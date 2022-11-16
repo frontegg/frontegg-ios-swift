@@ -12,22 +12,34 @@ struct MyApp: View {
 
     
     var body: some View {
-        
-        if fronteggAuth.isAuthenticated {
-            TabView {
-                ProfileTab()
-                    .tabItem {
-                        Image(systemName: "person.circle")
-                        Text("Profile")
+        ZStack{
+            if !fronteggAuth.initializing {
+                if fronteggAuth.isAuthenticated {
+                    TabView {
+                        ProfileTab()
+                            .tabItem {
+                                Image(systemName: "person.circle")
+                                Text("Profile")
+                            }
+                        TasksTab()
+                            .tabItem {
+                                Image(systemName: "checklist")
+                                Text("Tasks")
+                            }
                     }
-                TasksTab()
-                    .tabItem {
-                        Image(systemName: "checklist")
-                        Text("Tasks")
-                    }
+                } else  {
+                    FronteggLoginPage()
+                }
             }
-        } else {
-            FronteggLoginPage()
+            if fronteggAuth.initializing || (!fronteggAuth.isAuthenticated && fronteggAuth.isLoading) {
+                Color(red: 0.95, green:  0.95, blue:  0.95).ignoresSafeArea(.all)
+                VStack {
+                    Image("SplashIcon")
+                        .resizable()
+                        .frame(width: 100, height: 100)
+                    ProgressView()
+                }
+            }
         }
     }
 }

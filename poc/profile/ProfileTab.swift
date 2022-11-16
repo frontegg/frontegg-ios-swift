@@ -23,7 +23,7 @@ struct ProfileTab: View {
                 
                 Spacer()
                 Button("Logout") {
-                    fronteggAuth.isAuthenticated = false
+                    fronteggAuth.logout()
                 }
                 .foregroundColor(.red)
                 .font(.title2)

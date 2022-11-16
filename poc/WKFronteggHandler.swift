@@ -26,6 +26,15 @@ extension SchemeHandler {
     }
 }
 
+
+struct AuthResponse:Decodable {
+    
+    let token_type: String
+    let refresh_token: String
+    let access_token: String
+    let id_token: String
+}
+
 class WkFronteggHandler: NSObject, SchemeHandler {
     
     let fronteggAuth: FronteggAuth
@@ -48,7 +57,13 @@ class WkFronteggHandler: NSObject, SchemeHandler {
             }
             
             if url.absoluteString == "frontegg://oauth/session" {
-                self.fronteggAuth.isAuthenticated = true
+                
+                let jsonData = data.data(using: .utf8)!
+                let authRes: AuthResponse? = try? JSONDecoder().decode(AuthResponse.self, from: jsonData)
+
+                if let payload = authRes {
+                    self.fronteggAuth.setCredentials(accessToken: payload.access_token, refreshToken: payload.refresh_token)
+                }
             }
             print("POST METHOD URL: \(url)")
             print("POST METHOD DATA: \(data)")
@@ -84,10 +99,19 @@ class WkFronteggHandler: NSObject, SchemeHandler {
     private func fileUrlFromUrl(_ url: URL) -> URL? {
         print("fileUrlFromUrl: \(url.absoluteString)")
         if url.absoluteString == "frontegg://oauth/authenticate" {
+//            if !self.fronteggAuth.isLoading {
+//                self.fronteggAuth.isLoading = true
+//            }
             return Bundle.main.url(forResource: "authenticate", withExtension: "html");
         }else if url.absoluteString.starts(with: "frontegg://oauth/callback")  {
+//            if !self.fronteggAuth.isLoading {
+//                self.fronteggAuth.isLoading = true
+//            }
             return Bundle.main.url(forResource: "exchange-token", withExtension: "html");
         }else if url.absoluteString.starts(with: "frontegg://oauth/success/callback")  {
+//            if !self.fronteggAuth.isLoading {
+//                self.fronteggAuth.isLoading = true
+//            }
             return Bundle.main.url(forResource: "exchange-token", withExtension: "html");
         } else {
             return nil

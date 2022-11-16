@@ -7,18 +7,19 @@
 
 import SwiftUI
 
-
 struct ProfileInfo: View {
+    @EnvironmentObject var fronteggAuth: FronteggAuth
+    
     var body: some View {
         VStack(alignment: .leading) {
-            Text("Turtle Rock")
+            Text(fronteggAuth.user?.name ?? "Name")
                 .font(.title)
 
             HStack {
-                Text("Joshua Tree National Park")
+                Text(fronteggAuth.user?.email ?? "Email")
                     .font(.subheadline)
                 Spacer()
-                Text("California")
+                Text("Admin")
                     .font(.subheadline)
             }
         }

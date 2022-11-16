@@ -10,15 +10,21 @@ import SwiftUI
 
 struct FronteggWrapper<Content: View>: View {
     var content: () -> Content
-    @StateObject var fronteggAuth = FronteggAuth()
+    @StateObject var fronteggAuth = try! FronteggAuth()
     
     
     init(@ViewBuilder content: @escaping () -> Content) {
         self.content = content
     }
     var body: some View {
-        Group(content: content)
-            .environmentObject(fronteggAuth)
+        ZStack {
+            Group(content: content)
+        }
+        .environmentObject(fronteggAuth)
+        .onOpenURL { url in
+            
+            print("Testing Url \(url)")
+        }
             
     }
 }
