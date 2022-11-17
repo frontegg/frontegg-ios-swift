@@ -15,7 +15,7 @@
 		4101EDC729070DD40059CDB1 /* frontegg.development.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 4101EDC52906F8340059CDB1 /* frontegg.development.min.js */; };
 		4101EDC829070DEB0059CDB1 /* index.html in Resources */ = {isa = PBXBuildFile; fileRef = 4101EDC62906F8340059CDB1 /* index.html */; };
 		4101EDCA2908A6750059CDB1 /* WKFronteggHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4101EDC92908A6750059CDB1 /* WKFronteggHandler.swift */; };
-		4101EDCC290937F70059CDB1 /* frontegg.plist in Resources */ = {isa = PBXBuildFile; fileRef = 4101EDCB290937F70059CDB1 /* frontegg.plist */; };
+		4101EDCC290937F70059CDB1 /* Frontegg.plist in Resources */ = {isa = PBXBuildFile; fileRef = 4101EDCB290937F70059CDB1 /* Frontegg.plist */; };
 		4101EDCE290984500059CDB1 /* FronteggSocialLoginAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4101EDCD290984500059CDB1 /* FronteggSocialLoginAuth.swift */; };
 		4101EDD12909EE4D0059CDB1 /* exchange-token.html in Resources */ = {isa = PBXBuildFile; fileRef = 4101EDCF2909EE4D0059CDB1 /* exchange-token.html */; };
 		4101EDD22909EE4D0059CDB1 /* authenticate.html in Resources */ = {isa = PBXBuildFile; fileRef = 4101EDD02909EE4D0059CDB1 /* authenticate.html */; };
@@ -28,20 +28,23 @@
 		411EF7082921C3FB0082D418 /* FronteggWrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 411EF7072921C3FB0082D418 /* FronteggWrapper.swift */; };
 		411EF70A2921C77B0082D418 /* FronteggAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 411EF7092921C77B0082D418 /* FronteggAuth.swift */; };
 		411EF70C2921C88E0082D418 /* FronteggUser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 411EF70B2921C88E0082D418 /* FronteggUser.swift */; };
+		411EF7172925B7AF0082D418 /* JWTHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 411EF7142925B7AF0082D418 /* JWTHelper.swift */; };
+		411EF7182925B7AF0082D418 /* FronteggCredentialManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 411EF7152925B7AF0082D418 /* FronteggCredentialManager.swift */; };
+		411EF7192925B7AF0082D418 /* FronteggApi.swift in Sources */ = {isa = PBXBuildFile; fileRef = 411EF7162925B7AF0082D418 /* FronteggApi.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		4101EDAA290681920059CDB1 /* poc.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = poc.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4101EDAA290681920059CDB1 /* demo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = demo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4101EDAD290681920059CDB1 /* AcmeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AcmeApp.swift; sourceTree = "<group>"; };
 		4101EDAF290681920059CDB1 /* FronteggLoginPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FronteggLoginPage.swift; sourceTree = "<group>"; };
 		4101EDB1290681950059CDB1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		4101EDB3290681950059CDB1 /* poc.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = poc.entitlements; sourceTree = "<group>"; };
+		4101EDB3290681950059CDB1 /* demo.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = demo.entitlements; sourceTree = "<group>"; };
 		4101EDB5290681950059CDB1 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		4101EDBE2906A2620059CDB1 /* SwiftUIWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftUIWebView.swift; sourceTree = "<group>"; };
 		4101EDC52906F8340059CDB1 /* frontegg.development.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = frontegg.development.min.js; sourceTree = "<group>"; };
 		4101EDC62906F8340059CDB1 /* index.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = index.html; sourceTree = "<group>"; };
 		4101EDC92908A6750059CDB1 /* WKFronteggHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WKFronteggHandler.swift; sourceTree = "<group>"; };
-		4101EDCB290937F70059CDB1 /* frontegg.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = frontegg.plist; sourceTree = "<group>"; };
+		4101EDCB290937F70059CDB1 /* Frontegg.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Frontegg.plist; sourceTree = "<group>"; };
 		4101EDCD290984500059CDB1 /* FronteggSocialLoginAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FronteggSocialLoginAuth.swift; sourceTree = "<group>"; };
 		4101EDCF2909EE4D0059CDB1 /* exchange-token.html */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.html; name = "exchange-token.html"; path = "../../../admin-box/mobile/exchange-token.html"; sourceTree = "<group>"; };
 		4101EDD02909EE4D0059CDB1 /* authenticate.html */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.html; name = authenticate.html; path = "../../../admin-box/mobile/authenticate.html"; sourceTree = "<group>"; };
@@ -54,6 +57,10 @@
 		411EF7072921C3FB0082D418 /* FronteggWrapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FronteggWrapper.swift; sourceTree = "<group>"; };
 		411EF7092921C77B0082D418 /* FronteggAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FronteggAuth.swift; sourceTree = "<group>"; };
 		411EF70B2921C88E0082D418 /* FronteggUser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FronteggUser.swift; sourceTree = "<group>"; };
+		411EF7142925B7AF0082D418 /* JWTHelper.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = JWTHelper.swift; sourceTree = "<group>"; };
+		411EF7152925B7AF0082D418 /* FronteggCredentialManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FronteggCredentialManager.swift; sourceTree = "<group>"; };
+		411EF7162925B7AF0082D418 /* FronteggApi.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FronteggApi.swift; sourceTree = "<group>"; };
+		411EF71A2925B7CC0082D418 /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -70,7 +77,7 @@
 		4101EDA1290681920059CDB1 = {
 			isa = PBXGroup;
 			children = (
-				4101EDAC290681920059CDB1 /* poc */,
+				4101EDAC290681920059CDB1 /* demo */,
 				4101EDAB290681920059CDB1 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -78,14 +85,15 @@
 		4101EDAB290681920059CDB1 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				4101EDAA290681920059CDB1 /* poc.app */,
+				4101EDAA290681920059CDB1 /* demo.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		4101EDAC290681920059CDB1 /* poc */ = {
+		4101EDAC290681920059CDB1 /* demo */ = {
 			isa = PBXGroup;
 			children = (
+				411EF71A2925B7CC0082D418 /* Info.plist */,
 				411EF7062921C3DE0082D418 /* Frontegg */,
 				411EF7012921B2ED0082D418 /* tasks */,
 				411EF6F82921A2E40082D418 /* profile */,
@@ -93,15 +101,15 @@
 				4101EDAD290681920059CDB1 /* AcmeApp.swift */,
 				4101EDAF290681920059CDB1 /* FronteggLoginPage.swift */,
 				4101EDB1290681950059CDB1 /* Assets.xcassets */,
-				4101EDB3290681950059CDB1 /* poc.entitlements */,
+				4101EDB3290681950059CDB1 /* demo.entitlements */,
 				4101EDB4290681950059CDB1 /* Preview Content */,
 				4101EDBE2906A2620059CDB1 /* SwiftUIWebView.swift */,
 				4101EDC92908A6750059CDB1 /* WKFronteggHandler.swift */,
-				4101EDCB290937F70059CDB1 /* frontegg.plist */,
+				4101EDCB290937F70059CDB1 /* Frontegg.plist */,
 				4101EDCD290984500059CDB1 /* FronteggSocialLoginAuth.swift */,
 				411EF6FF2921B0960082D418 /* MyApp.swift */,
 			);
-			path = poc;
+			path = demo;
 			sourceTree = "<group>";
 		};
 		4101EDB4290681950059CDB1 /* Preview Content */ = {
@@ -145,6 +153,9 @@
 		411EF7062921C3DE0082D418 /* Frontegg */ = {
 			isa = PBXGroup;
 			children = (
+				411EF7162925B7AF0082D418 /* FronteggApi.swift */,
+				411EF7152925B7AF0082D418 /* FronteggCredentialManager.swift */,
+				411EF7142925B7AF0082D418 /* JWTHelper.swift */,
 				411EF7072921C3FB0082D418 /* FronteggWrapper.swift */,
 				411EF7092921C77B0082D418 /* FronteggAuth.swift */,
 				411EF70B2921C88E0082D418 /* FronteggUser.swift */,
@@ -155,9 +166,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		4101EDA9290681920059CDB1 /* poc */ = {
+		4101EDA9290681920059CDB1 /* demo */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 4101EDB9290681950059CDB1 /* Build configuration list for PBXNativeTarget "poc" */;
+			buildConfigurationList = 4101EDB9290681950059CDB1 /* Build configuration list for PBXNativeTarget "demo" */;
 			buildPhases = (
 				4101EDA6290681920059CDB1 /* Sources */,
 				4101EDA7290681920059CDB1 /* Frameworks */,
@@ -167,9 +178,9 @@
 			);
 			dependencies = (
 			);
-			name = poc;
+			name = demo;
 			productName = poc;
-			productReference = 4101EDAA290681920059CDB1 /* poc.app */;
+			productReference = 4101EDAA290681920059CDB1 /* demo.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -187,7 +198,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 4101EDA5290681920059CDB1 /* Build configuration list for PBXProject "poc" */;
+			buildConfigurationList = 4101EDA5290681920059CDB1 /* Build configuration list for PBXProject "demo" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -200,7 +211,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				4101EDA9290681920059CDB1 /* poc */,
+				4101EDA9290681920059CDB1 /* demo */,
 			);
 		};
 /* End PBXProject section */
@@ -213,7 +224,7 @@
 				4101EDC729070DD40059CDB1 /* frontegg.development.min.js in Resources */,
 				4101EDD22909EE4D0059CDB1 /* authenticate.html in Resources */,
 				4101EDC829070DEB0059CDB1 /* index.html in Resources */,
-				4101EDCC290937F70059CDB1 /* frontegg.plist in Resources */,
+				4101EDCC290937F70059CDB1 /* Frontegg.plist in Resources */,
 				4101EDB6290681950059CDB1 /* Preview Assets.xcassets in Resources */,
 				4101EDD12909EE4D0059CDB1 /* exchange-token.html in Resources */,
 				4101EDB2290681950059CDB1 /* Assets.xcassets in Resources */,
@@ -236,9 +247,12 @@
 				411EF70C2921C88E0082D418 /* FronteggUser.swift in Sources */,
 				411EF7002921B0960082D418 /* MyApp.swift in Sources */,
 				411EF6FE2921A3540082D418 /* ProfileInfo.swift in Sources */,
+				411EF7192925B7AF0082D418 /* FronteggApi.swift in Sources */,
 				411EF6FA2921A2EF0082D418 /* ProfileTab.swift in Sources */,
 				411EF6FC2921A2F90082D418 /* ProfilePicture.swift in Sources */,
 				4101EDCE290984500059CDB1 /* FronteggSocialLoginAuth.swift in Sources */,
+				411EF7182925B7AF0082D418 /* FronteggCredentialManager.swift in Sources */,
+				411EF7172925B7AF0082D418 /* JWTHelper.swift in Sources */,
 				4101EDCA2908A6750059CDB1 /* WKFronteggHandler.swift in Sources */,
 				4101EDAE290681920059CDB1 /* AcmeApp.swift in Sources */,
 			);
@@ -361,14 +375,16 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = poc/poc.entitlements;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_ENTITLEMENTS = demo/demo.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "\"poc/Preview Content\"";
-				DEVELOPMENT_TEAM = V4WBH85SDY;
+				DEVELOPMENT_ASSET_PATHS = "\"demo/Preview Content\"";
+				DEVELOPMENT_TEAM = 3R2X6557U2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = ACME;
+				INFOPLIST_KEY_CFBundleDisplayName = Demo;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -384,10 +400,12 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 12.3;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.frontegg.acme;
+				PRODUCT_BUNDLE_IDENTIFIER = com.frontegg.demo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -399,14 +417,16 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = poc/poc.entitlements;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_ENTITLEMENTS = demo/demo.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "\"poc/Preview Content\"";
-				DEVELOPMENT_TEAM = V4WBH85SDY;
+				DEVELOPMENT_ASSET_PATHS = "\"demo/Preview Content\"";
+				DEVELOPMENT_TEAM = 3R2X6557U2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = ACME;
+				INFOPLIST_KEY_CFBundleDisplayName = Demo;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -422,10 +442,12 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 12.3;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.frontegg.acme;
+				PRODUCT_BUNDLE_IDENTIFIER = com.frontegg.demo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -435,7 +457,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		4101EDA5290681920059CDB1 /* Build configuration list for PBXProject "poc" */ = {
+		4101EDA5290681920059CDB1 /* Build configuration list for PBXProject "demo" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				4101EDB7290681950059CDB1 /* Debug */,
@@ -444,7 +466,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		4101EDB9290681950059CDB1 /* Build configuration list for PBXNativeTarget "poc" */ = {
+		4101EDB9290681950059CDB1 /* Build configuration list for PBXNativeTarget "demo" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				4101EDBA290681950059CDB1 /* Debug */,

@@ -78,11 +78,8 @@ class FronteggAuth: ObservableObject {
     public func initialize() {
         DispatchQueue.global(qos: .userInitiated).async {
             Task {
-                print(self.accessToken)
                 await self.refreshTokenIfNeeded()
-                print(self.accessToken)
                 await self.loadUserData()
-//                await loadTenants()
             }
         }
     }

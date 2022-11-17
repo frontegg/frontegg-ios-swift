@@ -3,15 +3,6 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>None</string>
-			<key>CFBundleURLName</key>
-			<string></string>
-			<key>CFBundleURLSchemes</key>
-			<array/>
-		</dict>
-	</array>
+	<array/>
 </dict>
 </plist>

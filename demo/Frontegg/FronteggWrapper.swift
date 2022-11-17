@@ -25,7 +25,6 @@ struct FronteggWrapper<Content: View>: View {
             
             print("Testing Url \(url)")
         }
-            
     }
 }
 

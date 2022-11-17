@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "4101EDA9290681920059CDB1"
-               BuildableName = "poc.app"
-               BlueprintName = "poc"
-               ReferencedContainer = "container:poc.xcodeproj">
+               BuildableName = "demo.app"
+               BlueprintName = "demo"
+               ReferencedContainer = "container:demo.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -45,9 +45,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4101EDA9290681920059CDB1"
-            BuildableName = "poc.app"
-            BlueprintName = "poc"
-            ReferencedContainer = "container:poc.xcodeproj">
+            BuildableName = "demo.app"
+            BlueprintName = "demo"
+            ReferencedContainer = "container:demo.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -62,9 +62,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4101EDA9290681920059CDB1"
-            BuildableName = "poc.app"
-            BlueprintName = "poc"
-            ReferencedContainer = "container:poc.xcodeproj">
+            BuildableName = "demo.app"
+            BlueprintName = "demo"
+            ReferencedContainer = "container:demo.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
