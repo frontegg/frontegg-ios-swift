@@ -1,1 +1,3 @@
-# frontegg-ios-swift
+# FronteggSwift
+
+A description of this package.
