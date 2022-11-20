@@ -28,7 +28,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                 self.socialLoginAuth.startLoginTransition(url) { url, error in
                     if let query = url?.query {
 //                        self.fronteggAuth?.isLoading = true
-                        var successUrl = URL(string:"https://david.frontegg.com/oauth/account/social/success?\(query)" )!
+                        let successUrl = URL(string:"https://david.frontegg.com/oauth/account/social/success?\(query)" )!
                         webView.load(URLRequest(url: successUrl))
                     }
                 }
@@ -107,7 +107,7 @@ struct FronteggWebView: UIViewRepresentable {
     
     func makeUIView(context: Context) -> WKWebView {
         
-        if var url = URL(string: "frontegg://oauth/authenticate" ) {
+        if let url = URL(string: "frontegg://oauth/authenticate" ) {
             let request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad)
             webView.load(request)
         }

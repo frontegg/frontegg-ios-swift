@@ -60,7 +60,7 @@ public class FronteggApi {
     
     internal func refreshToken(accessToken: String, refreshToken: String) async -> AuthResponse? {
         do{
-            let (data, response) = try await postRequest(accessToken: accessToken, path: "oauth/token", body: [
+            let (data, _) = try await postRequest(accessToken: accessToken, path: "oauth/token", body: [
                 "grant_type": "refresh_token",
                 "refresh_token": refreshToken,
             ])

@@ -1,0 +1,86 @@
+<html>
+<head>
+  <script type='text/javascript'>
+    const HOSTED_LOGIN_VERIFIER_KEY = 'TESTING';
+
+    const contextOptions = {
+      baseUrl: "https://david.frontegg.com",
+      clientId: "b6adfe4c-d695-4c04-b95f-3ec9fd0c6cca"
+    }
+
+    function createRandomString(length = 16) {
+      let text = '';
+      const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      for (let i = 0; i < length; i++) {
+        text += possible.charAt(Math.floor(Math.random() * possible.length));
+      }
+      return text;
+    }
+
+    async function generateCodeChallenge(codeVerifier) {
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(codeVerifier));
+
+      // @ts-ignore
+      return btoa(String.fromCharCode(...new Uint8Array(digest)))
+        .replace(/=/g, '')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_');
+    }
+
+    async function requestHostedLoginAuthorize() {
+      const nonce = createRandomString();
+      const code_verifier = createRandomString();
+      const code_challenge = await generateCodeChallenge(code_verifier);
+
+      // We are saving the verifier in session storage to be able to validate the response
+      
+      console.log('code_verifier', code_verifier);
+      localStorage.setItem(HOSTED_LOGIN_VERIFIER_KEY, code_verifier);
+      
+
+      const redirectUrl = `frontegg://oauth/callback`;
+
+      // Hard coded for now
+      const oauthUrl = `${contextOptions.baseUrl}/oauth/authorize`;
+
+
+      const params = {
+        response_type: 'code',
+        client_id: contextOptions.clientId || 'INVALID-CLIENT-ID',
+        scope: 'openid email profile',
+        redirect_uri: redirectUrl,
+        code_challenge: code_challenge,
+        code_challenge_method: 'S256',
+        nonce,
+      };
+
+      const searchParams = new URLSearchParams(params);
+      return `${oauthUrl}?${searchParams.toString()}`;
+    }
+
+  //    console.log("Testing: 1");
+  //setTimeout(()=>{
+          
+          // console.log('first: ', localStorage)
+    requestHostedLoginAuthorize().then(authorizeUrl => {
+        
+//console.log('first: ', localStorage.getItem(HOSTED_LOGIN_VERIFIER_KEY))-->
+//        document.getElementById('code').innerText = authorizeUrl;-->
+//        console.log(localStorage);-->
+        
+        
+      window.location.href = authorizeUrl
+      return false;
+    }).catch(e => {
+        console.error(e)
+    });
+      //}, 8000)
+  </script>
+</head>
+<body>
+
+<!--<h1 id='code'></h1>-->
+
+</body>
+
+</html>

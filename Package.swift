@@ -23,9 +23,15 @@ let package = Package(
         // Targets can depend on other targets in this package, and on products in packages this package depends on.
         .target(
             name: "FronteggSwift",
-            dependencies: []),
+            dependencies: [],
+            resources: [
+                .copy("Resources/authenticate.html"),
+                .copy("Resources/exchange-token.html")
+            ]
+        ),
         .testTarget(
             name: "FronteggSwiftTests",
-            dependencies: ["FronteggSwift"]),
+            dependencies: ["FronteggSwift"]
+        ),
     ]
 )

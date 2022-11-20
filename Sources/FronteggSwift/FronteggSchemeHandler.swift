@@ -93,21 +93,22 @@ class FronteggSchemeHandler: NSObject, SchemeHandler {
     
     private func fileUrlFromUrl(_ url: URL) -> URL? {
         print("fileUrlFromUrl: \(url.absoluteString)")
+        
         if url.absoluteString == "frontegg://oauth/authenticate" {
 //            if !self.fronteggAuth.isLoading {
 //                self.fronteggAuth.isLoading = true
 //            }
-            return Bundle.main.url(forResource: "authenticate", withExtension: "html");
+            return Bundle.main.url(forResource: "authenticate", withExtension: "html", subdirectory: "FronteggSwift_FronteggSwift.bundle");
         }else if url.absoluteString.starts(with: "frontegg://oauth/callback")  {
 //            if !self.fronteggAuth.isLoading {
 //                self.fronteggAuth.isLoading = true
 //            }
-            return Bundle.main.url(forResource: "exchange-token", withExtension: "html");
+            return Bundle.main.url(forResource: "exchange-token", withExtension: "html", subdirectory: "FronteggSwift_FronteggSwift.bundle");
         }else if url.absoluteString.starts(with: "frontegg://oauth/success/callback")  {
 //            if !self.fronteggAuth.isLoading {
 //                self.fronteggAuth.isLoading = true
 //            }
-            return Bundle.main.url(forResource: "exchange-token", withExtension: "html");
+            return Bundle.main.url(forResource: "exchange-token", withExtension: "html", subdirectory: "FronteggSwift_FronteggSwift.bundle");
         } else {
             return nil
         }
