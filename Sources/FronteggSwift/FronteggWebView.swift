@@ -51,6 +51,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         print("start load \(webView.url?.absoluteString ?? "")")
+        if(!(webView.url?.absoluteString.hasSuffix("/prelogin") ?? false)){
+            fronteggAuth?.isLoading = true
+        }
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         print("finish load \(webView.url?.absoluteString ?? "")")
@@ -86,10 +89,6 @@ struct FronteggWebView: UIViewRepresentable {
         conf.userContentController = userContentController
         userContentController.addUserScript(atDocumentStartScript)
         userContentController.addUserScript(atDocumentEndScript)
-        
-//        let preferences = WKPreferences()
-//        conf.preferences = preferences
-
         
         httpCookieStore = WKWebsiteDataStore.default().httpCookieStore;
         let assetsHandler = FronteggSchemeHandler(fronteggAuth: fronteggAuth)
