@@ -3,10 +3,7 @@
   <script type='text/javascript'>
     const HOSTED_LOGIN_VERIFIER_KEY = 'TESTING';
 
-    const contextOptions = {
-      baseUrl: "https://david.frontegg.com",
-      clientId: "b6adfe4c-d695-4c04-b95f-3ec9fd0c6cca"
-    }
+
 
     function createRandomString(length = 16) {
       let text = '';
@@ -41,12 +38,12 @@
       const redirectUrl = `frontegg://oauth/callback`;
 
       // Hard coded for now
-      const oauthUrl = `${contextOptions.baseUrl}/oauth/authorize`;
+      const oauthUrl = `${window.contextOptions.baseUrl}/oauth/authorize`;
 
 
       const params = {
         response_type: 'code',
-        client_id: contextOptions.clientId || 'INVALID-CLIENT-ID',
+        client_id: window.contextOptions.clientId || 'INVALID-CLIENT-ID',
         scope: 'openid email profile',
         redirect_uri: redirectUrl,
         code_challenge: code_challenge,

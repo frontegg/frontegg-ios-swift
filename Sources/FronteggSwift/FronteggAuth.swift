@@ -21,6 +21,8 @@ public class FronteggAuth: ObservableObject {
     @Published public var isAuthenticated = false
     @Published public var isLoading = true
     @Published public var initializing = true
+    public var baseUrl = ""
+    public var clientId = ""
     
     
     enum KeychainKeys: String {
@@ -35,6 +37,8 @@ public class FronteggAuth: ObservableObject {
     init() throws {
         let data = try FronteggAuth.plistValues(bundle: Bundle.main)
         
+        self.baseUrl = data.baseUrl
+        self.clientId = data.clientId
         self.credentialManager = FronteggCredentialManager(serviceKey: data.keychainService)
         self.api = FronteggApi(baseUrl: data.baseUrl, clientId: data.clientId, credentialManager: self.credentialManager)
         

@@ -24,11 +24,11 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
         if let url = navigationAction.request.url,
            let scheme = url.scheme {
-            if(scheme != "frontegg" && !url.absoluteString.starts(with: "https://david.frontegg.com")){
+            if(scheme != "frontegg" && !url.absoluteString.starts(with: fronteggAuth!.baseUrl)){
                 self.socialLoginAuth.startLoginTransition(url) { url, error in
                     if let query = url?.query {
 //                        self.fronteggAuth?.isLoading = true
-                        let successUrl = URL(string:"https://david.frontegg.com/oauth/account/social/success?\(query)" )!
+                        let successUrl = URL(string:"\(self.fronteggAuth!.baseUrl)/oauth/account/social/success?\(query)" )!
                         webView.load(URLRequest(url: successUrl))
                     }
                 }
@@ -36,7 +36,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             } else {
                 if(url.absoluteString.starts(with: "frontegg://oauth/callback")){
                     let query = url.query ?? ""
-//                    self.fronteggAuth?.isLoading = true
+                    self.fronteggAuth?.isLoading = true
                     webView.load(URLRequest(url: URL(string: "frontegg://oauth/success/callback?\(query)")!))
                     return .cancel
                 }
@@ -69,17 +69,23 @@ struct FronteggWebView: UIViewRepresentable {
     
     init(fronteggAuth: FronteggAuth) {
         self.fronteggAuth = fronteggAuth;
-        let source: String = "var meta = document.createElement('meta');" +
+        let atDocumentStartSource: String = "window.contextOptions = {" +
+        "baseUrl: \"\(fronteggAuth.baseUrl)\"," +
+        "clientId: \"\(fronteggAuth.clientId)\"}"
+        
+        let atDocumentEndSource: String = "var meta = document.createElement('meta');" +
         "meta.name = 'viewport';" +
         "meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';" +
         "var head = document.getElementsByTagName('head')[0];" +
         "head.appendChild(meta);"
         
-        let script: WKUserScript = WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        let atDocumentStartScript: WKUserScript = WKUserScript(source: atDocumentStartSource, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        let atDocumentEndScript: WKUserScript = WKUserScript(source: atDocumentEndSource, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         let userContentController: WKUserContentController = WKUserContentController()
         let conf = WKWebViewConfiguration()
         conf.userContentController = userContentController
-        userContentController.addUserScript(script)
+        userContentController.addUserScript(atDocumentStartScript)
+        userContentController.addUserScript(atDocumentEndScript)
         
 //        let preferences = WKPreferences()
 //        conf.preferences = preferences
@@ -96,12 +102,7 @@ struct FronteggWebView: UIViewRepresentable {
         webView.navigationDelegate = webView;
         
         
-        
-        print("INIT WEBVIEW")
-//                var url = URL(string:"https://david.frontegg.com/oauth/account/login" )!
-//        var url = URL(string: "frontegg://oauth/authenticate" )!
-//        self.webView.load(URLRequest(url: url))
-        
+
         
     }
     
