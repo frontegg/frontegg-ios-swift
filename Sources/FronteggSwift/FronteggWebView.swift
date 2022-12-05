@@ -87,7 +87,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         print("finish load \(webView.url?.absoluteString ?? "")")
-        if (webView.url?.absoluteString.hasSuffix("/oauth/account/login") ?? false) {
+        if (webView.url?.absoluteString.hasPrefix("\(self.fronteggAuth?.baseUrl ?? "")/oauth/account") ?? false) {
             if(fronteggAuth?.isLoading ?? true){
                 fronteggAuth?.isLoading = false
             }
@@ -123,8 +123,12 @@ struct FronteggWebView: UIViewRepresentable {
         "       meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';" +
         "       var head = document.getElementsByTagName('head')[0];" +
         "       head.appendChild(meta);" +
+        "       var style = document.createElement('style');" +
+        "       style.innerHTML = 'html {font-size: 16px;}';" +
+        "       style.setAttribute('type', 'text/css');" +
+        "       document.head.appendChild(style); " +
         "   }" +
-        "}, 100);"
+        "}, 10);"
 
         
         let userContentController: WKUserContentController = WKUserContentController()
