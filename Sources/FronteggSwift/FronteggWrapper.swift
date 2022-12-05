@@ -18,12 +18,24 @@ public struct FronteggWrapper<Content: View>: View {
     }
     public var body: some View {
         ZStack {
-            Group(content: content)
+            if fronteggAuth.showLoader {
+                Color(red: 0.95, green:  0.95, blue:  0.95).ignoresSafeArea(.all)
+                VStack {
+                    ProgressView()
+                }
+            }
+            if(fronteggAuth.pendingAppLink != nil){
+                FronteggLoginPage()
+            } else {
+                Group(content: content)
+            }
         }
         .environmentObject(fronteggAuth)
         .onOpenURL { url in
-            
-            print("Testing Url \(url)")
+            if(url.absoluteString.hasPrefix(fronteggAuth.baseUrl)){
+                print("App link: \(url)")
+                fronteggAuth.loadAppLink(url)
+            }
         }
     }
 }

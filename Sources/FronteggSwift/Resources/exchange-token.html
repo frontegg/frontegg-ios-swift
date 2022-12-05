@@ -21,8 +21,13 @@
                 const searchParams = new URLSearchParams(location.search);
                 
                 console.log('HOSTED_LOGIN_VERIFIER_KEY', localStorage.getItem(HOSTED_LOGIN_VERIFIER_KEY))
-                const code_verifier = localStorage.getItem(HOSTED_LOGIN_VERIFIER_KEY) || searchParams.get("code_verifier") || 'INVALID-CODE-VERIFIER';
+                const code_verifier = localStorage.getItem(HOSTED_LOGIN_VERIFIER_KEY) || searchParams.get("code_verifier")
                 console.log(code_verifier);
+                
+                if(!code_verifier){
+                    window.location.href = "frontegg://oauth/authenticate"
+                    return false
+                }
                 
                 
                 fetch(`${window.contextOptions.baseUrl}/oauth/token`, {

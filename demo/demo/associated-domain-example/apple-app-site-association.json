@@ -1,0 +1,10 @@
+{
+  "applinks": {
+      "details": [
+      {
+        "appID": "3R2X6557U2.com.frontegg.demo",
+        "paths": ["*"]
+      }
+    ]
+  }
+}

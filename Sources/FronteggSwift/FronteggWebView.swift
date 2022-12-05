@@ -21,15 +21,43 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         return accessoryView
     }
     
+    
+    private func shouldStartLoginTransition(url: URL) -> Bool{
+        if url.scheme == "frontegg" || url.absoluteString.starts(with: fronteggAuth!.baseUrl) {
+            return false;
+        }
+        if url.absoluteString.contains("google") ||
+            url.absoluteString.contains("microsoft") ||
+            url.absoluteString.contains("github") ||
+            url.absoluteString.contains("facebook") {
+            return true;
+        }
+        
+        // Option 1:
+        // generate private/public key in ios app
+        // login with okta? relayState = publicKey
+        // post request to hosted login saml callback + relayState
+        // https://{hosted login}/saml/mobile/callback => refresh+access encrypt with public key
+        // go to frontegg-auth://saml/success?ecrypyed=sadasdsad
+        // privateKey + sadasdsad => refresh token + acccess Token
+        
+        
+        return false;
+    }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-        if let url = navigationAction.request.url,
-           let scheme = url.scheme {
-            if(scheme != "frontegg" && !url.absoluteString.starts(with: fronteggAuth!.baseUrl)){
+        if let url = navigationAction.request.url {
+            if(self.shouldStartLoginTransition(url: url)){
+                print("Starting login transition to: \(url)")
                 self.socialLoginAuth.startLoginTransition(url) { url, error in
                     if let query = url?.query {
-//                        self.fronteggAuth?.isLoading = true
                         let successUrl = URL(string:"\(self.fronteggAuth!.baseUrl)/oauth/account/social/success?\(query)" )!
-                        webView.load(URLRequest(url: successUrl))
+                        webView.stopLoading()
+                        _ = webView.load((URLRequest(url: successUrl)))
+                        self.fronteggAuth?.isLoading = false
+                    } else {
+                        self.fronteggAuth?.isLoading = true
+                        webView.stopLoading()
+                        _ = webView.load(URLRequest(url: URL(string:"frontegg://oauth/authenticate")!))
                     }
                 }
                 return .cancel
@@ -37,7 +65,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                 if(url.absoluteString.starts(with: "frontegg://oauth/callback")){
                     let query = url.query ?? ""
                     self.fronteggAuth?.isLoading = true
-                    webView.load(URLRequest(url: URL(string: "frontegg://oauth/success/callback?\(query)")!))
+                    _ = webView.load(URLRequest(url: URL(string: "frontegg://oauth/success/callback?\(query)")!))
                     return .cancel
                 }
                 
@@ -51,45 +79,60 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         print("start load \(webView.url?.absoluteString ?? "")")
+        fronteggAuth?.externalLink = webView.url?.absoluteString.contains("okta.com") ?? false
+        
         if(!(webView.url?.absoluteString.hasSuffix("/prelogin") ?? false)){
             fronteggAuth?.isLoading = true
         }
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         print("finish load \(webView.url?.absoluteString ?? "")")
-        if(webView.url?.absoluteString.hasSuffix("/oauth/account/login") ?? false && fronteggAuth?.isLoading ?? true){
-            fronteggAuth?.isLoading = false
+        if (webView.url?.absoluteString.hasSuffix("/oauth/account/login") ?? false) {
+            if(fronteggAuth?.isLoading ?? true){
+                fronteggAuth?.isLoading = false
+            }
+        } else if (webView.url?.absoluteString.contains("okta.com") ?? false) {
+            if(fronteggAuth?.isLoading ?? true){
+                fronteggAuth?.isLoading = false
+            }
         }
+
     }
     
 }
 
 struct FronteggWebView: UIViewRepresentable {
     typealias UIViewType = WKWebView
+    
     let webView: CustomWebView
     private var httpCookieStore: WKHTTPCookieStore
     private var fronteggAuth: FronteggAuth
     
-    init(fronteggAuth: FronteggAuth) {
+    init(_ fronteggAuth: FronteggAuth) {
         self.fronteggAuth = fronteggAuth;
-        let atDocumentStartSource: String = "window.contextOptions = {" +
+        let contextOptionsSource: String = "window.contextOptions = {" +
+
         "baseUrl: \"\(fronteggAuth.baseUrl)\"," +
         "clientId: \"\(fronteggAuth.clientId)\"}"
         
-        let atDocumentEndSource: String = "var meta = document.createElement('meta');" +
-        "meta.name = 'viewport';" +
-        "meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';" +
-        "var head = document.getElementsByTagName('head')[0];" +
-        "head.appendChild(meta);"
+        let metadataSource:String = "let interval = setInterval(function(){" +
+        "   if(document.getElementsByTagName('head').length > 0){" +
+        "       clearInterval(interval);" +
+        "       var meta = document.createElement('meta');" +
+        "       meta.name = 'viewport';" +
+        "       meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';" +
+        "       var head = document.getElementsByTagName('head')[0];" +
+        "       head.appendChild(meta);" +
+        "   }" +
+        "}, 100);"
+
         
-        let atDocumentStartScript: WKUserScript = WKUserScript(source: atDocumentStartSource, injectionTime: .atDocumentStart, forMainFrameOnly: true)
-        let atDocumentEndScript: WKUserScript = WKUserScript(source: atDocumentEndSource, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         let userContentController: WKUserContentController = WKUserContentController()
+        userContentController.addUserScript(WKUserScript(source: contextOptionsSource, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        userContentController.addUserScript(WKUserScript(source: metadataSource, injectionTime: .atDocumentEnd, forMainFrameOnly: false))
+        
         let conf = WKWebViewConfiguration()
         conf.userContentController = userContentController
-        userContentController.addUserScript(atDocumentStartScript)
-        userContentController.addUserScript(atDocumentEndScript)
-        
         httpCookieStore = WKWebsiteDataStore.default().httpCookieStore;
         let assetsHandler = FronteggSchemeHandler(fronteggAuth: fronteggAuth)
         
@@ -100,15 +143,12 @@ struct FronteggWebView: UIViewRepresentable {
         webView.fronteggAuth = fronteggAuth;
         webView.navigationDelegate = webView;
         
-        
-
-        
     }
     
     func makeUIView(context: Context) -> WKWebView {
         
-        if let url = URL(string: "frontegg://oauth/authenticate" ) {
-            let request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad)
+        if let url = URL(string: self.fronteggAuth.pendingAppLink ?? "frontegg://oauth/authenticate" ) {
+            let request = URLRequest(url: url, cachePolicy: .reloadIgnoringCacheData)
             webView.load(request)
         }
                 

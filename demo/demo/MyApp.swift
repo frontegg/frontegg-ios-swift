@@ -32,15 +32,15 @@ struct MyApp: View {
                     FronteggLoginPage()
                 }
             }
-            if fronteggAuth.initializing || (!fronteggAuth.isAuthenticated && fronteggAuth.isLoading) {
-                Color(red: 0.95, green:  0.95, blue:  0.95).ignoresSafeArea(.all)
-                VStack {
-                    Image("SplashIcon")
-                        .resizable()
-                        .frame(width: 100, height: 100)
-                    ProgressView()
-                }
-            }
+//            if fronteggAuth.initializing || (!fronteggAuth.isAuthenticated && fronteggAuth.isLoading) {
+//                Color(red: 0.95, green:  0.95, blue:  0.95).ignoresSafeArea(.all)
+//                VStack {
+//                    Image("SplashIcon")
+//                        .resizable()
+//                        .frame(width: 100, height: 100)
+//                    ProgressView()
+//                }
+//            }
         }
     }
 }

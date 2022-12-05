@@ -7,12 +7,31 @@
 
 import Foundation
 import WebKit
-
+import Combine
 
 
 enum FronteggError: Error {
     case configError(String)
 }
+
+struct Credential {
+        let domain: String
+        let account: String
+        let password: String
+
+        init?(dictionary: NSDictionary) {
+            let dict = dictionary as Dictionary
+
+            guard let domain = dict[kSecAttrServer] as? String,
+                let account = dict[kSecAttrAccount] as? String,
+                let password = dict[kSecSharedPassword] as? String
+            else { return nil }
+
+            self.domain = domain
+            self.account = account
+            self.password = password
+        }
+    }
 
 public class FronteggAuth: ObservableObject {
     @Published public var accessToken: String?
@@ -21,6 +40,9 @@ public class FronteggAuth: ObservableObject {
     @Published public var isAuthenticated = false
     @Published public var isLoading = true
     @Published public var initializing = true
+    @Published public var showLoader = true
+    @Published public var pendingAppLink: String?
+    @Published public var externalLink = false
     public var baseUrl = ""
     public var clientId = ""
     
@@ -33,6 +55,7 @@ public class FronteggAuth: ObservableObject {
     
     private let credentialManager: FronteggCredentialManager
     public let api: FronteggApi
+    private var subscribers = Set<AnyCancellable>()
     
     init() throws {
         let data = try FronteggAuth.plistValues(bundle: Bundle.main)
@@ -42,6 +65,9 @@ public class FronteggAuth: ObservableObject {
         self.credentialManager = FronteggCredentialManager(serviceKey: data.keychainService)
         self.api = FronteggApi(baseUrl: data.baseUrl, clientId: data.clientId, credentialManager: self.credentialManager)
         
+        self.$initializing.combineLatest(self.$isAuthenticated, self.$isLoading).sink(){ (initializingValue, isAuthenticatedValue, isLoadingValue) in
+                            self.showLoader = initializingValue || (!isAuthenticatedValue && isLoadingValue)
+        }.store(in: &subscribers)
         
         if let refreshToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue),
            let accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
@@ -56,8 +82,8 @@ public class FronteggAuth: ObservableObject {
                 }
             }
         }else {
-            self.isLoading = false
-            self.initializing = false
+                self.isLoading = false
+                self.initializing = false
         }
     }
     
@@ -77,6 +103,7 @@ public class FronteggAuth: ObservableObject {
                 self.accessToken = accessToken
                 self.user = user
                 self.isAuthenticated = true
+                self.pendingAppLink = nil
                 
                 let offset = Double((decode["exp"] as! Int) - Int(Date().timeIntervalSince1970))  * 0.9
                 DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + offset) {
@@ -108,7 +135,7 @@ public class FronteggAuth: ObservableObject {
         dataStore.fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) { records in
             dataStore.removeData(
                 ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
-                for: records.filter { $0.displayName.contains("frontegg") }) {
+                for: records.filter { !$0.displayName.contains("refesh") }) {
                     self.credentialManager.clear()
                     
                     DispatchQueue.main.async {
@@ -158,6 +185,10 @@ public class FronteggAuth: ObservableObject {
                 self.isAuthenticated = false
             }
         }
+    }
+    
+    public func loadAppLink(_ url: URL) {
+        self.pendingAppLink = url.absoluteString
     }
     //    public func loadUserData() async {
     //        guard let accessToken = self.accessToken else {

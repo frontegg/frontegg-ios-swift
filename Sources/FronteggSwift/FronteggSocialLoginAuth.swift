@@ -15,6 +15,9 @@ class FronteggSocialLoginAuth: NSObject, ObservableObject, ASWebAuthenticationPr
  
     var webAuthSession: ASWebAuthenticationSession?
     
+    override func responds(to aSelector: Selector!) -> Bool {
+        return true
+    }
     
     func startLoginTransition(_ websiteURL:URL, completionHandler: @escaping ASWebAuthenticationSession.CompletionHandler){
         webAuthSession = ASWebAuthenticationSession.init(
@@ -26,6 +29,7 @@ class FronteggSocialLoginAuth: NSObject, ObservableObject, ASWebAuthenticationPr
         // Run the session
         webAuthSession?.presentationContextProvider = self
         webAuthSession?.prefersEphemeralWebBrowserSession = false
+        
         DispatchQueue.main.async {
             self.webAuthSession?.start()
         }
