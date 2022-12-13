@@ -38,7 +38,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         // login with okta? relayState = publicKey
         // post request to hosted login saml callback + relayState
         // https://{hosted login}/saml/mobile/callback => refresh+access encrypt with public key
-        // go to frontegg-auth://saml/success?ecrypyed=sadasdsad
+        // go to frontegg-sso://saml/success?ecrypyed=sadasdsad
         // privateKey + sadasdsad => refresh token + acccess Token
         
         

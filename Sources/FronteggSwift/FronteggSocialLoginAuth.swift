@@ -22,7 +22,7 @@ class FronteggSocialLoginAuth: NSObject, ObservableObject, ASWebAuthenticationPr
     func startLoginTransition(_ websiteURL:URL, completionHandler: @escaping ASWebAuthenticationSession.CompletionHandler){
         webAuthSession = ASWebAuthenticationSession.init(
             url: websiteURL,
-            callbackURLScheme: "frontegg-auth",
+            callbackURLScheme: "frontegg-sso",
             completionHandler: completionHandler
         )
 

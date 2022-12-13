@@ -20,6 +20,7 @@
 		415C0128292A3F23007598C8 /* FronteggSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 415C0127292A3F23007598C8 /* FronteggSwift */; };
 		41A732A2292D9911004A22D2 /* server.js in Resources */ = {isa = PBXBuildFile; fileRef = 41A732A0292D9911004A22D2 /* server.js */; };
 		41A732A3292D9911004A22D2 /* index.html in Resources */ = {isa = PBXBuildFile; fileRef = 41A732A1292D9911004A22D2 /* index.html */; };
+		41D0537A294920A800A54D16 /* LoaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41D05379294920A800A54D16 /* LoaderView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -39,6 +40,7 @@
 		41A7329C292D9859004A22D2 /* demo.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = demo.entitlements; sourceTree = "<group>"; };
 		41A732A0292D9911004A22D2 /* server.js */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.javascript; path = server.js; sourceTree = "<group>"; };
 		41A732A1292D9911004A22D2 /* index.html */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.html; path = index.html; sourceTree = "<group>"; };
+		41D05379294920A800A54D16 /* LoaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoaderView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -83,6 +85,7 @@
 				415C00E929293437007598C8 /* demoApp.swift */,
 				415C00ED29293438007598C8 /* Assets.xcassets */,
 				415C00EF29293438007598C8 /* Preview Content */,
+				41D05379294920A800A54D16 /* LoaderView.swift */,
 			);
 			path = demo;
 			sourceTree = "<group>";
@@ -220,6 +223,7 @@
 				415C011829293730007598C8 /* ProfilePicture.swift in Sources */,
 				415C011B29293730007598C8 /* TasksTab.swift in Sources */,
 				415C011729293730007598C8 /* ProfileInfo.swift in Sources */,
+				41D0537A294920A800A54D16 /* LoaderView.swift in Sources */,
 				415C00EA29293437007598C8 /* demoApp.swift in Sources */,
 				415C010729293631007598C8 /* MyApp.swift in Sources */,
 			);
@@ -278,7 +282,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -332,7 +336,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
@@ -358,6 +362,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Demo;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -398,6 +403,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Demo;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

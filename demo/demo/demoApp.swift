@@ -12,7 +12,7 @@ import FronteggSwift
 struct demoApp: App {
     var body: some Scene {
         WindowGroup {
-            FronteggWrapper {
+            FronteggWrapper(loaderView: AnyView(LoaderView())) {
                 MyApp()
             }
         }
