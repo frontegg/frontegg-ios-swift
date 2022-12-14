@@ -1,7 +1,7 @@
 <html>
 <head>
   <script type='text/javascript'>
-    const HOSTED_LOGIN_VERIFIER_KEY = 'TESTING';
+    const HOSTED_LOGIN_VERIFIER_KEY = 'HOSTED_LOGIN_VERIFIER_KEY';
 
 
 
@@ -31,7 +31,6 @@
 
       // We are saving the verifier in session storage to be able to validate the response
       
-      console.log('code_verifier', code_verifier);
       localStorage.setItem(HOSTED_LOGIN_VERIFIER_KEY, code_verifier);
       
 
@@ -55,17 +54,8 @@
       return `${oauthUrl}?${searchParams.toString()}`;
     }
 
-  //    console.log("Testing: 1");
-  //setTimeout(()=>{
-          
-          // console.log('first: ', localStorage)
     requestHostedLoginAuthorize().then(authorizeUrl => {
-        
-//console.log('first: ', localStorage.getItem(HOSTED_LOGIN_VERIFIER_KEY))-->
-//        document.getElementById('code').innerText = authorizeUrl;-->
-//        console.log(localStorage);-->
-        
-        
+            
       window.location.href = authorizeUrl
       return false;
     }).catch(e => {

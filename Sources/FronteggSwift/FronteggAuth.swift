@@ -132,10 +132,10 @@ public class FronteggAuth: ObservableObject {
         self.isLoading = true
         
         let dataStore = WKWebsiteDataStore.default()
-        dataStore.fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) { records in
+        dataStore.fetchDataRecords(ofTypes: [WKWebsiteDataTypeCookies]) { records in
             dataStore.removeData(
-                ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
-                for: records.filter { !$0.displayName.contains("refesh") }) {
+                ofTypes: [WKWebsiteDataTypeCookies],
+                for: records.filter { _ in true }) {
                     self.credentialManager.clear()
                     
                     DispatchQueue.main.async {

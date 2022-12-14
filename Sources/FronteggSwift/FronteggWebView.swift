@@ -26,10 +26,14 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         if url.scheme == "frontegg" || url.absoluteString.starts(with: fronteggAuth!.baseUrl) {
             return false;
         }
-        if url.absoluteString.contains("google") ||
-            url.absoluteString.contains("microsoft") ||
-            url.absoluteString.contains("github") ||
-            url.absoluteString.contains("facebook") {
+        
+    
+        if url.absoluteString.starts(with: "https://www.facebook.com") ||
+            url.absoluteString.starts(with: "https://accounts.google.com") ||
+            url.absoluteString.starts(with: "https://github.com/login/oauth/authorize") ||
+            url.absoluteString.starts(with: "https://login.microsoftonline.com") ||
+            url.absoluteString.starts(with: "https://slack.com/openid/connect/authorize") ||
+            url.absoluteString.starts(with: "https://appleid.apple.com") {
             return true;
         }
         
@@ -53,7 +57,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                         let successUrl = URL(string:"\(self.fronteggAuth!.baseUrl)/oauth/account/social/success?\(query)" )!
                         webView.stopLoading()
                         _ = webView.load((URLRequest(url: successUrl)))
-                        self.fronteggAuth?.isLoading = false
+//                        self.fronteggAuth?.isLoading = false
                     } else {
                         self.fronteggAuth?.isLoading = true
                         webView.stopLoading()
@@ -84,12 +88,16 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         if(!(webView.url?.absoluteString.hasSuffix("/prelogin") ?? false)){
             fronteggAuth?.isLoading = true
         }
+        
+        
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         print("finish load \(webView.url?.absoluteString ?? "")")
         if (webView.url?.absoluteString.hasPrefix("\(self.fronteggAuth?.baseUrl ?? "")/oauth/account") ?? false) {
-            if(fronteggAuth?.isLoading ?? true){
-                fronteggAuth?.isLoading = false
+            if(webView.url?.path != "/oauth/account/social/success"){
+                if(fronteggAuth?.isLoading ?? true){
+                    fronteggAuth?.isLoading = false
+                }
             }
         } else if (webView.url?.absoluteString.contains("okta.com") ?? false) {
             if(fronteggAuth?.isLoading ?? true){

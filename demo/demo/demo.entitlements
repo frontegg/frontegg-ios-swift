@@ -4,8 +4,8 @@
 <dict>
 	<key>com.apple.developer.associated-domains</key>
 	<array>
-		<string>applinks:davidantoon.stg.frontegg.com</string>
-		<string>webcredentials:davidantoon.stg.frontegg.com</string>
+		<string>applinks:test.frontegg.com</string>
+		<string>webcredentials:test.frontegg.com</string>
 	</array>
 </dict>
 </plist>
