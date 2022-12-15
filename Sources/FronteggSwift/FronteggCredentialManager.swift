@@ -93,7 +93,7 @@ class FronteggCredentialManager{
         let status = SecItemDelete(query)
         
         if status != errSecSuccess {
-            fatalError("Failed to logout from Frontegg Services, error \(status)")
+//            fatalError("Failed to logout from Frontegg Services, error \(status)")
         }
     }
 }

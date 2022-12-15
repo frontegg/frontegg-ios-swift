@@ -10,36 +10,24 @@ import FronteggSwift
 
 struct MyApp: View {
     @EnvironmentObject var fronteggAuth: FronteggAuth
-
     
     var body: some View {
-        ZStack{
-            if !fronteggAuth.initializing {
-                if fronteggAuth.isAuthenticated {
-                    TabView {
-                        ProfileTab()
-                            .tabItem {
-                                Image(systemName: "person.circle")
-                                Text("Profile")
-                            }
-                        TasksTab()
-                            .tabItem {
-                                Image(systemName: "checklist")
-                                Text("Tasks")
-                            }
-                    }
-                } else  {
-                    FronteggLoginPage()
+        ZStack {
+            if fronteggAuth.isAuthenticated {
+                TabView {
+                    ProfileTab()
+                        .tabItem {
+                            Image(systemName: "person.circle")
+                            Text("Profile")
+                        }
+                    TasksTab()
+                        .tabItem {
+                            Image(systemName: "checklist")
+                            Text("Tasks")
+                        }
                 }
-            }
-            if fronteggAuth.initializing || (!fronteggAuth.isAuthenticated && fronteggAuth.isLoading) {
-                Color(red: 0.95, green:  0.95, blue:  0.95).ignoresSafeArea(.all)
-                VStack {
-                    Image("SplashIcon")
-                        .resizable()
-                        .frame(width: 100, height: 100)
-                    ProgressView()
-                }
+            } else  {
+                FronteggLoginPage()
             }
         }
     }

@@ -9,12 +9,7 @@
         
         
         <script type='text/javascript'>
-            const HOSTED_LOGIN_VERIFIER_KEY = 'TESTING';
-            
-            const contextOptions = {
-                baseUrl: 'https://david.frontegg.com',
-                clientId: 'b6adfe4c-d695-4c04-b95f-3ec9fd0c6cca',
-            };
+            const HOSTED_LOGIN_VERIFIER_KEY = 'HOSTED_LOGIN_VERIFIER_KEY';
             
             function exchangeToken(){
                 // document.getElementById('code').innerText = "Loading";
@@ -23,12 +18,15 @@
                 
                 const searchParams = new URLSearchParams(location.search);
                 
-                console.log('HOSTED_LOGIN_VERIFIER_KEY', localStorage.getItem(HOSTED_LOGIN_VERIFIER_KEY))
-                const code_verifier = localStorage.getItem(HOSTED_LOGIN_VERIFIER_KEY) || searchParams.get("code_verifier") || 'INVALID-CODE-VERIFIER';
-                console.log(code_verifier);
+                const code_verifier = localStorage.getItem(HOSTED_LOGIN_VERIFIER_KEY) || searchParams.get("code_verifier")
+                
+                if(!code_verifier){
+                    window.location.href = "frontegg://oauth/authenticate"
+                    return false
+                }
                 
                 
-                fetch(`${contextOptions.baseUrl}/oauth/token`, {
+                fetch(`${window.contextOptions.baseUrl}/oauth/token`, {
                     method: 'POST',
                     headers: {
                         'Accept': 'application/json',
@@ -49,18 +47,11 @@
                             console.error(e);
                         })
                     }).catch(e => {
-                        
-                        //document.getElementById('code').innerText = e.message
                         console.error(e);
                     });
             }
             
-            //setTimeout(()=>{
-                console.log("exchange-token");
-                console.log(localStorage)
-                exchangeToken()
-                
-            //}, 5000)
+            exchangeToken()
         </script>
     </body>
 </html>
