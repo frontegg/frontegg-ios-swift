@@ -12,7 +12,6 @@ and integrate them into their SaaS portals in up to 5 lines of code.
 - [Getting Started](#getting-started)
   - [Add frontegg package to the project](#add-frontegg-package-to-the-project)
   - [Prepare Frontegg workspace](#prepare-frontegg-workspace)
-  - [Setup SSO callback urls](#setup-sso-callback-urls)
   - [Create Frontegg plist file](#create-frontegg-plist-file)
   - [Add Frontegg Wrapper](#add-frontegg-wrapper)
   - [Add your custom loading screen](#Add-your-custom-loading-screen)
@@ -66,18 +65,6 @@ Copy ClientID, Frontegg Domain from "Settings" page, You'll need these values in
 - Add new redirect url `frontegg://oauth/callback`
   ![Frontegg_Login Methods](./assets/README_hosted-login.png) 
 
-
-- Change Redirect url to `frontegg-sso://` for all active social logins:
-  - [Login with Google](https://portal.frontegg.com/development/authentication/social-logins/google)
-  - [Login with Github](https://portal.frontegg.com/development/authentication/social-logins/github)
-  - [Login with Microsoft](https://portal.frontegg.com/development/authentication/social-logins/microsoft)
-  - [Login with Facebook](https://portal.frontegg.com/development/authentication/social-logins/facebook)
-
-  ![Social Login Config](./assets/README_social-login-config.png)
-
-### Setup SSO callback urls
-
-**NOTE: In the near future this step will be ignored automatically configuring redirect urls for mobile sdks**
 
 - Change Redirect url to `frontegg-sso://` for all active social logins:
   - [Login with Google](https://portal.frontegg.com/development/authentication/social-logins/google)

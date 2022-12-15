@@ -16,6 +16,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     var fronteggAuth: FronteggAuth?
     var socialLoginAuth = FronteggSocialLoginAuth()
     
+    
     override var inputAccessoryView: UIView? {
         // remove/replace the default accessory view
         return accessoryView
@@ -28,6 +29,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         }
         
     
+        // ??
         if url.absoluteString.starts(with: "https://www.facebook.com") ||
             url.absoluteString.starts(with: "https://accounts.google.com") ||
             url.absoluteString.starts(with: "https://github.com/login/oauth/authorize") ||
@@ -51,7 +53,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
         if let url = navigationAction.request.url {
             if(self.shouldStartLoginTransition(url: url)){
-                print("Starting login transition to: \(url)")
+//                print("Starting login transition to: \(url)")
                 self.socialLoginAuth.startLoginTransition(url) { url, error in
                     if let query = url?.query {
                         let successUrl = URL(string:"\(self.fronteggAuth!.baseUrl)/oauth/account/social/success?\(query)" )!
@@ -70,6 +72,22 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                     let query = url.query ?? ""
                     self.fronteggAuth?.isLoading = true
                     _ = webView.load(URLRequest(url: URL(string: "frontegg://oauth/success/callback?\(query)")!))
+                    return .cancel
+                }
+                
+                if(url.path.hasPrefix("/frontegg/identity/resources") && url.path.hasSuffix("/prelogin")) {
+                    let queryItems = [URLQueryItem(name: "redirectUri", value: "frontegg-sso://")]
+                    var urlComps = URLComponents(string: url.absoluteString)!
+                    
+                    if(urlComps.query?.contains("redirectUri") ?? false){
+                        
+                        return .allow
+                    }
+                    urlComps.queryItems = (urlComps.queryItems ?? []) + queryItems
+                    let newUrl = urlComps.url!;
+                    
+                    self.fronteggAuth?.isLoading = true
+                    _ = webView.load(URLRequest(url: newUrl))
                     return .cancel
                 }
                 
