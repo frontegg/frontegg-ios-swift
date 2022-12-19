@@ -66,14 +66,6 @@ Copy ClientID, Frontegg Domain from "Settings" page, You'll need these values in
   ![Frontegg_Login Methods](./assets/README_hosted-login.png) 
 
 
-- Change Redirect url to `frontegg-sso://` for all active social logins:
-  - [Login with Google](https://portal.frontegg.com/development/authentication/social-logins/google)
-  - [Login with Github](https://portal.frontegg.com/development/authentication/social-logins/github)
-  - [Login with Microsoft](https://portal.frontegg.com/development/authentication/social-logins/microsoft)
-  - [Login with Facebook](https://portal.frontegg.com/development/authentication/social-logins/facebook)
-
-  ![Social Login Config](./assets/README_social-login-config.png)
-
 ### Create Frontegg plist file
 
 To setup your SwiftUI application to communicate with Frontegg, you have to create a new file named `Frontegg.plist` under
