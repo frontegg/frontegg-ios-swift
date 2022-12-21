@@ -44,8 +44,7 @@ public struct FronteggWrapper<Content: View>: View {
         .environmentObject(fronteggAuth)
         .onOpenURL { url in
             if(url.absoluteString.hasPrefix(fronteggAuth.baseUrl)){
-                print("App link: \(url)")
-                fronteggAuth.loadAppLink(url)
+                fronteggAuth.pendingAppLink = url
             }
         }
     }

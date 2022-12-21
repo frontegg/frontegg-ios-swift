@@ -14,9 +14,9 @@ enum FronteggApiError: Error {
 public class FronteggApi {
     private let baseUrl: String
     private let clientId: String
-    private let credentialManager: FronteggCredentialManager
+    private let credentialManager: CredentialManager
     
-    init(baseUrl: String, clientId: String, credentialManager: FronteggCredentialManager) {
+    init(baseUrl: String, clientId: String, credentialManager: CredentialManager) {
         self.baseUrl = baseUrl
         self.clientId = clientId
         self.credentialManager = credentialManager

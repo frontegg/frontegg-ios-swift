@@ -41,10 +41,12 @@ public class FronteggAuth: ObservableObject {
     @Published public var isLoading = true
     @Published public var initializing = true
     @Published public var showLoader = true
-    @Published public var pendingAppLink: String?
+    @Published public var pendingAppLink: URL?
     @Published public var externalLink = false
     public var baseUrl = ""
     public var clientId = ""
+    
+    
     
     
     enum KeychainKeys: String {
@@ -53,16 +55,18 @@ public class FronteggAuth: ObservableObject {
     }
     
     
-    private let credentialManager: FronteggCredentialManager
+    private let credentialManager: CredentialManager
     public let api: FronteggApi
     private var subscribers = Set<AnyCancellable>()
     
     init() throws {
         let data = try FronteggAuth.plistValues(bundle: Bundle.main)
         
+        
+        
         self.baseUrl = data.baseUrl
         self.clientId = data.clientId
-        self.credentialManager = FronteggCredentialManager(serviceKey: data.keychainService)
+        self.credentialManager = CredentialManager(serviceKey: data.keychainService)
         self.api = FronteggApi(baseUrl: data.baseUrl, clientId: data.clientId, credentialManager: self.credentialManager)
         
         self.$initializing.combineLatest(self.$isAuthenticated, self.$isLoading).sink(){ (initializingValue, isAuthenticatedValue, isLoadingValue) in
@@ -152,8 +156,6 @@ public class FronteggAuth: ObservableObject {
     }
     
     
-    
-    
     private static func plistValues(bundle: Bundle) throws -> (clientId: String, baseUrl: String, keychainService: String?) {
         guard let path = bundle.path(forResource: "Frontegg", ofType: "plist"),
               let values = NSDictionary(contentsOfFile: path) as? [String: Any] else {
@@ -186,19 +188,6 @@ public class FronteggAuth: ObservableObject {
             }
         }
     }
-    
-    public func loadAppLink(_ url: URL) {
-        self.pendingAppLink = url.absoluteString
-    }
-    //    public func loadUserData() async {
-    //        guard let accessToken = self.accessToken else {
-    //            return
-    //        }
-    //
-    //        if let data = await self.api.me(accessToken: accessToken) {
-    //            print(data)
-    //        }
-    //    }
     
 }
 

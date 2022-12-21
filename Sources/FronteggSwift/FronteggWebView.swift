@@ -28,32 +28,23 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             return false;
         }
         
-    
-        // ??
-        if url.absoluteString.starts(with: "https://www.facebook.com") ||
-            url.absoluteString.starts(with: "https://accounts.google.com") ||
-            url.absoluteString.starts(with: "https://github.com/login/oauth/authorize") ||
-            url.absoluteString.starts(with: "https://login.microsoftonline.com") ||
-            url.absoluteString.starts(with: "https://slack.com/openid/connect/authorize") ||
-            url.absoluteString.starts(with: "https://appleid.apple.com") {
-            return true;
+        
+        if SocialLoginConstansts.oauthUrls.contains(where: { url.absoluteString.starts(with: $0) }) {
+            print("Catch oauth url, \(url.absoluteString)")
+            return true
         }
-        
-        // Option 1:
-        // generate private/public key in ios app
-        // login with okta? relayState = publicKey
-        // post request to hosted login saml callback + relayState
-        // https://{hosted login}/saml/mobile/callback => refresh+access encrypt with public key
-        // go to frontegg-sso://saml/success?ecrypyed=sadasdsad
-        // privateKey + sadasdsad => refresh token + acccess Token
-        
-        
+    
         return false;
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-        if let url = navigationAction.request.url {
+        if var url = navigationAction.request.url {
             if(self.shouldStartLoginTransition(url: url)){
 //                print("Starting login transition to: \(url)")
+                if #available(iOS 16.0, *) {
+                    url.append(queryItems: [URLQueryItem(name: "prompt", value: "select_account")])
+                } else {
+                    // Fallback on earlier versions
+                };
                 self.socialLoginAuth.startLoginTransition(url) { url, error in
                     if let query = url?.query {
                         let successUrl = URL(string:"\(self.fronteggAuth!.baseUrl)/oauth/account/social/success?\(query)" )!
@@ -109,6 +100,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         
         
     }
+    
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         print("finish load \(webView.url?.absoluteString ?? "")")
         if (webView.url?.absoluteString.hasPrefix("\(self.fronteggAuth?.baseUrl ?? "")/oauth/account") ?? false) {
@@ -131,39 +123,23 @@ struct FronteggWebView: UIViewRepresentable {
     typealias UIViewType = WKWebView
     
     let webView: CustomWebView
-    private var httpCookieStore: WKHTTPCookieStore
     private var fronteggAuth: FronteggAuth
     
     init(_ fronteggAuth: FronteggAuth) {
         self.fronteggAuth = fronteggAuth;
-        let contextOptionsSource: String = "window.contextOptions = {" +
-
-        "baseUrl: \"\(fronteggAuth.baseUrl)\"," +
-        "clientId: \"\(fronteggAuth.clientId)\"}"
         
-        let metadataSource:String = "let interval = setInterval(function(){" +
-        "   if(document.getElementsByTagName('head').length > 0){" +
-        "       clearInterval(interval);" +
-        "       var meta = document.createElement('meta');" +
-        "       meta.name = 'viewport';" +
-        "       meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';" +
-        "       var head = document.getElementsByTagName('head')[0];" +
-        "       head.appendChild(meta);" +
-        "       var style = document.createElement('style');" +
-        "       style.innerHTML = 'html {font-size: 16px;}';" +
-        "       style.setAttribute('type', 'text/css');" +
-        "       document.head.appendChild(style); " +
-        "   }" +
-        "}, 10);"
-
+        let preloadJSScript = JSHelper.generatePreloadScript()
+        let contextOptionsScript = JSHelper.generateContextOptions(fronteggAuth.baseUrl, fronteggAuth.clientId)
         
         let userContentController: WKUserContentController = WKUserContentController()
-        userContentController.addUserScript(WKUserScript(source: contextOptionsSource, injectionTime: .atDocumentStart, forMainFrameOnly: false))
-        userContentController.addUserScript(WKUserScript(source: metadataSource, injectionTime: .atDocumentEnd, forMainFrameOnly: false))
+        userContentController.addUserScript(contextOptionsScript)
+        userContentController.addUserScript(preloadJSScript)
+//        userContentController.add(self, name: "fronteggSwiftHandler")
+        
         
         let conf = WKWebViewConfiguration()
         conf.userContentController = userContentController
-        httpCookieStore = WKWebsiteDataStore.default().httpCookieStore;
+        
         let assetsHandler = FronteggSchemeHandler(fronteggAuth: fronteggAuth)
         
         conf.setURLSchemeHandler(assetsHandler , forURLScheme: "frontegg" )
@@ -177,10 +153,16 @@ struct FronteggWebView: UIViewRepresentable {
     
     func makeUIView(context: Context) -> WKWebView {
         
-        if let url = URL(string: self.fronteggAuth.pendingAppLink ?? "frontegg://oauth/authenticate" ) {
-            let request = URLRequest(url: url, cachePolicy: .reloadIgnoringCacheData)
-            webView.load(request)
+        let url: URL
+        if let appLink = self.fronteggAuth.pendingAppLink {
+            print("Loading deep link \(appLink)")
+            url = appLink
+        } else {
+            url = URLConstants.authenticateUrl
         }
+        
+        let request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy)
+        webView.load(request)
                 
         return webView
     }

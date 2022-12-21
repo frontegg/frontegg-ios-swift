@@ -13,19 +13,6 @@ protocol SchemeHandler: WKURLSchemeHandler {
     
 }
 
-/// extension to add a default HTTPURLResponse in case of error to be used by concrete types
-extension SchemeHandler {
-    static func responseError(forUrl url: URL?, message: String) -> (HTTPURLResponse, Data) {
-        let responseUrl = url ?? URL(string: "error://error")!
-        let response = HTTPURLResponse(url: responseUrl,
-                                       mimeType: nil,
-                                       expectedContentLength: message.count,
-                                       textEncodingName: "utf-8")
-        let data = message.data(using: .utf8) ?? Data()
-        return (response, data)
-    }
-}
-
 class FronteggSchemeHandler: NSObject, SchemeHandler {
     
     let fronteggAuth: FronteggAuth
@@ -49,7 +36,7 @@ class FronteggSchemeHandler: NSObject, SchemeHandler {
                 
                 let jsonData = data.data(using: .utf8)!
                 let authRes: AuthResponse? = try? JSONDecoder().decode(AuthResponse.self, from: jsonData)
-
+                
                 if let payload = authRes {
                     Task{
                         await self.fronteggAuth.setCredentials(
@@ -57,10 +44,11 @@ class FronteggSchemeHandler: NSObject, SchemeHandler {
                             refreshToken: payload.refresh_token
                         )
                     }
+                }else {
+                    webView.load(URLRequest(url: URLConstants.authenticateUrl))
                 }
             }
-            print("POST METHOD URL: \(url)")
-            print("POST METHOD DATA: \(data)")
+            
             
         }
         
@@ -71,7 +59,7 @@ class FronteggSchemeHandler: NSObject, SchemeHandler {
             return
         }
         
-    
+        
         
         let data = try? Data(contentsOf: fileUrl)
         
@@ -92,26 +80,21 @@ class FronteggSchemeHandler: NSObject, SchemeHandler {
     }
     
     private func fileUrlFromUrl(_ url: URL) -> URL? {
-        print("fileUrlFromUrl: \(url.absoluteString)")
+        guard url.scheme == "frontegg", url.host == "oauth" else { return nil }
         
-        if url.absoluteString == "frontegg://oauth/authenticate" {
-//            if !self.fronteggAuth.isLoading {
-//                self.fronteggAuth.isLoading = true
-//            }
-            return Bundle.main.url(forResource: "authenticate", withExtension: "html", subdirectory: "FronteggSwift_FronteggSwift.bundle");
-        }else if url.absoluteString.starts(with: "frontegg://oauth/callback")  {
-//            if !self.fronteggAuth.isLoading {
-//                self.fronteggAuth.isLoading = true
-//            }
-            return Bundle.main.url(forResource: "exchange-token", withExtension: "html", subdirectory: "FronteggSwift_FronteggSwift.bundle");
-        }else if url.absoluteString.starts(with: "frontegg://oauth/success/callback")  {
-//            if !self.fronteggAuth.isLoading {
-//                self.fronteggAuth.isLoading = true
-//            }
-            return Bundle.main.url(forResource: "exchange-token", withExtension: "html", subdirectory: "FronteggSwift_FronteggSwift.bundle");
-        } else {
+        let resource: String
+        
+        switch url.path {
+        case "/authenticate":
+            resource = "authenticate"
+        case "/callback", "/success/callback":
+            resource = "exchange-token"
+        default:
+            print("No resource found for \(url.absoluteString)")
             return nil
         }
+        
+        return Bundle.main.url(forResource: resource, withExtension: "html", subdirectory: "FronteggSwift_FronteggSwift.bundle");
     }
     
     private func mimeType(ofFileAtUrl url: URL) -> String? {

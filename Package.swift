@@ -27,7 +27,8 @@ let package = Package(
             dependencies: [],
             resources: [
                 .copy("Resources/authenticate.html"),
-                .copy("Resources/exchange-token.html")
+                .copy("Resources/exchange-token.html"),
+                .copy("Resources/preload-script.js")
             ]
         ),
         .testTarget(
