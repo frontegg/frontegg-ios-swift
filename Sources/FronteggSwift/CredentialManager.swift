@@ -7,14 +7,13 @@
 
 import Foundation
 
-class FronteggCredentialManager{
+class CredentialManager {
     
     enum KeychainError: Error {
         case duplicateEntry;
         case valueDataIsNil;
         case unknown(OSStatus);
     }
-    
     
     
     let serviceKey: String?
@@ -85,7 +84,7 @@ class FronteggCredentialManager{
         return nil
     }
     
-    func clear(){
+    func clear() {
         let query = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: serviceKey ?? "frontegg"
@@ -93,7 +92,7 @@ class FronteggCredentialManager{
         let status = SecItemDelete(query)
         
         if status != errSecSuccess {
-//            fatalError("Failed to logout from Frontegg Services, error \(status)")
+            print("Failed to logout from Frontegg Services, error \(status)")
         }
     }
 }
