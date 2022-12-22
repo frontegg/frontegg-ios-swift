@@ -17,7 +17,7 @@ struct JSHelper {
         "baseUrl: \"\(baseUrl)\"," +
         "clientId: \"\(clientId)\"}"
         
-        return WKUserScript(source: contextOptions, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+        return WKUserScript(source: contextOptions, injectionTime: .atDocumentStart, forMainFrameOnly: false)
     }
     
     static func generatePreloadScript() -> WKUserScript {

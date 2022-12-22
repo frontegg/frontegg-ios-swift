@@ -32,11 +32,12 @@ public struct FronteggWrapper<Content: View>: View {
             }
             if fronteggAuth.showLoader {
                 self.loaderView ?? AnyView {
-                    Color(red: 0.95, green:  0.95, blue:  0.95).ignoresSafeArea(.all)
-                    VStack {
-                        ProgressView()
+                    HStack {
+                        Color(red: 0.95, green:  0.95, blue:  0.95).ignoresSafeArea(.all)
+                        VStack {
+                            ProgressView()
+                        }
                     }
-                    
                 }
             }
         }
