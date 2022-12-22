@@ -26,9 +26,9 @@ let package = Package(
             name: "FronteggSwift",
             dependencies: [],
             resources: [
-                .copy("Resources/authenticate.html"),
-                .copy("Resources/exchange-token.html"),
-                .copy("Resources/preload-script.js")
+                .copy("resources/authenticate.html"),
+                .copy("resources/exchange-token.html"),
+                .copy("resources/preload-script.js")
             ]
         ),
         .testTarget(
