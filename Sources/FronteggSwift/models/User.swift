@@ -1,6 +1,5 @@
 //
-//  FronteggUser.swift
-//  poc
+//  User.swift
 //
 //  Created by David Frontegg on 14/11/2022.
 //
@@ -8,39 +7,8 @@
 import Foundation
 
 
-public struct AuthResponse:Decodable {
-    
-    public let token_type: String
-    public let refresh_token: String
-    public let access_token: String
-    public let id_token: String
-}
 
-public struct FronteggRole: Codable {
-    public var id: String
-    public var key: String
-    public var isDefault: Bool
-    public var name: String
-    public var description: String?
-    public var permissions: [String]
-    public var tenantId: String?
-    public var vendorId: String
-    public var createdAt: String
-    public var updatedAt: String
-}
-
-public struct FronteggRolePermission: Codable {
-    public var id: String
-    public var key: String
-    public var name: String
-    public var description: String?
-    public var categoryId: String
-    public var fePermission: Bool
-    public var createdAt: String
-    public var updatedAt: String
-}
-
-public struct FronteggUser: Codable {
+public struct User: Codable {
     
     enum DecodeError: Error {
         case invalidJsonData
@@ -53,8 +21,8 @@ public struct FronteggUser: Codable {
     public var profilePictureUrl: String
     public var phoneNumber: String?
     public var profileImage: String?
-    public var roles: [FronteggRole]
-    public var permissions: [FronteggRolePermission]
+    public var roles: [UserRole]
+    public var permissions: [UserRolePermission]
     public var tenantId: String
     public var tenantIds: [String]
     public var activatedForTenant: Bool
@@ -73,8 +41,8 @@ public struct FronteggUser: Codable {
         self.profilePictureUrl = try container.decode(String.self, forKey: .profilePictureUrl)
         self.phoneNumber = try container.decodeIfPresent(String.self, forKey: .phoneNumber)
         self.profileImage = try container.decodeIfPresent(String.self, forKey: .profileImage)
-        self.roles = try container.decode([FronteggRole].self, forKey: .roles)
-        self.permissions = try container.decode([FronteggRolePermission].self, forKey: .permissions)
+        self.roles = try container.decode([UserRole].self, forKey: .roles)
+        self.permissions = try container.decode([UserRolePermission].self, forKey: .permissions)
         self.tenantId = try container.decode(String.self, forKey: .tenantId)
         self.tenantIds = try container.decode([String].self, forKey: .tenantIds)
         self.activatedForTenant = (try? container.decodeIfPresent(Bool.self, forKey: .activatedForTenant)) ?? false
@@ -85,7 +53,7 @@ public struct FronteggUser: Codable {
     }
     
     init(dictionary: [String: Any]) throws {
-        self = try JSONDecoder().decode(FronteggUser.self, from: JSONSerialization.data(withJSONObject: dictionary))
+        self = try JSONDecoder().decode(User.self, from: JSONSerialization.data(withJSONObject: dictionary))
     }
 
 }

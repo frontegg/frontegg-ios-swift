@@ -1,6 +1,5 @@
 //
 //  FronteggApi.swift
-//  poc
 //
 //  Created by David Frontegg on 16/11/2022.
 //
@@ -8,10 +7,10 @@
 import Foundation
 
 
-enum FronteggApiError: Error {
+enum ApiError: Error {
     case invalidUrl(String)
 }
-public class FronteggApi {
+public class Api {
     private let baseUrl: String
     private let clientId: String
     private let credentialManager: CredentialManager
@@ -28,7 +27,7 @@ public class FronteggApi {
         
         let urlStr = "\(self.baseUrl)/frontegg/\(path)"
         guard let url = URL(string: urlStr) else {
-            throw FronteggApiError.invalidUrl("invalid url: \(urlStr)")
+            throw ApiError.invalidUrl("invalid url: \(urlStr)")
         }
         
         var request = URLRequest(url: url)
@@ -46,7 +45,7 @@ public class FronteggApi {
         
         let urlStr = "\(self.baseUrl)/frontegg/\(path)"
         guard let url = URL(string: urlStr) else {
-            throw FronteggApiError.invalidUrl("invalid url: \(urlStr)")
+            throw ApiError.invalidUrl("invalid url: \(urlStr)")
         }
         
         var request = URLRequest(url: url)
@@ -74,10 +73,10 @@ public class FronteggApi {
     }
     
     
-    internal func me(accessToken: String) async throws -> FronteggUser? {
+    internal func me(accessToken: String) async throws -> User? {
         let (data, _) = try await getRequest(accessToken: accessToken, path: "identity/resources/users/v2/me")
 
-        return try JSONDecoder().decode(FronteggUser.self, from: data)
+        return try JSONDecoder().decode(User.self, from: data)
     }
     
     

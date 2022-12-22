@@ -1,6 +1,5 @@
 //
-//  FronteggCredentialManager.swift
-//  poc
+//  CredentialManager.swift
 //
 //  Created by David Frontegg on 16/11/2022.
 //

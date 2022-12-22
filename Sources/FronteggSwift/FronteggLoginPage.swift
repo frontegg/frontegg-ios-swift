@@ -1,12 +1,10 @@
 //
 //  ContentView.swift
-//  poc
 //
 //  Created by David Frontegg on 24/10/2022.
 //
 
 import SwiftUI
-
 
 public struct FronteggLoginPage: View {
     @EnvironmentObject var fronteggAuth: FronteggAuth

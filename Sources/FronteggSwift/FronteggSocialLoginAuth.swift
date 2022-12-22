@@ -1,6 +1,5 @@
 //
 //  FronteggSocialLoginAuth.swift
-//  poc
 //
 //  Created by David Frontegg on 26/10/2022.
 //

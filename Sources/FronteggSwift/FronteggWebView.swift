@@ -1,6 +1,5 @@
 //
 //  SwiftUIWebView.swift
-//  poc
 //
 //  Created by David Frontegg on 24/10/2022.
 //
@@ -131,17 +130,17 @@ struct FronteggWebView: UIViewRepresentable {
         let preloadJSScript = JSHelper.generatePreloadScript()
         let contextOptionsScript = JSHelper.generateContextOptions(fronteggAuth.baseUrl, fronteggAuth.clientId)
         
+        
         let userContentController: WKUserContentController = WKUserContentController()
         userContentController.addUserScript(contextOptionsScript)
         userContentController.addUserScript(preloadJSScript)
 //        userContentController.add(self, name: "fronteggSwiftHandler")
         
         
-        let conf = WKWebViewConfiguration()
-        conf.userContentController = userContentController
-        
         let assetsHandler = FronteggSchemeHandler(fronteggAuth: fronteggAuth)
         
+        let conf = WKWebViewConfiguration()
+        conf.userContentController = userContentController
         conf.setURLSchemeHandler(assetsHandler , forURLScheme: "frontegg" )
         conf.websiteDataStore = WKWebsiteDataStore.default()
         
