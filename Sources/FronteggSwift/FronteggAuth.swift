@@ -26,9 +26,6 @@ public class FronteggAuth: ObservableObject {
     public var baseUrl = ""
     public var clientId = ""
     
-    
-    
-    
     enum KeychainKeys: String {
         case accessToken = "accessToken"
         case refreshToken = "refreshToken"
@@ -39,15 +36,12 @@ public class FronteggAuth: ObservableObject {
     public let api: Api
     private var subscribers = Set<AnyCancellable>()
     
-    init() throws {
-        let data = try FronteggAuth.plistValues(bundle: Bundle.main)
+    init (baseUrl:String, clientId: String, api:Api, credentialManager: CredentialManager) {
         
-        
-        
-        self.baseUrl = data.baseUrl
-        self.clientId = data.clientId
-        self.credentialManager = CredentialManager(serviceKey: data.keychainService)
-        self.api = Api(baseUrl: data.baseUrl, clientId: data.clientId, credentialManager: self.credentialManager)
+        self.baseUrl = baseUrl
+        self.clientId = clientId
+        self.credentialManager = credentialManager
+        self.api = api
         
         self.$initializing.combineLatest(self.$isAuthenticated, self.$isLoading).sink(){ (initializingValue, isAuthenticatedValue, isLoadingValue) in
                             self.showLoader = initializingValue || (!isAuthenticatedValue && isLoadingValue)

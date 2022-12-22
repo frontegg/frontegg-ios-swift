@@ -6,7 +6,7 @@
 
 import Foundation
 
-class CredentialManager {
+public class CredentialManager {
     
     enum KeychainError: Error {
         case duplicateEntry;

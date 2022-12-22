@@ -8,11 +8,8 @@ import Foundation
 import UniformTypeIdentifiers
 import WebKit
 
-protocol SchemeHandler: WKURLSchemeHandler {
-    
-}
 
-class FronteggSchemeHandler: NSObject, SchemeHandler {
+class FronteggSchemeHandler: NSObject, WKURLSchemeHandler {
     
     let fronteggAuth: FronteggAuth
     
@@ -22,33 +19,33 @@ class FronteggSchemeHandler: NSObject, SchemeHandler {
     
     func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
         
-//        if let httpMethod = urlSchemeTask.request.httpMethod,
-//           let url = urlSchemeTask.request.url,
-//           httpMethod == "POST" {
-//
-//            var data = ""
-//            if let httpBody = urlSchemeTask.request.httpBody {
-//                data = String(bytes: httpBody, encoding: String.Encoding.utf8) ?? ""
-//            }
-//
-//            if url.absoluteString == "frontegg://oauth/session" {
-//
-//                let jsonData = data.data(using: .utf8)!
-//                let authRes: AuthResponse? = try? JSONDecoder().decode(AuthResponse.self, from: jsonData)
-//
-//                if let payload = authRes {
-//                    Task{
-//                        await self.fronteggAuth.setCredentials(
-//                            accessToken: payload.access_token,
-//                            refreshToken: payload.refresh_token
-//                        )
-//                    }
-//                }else {
-//                    webView.load(URLRequest(url: URLConstants.authenticateUrl))
-//                }
-//            }
-//        }
-//
+        if let httpMethod = urlSchemeTask.request.httpMethod,
+           let url = urlSchemeTask.request.url,
+           httpMethod == "POST" {
+
+            var data = ""
+            if let httpBody = urlSchemeTask.request.httpBody {
+                data = String(bytes: httpBody, encoding: String.Encoding.utf8) ?? ""
+            }
+
+            if url.absoluteString == "frontegg://oauth/session" {
+
+                let jsonData = data.data(using: .utf8)!
+                let authRes: AuthResponse? = try? JSONDecoder().decode(AuthResponse.self, from: jsonData)
+
+                if let payload = authRes {
+                    Task{
+                        await self.fronteggAuth.setCredentials(
+                            accessToken: payload.access_token,
+                            refreshToken: payload.refresh_token
+                        )
+                    }
+                }else {
+                    webView.load(URLRequest(url: URLConstants.authenticateUrl))
+                }
+            }
+        }
+
         guard let url = urlSchemeTask.request.url,
               let httpMethod = urlSchemeTask.request.httpMethod,
               httpMethod == "GET",
