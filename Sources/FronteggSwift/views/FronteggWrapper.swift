@@ -7,6 +7,7 @@
 import SwiftUI
 
 
+
 public struct FronteggWrapper<Content: View>: View {
     var content: () -> Content
     var loaderView: AnyView?
@@ -19,7 +20,7 @@ public struct FronteggWrapper<Content: View>: View {
     }
     public init(@ViewBuilder content: @escaping () -> Content) {
         self.content = content
-        self.loaderView = nil
+        self.loaderView = AnyView {DefaultLoader()}
     }
     public var body: some View {
         ZStack {
@@ -31,14 +32,7 @@ public struct FronteggWrapper<Content: View>: View {
                 }
             }
             if fronteggAuth.showLoader {
-                self.loaderView ?? AnyView {
-                    HStack {
-                        Color(red: 0.95, green:  0.95, blue:  0.95).ignoresSafeArea(.all)
-                        VStack {
-                            ProgressView()
-                        }
-                    }
-                }
+                self.loaderView
             }
         }
         .environmentObject(fronteggAuth)
