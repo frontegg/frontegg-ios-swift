@@ -12,7 +12,7 @@ struct URLConstants {
  
     static let authenticateUrl = URL(string: "frontegg://oauth/authenticate")!
     static let exchangeTokenUrl = URL(string: "frontegg://oauth/callback")!
-    static let exchangeTokenSuccessUrl = URL(string: "frontegg://oauth/success/callback")
+    static let exchangeTokenSuccessUrl = URL(string: "frontegg://oauth/success/callback")!
     
 }
 

@@ -11,11 +11,11 @@ public struct FronteggLoginPage: View {
     
     public init(){}
     public var body: some View {
-        let webView = FronteggWebView(fronteggAuth)
+
         ZStack {
             NavigationView{
                 VStack(alignment: .center) {
-                    webView
+                    FronteggWebView()
                 }
                 
                 .toolbar {
