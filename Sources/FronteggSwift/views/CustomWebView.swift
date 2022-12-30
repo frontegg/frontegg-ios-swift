@@ -13,7 +13,7 @@ import AuthenticationServices
 class CustomWebView: WKWebView, WKNavigationDelegate {
     var accessoryView: UIView?
     var fronteggAuth: FronteggAuth?
-    var socialLoginAuth = FronteggSocialLoginAuth()
+    var socialLoginAuth = ExternalWebAuthentication()
     
     
     override var inputAccessoryView: UIView? {

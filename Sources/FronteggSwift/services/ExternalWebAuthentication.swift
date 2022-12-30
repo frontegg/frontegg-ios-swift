@@ -6,7 +6,7 @@
 
 import AuthenticationServices
  
-class FronteggSocialLoginAuth: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
+class ExternalWebAuthentication: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         return ASPresentationAnchor()
     }

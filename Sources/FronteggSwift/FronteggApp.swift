@@ -10,7 +10,7 @@ import Foundation
 
 public class FronteggApp {
     
-    static let shared = FronteggApp()
+    public static let shared = FronteggApp()
     
     public let auth: FronteggAuth
     public let baseUrl: String
@@ -37,6 +37,9 @@ public class FronteggApp {
         )
     }
  
+    public func didFinishLaunchingWithOptions(){
+        self.auth.pendingAppLink = nil
+    }
     
     
 }
