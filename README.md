@@ -180,6 +180,31 @@ your root project directory, this file will store values to be used variables by
     ```
   - Create ViewController and set FronteggController from previous step as a custom class
   - Mark FronteggController as **Storyboard Entry Point**
+  - Setup SceneDelegate for Frontegg universal links:
+      ```swift
+        func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+            if let url = URLContexts.first?.url,
+                url.startAccessingSecurityScopedResource() {
+                defer  {
+                    url.stopAccessingSecurityScopedResource()
+                }
+                if url.absoluteString.hasPrefix( FronteggApp.shared.baseUrl ) {
+                    FronteggApp.shared.auth.pendingAppLink = url
+                    window?.rootViewController = FronteggController()
+                    window?.makeKeyAndVisible()
+                }
+                
+            }
+        }
+        func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+            if let url = userActivity.webpageURL,
+               url.absoluteString.hasPrefix( FronteggApp.shared.baseUrl ){
+                FronteggApp.shared.auth.pendingAppLink = url
+                window?.rootViewController = FronteggController()
+                window?.makeKeyAndVisible()
+            }
+        }
+      ```
   - Access authenticated user by `FronteggApp.shared.auth`
       ```swift
           
@@ -227,7 +252,6 @@ your root project directory, this file will store values to be used variables by
 
         }
         
-
       ```
   
 
