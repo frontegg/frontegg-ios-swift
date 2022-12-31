@@ -38,7 +38,7 @@ public class FronteggApp {
     }
  
     public func didFinishLaunchingWithOptions(){
-        self.auth.pendingAppLink = nil
+        print("Frontegg baseURL: \(self.baseUrl)")
     }
     
     
