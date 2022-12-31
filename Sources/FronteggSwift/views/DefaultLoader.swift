@@ -12,7 +12,7 @@ public struct DefaultLoader: View {
     
     public init(){}
     public var body: some View {
-        HStack {
+        ZStack {
             Color(red: 0.95, green:  0.95, blue:  0.95).ignoresSafeArea(.all)
             VStack {
                 ProgressView()

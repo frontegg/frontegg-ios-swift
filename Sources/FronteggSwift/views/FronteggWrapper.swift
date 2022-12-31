@@ -10,7 +10,7 @@ import SwiftUI
 
 public struct FronteggWrapper<Content: View>: View {
     var content: () -> Content
-    var loaderView: AnyView?
+    var loaderView: AnyView
     @StateObject var fronteggAuth = FronteggApp.shared.auth
     
     
@@ -20,7 +20,7 @@ public struct FronteggWrapper<Content: View>: View {
     }
     public init(@ViewBuilder content: @escaping () -> Content) {
         self.content = content
-        self.loaderView = AnyView {DefaultLoader()}
+        self.loaderView = AnyView(DefaultLoader())
     }
     public var body: some View {
         ZStack {
