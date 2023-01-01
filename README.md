@@ -50,14 +50,6 @@ Major platform versions are supported, starting from:
 Navigate to [Frontegg Portal Settings](https://portal.frontegg.com/development/settings), If you don't have application
 follow integration steps after signing up.
 
-Next, configure the "Allowed Origins" in your application under "Domain" tab of the "Settings" page :
-
-- `frontegg://oauth` for both development/production environments
-
-    ![Frontegg_SwiftUI_SDK](./assets/README_allowed-origins.png)
-
-Copy ClientID, Frontegg Domain from "Settings" page, You'll need these values in the next step.
-
 
 ### Setup Hosted Login oauth callback
 
