@@ -13,10 +13,10 @@ and integrate them into their SaaS portals in up to 5 lines of code.
   - [Add frontegg package to the project](#add-frontegg-package-to-the-project)
   - [Prepare Frontegg workspace](#prepare-frontegg-workspace)
   - [Create Frontegg plist file](#create-frontegg-plist-file)
-  - [SwiftUI Integration](#add-frontegg-wrapper)
+  - [SwiftUI Integration](#swiftui-integration)
     - [Add Frontegg Wrapper](#add-frontegg-wrapper)
     - [Add custom loading screen](#Add-custom-loading-screen)
-  - [UIKit Integration](#add-frontegg-wrapper)
+  - [UIKit Integration](#uikit-integration)
     - [Add Frontegg UIKit Wrapper](#add-frontegg-uikit-wrapper)
     - [Add custom UIKit loading screen (coming-soon)](#Add-custom-uikit-loading-screen)
   - [Config iOS associated domain](#config-ios-associated-domain)
@@ -178,8 +178,12 @@ your root project directory, this file will store values to be used variables by
       
       }
     ```
-  - Create ViewController and set FronteggController from previous step as a custom class
+  - Create new ViewController and set FronteggController as view custom class from the previous step
+    ![ViewController custom class](./assets/README_custom-class.png)
+    
   - Mark FronteggController as **Storyboard Entry Point**
+    ![ViewController entry point](./assets/README_entry-point.png)
+  
   - Setup SceneDelegate for Frontegg universal links:
       ```swift
         func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
