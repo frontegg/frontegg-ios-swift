@@ -1,13 +1,12 @@
 //
 //  FronteggSocialLoginAuth.swift
-//  poc
 //
 //  Created by David Frontegg on 26/10/2022.
 //
 
 import AuthenticationServices
  
-class FronteggSocialLoginAuth: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
+class ExternalWebAuthentication: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         return ASPresentationAnchor()
     }
@@ -22,7 +21,7 @@ class FronteggSocialLoginAuth: NSObject, ObservableObject, ASWebAuthenticationPr
     func startLoginTransition(_ websiteURL:URL, completionHandler: @escaping ASWebAuthenticationSession.CompletionHandler){
         webAuthSession = ASWebAuthenticationSession.init(
             url: websiteURL,
-            callbackURLScheme: "frontegg-sso",
+            callbackURLScheme: SchemeConstants.webAuthenticationCallbackScheme,
             completionHandler: completionHandler
         )
 

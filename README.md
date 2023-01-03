@@ -13,8 +13,12 @@ and integrate them into their SaaS portals in up to 5 lines of code.
   - [Add frontegg package to the project](#add-frontegg-package-to-the-project)
   - [Prepare Frontegg workspace](#prepare-frontegg-workspace)
   - [Create Frontegg plist file](#create-frontegg-plist-file)
-  - [Add Frontegg Wrapper](#add-frontegg-wrapper)
-  - [Add your custom loading screen](#Add-your-custom-loading-screen)
+  - [SwiftUI Integration](#swiftui-integration)
+    - [Add Frontegg Wrapper](#add-frontegg-wrapper)
+    - [Add custom loading screen](#Add-custom-loading-screen)
+  - [UIKit Integration](#uikit-integration)
+    - [Add Frontegg UIKit Wrapper](#add-frontegg-uikit-wrapper)
+    - [Add custom UIKit loading screen (coming-soon)](#Add-custom-uikit-loading-screen)
   - [Config iOS associated domain](#config-ios-associated-domain)
 
 ## Project Requirements
@@ -76,57 +80,177 @@ your root project directory, this file will store values to be used variables by
 </plist>
 ```
 
-### Add Frontegg Wrapper
+### SwiftUI integration
 
-- To use Frontegg SDK you have to wrap you Application Scene with FronteggWrapper
-    ```swift
+- ### Add Frontegg Wrapper
+
+  - To use Frontegg SDK you have to wrap you Application Scene with FronteggWrapper
+      ```swift
     
-    import SwiftUI
-    import FronteggSwift
+      import SwiftUI
+      import FronteggSwift
     
-    @main
-    struct demoApp: App {
-        var body: some Scene {
-            WindowGroup {
-                FronteggWrapper {
-                    MyApp()
-                }
-            }
-        }
-    }
-    ```
-- Modify `MyApp.swift` file to render content if user is authenticated:
-  1. Add `@EnvironmentObject var fronteggAuth: FronteggAuth` to
-  2. Render your entire application based on `fronteggAuth.isAuthenticated`
+      @main
+      struct demoApp: App {
+          var body: some Scene {
+              WindowGroup {
+                  FronteggWrapper {
+                      MyApp()
+                  }
+              }
+          }
+      }
+      ```
+  - Modify `MyApp.swift` file to render content if user is authenticated:
+    1. Add `@EnvironmentObject var fronteggAuth: FronteggAuth` to
+    2. Render your entire application based on `fronteggAuth.isAuthenticated`
   
-  ```swift
-  struct MyApp: View {
-    @EnvironmentObject var fronteggAuth: FronteggAuth
+    ```swift
+    struct MyApp: View {
+      @EnvironmentObject var fronteggAuth: FronteggAuth
       
-    var body: some View {
-      ZStack {
-        if fronteggAuth.isAuthenticated {
-          [YOU APPLICATION TABS / ROUTER / VIEWS]
-        } else  {
-          FronteggLoginPage()
+      var body: some View {
+        ZStack {
+          if fronteggAuth.isAuthenticated {
+            [YOU APPLICATION TABS / ROUTER / VIEWS]
+          } else  {
+            FronteggLoginPage()
+          }
         }
       }
     }
-  }
-  ```
+    ```
 
+  - ### Add custom loading screen
+
+  To use your own `LoadingView` / `SplashScreen`:
+  
+  - Build your loading view in separated file
+  - Pass `LoadingView` as AnyView to the FronteggWrapper
+    ```swift
+    FronteggWrapper(loaderView: AnyView(LoaderView())) {
+      MyApp()
+    }
+    ```
+
+
+### UIKit integration
+
+- ### Add Frontegg UIKit Wrapper
+  - Add Frontegg to the AppDelegate file
+    ```swift
+      func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+          // Override point for customization after application launch.
     
-### Add your custom loading screen
+          FronteggApp.shared.didFinishLaunchingWithOptions()
+        
+          return true
+      }
+    ```
+  - Create FronteggController class that extends AbstractFronteggController from FronteggSwift
+    ```swift 
+      //
+      //  FronteggController.swift
+      //
+      
+      import UIKit
+      import FronteggSwift
+      
+      class FronteggController: AbstractFronteggController {
+      
+          override func navigateToAuthenticated(){
+              // This function will be called when the user is authenticated
+              // to navigate your application to the authenticated screen
+              
+              let mainStoryboard: UIStoryboard = UIStoryboard(name: "Main", bundle: nil)
+              let viewController = mainStoryboard.instantiateViewController(withIdentifier: "authenticatedScreen")
+              self.view.window?.rootViewController = viewController
+              self.view.window?.makeKeyAndVisible()
+          }
+      
+      }
+    ```
+  - Create new ViewController and set FronteggController as view custom class from the previous step
+    ![ViewController custom class](./assets/README_custom-class.png)
+    
+  - Mark FronteggController as **Storyboard Entry Point**
+    ![ViewController entry point](./assets/README_entry-point.png)
+  
+  - Setup SceneDelegate for Frontegg universal links:
+      ```swift
+        func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+            if let url = URLContexts.first?.url,
+                url.startAccessingSecurityScopedResource() {
+                defer  {
+                    url.stopAccessingSecurityScopedResource()
+                }
+                if url.absoluteString.hasPrefix( FronteggApp.shared.baseUrl ) {
+                    FronteggApp.shared.auth.pendingAppLink = url
+                    window?.rootViewController = FronteggController()
+                    window?.makeKeyAndVisible()
+                }
+                
+            }
+        }
+        func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+            if let url = userActivity.webpageURL,
+               url.absoluteString.hasPrefix( FronteggApp.shared.baseUrl ){
+                FronteggApp.shared.auth.pendingAppLink = url
+                window?.rootViewController = FronteggController()
+                window?.makeKeyAndVisible()
+            }
+        }
+      ```
+  - Access authenticated user by `FronteggApp.shared.auth`
+      ```swift
+          
+        //
+        //  ExampleViewController.swift
+        //
+        
+        import UIKit
+        import SwiftUI
+        import FronteggSwift
+        import Combine
+        
+        
+        class ExampleViewController: UIViewController {
+        
+            // Label to display logged in user's email
+            @IBOutlet weak var label: UILabel!
+            
+            override func viewDidLoad() {
+                super.viewDidLoad()
+                // Do any additional setup after loading the view.
+                
+                // subscribe to isAuthenticated and navigate to login page
+                // if the user is not authenticated
+    
+                let sub = AnySubscriber<Bool, Never>(
+                    receiveSubscription: {query in
+                        query.request(.unlimited)
+                    }, receiveValue: { isAuthenticated in
+                        if(!isAuthenticated){
+                            self.view.window?.rootViewController = FronteggController()
+                            self.view.window?.makeKeyAndVisible()
+                            return .none
+                        }
+                        return .unlimited
+                        })
+                FronteggApp.shared.auth.$isAuthenticated.subscribe(sub)
+        
+                label.text = FronteggApp.shared.auth.user?.email ?? "Unknown"
+            }
+             
+            @IBAction func logoutButton (){
+                FronteggApp.shared.auth.logout()
+            }
 
-To use your own `LoadingView` / `SplashScreen`:
+        }
+        
+      ```
+  
 
-- Build your loading view in separated file
-- Pass `LoadingView` as AnyView to the FronteggWrapper
-  ```swift
-  FronteggWrapper(loaderView: AnyView(LoaderView())) {
-    MyApp()
-  }
-  ```
 
 
 ### Config iOS associated domain

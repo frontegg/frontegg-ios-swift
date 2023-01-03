@@ -1,23 +1,21 @@
 //
 //  ContentView.swift
-//  poc
 //
 //  Created by David Frontegg on 24/10/2022.
 //
 
 import SwiftUI
 
-
 public struct FronteggLoginPage: View {
     @EnvironmentObject var fronteggAuth: FronteggAuth
     
     public init(){}
     public var body: some View {
-        let webView = FronteggWebView(fronteggAuth)
+
         ZStack {
             NavigationView{
                 VStack(alignment: .center) {
-                    webView
+                    FronteggWebView()
                 }
                 
                 .toolbar {

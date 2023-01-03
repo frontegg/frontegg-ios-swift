@@ -1,6 +1,5 @@
 //
 //  FronteggAuth.swift
-//  poc
 //
 //  Created by David Frontegg on 14/11/2022.
 //
@@ -14,38 +13,18 @@ enum FronteggError: Error {
     case configError(String)
 }
 
-struct Credential {
-        let domain: String
-        let account: String
-        let password: String
-
-        init?(dictionary: NSDictionary) {
-            let dict = dictionary as Dictionary
-
-            guard let domain = dict[kSecAttrServer] as? String,
-                let account = dict[kSecAttrAccount] as? String,
-                let password = dict[kSecSharedPassword] as? String
-            else { return nil }
-
-            self.domain = domain
-            self.account = account
-            self.password = password
-        }
-    }
-
 public class FronteggAuth: ObservableObject {
     @Published public var accessToken: String?
     @Published public var refreshToken: String?
-    @Published public var user: FronteggUser?
+    @Published public var user: User?
     @Published public var isAuthenticated = false
     @Published public var isLoading = true
     @Published public var initializing = true
     @Published public var showLoader = true
-    @Published public var pendingAppLink: String?
+    @Published public var pendingAppLink: URL?
     @Published public var externalLink = false
     public var baseUrl = ""
     public var clientId = ""
-    
     
     enum KeychainKeys: String {
         case accessToken = "accessToken"
@@ -53,17 +32,16 @@ public class FronteggAuth: ObservableObject {
     }
     
     
-    private let credentialManager: FronteggCredentialManager
-    public let api: FronteggApi
+    private let credentialManager: CredentialManager
+    public let api: Api
     private var subscribers = Set<AnyCancellable>()
     
-    init() throws {
-        let data = try FronteggAuth.plistValues(bundle: Bundle.main)
+    init (baseUrl:String, clientId: String, api:Api, credentialManager: CredentialManager) {
         
-        self.baseUrl = data.baseUrl
-        self.clientId = data.clientId
-        self.credentialManager = FronteggCredentialManager(serviceKey: data.keychainService)
-        self.api = FronteggApi(baseUrl: data.baseUrl, clientId: data.clientId, credentialManager: self.credentialManager)
+        self.baseUrl = baseUrl
+        self.clientId = clientId
+        self.credentialManager = credentialManager
+        self.api = api
         
         self.$initializing.combineLatest(self.$isAuthenticated, self.$isLoading).sink(){ (initializingValue, isAuthenticatedValue, isLoadingValue) in
                             self.showLoader = initializingValue || (!isAuthenticatedValue && isLoadingValue)
@@ -152,8 +130,6 @@ public class FronteggAuth: ObservableObject {
     }
     
     
-    
-    
     private static func plistValues(bundle: Bundle) throws -> (clientId: String, baseUrl: String, keychainService: String?) {
         guard let path = bundle.path(forResource: "Frontegg", ofType: "plist"),
               let values = NSDictionary(contentsOfFile: path) as? [String: Any] else {
@@ -186,19 +162,6 @@ public class FronteggAuth: ObservableObject {
             }
         }
     }
-    
-    public func loadAppLink(_ url: URL) {
-        self.pendingAppLink = url.absoluteString
-    }
-    //    public func loadUserData() async {
-    //        guard let accessToken = self.accessToken else {
-    //            return
-    //        }
-    //
-    //        if let data = await self.api.me(accessToken: accessToken) {
-    //            print(data)
-    //        }
-    //    }
     
 }
 
