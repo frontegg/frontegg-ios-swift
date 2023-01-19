@@ -64,7 +64,6 @@ public class Api {
                 "refresh_token": refreshToken,
             ])
 
-//            print(response)
             return try JSONDecoder().decode(AuthResponse.self, from: data)
         }catch {
             print(error)
