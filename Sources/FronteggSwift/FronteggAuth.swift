@@ -25,12 +25,16 @@ public class FronteggAuth: ObservableObject {
     @Published public var externalLink = false
     public var baseUrl = ""
     public var clientId = ""
+    public var codeVerifier = ""
     
     enum KeychainKeys: String {
         case accessToken = "accessToken"
         case refreshToken = "refreshToken"
     }
     
+    public static var shared: FronteggAuth {
+        return FronteggApp.shared.auth
+    }
     
     private let credentialManager: CredentialManager
     public let api: Api

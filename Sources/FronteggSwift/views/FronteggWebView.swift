@@ -28,8 +28,7 @@ struct FronteggWebView: UIViewRepresentable {
         userContentController.addUserScript(contextOptionsScript)
         userContentController.addUserScript(preloadJSScript)
 //        userContentController.add(self, name: "fronteggSwiftHandler")
-        
-        
+                
         let assetsHandler = FronteggSchemeHandler(fronteggAuth: fronteggAuth)
         
         let conf = WKWebViewConfiguration()
@@ -44,13 +43,11 @@ struct FronteggWebView: UIViewRepresentable {
     }
     
     func makeUIView(context: Context) -> WKWebView {
-        
         let url: URL
         if let appLink = self.fronteggAuth.pendingAppLink {
-            print("Loading deep link \(appLink)")
             url = appLink
         } else {
-            url = URLConstants.authenticateUrl
+            url = AuthorizeUrlGenerator().generate()
         }
         
         let request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy)
@@ -58,13 +55,10 @@ struct FronteggWebView: UIViewRepresentable {
                 
         return webView
     }
+    
     func updateUIView(_ uiView: WKWebView, context: Context) {
         
     }
-    
-    
-    
-    
 }
 
 
