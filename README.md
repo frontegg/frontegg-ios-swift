@@ -254,6 +254,12 @@ your root project directory, this file will store values to be used variables by
 
 
 ### Config iOS associated domain
+Configuring your iOS associated domain is required for Magic Link authentication / Reset Password / Activate Account.
 
-Contact Frontegg Support for adding iOS associated domain to your Frontegg application,
-This config is necessary for Magic Link authenticated / Reset Password / Activate Accounts
+In order to add your iOS associated domain to your Frontegg application, you will need to update in each of your integrated Frontegg Environments the iOS associated domain that you would like to use with that Environment. Send a POST request to `https://api.frontegg.com/vendors/resources/associated-domains/v1/ios` with the following payload:
+```
+{
+    “appId”:[YOUR_ASSOCIATED_DOMAIN]
+}
+```
+In order to use our API’s, follow [this guide](‘https://docs.frontegg.com/reference/getting-started-with-your-api’) to generate a vendor token.
