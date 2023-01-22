@@ -24,7 +24,6 @@ public class Api {
     
     
     private func postRequest(path:String, body: [String: Any?]) async throws -> (Data, URLResponse) {
-        
         let urlStr = "\(self.baseUrl)/frontegg/\(path)"
         guard let url = URL(string: urlStr) else {
             throw ApiError.invalidUrl("invalid url: \(urlStr)")
@@ -69,7 +68,7 @@ public class Api {
             ])
             
             return try JSONDecoder().decode(AuthResponse.self, from: data)
-        }catch {
+        } catch {
             print(error)
             return nil
         }

@@ -10,13 +10,6 @@ import Foundation
 
 struct URLConstants {
     
-    static let authenticateUrl = URL(string: "frontegg://oauth/authenticate")!
-    static let exchangeTokenUrl = URL(string: "frontegg://oauth/callback")!
-    static let exchangeTokenSuccessUrl = URL(string: "frontegg://oauth/success/callback")!
-    
-    
-    
-    
     static let oauthUrls = [
         "https://www.facebook.com",
         "https://accounts.google.com",
@@ -36,6 +29,10 @@ struct URLConstants {
  
     static func generateRedirectUri(_ baseUrl:String) -> String {
         return "\(baseUrl)/mobile/oauth/callback"
+    }
+    
+    static func generateSocialLoginRedirectUri(_ baseUrl:String) -> String {
+        return "\(baseUrl)/oauth/account/social/success"
     }
 }
 

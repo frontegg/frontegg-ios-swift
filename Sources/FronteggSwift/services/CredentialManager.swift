@@ -22,7 +22,7 @@ public class CredentialManager {
     }
     
     func save(key: String, value: String) throws {
-        print("Saving Frontegg session in keyhcain")
+        print("Saving \(key) in keyhcain")
         
         if let valueData = value.data(using: .utf8) {
             let query = [
@@ -35,7 +35,7 @@ public class CredentialManager {
             let status = SecItemAdd(query, nil)
             
             if status == errSecDuplicateItem {
-                print("Updating exising Frontegg session")
+                print("Updating exising \(key)")
                 let updateQuery = [
                     kSecClass: kSecClassGenericPassword,
                     kSecAttrService: serviceKey ?? "frontegg",
@@ -54,7 +54,7 @@ public class CredentialManager {
                 throw KeychainError.unknown(status)
             }
             
-            print("Frontegg session saved in keyhcain")
+            print("\(key) saved in keyhcain")
         } else {
             throw KeychainError.valueDataIsNil
         }

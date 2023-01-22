@@ -20,24 +20,14 @@ struct FronteggWebView: UIViewRepresentable {
     init() {
         self.fronteggAuth = FronteggApp.shared.auth;
         
-        let preloadJSScript = JSHelper.generatePreloadScript()
-        let contextOptionsScript = JSHelper.generateContextOptions(fronteggAuth.baseUrl, fronteggAuth.clientId)
-        
-        
         let userContentController: WKUserContentController = WKUserContentController()
-        userContentController.addUserScript(contextOptionsScript)
-        userContentController.addUserScript(preloadJSScript)
 //        userContentController.add(self, name: "fronteggSwiftHandler")
-                
-        let assetsHandler = FronteggSchemeHandler(fronteggAuth: fronteggAuth)
         
         let conf = WKWebViewConfiguration()
         conf.userContentController = userContentController
-        conf.setURLSchemeHandler(assetsHandler , forURLScheme: "frontegg" )
         conf.websiteDataStore = WKWebsiteDataStore.default()
         
         webView = CustomWebView(frame: .zero, configuration: conf)
-        webView.fronteggAuth = fronteggAuth;
         webView.navigationDelegate = webView;
         
     }

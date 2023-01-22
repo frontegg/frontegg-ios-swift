@@ -12,9 +12,7 @@ import AuthenticationServices
 
 class CustomWebView: WKWebView, WKNavigationDelegate {
     var accessoryView: UIView?
-    var fronteggAuth: FronteggAuth?
-    var socialLoginAuth = ExternalWebAuthentication()
-    
+    private let fronteggAuth: FronteggAuth = FronteggAuth.shared
     
     override var inputAccessoryView: UIView? {
         // remove/replace the default accessory view
@@ -22,18 +20,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     }
     
     
-    private func shouldStartLoginTransition(url: URL) -> Bool{
-        if url.scheme == "frontegg" || url.absoluteString.starts(with: fronteggAuth!.baseUrl) {
-            return false;
-        }
-        
-        
-        if URLConstants.oauthUrls.contains(where: { url.absoluteString.starts(with: $0) }) {
-            return true
-        }
-        
-        return false;
-    }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
         if let url = navigationAction.request.url {
             let urlType = getOverrideUrlType(url: url)
@@ -42,72 +28,36 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                 
             case .SocialLoginRedirectToBrowser: do {
                 let opened = await UIApplication.shared.open(url)
-                if(!opened){
-                    _ = webView.load(URLRequest(url: URLConstants.authenticateUrl))
+                if !opened {
+                    let url = AuthorizeUrlGenerator().generate()
+                    _ = webView.load(URLRequest(url: url))
                 }
                 return .cancel
             }
             case .HostedLoginCallback: do {
                 return self.handleHostedLoginCallback(webView, url)
             }
-            case .SocialLoginCallback: do {
-                return self.handleSocialLoginCallback(webView, url)
-            }
             case .SamlCallback: do {
                 return .allow
+            }
+            case .SocialOauthPreLogin: do {
+                return self.setSocialLoginRedirectUri(webView, url)
             }
             default:
                 return .allow
             }
-            //            if(self.shouldStartLoginTransition(url: url)){
-            //
-            //                let opened = await UIApplication.shared.open(url)
-            //                if(!opened){
-            //                    _ = webView.load(URLRequest(url: URLConstants.authenticateUrl))
-            //                }
-            //                return .cancel
-            //            } else {
-            ////                if(url.absoluteString.starts(with: URLConstants.exchangeTokenUrl.absoluteString)){
-            ////                    let query = url.query ?? ""
-            ////                    self.fronteggAuth?.isLoading = true
-            ////                    _ = webView.load(URLRequest(url: URL(string: "\(URLConstants.exchangeTokenSuccessUrl.absoluteString)?\(query)")!))
-            ////                    return .cancel
-            ////                }
-            //
-            ////                if(url.path.hasPrefix("/frontegg/identity/resources") && url.path.hasSuffix("/prelogin")) {
-            //////                    let queryItems = [URLQueryItem(name: "redirectUri", value: "frontegg-sso://")]
-            //////                    var urlComps = URLComponents(string: url.absoluteString)!
-            ////
-            //////                    if(urlComps.query?.contains("redirectUri") ?? false){
-            //////
-            //////                        return .allow
-            //////                    }
-            //////                    urlComps.queryItems = (urlComps.queryItems ?? []) + queryItems
-            //////                    let newUrl = urlComps.url!;
-            ////
-            ////                    self.fronteggAuth?.isLoading = true
-            ////                    _ = webView.load(URLRequest(url: url))
-            ////                    return .cancel
-            ////                }
-            //
-            //                if(url.path.hasPrefix("/mobile/oauth/callback")){
-            //
-            //                    return .cancel
-            //                }
-            //                return .allow
-            //            }
         } else {
-            self.fronteggAuth?.isLoading = false
+            self.fronteggAuth.isLoading = false
             return .allow
         }
     }
     
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         print("start load \(webView.url?.absoluteString ?? "")")
-        fronteggAuth?.externalLink = webView.url?.absoluteString.contains("okta.com") ?? false
+        fronteggAuth.externalLink = webView.url?.absoluteString.contains("okta.com") ?? false
         
         if(!(webView.url?.absoluteString.hasSuffix("/prelogin") ?? false)){
-            fronteggAuth?.isLoading = true
+            fronteggAuth.isLoading = true
         }
         
     }
@@ -116,44 +66,27 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         print("finish load \(webView.url?.absoluteString ?? "")")
         if let url = webView.url {
             
-            if (url.absoluteString.hasPrefix("\(self.fronteggAuth?.baseUrl ?? "")/oauth/account") ) {
+            if (url.absoluteString.hasPrefix("\(self.fronteggAuth.baseUrl)/oauth/account") ) {
                 if(webView.url?.path != "/oauth/account/social/success"){
-                    if(fronteggAuth?.isLoading ?? true){
-                        fronteggAuth?.isLoading = false
+                    if(fronteggAuth.isLoading){
+                        fronteggAuth.isLoading = false
                     }
                 }
-            } else {
-                if !(self.shouldStartLoginTransition(url: url) ||
-                     url.absoluteString.hasPrefix(self.fronteggAuth?.baseUrl ?? "") ||
-                     url.absoluteString.hasPrefix("frontegg://")
-                ){
-                    if(fronteggAuth?.isLoading ?? true){
-                        fronteggAuth?.isLoading = false
-                    }
-                }
-                
             }
+        }
+        if(fronteggAuth.isLoading){
+            fronteggAuth.isLoading = false
         }
         
     }
-    
-    
-    private func handleSocialLoginCallback(_ webView: WKWebView, _ url: URL) -> WKNavigationActionPolicy {
-        
-        
-        print("handleSocialLoginCallback, url: \(url)")
-        return .cancel
-    }
-    
+
     private func handleHostedLoginCallback(_ webView: WKWebView, _ url: URL) -> WKNavigationActionPolicy {
         
-        guard let queryItems = getQueryItems(url.absoluteString),
-              let code = queryItems["code"] else {
+        guard let queryItems = getQueryItems(url.absoluteString), let code = queryItems["code"] else {
             
-            print("handleHostedLoginCallback failed of nullable query")
-            
-            
-            return .allow
+            let url = AuthorizeUrlGenerator().generate()
+            _ = webView.load(URLRequest(url: url))
+            return .cancel
         }
         
         DispatchQueue.global(qos: .userInitiated).async {
@@ -170,6 +103,21 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         return .cancel
     }
     
+    
+    private func setSocialLoginRedirectUri(_ webView:WKWebView, _ url:URL) -> WKNavigationActionPolicy {
+        
+        let queryItems = [URLQueryItem(name: "redirectUri", value: URLConstants.generateSocialLoginRedirectUri(fronteggAuth.baseUrl))]
+        var urlComps = URLComponents(string: url.absoluteString)!
+
+        if(urlComps.query?.contains("redirectUri") ?? false){
+            return .allow
+        }
+        urlComps.queryItems = (urlComps.queryItems ?? []) + queryItems
+     
+        self.fronteggAuth.isLoading = true
+        _ = webView.load(URLRequest(url: urlComps.url!))
+        return .cancel
+    }
     
 }
 

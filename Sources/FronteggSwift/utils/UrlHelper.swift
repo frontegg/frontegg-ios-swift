@@ -12,11 +12,12 @@ import CommonCrypto
 enum OverrideUrlType {
     case HostedLoginCallback
     case SocialLoginCallback
-    case   SocialLoginRedirectToBrowser
-    case   SamlCallback
-    case   loginRoutes
-    case   internalRoutes
-    case   Unknown
+    case SocialLoginRedirectToBrowser
+    case SocialOauthPreLogin
+    case SamlCallback
+    case loginRoutes
+    case internalRoutes
+    case Unknown
 }
 func getOverrideUrlType (url: URL) -> OverrideUrlType {
     
@@ -26,9 +27,12 @@ func getOverrideUrlType (url: URL) -> OverrideUrlType {
         
         switch(url.path) {
         case "/mobile/oauth/callback": return .HostedLoginCallback
-        case "/mobile/sso/callback": return .SocialLoginCallback
         case "/auth/saml/callback":  return .SamlCallback
         default:
+            if(url.path.hasPrefix("/frontegg/identity/resources/auth/v2/user/sso/default") &&
+               url.path.hasSuffix("/prelogin")){
+                return .SocialOauthPreLogin
+            }
             if((URLConstants.successLoginRoutes.first { url.path.hasPrefix($0)}) != nil) {
                 return .internalRoutes
             }
