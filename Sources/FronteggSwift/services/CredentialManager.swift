@@ -14,15 +14,15 @@ public class CredentialManager {
         case unknown(OSStatus);
     }
     
-    
-    let serviceKey: String?
+    private let logger = getLogger("CredentialManager")
+    private let serviceKey: String?
     
     init(serviceKey: String?) {
         self.serviceKey = serviceKey;
     }
     
     func save(key: String, value: String) throws {
-        print("Saving \(key) in keyhcain")
+        logger.trace("Saving \(key) in keyhcain")
         
         if let valueData = value.data(using: .utf8) {
             let query = [
@@ -35,7 +35,7 @@ public class CredentialManager {
             let status = SecItemAdd(query, nil)
             
             if status == errSecDuplicateItem {
-                print("Updating exising \(key)")
+                logger.trace("Updating exising \(key)")
                 let updateQuery = [
                     kSecClass: kSecClassGenericPassword,
                     kSecAttrService: serviceKey ?? "frontegg",
@@ -54,13 +54,16 @@ public class CredentialManager {
                 throw KeychainError.unknown(status)
             }
             
-            print("\(key) saved in keyhcain")
+            logger.info("\(key) saved in keyhcain")
         } else {
+            
+            logger.error("failed to convert value to Data, value: \(value)")
             throw KeychainError.valueDataIsNil
         }
     }
     
     func get(key:String) throws -> String? {
+        logger.trace("retrieving \(key) from keyhcain")
         let query = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: serviceKey ?? "frontegg",
@@ -74,16 +77,21 @@ public class CredentialManager {
         let status = SecItemCopyMatching(query, &result)
         
         if status != errSecSuccess {
+            logger.error("Unknown error occured while trying to retrieve the key: \(key) from keyhcain")
             throw KeychainError.unknown(status)
         }
         
         if let resultData = result as? Data {
+            logger.trace("Value found in keychain for key: \(key)")
             return String(decoding: resultData, as: UTF8.self)
         }
+        
+        logger.trace("Value not found in keychain for key: \(key), returned nil")
         return nil
     }
     
     func clear() {
+        logger.trace("Clearing keychain frontegg data")
         let query = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: serviceKey ?? "frontegg"
@@ -91,7 +99,7 @@ public class CredentialManager {
         let status = SecItemDelete(query)
         
         if status != errSecSuccess {
-            print("Failed to logout from Frontegg Services, error \(status)")
+            logger.error("Failed to logout from Frontegg Services, errSec: \(status)")
         }
     }
 }

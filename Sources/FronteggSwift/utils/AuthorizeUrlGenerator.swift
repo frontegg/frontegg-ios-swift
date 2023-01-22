@@ -12,6 +12,7 @@ import CommonCrypto
 
 class AuthorizeUrlGenerator {
     
+    private let logger = getLogger("AuthorizeUrlGenerator")
     
     private func createRandomString(_ length: Int = 16) -> String {
         let letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -19,7 +20,7 @@ class AuthorizeUrlGenerator {
     }
     
     private func digest(_ input : NSData) -> NSData {
-
+        
         let digestLength = Int(CC_SHA256_DIGEST_LENGTH)
         var hash = [UInt8](repeating: 0, count: digestLength)
         
@@ -43,7 +44,8 @@ class AuthorizeUrlGenerator {
         let codeChallenge = generateCodeChallenge(codeVerifier)
         
         let baseUrl = FronteggApp.shared.baseUrl
-        print("Saving the codeVerifier in temporary storage to be able to validate the response")
+        
+        logger.trace("CodeVerifier saved in memory to be able to validate the response")
         FronteggAuth.shared.codeVerifier = codeVerifier
         
         
@@ -60,7 +62,13 @@ class AuthorizeUrlGenerator {
             URLQueryItem(name: "nonce", value: nonce),
         ]
         
-        return authorizeUrl.url!
+        if let url = authorizeUrl.url{
+            logger.trace("Generated url: \(url.absoluteString)")
+            return url
+        } else {
+            logger.error("Unkonwn error occured while generating authorize url, baseUrl: \(baseUrl)")
+            fatalError("Failed to generate authorize url")
+        }
         
         
     }
