@@ -15,6 +15,8 @@ struct URLConstants {
     static let exchangeTokenSuccessUrl = URL(string: "frontegg://oauth/success/callback")!
     
     
+    
+    
     static let oauthUrls = [
         "https://www.facebook.com",
         "https://accounts.google.com",
@@ -31,7 +33,10 @@ struct URLConstants {
     static let loginRoutes:[String] = [
         "/oauth/account/",
     ]
-    
+ 
+    static func generateRedirectUri(_ baseUrl:String) -> String {
+        return "\(baseUrl)/mobile/oauth/callback"
+    }
 }
 
 struct SchemeConstants {

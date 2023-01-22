@@ -21,7 +21,7 @@ public class CredentialManager {
         self.serviceKey = serviceKey;
     }
     
-    func save(key:String, value: String) throws {
+    func save(key: String, value: String) throws {
         print("Saving Frontegg session in keyhcain")
         
         if let valueData = value.data(using: .utf8) {

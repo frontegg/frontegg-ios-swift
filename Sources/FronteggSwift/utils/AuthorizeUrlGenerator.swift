@@ -13,42 +13,35 @@ import CommonCrypto
 class AuthorizeUrlGenerator {
     
     
-
-    
     private func createRandomString(_ length: Int = 16) -> String {
-      let letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-      return String((0 ..< length).map{ _ in letters.randomElement()! })
+        let letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        return String((0 ..< length).map{ _ in letters.randomElement()! })
     }
-
+    
     private func digest(_ input : NSData) -> NSData {
-            let digestLength = Int(CC_SHA256_DIGEST_LENGTH)
-            var hash = [UInt8](repeating: 0, count: digestLength)
-            CC_SHA256(input.bytes, UInt32(input.length), &hash)
-            return NSData(bytes: hash, length: digestLength)
-        }
-        
-    private func hexStringFromData(_ input: NSData) -> String {
-        var bytes = [UInt8](repeating: 0, count: input.length)
-        input.getBytes(&bytes, length: input.length)
-        
-        var hexString = ""
-        for byte in bytes {
-            hexString += String(format:"%02x", UInt8(byte))
-        }
-        
-        return hexString
-    }
 
+        let digestLength = Int(CC_SHA256_DIGEST_LENGTH)
+        var hash = [UInt8](repeating: 0, count: digestLength)
+        
+        CC_SHA256(input.bytes, UInt32(input.length), &hash)
+        return NSData(bytes: hash, length: digestLength)
+        
+    }
+    
     private func generateCodeChallenge(_ codeVerifier: String) -> String {
         let data = codeVerifier.data(using: .utf8)!
         let sha256 = digest(data as NSData)
-        return hexStringFromData(sha256)
+        return sha256.base64EncodedString()
+            .replacingOccurrences(of: "=", with: "")
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
     }
-
+    
     func generate() -> URL {
         let nonce = createRandomString()
-       let codeVerifier = createRandomString()
-       let codeChallenge = generateCodeChallenge(codeVerifier)
+        let codeVerifier = createRandomString()
+        let codeChallenge = generateCodeChallenge(codeVerifier)
+        
         let baseUrl = FronteggApp.shared.baseUrl
         print("Saving the codeVerifier in temporary storage to be able to validate the response")
         FronteggAuth.shared.codeVerifier = codeVerifier
@@ -58,7 +51,7 @@ class AuthorizeUrlGenerator {
         
         authorizeUrl.path = "/oauth/authorize"
         authorizeUrl.queryItems = [
-            URLQueryItem(name: "redirect_uri", value: "\(baseUrl)/mobile/oauth/callback"),
+            URLQueryItem(name: "redirect_uri", value: URLConstants.generateRedirectUri(baseUrl)),
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "client_id", value: FronteggApp.shared.clientId),
             URLQueryItem(name: "scope", value: "openid email profile"),
@@ -69,7 +62,7 @@ class AuthorizeUrlGenerator {
         
         return authorizeUrl.url!
         
-
+        
     }
-
+    
 }
