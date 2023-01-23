@@ -28,6 +28,7 @@ public struct FronteggLoginPage: View {
                             fronteggAuth.isLoading = true
                             fronteggAuth.initializing = true
                             fronteggAuth.pendingAppLink = nil
+                            fronteggAuth.appLink = nil
                             fronteggAuth.externalLink = false
                             fronteggAuth.logout()
                         }

@@ -11,7 +11,6 @@ import CommonCrypto
 
 enum OverrideUrlType {
     case HostedLoginCallback
-    case SocialLoginCallback
     case SocialLoginRedirectToBrowser
     case SocialOauthPreLogin
     case SamlCallback
