@@ -10,8 +10,8 @@ and integrate them into their SaaS portals in up to 5 lines of code.
   - [Supported Languages](#supported-languages)
   - [Supported Platforms](#supported-platforms)
 - [Getting Started](#getting-started)
-  - [Add frontegg package to the project](#add-frontegg-package-to-the-project)
   - [Prepare Frontegg workspace](#prepare-frontegg-workspace)
+  - [Add frontegg package to the project](#add-frontegg-package-to-the-project)
   - [Create Frontegg plist file](#create-frontegg-plist-file)
   - [SwiftUI Integration](#swiftui-integration)
     - [Add Frontegg Wrapper](#add-frontegg-wrapper)
@@ -42,24 +42,18 @@ Major platform versions are supported, starting from:
 
 ## Getting Started
 
+### Prepare Frontegg workspace
+
+Navigate to [Frontegg Portal Settings](https://portal.frontegg.com/development/settings), If you don't have application
+follow integration steps after signing up.
+Copy FronteggDomain to future steps from [Frontegg Portal Domain](https://portal.frontegg.com/development/settings/domains)
+
 ### Add frontegg package to the project
 
 - Open you project
 - Choose File -> Add Packages
 - Enter `https://github.com/frontegg/frontegg-ios-swift` in search field
 - Press `Add Package`
-
-### Prepare Frontegg workspace
-
-Navigate to [Frontegg Portal Settings](https://portal.frontegg.com/development/settings), If you don't have application
-follow integration steps after signing up.
-
-
-### Setup Hosted Login oauth callback
-
-- Navigate to [Frontegg Login Methods](https://portal.frontegg.com/development/authentication/hosted),
-- Add new redirect url `frontegg://oauth/callback`
-  ![Frontegg_Login Methods](./assets/README_hosted-login.png) 
 
 
 ### Create Frontegg plist file

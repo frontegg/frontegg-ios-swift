@@ -6,8 +6,6 @@
 
 import Foundation
 
-
-
 public struct User: Codable {
     
     enum DecodeError: Error {

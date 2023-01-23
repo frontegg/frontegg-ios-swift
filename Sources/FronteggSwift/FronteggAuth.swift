@@ -13,6 +13,11 @@ enum FronteggError: Error {
     case configError(String)
 }
 
+enum KeychainKeys: String {
+    case accessToken = "accessToken"
+    case refreshToken = "refreshToken"
+}
+
 public class FronteggAuth: ObservableObject {
     @Published public var accessToken: String?
     @Published public var refreshToken: String?
@@ -25,12 +30,12 @@ public class FronteggAuth: ObservableObject {
     @Published public var externalLink = false
     public var baseUrl = ""
     public var clientId = ""
+    public var codeVerifier = ""
     
-    enum KeychainKeys: String {
-        case accessToken = "accessToken"
-        case refreshToken = "refreshToken"
+    
+    public static var shared: FronteggAuth {
+        return FronteggApp.shared.auth
     }
-    
     
     private let credentialManager: CredentialManager
     public let api: Api
@@ -163,6 +168,19 @@ public class FronteggAuth: ObservableObject {
         }
     }
     
+    func handleHostedLoginCallback(_ code: String) async -> Bool {
+        
+        let redirectUri = URLConstants.generateRedirectUri(baseUrl)
+        let codeVerifier = codeVerifier
+        
+        if let data = await api.exchangeToken(code: code, redirectUrl: redirectUri, codeVerifier: codeVerifier) {
+            await setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
+            return true
+        }
+        
+        return false
+        
+    }
 }
 
 
