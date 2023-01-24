@@ -28,7 +28,7 @@ struct URLConstants {
     ]
  
     static func generateRedirectUri(_ baseUrl:String) -> String {
-        return "\(baseUrl)/mobile/oauth/callback"
+        return "\(baseUrl)/oauth/mobile/callback"
     }
     
     static func generateSocialLoginRedirectUri(_ baseUrl:String) -> String {

@@ -1,5 +1,5 @@
 
-![Frontegg_SwiftUI_SDK](./logo.png)
+![Frontegg_SwiftUI_SDK](https://github.com/frontegg/frontegg-ios-swift/raw/master/logo.png)
 
 Frontegg is a web platform where SaaS companies can set up their fully managed, scalable and brand aware - SaaS features
 and integrate them into their SaaS portals in up to 5 lines of code.
@@ -11,6 +11,7 @@ and integrate them into their SaaS portals in up to 5 lines of code.
   - [Supported Platforms](#supported-platforms)
 - [Getting Started](#getting-started)
   - [Prepare Frontegg workspace](#prepare-frontegg-workspace)
+  - [Setup Hosted Login](#setup-hosted-login)
   - [Add frontegg package to the project](#add-frontegg-package-to-the-project)
   - [Create Frontegg plist file](#create-frontegg-plist-file)
   - [SwiftUI Integration](#swiftui-integration)
@@ -47,6 +48,13 @@ Major platform versions are supported, starting from:
 Navigate to [Frontegg Portal Settings](https://portal.frontegg.com/development/settings), If you don't have application
 follow integration steps after signing up.
 Copy FronteggDomain to future steps from [Frontegg Portal Domain](https://portal.frontegg.com/development/settings/domains)
+
+### Setup Hosted Login
+
+- Navigate to [Login Method Settings](https://portal.frontegg.com/development/authentication/hosted)
+- Toggle Hosted login method
+- Add `{{LOGIN_URL}}/mobile/callback`
+
 
 ### Add frontegg package to the project
 

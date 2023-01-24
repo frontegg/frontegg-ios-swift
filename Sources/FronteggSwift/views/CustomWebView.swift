@@ -40,9 +40,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             case .HostedLoginCallback: do {
                 return self.handleHostedLoginCallback(webView, url)
             }
-            case .SamlCallback: do {
-                return .allow
-            }
             case .SocialOauthPreLogin: do {
                 return self.setSocialLoginRedirectUri(webView, url)
             }

@@ -13,7 +13,6 @@ enum OverrideUrlType {
     case HostedLoginCallback
     case SocialLoginRedirectToBrowser
     case SocialOauthPreLogin
-    case SamlCallback
     case loginRoutes
     case internalRoutes
     case Unknown
@@ -25,8 +24,7 @@ func getOverrideUrlType (url: URL) -> OverrideUrlType {
     if urlStr.starts(with: FronteggApp.shared.baseUrl) {
         
         switch(url.path) {
-        case "/mobile/oauth/callback": return .HostedLoginCallback
-        case "/auth/saml/callback":  return .SamlCallback
+        case "/oauth/mobile/callback": return .HostedLoginCallback
         default:
             if(url.path.hasPrefix("/frontegg/identity/resources/auth/v2/user/sso/default") &&
                url.path.hasSuffix("/prelogin")){
