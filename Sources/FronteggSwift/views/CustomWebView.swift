@@ -136,7 +136,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         urlComps.queryItems = (urlComps.queryItems ?? []) + queryItems
         
         
-        logger.trace("added redirectUri to socialLogin auth url")
+        logger.trace("added redirectUri to socialLogin auth url \(urlComps.url!)")
         self.fronteggAuth.isLoading = true
         _ = webView.load(URLRequest(url: urlComps.url!))
         return .cancel
