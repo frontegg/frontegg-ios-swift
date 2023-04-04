@@ -14,6 +14,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     var accessoryView: UIView?
     private let fronteggAuth: FronteggAuth = FronteggAuth.shared
     private let logger = getLogger("CustomWebView")
+    private var lastResponseStatusCode: Int? = nil
     
     override var inputAccessoryView: UIView? {
         // remove/replace the default accessory view
@@ -22,7 +23,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     
     
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-        logger.trace("navigationAction check for \(navigationAction.request.url)")
+        logger.trace("navigationAction check for \(navigationAction.request.url?.absoluteString ?? "")")
         if let url = navigationAction.request.url {
             let urlType = getOverrideUrlType(url: url)
             
@@ -91,11 +92,42 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                 if(fronteggAuth.isLoading) {
                     fronteggAuth.isLoading = false
                 }
+            } else if let statusCode = self.lastResponseStatusCode {
+                self.lastResponseStatusCode = nil;
+                self.fronteggAuth.isLoading = false
+                
+                
+                webView.evaluateJavaScript("JSON.parse(document.body.innerText).errors.join('\\n')") { [self] res, err in
+                    let errorMessage = res as? String ?? "Unknown error occured"
+                    
+                    logger.error("Failed to load page: \(errorMessage), status: \(statusCode)")
+                    self.fronteggAuth.isLoading = false
+                    let content = generateErrorPage(message: errorMessage, url: url.absoluteString,status: statusCode);
+                    webView.loadHTMLString(content, baseURL: nil);
+                }
             }
         } else {
             logger.warning("failed to get url from didFinishNavigation()")
             self.fronteggAuth.isLoading = false
         }
+    }
+    
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+                 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+
+        if let response = navigationResponse.response as? HTTPURLResponse {
+            if response.statusCode >= 400, let url = response.url {
+                let urlType = getOverrideUrlType(url: url)
+                logger.info("urlType: \(urlType), for: \(url.absoluteString)")
+                
+                if(urlType == .internalRoutes && response.mimeType == "application/json"){
+                    self.lastResponseStatusCode = response.statusCode
+                    decisionHandler(.allow)
+                    return
+                }
+            }
+        }
+        decisionHandler(.allow)
     }
     
     private func handleHostedLoginCallback(_ webView: WKWebView, _ url: URL) -> WKNavigationActionPolicy {
