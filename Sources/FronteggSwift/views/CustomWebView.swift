@@ -130,6 +130,23 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         decisionHandler(.allow)
     }
     
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        print("error, \(error)")
+    }
+    
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError _error: Error) {
+        let error = _error as NSError
+        
+        let statusCode = error.code
+        let errorMessage = error.localizedDescription;
+        let url = "\(error.userInfo["NSErrorFailingURLKey"] ?? error.userInfo)"
+        logger.error("Failed to load page: \(errorMessage), status: \(statusCode), \(error)")
+        self.fronteggAuth.isLoading = false
+        let content = generateErrorPage(message: errorMessage, url: url, status: statusCode);
+        webView.loadHTMLString(content, baseURL: nil);
+    }
+    
+    
     private func handleHostedLoginCallback(_ webView: WKWebView, _ url: URL) -> WKNavigationActionPolicy {
         logger.trace("handleHostedLoginCallback, url: \(url)")
         guard let queryItems = getQueryItems(url.absoluteString), let code = queryItems["code"] else {

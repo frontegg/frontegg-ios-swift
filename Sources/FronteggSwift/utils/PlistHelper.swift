@@ -14,7 +14,10 @@ struct PlistHelper {
     
     public static func fronteggConfig() throws -> (clientId: String, baseUrl: String, keychainService: String?) {
         let bundle = Bundle.main;
-        guard let path = bundle.path(forResource: "Frontegg", ofType: "plist"),
+        
+        let resourceName = (getenv("frontegg-testing") != nil) ? "FronteggTest" : "Frontegg"
+            
+        guard let path = bundle.path(forResource: resourceName, ofType: "plist"),
               let values = NSDictionary(contentsOfFile: path) as? [String: Any] else {
             let errorMessage = "Missing Frontegg.plist file with 'clientId' and 'baseUrl' entries in main bundle!"
             print(errorMessage)

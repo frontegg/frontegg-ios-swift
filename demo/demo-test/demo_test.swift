@@ -25,7 +25,10 @@ final class demo_test: XCTestCase {
     func testExample() throws {
         // UI tests must launch the application that they test.
         let app = XCUIApplication()
+        
+        app.launchEnvironment = ["frontegg-testing":"true"]
         app.launch()
+        
 
         // Check that the app is displaying an activity indicator
         let activityIndicator = app.otherElements["LoaderView"]
@@ -43,11 +46,44 @@ final class demo_test: XCTestCase {
         }
         
         let continueButton = app.webViews.buttons["Continue"]
-        if continueButton.waitForExistence(timeout: 5) {
-            continueButton.tap()
+        XCTAssert(continueButton.waitForExistence(timeout: 5))
+        continueButton.tap()
+        
+        let magicLink = app.webViews.staticTexts["Magic link sent!"]
+        XCTAssert(magicLink.waitForExistence(timeout: 5))
+        
+        
+        let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
+        safari.launch()
+        XCTAssert(safari.wait(for: .runningForeground, timeout: 5))
+
+        // Type the deeplink and execute it
+
+        let firstLaunchContinueButton = safari.buttons["Continue"]
+
+        if firstLaunchContinueButton.exists {
+
+            firstLaunchContinueButton.tap()
+
         }
+
+
+        safari.textFields["Address"].tap()
+
+        let keyboardTutorialButton = safari.buttons["Continue"]
+
+        if keyboardTutorialButton.exists {
+
+            keyboardTutorialButton.tap()
+
+        }
+
+        safari.typeText("https://gmail.com")
+
+        safari.buttons["go"].tap()
         
-        
+    
+        XCTAssert(magicLink.waitForExistence(timeout: 5))
     }
 
 }
