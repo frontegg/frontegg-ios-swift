@@ -29,7 +29,7 @@ func getOverrideUrlType (url: URL) -> OverrideUrlType {
         case "/mobile/oauth/callback": return .HostedLoginCallback
         case "/auth/saml/callback":  return .SamlCallback
         default:
-            if(url.path.hasPrefix("/frontegg/identity/resources/auth/v2/user/sso/default") &&
+            if(url.path.hasPrefix("/identity/resources/auth/v2/user/sso/default") &&
                url.path.hasSuffix("/prelogin")){
                 return .SocialOauthPreLogin
             }

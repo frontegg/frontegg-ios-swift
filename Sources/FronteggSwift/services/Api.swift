@@ -24,7 +24,7 @@ public class Api {
     
     
     private func postRequest(path:String, body: [String: Any?]) async throws -> (Data, URLResponse) {
-        let urlStr = "\(self.baseUrl)/frontegg/\(path)"
+        let urlStr = "\(self.baseUrl)/\(path)"
         guard let url = URL(string: urlStr) else {
             throw ApiError.invalidUrl("invalid url: \(urlStr)")
         }
@@ -46,7 +46,7 @@ public class Api {
     
     private func getRequest(accessToken:String, path:String) async throws -> (Data, URLResponse) {
         
-        let urlStr = "\(self.baseUrl)/frontegg/\(path)"
+        let urlStr = "\(self.baseUrl)/\(path)"
         guard let url = URL(string: urlStr) else {
             throw ApiError.invalidUrl("invalid url: \(urlStr)")
         }

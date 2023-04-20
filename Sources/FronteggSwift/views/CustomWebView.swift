@@ -116,7 +116,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
 
         if let response = navigationResponse.response as? HTTPURLResponse {
-            if response.statusCode >= 400, let url = response.url {
+            if response.statusCode >= 400 && response.statusCode != 500, let url = response.url {
                 let urlType = getOverrideUrlType(url: url)
                 logger.info("urlType: \(urlType), for: \(url.absoluteString)")
                 
@@ -130,14 +130,14 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         decisionHandler(.allow)
     }
     
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        print("error, \(error)")
-    }
-    
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError _error: Error) {
         let error = _error as NSError
-        
         let statusCode = error.code
+        if(statusCode==102){
+            // interrupted by frontegg webview
+            return;
+        }
+        
         let errorMessage = error.localizedDescription;
         let url = "\(error.userInfo["NSErrorFailingURLKey"] ?? error.userInfo)"
         logger.error("Failed to load page: \(errorMessage), status: \(statusCode), \(error)")

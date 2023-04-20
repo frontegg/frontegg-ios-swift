@@ -22,6 +22,7 @@
 		415CE468297DBA8800EDCA18 /* demo_test.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415CE467297DBA8800EDCA18 /* demo_test.swift */; };
 		415CE46A297DBA8800EDCA18 /* demo_testLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415CE469297DBA8800EDCA18 /* demo_testLaunchTests.swift */; };
 		41D0537A294920A800A54D16 /* LoaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41D05379294920A800A54D16 /* LoaderView.swift */; };
+		41DB5FBF29F048B8006F3EB6 /* Mocker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41DB5FBE29F048B8006F3EB6 /* Mocker.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -53,6 +54,7 @@
 		415CE469297DBA8800EDCA18 /* demo_testLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = demo_testLaunchTests.swift; sourceTree = "<group>"; };
 		41A7329C292D9859004A22D2 /* demo.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = demo.entitlements; sourceTree = "<group>"; };
 		41D05379294920A800A54D16 /* LoaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoaderView.swift; sourceTree = "<group>"; };
+		41DB5FBE29F048B8006F3EB6 /* Mocker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mocker.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -158,6 +160,7 @@
 			children = (
 				415CE467297DBA8800EDCA18 /* demo_test.swift */,
 				415CE469297DBA8800EDCA18 /* demo_testLaunchTests.swift */,
+				41DB5FBE29F048B8006F3EB6 /* Mocker.swift */,
 			);
 			path = "demo-test";
 			sourceTree = "<group>";
@@ -284,6 +287,7 @@
 			files = (
 				415CE468297DBA8800EDCA18 /* demo_test.swift in Sources */,
 				415CE46A297DBA8800EDCA18 /* demo_testLaunchTests.swift in Sources */,
+				41DB5FBF29F048B8006F3EB6 /* Mocker.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
