@@ -19,9 +19,14 @@ jobs:
         with:
           repository: frontegg/frontegg-mock-server
           ssh-key: ${{ secrets.MOCK_SERVER_SSH_KEY }}
+          ref: "master"
           path: mocker
-      - name: List Mock Server
-        run: ls -la "./mocker"
+      - name: Install  Mock Server
+        working-directory: mocker
+        run: |
+          yarn install
+          cd packages/mobile-mocker
+          (yarn start$)
       - name: Double-check macOS version (macos-latest)
         run: sw_vers
       - name: Double-check Xcode.app selected
