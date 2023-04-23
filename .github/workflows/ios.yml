@@ -6,23 +6,14 @@ on:
 
 jobs:
   build-and-test:
-    name: ${{ matrix.command }} on  ${{ matrix.platform }} (xcode ${{ matrix.xcode }}, ${{ matrix.macos }})
-    runs-on: ${{ matrix.macos }} #os switching
-    strategy:
-      fail-fast: false #if 'true' then one failed job cancels all jobs remaining
-      matrix:
-        xcode: [ '14.2.0' ]
-        macos: [ 'macos-latest' ]
-        scheme: [ 'demo' ]
-        command: [ 'test' ]
-        platform: [ 'iOS' ]
-
+    name: "Test on  iOS Simulator (xcode: 14.2.0, macos: latest)"
+    runs-on: 'macos-latest'
     steps:
       - name: Checkout
         uses: actions/checkout@v3
       - uses: maxim-lobanov/setup-xcode@v1.2.3
         with:
-          xcode-version: ${{ matrix.xcode }}
+          xcode-version: '14.2.0'
       - name: Double-check macOS version (${{ matrix.macos }})
         run: sw_vers
       - name: Double-check Xcode.app selected
@@ -37,11 +28,11 @@ jobs:
         run: xcodebuild -project demo/demo.xcodeproj -showdestinations -scheme ${{ matrix.scheme }}
       - uses: mxcl/xcodebuild@v1.9.2
         with:
-          platform: ${{ matrix.platform }}
-          scheme: ${{ matrix.scheme }}
-          action: ${{ matrix.command }}
+          platform: "iOS"
+          scheme: "demo"
+          action: "test"
           working-directory: "demo"
-          code-coverage: true
+          code-coverage: false
           verbosity: xcpretty
           upload-logs: always
 #      - name: Build

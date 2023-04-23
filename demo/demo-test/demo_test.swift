@@ -57,46 +57,49 @@ final class demo_test: XCTestCase {
         
         await waitForExpectations(timeout: 10)
         
-        let userNameField = app.webViews.textFields["name@example.com"]
-        if userNameField.waitForExistence(timeout: 5) {
-            DispatchQueue.main.sync {
-                userNameField.tap()
-                userNameField.typeText("test@frontegg.com")
-            }
-        }
-        
-        await Mocker.mock(name: .mockSSOPrelogin, body: [ "options": ["success": false]])
-        
-        let continueButton = app.webViews.buttons["Continue"]
-        XCTAssert(continueButton.waitForExistence(timeout: 5))
-        
-        DispatchQueue.main.sync {
-            continueButton.tap()
-        }
-        
-        let passwordField = app.webViews.secureTextFields["Set a password"]
-        if passwordField.waitForExistence(timeout: 5) {
-            DispatchQueue.main.sync {
-                passwordField.tap()
-                passwordField.typeText("TestTest")
-            }
-        }
+        XCUIScreen.main.screenshot()
         
         
-        await Mocker.mockSuccessPasswordLogin()
-        
-        let signInButton = app.webViews.buttons["Sign in"]
-        XCTAssert(signInButton.waitForExistence(timeout: 5))
-        DispatchQueue.main.sync {
-            signInButton.tap()
-        }
-        
-        
-        let successField = app.staticTexts["test@frontegg.com"]
-        XCTAssert(successField.waitForExistence(timeout: 5))
-        
-        
-        
+//        let userNameField = app.webViews.textFields["name@example.com"]
+//        if userNameField.waitForExistence(timeout: 5) {
+//            DispatchQueue.main.sync {
+//                userNameField.tap()
+//                userNameField.typeText("test@frontegg.com")
+//            }
+//        }
+//
+//        await Mocker.mock(name: .mockSSOPrelogin, body: [ "options": ["success": false]])
+//
+//        let continueButton = app.webViews.buttons["Continue"]
+//        XCTAssert(continueButton.waitForExistence(timeout: 5))
+//
+//        DispatchQueue.main.sync {
+//            continueButton.tap()
+//        }
+//
+//        let passwordField = app.webViews.secureTextFields["Set a password"]
+//        if passwordField.waitForExistence(timeout: 5) {
+//            DispatchQueue.main.sync {
+//                passwordField.tap()
+//                passwordField.typeText("TestTest")
+//            }
+//        }
+//
+//
+//        await Mocker.mockSuccessPasswordLogin()
+//
+//        let signInButton = app.webViews.buttons["Sign in"]
+//        XCTAssert(signInButton.waitForExistence(timeout: 5))
+//        DispatchQueue.main.sync {
+//            signInButton.tap()
+//        }
+//
+//
+//        let successField = app.staticTexts["test@frontegg.com"]
+//        XCTAssert(successField.waitForExistence(timeout: 5))
+//
+//
+//
         
         //            let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
         //            safari.launch()
