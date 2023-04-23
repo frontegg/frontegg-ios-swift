@@ -26,7 +26,7 @@ jobs:
         run: |
           yarn install
           cd packages/mobile-mocker
-          (yarn start$)
+          (yarn start&)
       - name: Double-check macOS version (macos-latest)
         run: sw_vers
       - name: Double-check Xcode.app selected
