@@ -8,18 +8,18 @@ import Foundation
 import WebKit
 import SwiftUI
 import AuthenticationServices
- 
+
 
 
 struct FronteggWebView: UIViewRepresentable {
     typealias UIViewType = WKWebView
-    
+
     let webView: CustomWebView
     private var fronteggAuth: FronteggAuth
-    
+
     init() {
         self.fronteggAuth = FronteggApp.shared.auth;
-        
+
         let userContentController: WKUserContentController = WKUserContentController()
 
         let metadataSource:String = "let interval = setInterval(function(){" +
@@ -42,28 +42,28 @@ struct FronteggWebView: UIViewRepresentable {
         let conf = WKWebViewConfiguration()
         conf.userContentController = userContentController
         conf.websiteDataStore = WKWebsiteDataStore.default()
-        
+
         webView = CustomWebView(frame: .zero, configuration: conf)
         webView.navigationDelegate = webView;
-        
+
     }
-    
+
     func makeUIView(context: Context) -> WKWebView {
         let url: URL
-        if let appLink = self.fronteggAuth.pendingAppLink {
+        if let appLink = fronteggAuth.appLink {
             url = appLink
         } else {
             url = AuthorizeUrlGenerator().generate()
         }
-        
+
         let request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy)
         webView.load(request)
-                
+
         return webView
     }
-    
+
     func updateUIView(_ uiView: WKWebView, context: Context) {
-        
+
     }
 }
 

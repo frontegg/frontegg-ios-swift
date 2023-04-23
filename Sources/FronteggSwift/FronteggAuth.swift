@@ -27,6 +27,7 @@ public class FronteggAuth: ObservableObject {
     @Published public var initializing = true
     @Published public var showLoader = true
     @Published public var pendingAppLink: URL?
+    @Published public var appLink: URL?
     @Published public var externalLink = false
     public var baseUrl = ""
     public var clientId = ""
@@ -50,6 +51,16 @@ public class FronteggAuth: ObservableObject {
         
         self.$initializing.combineLatest(self.$isAuthenticated, self.$isLoading).sink(){ (initializingValue, isAuthenticatedValue, isLoadingValue) in
             self.showLoader = initializingValue || (!isAuthenticatedValue && isLoadingValue)
+        }.store(in: &subscribers)
+        
+        
+        self.$pendingAppLink.sink() { pendingAppLinkValue in
+            if(pendingAppLinkValue != nil){
+                DispatchQueue.main.async {
+                    self.appLink = pendingAppLinkValue
+                    self.pendingAppLink = nil
+                }
+            }
         }.store(in: &subscribers)
         
         if let refreshToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue),
@@ -87,6 +98,7 @@ public class FronteggAuth: ObservableObject {
                 self.user = user
                 self.isAuthenticated = true
                 self.pendingAppLink = nil
+                self.appLink = nil
                 
                 let offset = Double((decode["exp"] as! Int) - Int(Date().timeIntervalSince1970))  * 0.9
                 DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + offset) {

@@ -17,8 +17,8 @@ struct FronteggUIKitWrapper: View {
     }
     public var body: some View {
         ZStack {
-            if !fronteggAuth.initializing {
-                if(fronteggAuth.pendingAppLink != nil){
+            if !fronteggAuth.initializing && fronteggAuth.pendingAppLink == nil {
+                if(fronteggAuth.appLink != nil){
                     FronteggLoginPage()
                 } else {
                     if(fronteggAuth.isAuthenticated){
@@ -31,7 +31,7 @@ struct FronteggUIKitWrapper: View {
                     }
                 }
             }
-            if fronteggAuth.showLoader {
+            if fronteggAuth.showLoader || fronteggAuth.pendingAppLink != nil {
                 self.loaderView
             }
         }
