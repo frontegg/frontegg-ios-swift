@@ -15,7 +15,7 @@ jobs:
         macos: [ 'macos-latest' ]
         scheme: [ 'demo' ]
         command: [ 'test' ]
-        platform: [ 'iOS Simulator,name=iPhone 14 Pro' ]
+        platform: [ 'iOS' ]
 
     steps:
       - name: Checkout
