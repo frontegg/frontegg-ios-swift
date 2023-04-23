@@ -32,7 +32,7 @@ struct Mocker {
     
     static var baseUrl:String!
     static var clientId:String!
-
+    
     
     static func fronteggConfig(bundle:Bundle) throws -> (clientId: String, baseUrl: String) {
         
@@ -62,8 +62,7 @@ struct Mocker {
     
     
     
-    static func mock(name: MockMethod, body: [String: Any?]) async -> String {
-        
+    static func mockWithId(name: MockMethod, body: [String: Any?]) async -> String {
         let urlStr = "http://localhost:4001/mock/\(name.rawValue)"
         let url = URL(string: urlStr)
         var request = URLRequest(url: url!)
@@ -77,10 +76,11 @@ struct Mocker {
         
         let (data, _) :(Data, URLResponse) = try! await URLSession.shared.data(for: request)
         
-        let x = String(data: data, encoding: .utf8)!
-        print("id: \(x)")
-        
-        return x;
+        return String(data: data, encoding: .utf8)!
+    }
+    static func mock(name: MockMethod, body: [String: Any?]) async {
+        let id = await mockWithId(name: name, body: body)
+        print("Mock(\(name.rawValue)) => \(id)")
     }
     
     static func mockData(name: MockDataMethod, body: [Any]) async -> Any {
@@ -100,7 +100,7 @@ struct Mocker {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("http://localhost:4001", forHTTPHeaderField: "Origin")
         request.httpMethod = "GET"
-
+        
         
         
         let (data, _) :(Data, URLResponse) = try! await URLSession.shared.data(for: request)
@@ -108,10 +108,6 @@ struct Mocker {
         
         return (try! JSONSerialization.jsonObject(with: data, options: []) as! [String: Any])["data"]
     }
-    
-    
-    
-    
     
     static  func mockClearMocks() async {
         let urlStr = "\(Mocker.baseUrl!)/clear-mock"
@@ -136,10 +132,10 @@ struct Mocker {
         await Mocker.mock(name: .mockHostedLoginRefreshToken, body: [
             "partialRequestBody": [:],
             "options":[
-            "success":true,
-            "refreshTokenResponse": mockedUser["refreshTokenResponse"],
-            "refreshTokenCookie": mockedUser["refreshTokenCookie"],
-        ]])
+                "success":true,
+                "refreshTokenResponse": mockedUser["refreshTokenResponse"],
+                "refreshTokenCookie": mockedUser["refreshTokenCookie"],
+            ]])
         await Mocker.mock(name: .mockEmbeddedRefreshToken, body: [
             "options":[
                 "success":true,
