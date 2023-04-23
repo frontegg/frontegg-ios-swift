@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false #if 'true' then one failed job cancels all jobs remaining
       matrix:
-        xcode: [ '14.2.0', '13.4.1' ]
+        xcode: [ '14.2.0' ]
         macos: [ 'macos-latest' ]
         scheme: [ 'demo' ]
         command: [ 'test' ]
@@ -28,13 +28,13 @@ jobs:
       - name: Double-check Xcode.app selected
         run: xcode-select --print-path
       - name: Check xcodebuild version
-        run: xcodebuild -version
+        run: xcodebuild -project demo/demo.xcodeproj -version
       - name: Check xcode embedded SDKs
-        run: xcodebuild -showsdks
+        run: xcodebuild -project demo/demo.xcodeproj -showsdks
       - name: Show buildable schemes
-        run: xcodebuild -list
+        run: xcodebuild -project demo/demo.xcodeproj -list
       - name: Show eligible build destinations for the ${{ matrix.scheme }}
-        run: xcodebuild -showdestinations -scheme ${{ matrix.scheme }}
+        run: xcodebuild -project demo/demo.xcodeproj -showdestinations -scheme ${{ matrix.scheme }}
       - uses: mxcl/xcodebuild@v1.9.2
         with:
           platform: ${{ matrix.platform }}
