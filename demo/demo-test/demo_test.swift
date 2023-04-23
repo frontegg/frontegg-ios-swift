@@ -22,42 +22,42 @@ final class demo_test: XCTestCase {
         // Put teardown code here. This method is called after the invocation of each test method in the class.
     }
     
-    
-    func takeScreenshot(named name: String) {
-        // Take the screenshot
-        let fullScreenshot = XCUIScreen.main.screenshot()
-        
-        // Create a new attachment to save our screenshot
-        // and give it a name consisting of the "named"
-        // parameter and the device name, so we can find
-        // it later.
-        let screenshotAttachment = XCTAttachment(
-            uniformTypeIdentifier: "public.png",
-            name: "Screenshot-\(UIDevice.current.name)-\(name).png",
-            payload: fullScreenshot.pngRepresentation,
-            userInfo: nil)
-            
-        // Usually Xcode will delete attachments after
-        // the test has run; we don't want that!
-        screenshotAttachment.lifetime = .keepAlways
-        
-        // Add the attachment to the test log,
-        // so we can retrieve it later
-        add(screenshotAttachment)
-    }
+//
+//    func takeScreenshot(named name: String) {
+//        // Take the screenshot
+//        let fullScreenshot = XCUIScreen.main.screenshot()
+//
+//        // Create a new attachment to save our screenshot
+//        // and give it a name consisting of the "named"
+//        // parameter and the device name, so we can find
+//        // it later.
+//        let screenshotAttachment = XCTAttachment(
+//            uniformTypeIdentifier: "public.png",
+//            name: "Screenshot-\(UIDevice.current.name)-\(name).png",
+//            payload: fullScreenshot.pngRepresentation,
+//            userInfo: nil)
+//
+//        // Usually Xcode will delete attachments after
+//        // the test has run; we don't want that!
+//        screenshotAttachment.lifetime = .keepAlways
+//
+//        // Add the attachment to the test log,
+//        // so we can retrieve it later
+//        add(screenshotAttachment)
+//    }
     
     func testExample() async throws {
         // UI tests must launch the application that they test.
         
-//        let config = try Mocker.fronteggConfig(bundle:Bundle(for: type(of: self)))
+        let config = try Mocker.fronteggConfig(bundle:Bundle(for: type(of: self)))
         
-//        print("config: \(config)")
-//        let code = UUID().uuidString
-//                await Mocker.mockClearMocks()
-//
-//        await Mocker.mock(name: .mockHostedLoginAuthorize, body:[ "options": ["code":code, "baseUrl": config.baseUrl, "appUrl":config.baseUrl ]])
-//        await Mocker.mock(name: .mockOauthPostlogin, body:[ "options": ["redirectUrl": "\(config.baseUrl)/mobile/oauth/callback?code=\(code)" ]])
-//        await Mocker.mock(name: .mockLogout, body: [:])
+        print("config: \(config)")
+        let code = UUID().uuidString
+        await Mocker.mockClearMocks()
+
+        await Mocker.mock(name: .mockHostedLoginAuthorize, body:[ "options": ["code":code, "baseUrl": config.baseUrl, "appUrl":config.baseUrl ]])
+        await Mocker.mock(name: .mockOauthPostlogin, body:[ "options": ["redirectUrl": "\(config.baseUrl)/mobile/oauth/callback?code=\(code)" ]])
+        await Mocker.mock(name: .mockLogout, body: [:])
         
 
         
@@ -67,8 +67,6 @@ final class demo_test: XCTestCase {
         
         DispatchQueue.main.sync { app.launch() }
         
-        
-//        let config = try Mocker.fronteggConfig(bundle:Bundle(for: type(of: self)))
         
         
         // Check that the app is displaying an activity indicator
@@ -81,7 +79,7 @@ final class demo_test: XCTestCase {
         
         await waitForExpectations(timeout: 10)
         
-        self.takeScreenshot(named: "Overview")
+//        self.takeScreenshot(named: "Overview")
         
 //        let userNameField = app.webViews.textFields["name@example.com"]
 //        if userNameField.waitForExistence(timeout: 5) {

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		410D4A2229F40B050054138C /* FronteggTest.plist in Resources */ = {isa = PBXBuildFile; fileRef = 4132D24E29DBA4D500894922 /* FronteggTest.plist */; };
+		410D4A2529F5930C0054138C /* loginWithPassword_test.swift in Sources */ = {isa = PBXBuildFile; fileRef = 410D4A2429F5930C0054138C /* loginWithPassword_test.swift */; };
 		4132D25129DBAC5700894922 /* FronteggTest.plist in Resources */ = {isa = PBXBuildFile; fileRef = 4132D24E29DBA4D500894922 /* FronteggTest.plist */; };
 		415C00EA29293437007598C8 /* demoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415C00E929293437007598C8 /* demoApp.swift */; };
 		415C00EE29293438007598C8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 415C00ED29293438007598C8 /* Assets.xcassets */; };
@@ -36,6 +37,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		410D4A2429F5930C0054138C /* loginWithPassword_test.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = loginWithPassword_test.swift; sourceTree = "<group>"; };
 		4132D24E29DBA4D500894922 /* FronteggTest.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = FronteggTest.plist; path = "demo-test/FronteggTest.plist"; sourceTree = SOURCE_ROOT; };
 		415C00E629293437007598C8 /* demo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = demo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		415C00E929293437007598C8 /* demoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = demoApp.swift; sourceTree = "<group>"; };
@@ -157,6 +159,7 @@
 		415CE466297DBA8800EDCA18 /* demo-test */ = {
 			isa = PBXGroup;
 			children = (
+				410D4A2429F5930C0054138C /* loginWithPassword_test.swift */,
 				415CE467297DBA8800EDCA18 /* demo_test.swift */,
 				41DB5FBE29F048B8006F3EB6 /* Mocker.swift */,
 			);
@@ -284,6 +287,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				410D4A2529F5930C0054138C /* loginWithPassword_test.swift in Sources */,
 				415CE468297DBA8800EDCA18 /* demo_test.swift in Sources */,
 				41DB5FBF29F048B8006F3EB6 /* Mocker.swift in Sources */,
 			);

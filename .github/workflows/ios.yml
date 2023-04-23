@@ -14,6 +14,14 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@v1.2.3
         with:
           xcode-version: '14.2.0'
+      - name: Clone Mock Server
+        uses: actions/checkout@v3
+        with:
+          repository: frontegg/frontegg-mock-server
+          token: ${{ secrets.GH_REPOSITORY_ADMIN_TOKEN }}
+          path: mocker
+      - name: List Mock Server
+        run: ls -la "./mocker"
       - name: Double-check macOS version (macos-latest)
         run: sw_vers
       - name: Double-check Xcode.app selected
