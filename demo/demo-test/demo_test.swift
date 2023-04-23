@@ -27,6 +27,7 @@ final class demo_test: XCTestCase {
         
         let config = try Mocker.fronteggConfig(bundle:Bundle(for: type(of: self)))
         
+        print("config: \(config)")
         let code = UUID().uuidString
                 await Mocker.mockClearMocks()
         
@@ -91,8 +92,8 @@ final class demo_test: XCTestCase {
         }
         
         
-        let successField = app.webViews.staticTexts["Sccee"]
-        XCTAssert(successField.waitForExistence(timeout: 100))
+        let successField = app.staticTexts["test@frontegg.com"]
+        XCTAssert(successField.waitForExistence(timeout: 5))
         
         
         
