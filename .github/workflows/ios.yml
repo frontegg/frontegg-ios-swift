@@ -7,24 +7,44 @@ on:
     branches: [ "master" ]
 
 jobs:
-  build:
-    name: Build and Test default scheme using any available iPhone simulator
-    runs-on: macos-latest
+  build-and-test:
+    name: ${{ matrix.command }} on  ${{ matrix.platform }} (xcode ${{ matrix.xcode }}, ${{ matrix.macos }})
+    runs-on: ${{ matrix.macos }} #os switching
+    strategy:
+      fail-fast: false #if 'true' then one failed job cancels all jobs remaining
+      matrix:
+        xcode: [ '13.0', '12.5.1', '12.0.1' ]
+        macos: [ 'macos-latest', 'macos-11' ]
+        scheme: [ 'demo' ]
+        project: [ 'demo/demo.xcodeproj']
+        command: [ 'test' ]
+        platform: [ 'iOS' ]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      - name: Build
-        env:
-          scheme: ${{ 'demo' }}
-          platform: ${{ 'iOS Simulator' }}
-        run: |
-          cd demo
-          xcodebuild build-for-testing -scheme "$scheme" -project demo.xcodeproj -destination "platform=$platform,name=iPhone 14 Pro"
-      - name: Test
-        env:
-          scheme: ${{ 'demo' }}
-          platform: ${{ 'iOS Simulator' }}
-        run: |
-          cd demo
-          xcodebuild test-without-building -scheme "$scheme" -project demo.xcodeproj -destination "platform=$platform,name=iPhone 14 Pro"
+      - uses: maxim-lobanov/setup-xcode@v1.2.3
+        with:
+          xcode-version: ${{ matrix.xcode }}
+      - uses: mxcl/xcodebuild@v1.9.2
+        with:
+          platform: ${{ matrix.platform }}
+          scheme: ${{ matrix.scheme }}
+          action: ${{ matrix.command }}
+          project: ${{ matrix.project }}
+          code-coverage: true
+          verbosity: xcpretty
+          upload-logs: always
+#      - name: Build
+#        env:
+#          scheme: ${{ 'demo' }}
+#          platform: ${{ 'iOS Simulator' }}
+#        run: |
+#          xcodebuild build-for-testing -scheme "$scheme" -project demo/demo.xcodeproj -destination "platform=$platform,name=iPhone 14 Pro"
+#      - name: Test
+#        env:
+#          scheme: ${{ 'demo' }}
+#          platform: ${{ 'iOS Simulator' }}
+#        run: |
+#          cd demo
+#          xcodebuild test-without-building -scheme "$scheme" -project demo.xcodeproj -destination "platform=$platform,name=iPhone 14 Pro"
