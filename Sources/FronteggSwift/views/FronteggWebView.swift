@@ -21,7 +21,6 @@ struct FronteggWebView: UIViewRepresentable {
         self.fronteggAuth = FronteggApp.shared.auth;
         
         let userContentController: WKUserContentController = WKUserContentController()
-//        userContentController.add(self, name: "fronteggSwiftHandler")
         
         let conf = WKWebViewConfiguration()
         conf.userContentController = userContentController
@@ -34,7 +33,7 @@ struct FronteggWebView: UIViewRepresentable {
     
     func makeUIView(context: Context) -> WKWebView {
         let url: URL
-        if let appLink = self.fronteggAuth.pendingAppLink {
+        if let appLink = fronteggAuth.appLink {
             url = appLink
         } else {
             url = AuthorizeUrlGenerator().generate()

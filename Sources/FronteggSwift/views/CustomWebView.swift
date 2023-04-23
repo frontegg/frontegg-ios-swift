@@ -22,7 +22,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     
     
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-        logger.trace("navigationAction check for \(navigationAction.request.url)")
+        logger.trace("navigationAction check for \(navigationAction.request.url?.absoluteString ?? "no Url")")
         if let url = navigationAction.request.url {
             let urlType = getOverrideUrlType(url: url)
             
@@ -39,9 +39,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             }
             case .HostedLoginCallback: do {
                 return self.handleHostedLoginCallback(webView, url)
-            }
-            case .SamlCallback: do {
-                return .allow
             }
             case .SocialOauthPreLogin: do {
                 return self.setSocialLoginRedirectUri(webView, url)
@@ -130,13 +127,13 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         var urlComps = URLComponents(string: url.absoluteString)!
         
         if(urlComps.query?.contains("redirectUri") ?? false){
-            logger.trace("redirectUri setted up, forward navigation to webView")
+            logger.trace("redirectUri exist, forward navigation to webView")
             return .allow
         }
         urlComps.queryItems = (urlComps.queryItems ?? []) + queryItems
         
         
-        logger.trace("added redirectUri to socialLogin auth url")
+        logger.trace("added redirectUri to socialLogin auth url \(urlComps.url!)")
         self.fronteggAuth.isLoading = true
         _ = webView.load(URLRequest(url: urlComps.url!))
         return .cancel
