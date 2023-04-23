@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false #if 'true' then one failed job cancels all jobs remaining
       matrix:
-        xcode: [ '14.2.0', '13.4.1']
+        xcode: [ '14.2.0', '13.4.1' ]
         macos: [ 'macos-latest', 'macos-11' ]
         scheme: [ 'demo' ]
         command: [ 'test' ]
