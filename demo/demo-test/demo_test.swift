@@ -25,15 +25,15 @@ final class demo_test: XCTestCase {
     func testExample() async throws {
         // UI tests must launch the application that they test.
         
-        let config = try Mocker.fronteggConfig(bundle:Bundle(for: type(of: self)))
+//        let config = try Mocker.fronteggConfig(bundle:Bundle(for: type(of: self)))
         
-        print("config: \(config)")
-        let code = UUID().uuidString
-                await Mocker.mockClearMocks()
-        
-        await Mocker.mock(name: .mockHostedLoginAuthorize, body:[ "options": ["code":code, "baseUrl": config.baseUrl, "appUrl":config.baseUrl ]])
-        await Mocker.mock(name: .mockOauthPostlogin, body:[ "options": ["redirectUrl": "\(config.baseUrl)/mobile/oauth/callback?code=\(code)" ]])
-        await Mocker.mock(name: .mockLogout, body: [:])
+//        print("config: \(config)")
+//        let code = UUID().uuidString
+//                await Mocker.mockClearMocks()
+//
+//        await Mocker.mock(name: .mockHostedLoginAuthorize, body:[ "options": ["code":code, "baseUrl": config.baseUrl, "appUrl":config.baseUrl ]])
+//        await Mocker.mock(name: .mockOauthPostlogin, body:[ "options": ["redirectUrl": "\(config.baseUrl)/mobile/oauth/callback?code=\(code)" ]])
+//        await Mocker.mock(name: .mockLogout, body: [:])
         
 
         
