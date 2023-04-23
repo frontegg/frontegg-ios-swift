@@ -11,12 +11,15 @@ import Foundation
 enum MockMethod: String {
     case mockEmbeddedRefreshToken
     case mockSSOPrelogin
+    case mockHostedLoginAuthorize
     case mockHostedLoginRefreshToken
+    case mockLogout
     case mockGetMe
     case mockGetMeTenants
     case mockAuthUser
     case mockSessionsConfigurations
     case mockOauthPostlogin
+    
 }
 
 
@@ -30,56 +33,6 @@ struct Mocker {
     static var baseUrl:String!
     static var clientId:String!
 
-    static func mock(name: MockMethod, body: [String: Any?]) async {
-        
-        var urlStr = "http://localhost:4001/mock/\(name.rawValue)"
-        var url = URL(string: urlStr)
-        var request = URLRequest(url: url!)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("http://localhost:4001", forHTTPHeaderField: "Origin")
-        request.httpMethod = "POST"
-        
-        let json = try? JSONSerialization.data(withJSONObject: body)
-        request.httpBody = json
-        
-        let (data, _) :(Data, URLResponse) = try! await URLSession.shared.data(for: request)
-        
-        let x = String(data: data, encoding: .utf8)
-        
-        print("Mock: \(urlStr), id: \(x)")
-    }
-    
-    static func mockData(name: MockDataMethod, body: [Any]) async -> Any {
-
-
-        
-        let jsonData = try? JSONSerialization.data(withJSONObject: body)
-        let jsonStr = String(data:jsonData!, encoding: .utf8)
-        
-        let query = jsonStr!.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
-        
-        let urlStr = "\(Mocker.baseUrl!)/faker/\(name.rawValue)?options=\(query!)";
-        
-        print(urlStr)
-        let url = URL(string: urlStr)
-        
-        print("url: \(url?.absoluteString)")
-        var request = URLRequest(url: url!)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("http://localhost:4001", forHTTPHeaderField: "Origin")
-        request.httpMethod = "GET"
-
-        
-        
-        let (data, _) :(Data, URLResponse) = try! await URLSession.shared.data(for: request)
-        
-        
-        return (try! JSONSerialization.jsonObject(with: data, options: []) as! [String: Any])["data"]
-    }
-    
-    
     
     static func fronteggConfig(bundle:Bundle) throws -> (clientId: String, baseUrl: String) {
         
@@ -109,10 +62,70 @@ struct Mocker {
     
     
     
-    
-    static  func mockSuccessLogin() async {
+    static func mock(name: MockMethod, body: [String: Any?]) async -> String {
         
-        let mockedUser = await Mocker.mockData(name: .generateUser, body: [Mocker.clientId, ["email":"test@frontegg.com"]])
+        let urlStr = "http://localhost:4001/mock/\(name.rawValue)"
+        let url = URL(string: urlStr)
+        var request = URLRequest(url: url!)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("http://localhost:4001", forHTTPHeaderField: "Origin")
+        request.httpMethod = "POST"
+        
+        let json = try? JSONSerialization.data(withJSONObject: body)
+        request.httpBody = json
+        
+        let (data, _) :(Data, URLResponse) = try! await URLSession.shared.data(for: request)
+        
+        let x = String(data: data, encoding: .utf8)!
+        print("id: \(x)")
+        
+        return x;
+    }
+    
+    static func mockData(name: MockDataMethod, body: [Any]) async -> Any {
+        
+        let jsonData = try? JSONSerialization.data(withJSONObject: body)
+        let jsonStr = String(data:jsonData!, encoding: .utf8)
+        
+        let query = jsonStr!.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+        
+        let urlStr = "\(Mocker.baseUrl!)/faker/\(name.rawValue)?options=\(query!)";
+        
+        print(urlStr)
+        let url = URL(string: urlStr)!
+        
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("http://localhost:4001", forHTTPHeaderField: "Origin")
+        request.httpMethod = "GET"
+
+        
+        
+        let (data, _) :(Data, URLResponse) = try! await URLSession.shared.data(for: request)
+        
+        
+        return (try! JSONSerialization.jsonObject(with: data, options: []) as! [String: Any])["data"]
+    }
+    
+    
+    
+    
+    
+    static  func mockClearMocks() async {
+        let urlStr = "\(Mocker.baseUrl!)/clear-mock"
+        let url = URL(string: urlStr)
+        var request = URLRequest(url: url!)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("http://localhost:4001", forHTTPHeaderField: "Origin")
+        request.httpMethod = "POST"
+        _ = try! await URLSession.shared.data(for: request)
+    }
+    static  func mockSuccessPasswordLogin() async {
+        
+        let mockedUser = await Mocker.mockData(name: .generateUser, body: [Mocker.clientId!, ["email":"test@frontegg.com"]])
         as! [String: Any]
         
         var authUserOptions: [String: Any] = [

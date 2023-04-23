@@ -26,9 +26,15 @@ final class demo_test: XCTestCase {
         // UI tests must launch the application that they test.
         
         let config = try Mocker.fronteggConfig(bundle:Bundle(for: type(of: self)))
-//        await Mocker.mockSuccessLogin()
-//        return
         
+        let code = UUID().uuidString
+                await Mocker.mockClearMocks()
+        
+        await Mocker.mock(name: .mockHostedLoginAuthorize, body:[ "options": ["code":code, "baseUrl": config.baseUrl, "appUrl":config.baseUrl ]])
+        await Mocker.mock(name: .mockOauthPostlogin, body:[ "options": ["redirectUrl": "\(config.baseUrl)/mobile/oauth/callback?code=\(code)" ]])
+        await Mocker.mock(name: .mockLogout, body: [:])
+        
+
         
         let app = XCUIApplication()
         
@@ -76,7 +82,7 @@ final class demo_test: XCTestCase {
         }
         
         
-        await Mocker.mockSuccessLogin()
+        await Mocker.mockSuccessPasswordLogin()
         
         let signInButton = app.webViews.buttons["Sign in"]
         XCTAssert(signInButton.waitForExistence(timeout: 5))
