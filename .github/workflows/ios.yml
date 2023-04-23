@@ -3,8 +3,6 @@ name: iOS starter workflow
 on:
   push:
     ignore-branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
 
 jobs:
   build-and-test:
@@ -16,7 +14,6 @@ jobs:
         xcode: [ '13.0', '12.5.1', '12.0.1' ]
         macos: [ 'macos-latest', 'macos-11' ]
         scheme: [ 'demo' ]
-        project: [ 'demo/demo.xcodeproj']
         command: [ 'test' ]
         platform: [ 'iOS' ]
 
@@ -31,7 +28,7 @@ jobs:
           platform: ${{ matrix.platform }}
           scheme: ${{ matrix.scheme }}
           action: ${{ matrix.command }}
-          project: ${{ matrix.project }}
+          working-directory: "demo"
           code-coverage: true
           verbosity: xcpretty
           upload-logs: always
