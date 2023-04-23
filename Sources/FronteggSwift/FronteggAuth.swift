@@ -49,7 +49,7 @@ public class FronteggAuth: ObservableObject {
         self.api = api
         
         self.$initializing.combineLatest(self.$isAuthenticated, self.$isLoading).sink(){ (initializingValue, isAuthenticatedValue, isLoadingValue) in
-                            self.showLoader = initializingValue || (!isAuthenticatedValue && isLoadingValue)
+            self.showLoader = initializingValue || (!isAuthenticatedValue && isLoadingValue)
         }.store(in: &subscribers)
         
         if let refreshToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue),
@@ -65,8 +65,8 @@ public class FronteggAuth: ObservableObject {
                 }
             }
         }else {
-                self.isLoading = false
-                self.initializing = false
+            self.isLoading = false
+            self.initializing = false
         }
     }
     
@@ -111,25 +111,33 @@ public class FronteggAuth: ObservableObject {
         }
     }
     
-    public func logout(){
+    public func logout() {
         self.isLoading = true
         
-        let dataStore = WKWebsiteDataStore.default()
-        dataStore.fetchDataRecords(ofTypes: [WKWebsiteDataTypeCookies]) { records in
-            dataStore.removeData(
-                ofTypes: [WKWebsiteDataTypeCookies],
-                for: records.filter { _ in true }) {
-                    self.credentialManager.clear()
-                    
-                    DispatchQueue.main.async {
-                        self.isAuthenticated = false
-                        self.isLoading = false
-                        self.user = nil
-                        self.accessToken = nil
-                        self.refreshToken = nil
-                        self.initializing = false
-                    }
+        DispatchQueue.global(qos: .userInitiated).async {
+            Task {
+                try? await self.api.logout(refreshToken: self.refreshToken ?? "")
+            }
+            DispatchQueue.main.sync {
+                let dataStore = WKWebsiteDataStore.default()
+                dataStore.fetchDataRecords(ofTypes: [WKWebsiteDataTypeCookies]) { records in
+                    dataStore.removeData(
+                        ofTypes: [WKWebsiteDataTypeCookies],
+                        for: records.filter { _ in true }) {
+                            self.credentialManager.clear()
+                            
+                            DispatchQueue.main.async {
+                                self.isAuthenticated = false
+                                self.isLoading = false
+                                self.user = nil
+                                self.accessToken = nil
+                                self.refreshToken = nil
+                                self.initializing = false
+                            }
+                        }
                 }
+            }
+            
         }
         
     }

@@ -24,20 +24,22 @@ final class demo_test: XCTestCase {
     
     func testExample() async throws {
         // UI tests must launch the application that they test.
+        
+        let config = try Mocker.fronteggConfig(bundle:Bundle(for: type(of: self)))
+//        await Mocker.mockSuccessLogin()
+//        return
+        
+        
         let app = XCUIApplication()
         
         app.launchEnvironment = ["frontegg-testing":"true"]
         
-        
-        await Mocker.mock(name: "mockHostedLoginAuthorize", body: [
-            "options": ["code": "12321321"]
-        ]);
-        
-        await Mocker.mock(name: "mockEmbeddedRefreshToken", body: [
-            "options": ["success": false]
-        ]);
-        
         DispatchQueue.main.sync { app.launch() }
+        
+        
+//        let config = try Mocker.fronteggConfig(bundle:Bundle(for: type(of: self)))
+        
+        
         // Check that the app is displaying an activity indicator
         let activityIndicator = app.otherElements["LoaderView"]
         
@@ -52,9 +54,11 @@ final class demo_test: XCTestCase {
         if userNameField.waitForExistence(timeout: 5) {
             DispatchQueue.main.sync {
                 userNameField.tap()
-                userNameField.typeText("david+123123@frontegg.com")
+                userNameField.typeText("test@frontegg.com")
             }
         }
+        
+        await Mocker.mock(name: .mockSSOPrelogin, body: [ "options": ["success": false]])
         
         let continueButton = app.webViews.buttons["Continue"]
         XCTAssert(continueButton.waitForExistence(timeout: 5))
@@ -67,9 +71,12 @@ final class demo_test: XCTestCase {
         if passwordField.waitForExistence(timeout: 5) {
             DispatchQueue.main.sync {
                 passwordField.tap()
-                passwordField.typeText("123123Davd!")
+                passwordField.typeText("TestTest")
             }
         }
+        
+        
+        await Mocker.mockSuccessLogin()
         
         let signInButton = app.webViews.buttons["Sign in"]
         XCTAssert(signInButton.waitForExistence(timeout: 5))
@@ -78,9 +85,9 @@ final class demo_test: XCTestCase {
         }
         
         
-        
         let successField = app.webViews.staticTexts["Sccee"]
-        XCTAssert(successField.waitForExistence(timeout: 10))
+        XCTAssert(successField.waitForExistence(timeout: 100))
+        
         
         
         

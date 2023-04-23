@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		410D4A2229F40B050054138C /* FronteggTest.plist in Resources */ = {isa = PBXBuildFile; fileRef = 4132D24E29DBA4D500894922 /* FronteggTest.plist */; };
 		4132D25129DBAC5700894922 /* FronteggTest.plist in Resources */ = {isa = PBXBuildFile; fileRef = 4132D24E29DBA4D500894922 /* FronteggTest.plist */; };
 		415C00EA29293437007598C8 /* demoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415C00E929293437007598C8 /* demoApp.swift */; };
 		415C00EE29293438007598C8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 415C00ED29293438007598C8 /* Assets.xcassets */; };
@@ -20,7 +21,6 @@
 		415C011B29293730007598C8 /* TasksTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415C011629293730007598C8 /* TasksTab.swift */; };
 		415C0128292A3F23007598C8 /* FronteggSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 415C0127292A3F23007598C8 /* FronteggSwift */; };
 		415CE468297DBA8800EDCA18 /* demo_test.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415CE467297DBA8800EDCA18 /* demo_test.swift */; };
-		415CE46A297DBA8800EDCA18 /* demo_testLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415CE469297DBA8800EDCA18 /* demo_testLaunchTests.swift */; };
 		41D0537A294920A800A54D16 /* LoaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41D05379294920A800A54D16 /* LoaderView.swift */; };
 		41DB5FBF29F048B8006F3EB6 /* Mocker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41DB5FBE29F048B8006F3EB6 /* Mocker.swift */; };
 /* End PBXBuildFile section */
@@ -51,7 +51,6 @@
 		415C0125292A3ED1007598C8 /* frontegg-swift */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = "frontegg-swift"; path = ..; sourceTree = "<group>"; };
 		415CE465297DBA8800EDCA18 /* demo-test.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "demo-test.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		415CE467297DBA8800EDCA18 /* demo_test.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = demo_test.swift; sourceTree = "<group>"; };
-		415CE469297DBA8800EDCA18 /* demo_testLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = demo_testLaunchTests.swift; sourceTree = "<group>"; };
 		41A7329C292D9859004A22D2 /* demo.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = demo.entitlements; sourceTree = "<group>"; };
 		41D05379294920A800A54D16 /* LoaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoaderView.swift; sourceTree = "<group>"; };
 		41DB5FBE29F048B8006F3EB6 /* Mocker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mocker.swift; sourceTree = "<group>"; };
@@ -159,7 +158,6 @@
 			isa = PBXGroup;
 			children = (
 				415CE467297DBA8800EDCA18 /* demo_test.swift */,
-				415CE469297DBA8800EDCA18 /* demo_testLaunchTests.swift */,
 				41DB5FBE29F048B8006F3EB6 /* Mocker.swift */,
 			);
 			path = "demo-test";
@@ -260,6 +258,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				410D4A2229F40B050054138C /* FronteggTest.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -286,7 +285,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				415CE468297DBA8800EDCA18 /* demo_test.swift in Sources */,
-				415CE46A297DBA8800EDCA18 /* demo_testLaunchTests.swift in Sources */,
 				41DB5FBF29F048B8006F3EB6 /* Mocker.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

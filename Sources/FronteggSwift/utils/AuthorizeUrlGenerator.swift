@@ -51,7 +51,7 @@ class AuthorizeUrlGenerator {
         
         var authorizeUrl = URLComponents(string: baseUrl)!
         
-        authorizeUrl.path = "/oauth/authorize"
+        authorizeUrl.path = "/frontegg/oauth/authorize"
         authorizeUrl.queryItems = [
             URLQueryItem(name: "redirect_uri", value: URLConstants.generateRedirectUri(baseUrl)),
             URLQueryItem(name: "response_type", value: "code"),

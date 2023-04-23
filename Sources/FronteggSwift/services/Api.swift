@@ -23,7 +23,7 @@ public class Api {
     
     
     
-    private func postRequest(path:String, body: [String: Any?]) async throws -> (Data, URLResponse) {
+    private func postRequest(path:String, body: [String: Any?], additionalHeaders: [String: String] = [:]) async throws -> (Data, URLResponse) {
         let urlStr = "\(self.baseUrl)/\(path)"
         guard let url = URL(string: urlStr) else {
             throw ApiError.invalidUrl("invalid url: \(urlStr)")
@@ -33,6 +33,10 @@ public class Api {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
+        
+        additionalHeaders.forEach({ (key: String, value: String) in
+            request.setValue(value, forHTTPHeaderField: key)
+        })
         
         if let accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
             request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "authorization")
@@ -97,5 +101,10 @@ public class Api {
         
         return try JSONDecoder().decode(User.self, from: data)
     }
+    
+    internal func logout(refreshToken: String) async throws {
+        try await postRequest(path: "identity/resources/auth/v1/logout", body: ["refreshToken":refreshToken])
+    }
+    
     
 }
