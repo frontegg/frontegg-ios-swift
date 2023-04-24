@@ -11,6 +11,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+      - uses: mikehardy/buildcache-action@v2
       - uses: maxim-lobanov/setup-xcode@v1.2.3
         with:
           xcode-version: '14.2.0'
@@ -41,4 +42,10 @@ jobs:
         run: xcodebuild -project demo/demo.xcodeproj -showdestinations -scheme "demo"
       - name: Test
         working-directory: "demo"
-        run: xcodebuild test -scheme "demo" -project "demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 14 Pro" -configuration "Debug" -resultBundlePath "test.xcresult" -enableCodeCoverage "YES"
+        run: xcodebuild CC=clang CPLUSPLUS=clang++ LD=clang LDPLUSPLUS=clang++ test -scheme "demo" -project "demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 14 Pro" -configuration "Debug" -resultBundlePath "test.xcresult" -enableCodeCoverage "YES"
+      - name: "Upload test results"
+        uses: actions/upload-artifact@v3
+        working-directory: "demo"
+        with:
+          name: 'test.xcresult'
+          path: test.xcresult
