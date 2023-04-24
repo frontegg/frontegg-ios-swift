@@ -8,3 +8,4 @@ DerivedData/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
 demo/demo/associated-domain-example/node_modules
+demo/test.xcresult

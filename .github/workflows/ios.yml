@@ -41,9 +41,4 @@ jobs:
         run: xcodebuild -project demo/demo.xcodeproj -showdestinations -scheme "demo"
       - name: Test
         working-directory: "demo"
-        run: xcodebuild test -scheme "demo"\
-          -project "demo.xcodeproj" \
-          -destination "platform=$platform,name=iPhone 14 Pro" \
-          -configuration "Debug" \
-          -resultBundlePath "test.xcresult" \
-          -enableCodeCoverage "YES"
+        run: xcodebuild test -scheme "demo" -project "demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 14 Pro" -configuration "Debug" -resultBundlePath "test.xcresult" -enableCodeCoverage "YES"
