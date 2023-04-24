@@ -35,26 +35,24 @@ final class demo_test: XCTestCase {
         await waitForLoader(app)
         
         
-        takeScreenshot(named: "Overview")
+        let userNameField = app.webViews.textFields["name@example.com"]
+        XCTAssertuserNameField.waitForExistence(timeout: 5))
         
+        takeScreenshot(named: "LoginPage")
+        DispatchQueue.main.sync {
+            userNameField.tap()
+            userNameField.typeText("test@frontegg.com")
+        }
         
-        //        let userNameField = app.webViews.textFields["name@example.com"]
-        //        if userNameField.waitForExistence(timeout: 5) {
-        //            DispatchQueue.main.sync {
-        //                userNameField.tap()
-        //                userNameField.typeText("test@frontegg.com")
-        //            }
-        //        }
-        //
-        //        await Mocker.mock(name: .mockSSOPrelogin, body: [ "options": ["success": false]])
-        //
-        //        let continueButton = app.webViews.buttons["Continue"]
-        //        XCTAssert(continueButton.waitForExistence(timeout: 5))
-        //
-        //        DispatchQueue.main.sync {
-        //            continueButton.tap()
-        //        }
-        //
+        await Mocker.mock(name: .mockSSOPrelogin, body: [ "options": ["success": false]])
+        
+        let continueButton = app.webViews.buttons["Continue"]
+        XCTAssert(continueButton.waitForExistence(timeout: 5))
+        
+        takeScreenshot(named: "PreLogin")
+        DispatchQueue.main.sync {continueButton.tap()}
+        
+        //        let passwordField = app.webViews.secureTextFields["Set a password"]
         //        let passwordField = app.webViews.secureTextFields["Set a password"]
         //        if passwordField.waitForExistence(timeout: 5) {
         //            DispatchQueue.main.sync {
