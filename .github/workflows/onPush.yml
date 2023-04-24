@@ -44,8 +44,10 @@ jobs:
         run: xcodebuild -project demo/demo.xcodeproj -list
       - name: Show eligible build destinations for the "demo"
         run: xcodebuild -project demo/demo.xcodeproj -showdestinations -scheme "demo"
-      - name: Build and Test
-        run: xcodebuild CC=clang CPLUSPLUS=clang++ -derivedDataPath demo/build LD=clang LDPLUSPLUS=clang++ test -scheme "demo" -project "demo/demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 14 Pro" -configuration "Debug" -resultBundlePath "test.xcresult" -enableCodeCoverage "YES"
+      - name: Build for Testing
+        run: xcodebuild CC=clang CPLUSPLUS=clang++ -derivedDataPath demo/build LD=clang LDPLUSPLUS=clang++ build-for-testing -scheme "demo" -project "demo/demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 14 Pro" -configuration "Debug" -enableCodeCoverage "YES"
+#      - name: Test without Building
+#        run: xcodebuild CC=clang CPLUSPLUS=clang++ -derivedDataPath demo/build LD=clang LDPLUSPLUS=clang++ test-without-building -scheme "demo" -project "demo/demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 14 Pro" -configuration "Debug" -resultBundlePath "test.xcresult" -enableCodeCoverage "YES"
       - name: "Upload test results"
         if: success() || failure()
         uses: actions/upload-artifact@v3
