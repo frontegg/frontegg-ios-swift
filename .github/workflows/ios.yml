@@ -39,25 +39,11 @@ jobs:
         run: xcodebuild -project demo/demo.xcodeproj -list
       - name: Show eligible build destinations for the "demo"
         run: xcodebuild -project demo/demo.xcodeproj -showdestinations -scheme "demo"
-      - uses: mxcl/xcodebuild@v1.9.2
-        with:
-          platform: "iOS"
-          scheme: "demo"
-          action: "test"
-          working-directory: "demo"
-          code-coverage: false
-          verbosity: xcpretty
-          upload-logs: always
-#      - name: Build
-#        env:
-#          scheme: ${{ 'demo' }}
-#          platform: ${{ 'iOS Simulator' }}
-#        run: |
-#          xcodebuild build-for-testing -scheme "$scheme" -project demo/demo.xcodeproj -destination "platform=$platform,name=iPhone 14 Pro"
-#      - name: Test
-#        env:
-#          scheme: ${{ 'demo' }}
-#          platform: ${{ 'iOS Simulator' }}
-#        run: |
-#          cd demo
-#          xcodebuild test-without-building -scheme "$scheme" -project demo.xcodeproj -destination "platform=$platform,name=iPhone 14 Pro"
+      - name: Test
+        working-directory: "demo"
+        run: xcodebuild test -scheme "demo"\
+          -project "demo.xcodeproj" \
+          -destination "platform=$platform,name=iPhone 14 Pro" \
+          -configuration "Debug" \
+          -resultBundlePath "test.xcresult" \
+          -enableCodeCoverage "YES"
