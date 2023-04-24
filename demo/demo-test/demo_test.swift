@@ -36,7 +36,7 @@ final class demo_test: XCTestCase {
         
         
         let userNameField = app.webViews.textFields["name@example.com"]
-        XCTAssertuserNameField.waitForExistence(timeout: 5))
+        XCTAssert(userNameField.waitForExistence(timeout: 5))
         
         takeScreenshot(named: "LoginPage")
         DispatchQueue.main.sync {
@@ -47,6 +47,7 @@ final class demo_test: XCTestCase {
         await Mocker.mock(name: .mockSSOPrelogin, body: [ "options": ["success": false]])
         
         let continueButton = app.webViews.buttons["Continue"]
+        
         XCTAssert(continueButton.waitForExistence(timeout: 5))
         
         takeScreenshot(named: "PreLogin")

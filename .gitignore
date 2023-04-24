@@ -9,3 +9,5 @@ DerivedData/
 .netrc
 demo/demo/associated-domain-example/node_modules
 demo/test.xcresult
+demo/build
+test.xcresult
