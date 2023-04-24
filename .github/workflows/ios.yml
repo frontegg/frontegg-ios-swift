@@ -44,7 +44,7 @@ jobs:
         working-directory: "demo"
         run: xcodebuild CC=clang CPLUSPLUS=clang++ LD=clang LDPLUSPLUS=clang++ test -scheme "demo" -project "demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 14 Pro" -configuration "Debug" -resultBundlePath "test.xcresult" -enableCodeCoverage "YES"
       - name: "Upload test results"
-        if: !cancelled()
+        if: success() || failure()
         uses: actions/upload-artifact@v3
         with:
           name: 'test.xcresult'
