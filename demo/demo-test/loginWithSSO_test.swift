@@ -49,38 +49,5 @@ final class loginWithSSO_test: XCTestCase {
             userNameField.typeText("test@frontegg.com")
         }
         
-//        await Mocker.mock(name: .mockSSOPrelogin, body: [ "options": ["success": true]])
-        
-//        let continueButton = app.webViews.buttons["Continue"]
-//
-//        XCTAssert(continueButton.waitForExistence(timeout: 5))
-//
-//        takeScreenshot(named: "PreLogin")
-//        DispatchQueue.main.sync {continueButton.tap()}
-//
-//        let passwordField = app.webViews.secureTextFields["Enter your password"]
-//        XCTAssert(passwordField.waitForExistence(timeout: 5))
-//        DispatchQueue.main.sync {
-//            passwordField.tap()
-//            passwordField.typeText("TestTest")
-//        }
-//
-//        await Mocker.mockSuccessPasswordLogin(code)
-//
-//
-//
-//        let signInButton = app.webViews.buttons["Sign in"]
-//        XCTAssert(signInButton.waitForExistence(timeout: 5))
-//        DispatchQueue.main.sync { signInButton.tap() }
-//
-//
-//        let successField = app.staticTexts["test@frontegg.com"]
-//        XCTAssert(successField.waitForExistence(timeout: 100))
-//
-//        DispatchQueue.main.sync { app.terminate() }
-//
-//        let relaunchApp = launchApp()
-//
-//        XCTAssert(relaunchApp.staticTexts["test@frontegg.com"].waitForExistence(timeout: 100))
     }
 }
