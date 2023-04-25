@@ -59,10 +59,23 @@ extension XCUIApplication {
     func getWebInput(_ text: String) -> XCUIElement {
         return self.webViews.textFields[text].waitUntilExists()
     }
-    
+    func waitWebInput(_ text: String) {
+        self.webViews.textFields[text].waitUntilExists()
+    }
     
     func getWebPasswordInput(_ text: String) -> XCUIElement {
         return self.webViews.secureTextFields[text].waitUntilExists()
+    }
+    func waitWebPasswordInput(_ text: String) {
+        self.webViews.secureTextFields[text].waitUntilExists()
+    }
+    
+    func getWebLabel(_ text: String) -> XCUIElement {
+        return self.webViews.staticTexts[text].waitUntilExists()
+    }
+    
+    func waitWebLabel(_ text: String) {
+        self.webViews.staticTexts[text].waitUntilExists()
     }
 }
 

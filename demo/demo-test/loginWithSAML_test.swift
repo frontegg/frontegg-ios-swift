@@ -1,5 +1,5 @@
 //
-//  loginWithSSO_test.swift
+//  loginWithSAML_test.swift
 //  demo-test
 //
 //  Created by David Frontegg on 25/04/2023.
@@ -7,7 +7,7 @@
 
 import XCTest
 
-final class loginWithSSO_test: XCTestCase {
+final class loginWithSAML_test: XCTestCase {
     
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -17,7 +17,7 @@ final class loginWithSSO_test: XCTestCase {
     }
     
     
-    func testLoginWithSSO() async throws {
+    func testLoginWithSAML() async throws {
         
         let config = try Mocker.fronteggConfig(bundle:Bundle(for: type(of: self)))
         await Mocker.mockClearMocks()
@@ -54,7 +54,7 @@ final class loginWithSSO_test: XCTestCase {
         app.getWebButton("Continue").safeTap()
         
         
-        let passwordField = app.getWebPasswordInput("Password is required")
+        app.waitWebPasswordInput("Password is required")
         takeScreenshot(named: "PreLoginPassword")
         
         
@@ -63,10 +63,10 @@ final class loginWithSSO_test: XCTestCase {
         app.getWebButton("Continue").safeTap()
         
         
-        let oktaLabel = app.webViews.staticTexts["OKTA SAML Mock Server"]
-        XCTAssert(oktaLabel.waitForExistence(timeout: 5))
+        app.waitWebLabel("OKTA SAML Mock Server")
         
-        await Mocker.mock(name: .mockSSOAuthCallback, body: ["options":[
+        
+        await Mocker.mock(name: .mockSSOAuthSamlCallback, body: ["options":[
             "success": false,
             "baseUrl": config.baseUrl,
         ]])
@@ -76,34 +76,19 @@ final class loginWithSSO_test: XCTestCase {
         app.getWebButton("Login With Okta").safeTap()
         
         
-        DispatchQueue.main.sync {
-            
-            let backToLoginButton = app.webViews.staticTexts["Back to Sign-in"]
-            backToLoginButton.waitUntilExists().tap()
-            
-            takeScreenshot(named: "Invalid Saml")
-        }
+        let backToLoginButton = app.getWebLabel("Back to Sign-in")
+        takeScreenshot(named: "Invalid Saml")
+        backToLoginButton.safeTap()
         
-        DispatchQueue.main.sync {
-            let emailField = app.webViews.textFields["Email is required"]
-                .waitUntilExists()
-            emailField.tap()
-            emailField.typeText("test@saml-domain.com")
-        }
         
+        app.getWebInput("Email is required").safeTypeText("test@saml-domain.com")
 
-        
-        DispatchQueue.main.sync {
-            app.webViews.buttons["Continue"].waitUntilExists().tap()
-            
-        }
+        app.getWebButton("Continue").safeTap()
         
         
         await Mocker.mockSuccessSamlLogin(code)
-        DispatchQueue.main.sync {
-            app.webViews.buttons["Login With Okta"].waitUntilExists().tap()
-            
-        }
+        
+        app.getWebButton("Login With Okta").safeTap()
         
         
         let successField = app.staticTexts["test@saml-domain.com"]
@@ -117,4 +102,6 @@ final class loginWithSSO_test: XCTestCase {
         
         
     }
+    
+    
 }
