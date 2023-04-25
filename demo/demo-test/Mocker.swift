@@ -21,6 +21,8 @@ enum MockMethod: String {
     case mockAuthUser
     case mockSessionsConfigurations
     case mockOauthPostlogin
+    case mockVendorConfig
+    case mockPreLoginWithMagicLink
     
 }
 

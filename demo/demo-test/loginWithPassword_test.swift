@@ -41,7 +41,7 @@ final class loginWithPassword_test: XCTestCase {
         
         await waitForLoader(app)
         
-        let userNameField = app.getWebInput("name@example.com")
+        let userNameField = app.getWebInput("Email is required")
 
         takeScreenshot(named: "LoginPage")
         
