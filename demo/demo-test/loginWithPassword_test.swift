@@ -7,6 +7,7 @@
 
 import XCTest
 
+
 final class loginWithPassword_test: XCTestCase {
     
     override func setUpWithError() throws {
@@ -40,47 +41,39 @@ final class loginWithPassword_test: XCTestCase {
         
         await waitForLoader(app)
         
-        let userNameField = app.webViews.textFields["name@example.com"]
-        XCTAssert(userNameField.waitForExistence(timeout: 5))
-        
+        let userNameField = app.getWebInput("name@example.com")
+
         takeScreenshot(named: "LoginPage")
-        DispatchQueue.main.sync {
-            userNameField.tap()
-            userNameField.typeText("test@frontegg.com")
-        }
+        
+        userNameField.safeTypeText("test@frontegg.com")
+        
         
         await Mocker.mock(name: .mockSSOPrelogin, body: [ "options": ["success": false]])
         
-        let continueButton = app.webViews.buttons["Continue"]
-        
-        XCTAssert(continueButton.waitForExistence(timeout: 5))
+        let continueButton = app.getWebButton("Continue")
         
         takeScreenshot(named: "PreLogin")
-        DispatchQueue.main.sync {continueButton.tap()}
+        continueButton.safeTap()
         
-        let passwordField = app.webViews.secureTextFields["Enter your password"]
-        XCTAssert(passwordField.waitForExistence(timeout: 5))
-        DispatchQueue.main.sync {
-            passwordField.tap()
-            passwordField.typeText("TestTest")
-        }
+        
+        let passwordField = app.getWebPasswordInput("Password is required")
+        
+        passwordField.safeTypeText("Testpassword")
+        
         
         await Mocker.mockSuccessPasswordLogin(code)
         
         
-        
-        let signInButton = app.webViews.buttons["Sign in"]
-        XCTAssert(signInButton.waitForExistence(timeout: 5))
-        DispatchQueue.main.sync { signInButton.tap() }
+        app.getWebButton("Sign in").safeTap()
         
         
         let successField = app.staticTexts["test@frontegg.com"]
-        XCTAssert(successField.waitForExistence(timeout: 100))
+        XCTAssert(successField.waitForExistence(timeout: 10))
         
         DispatchQueue.main.sync { app.terminate() }
         
         let relaunchApp = launchApp()
         
-        XCTAssert(relaunchApp.staticTexts["test@frontegg.com"].waitForExistence(timeout: 100))
+        XCTAssert(relaunchApp.staticTexts["test@frontegg.com"].waitForExistence(timeout: 10))
     }    
 }

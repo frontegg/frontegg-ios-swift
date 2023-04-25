@@ -40,39 +40,27 @@ final class loginWithSSO_test: XCTestCase {
         
         await waitForLoader(app)
         
-        let userNameField = app.webViews.textFields["Email is required"]
+        let userNameField = app.getWebInput("Email is required")
         
         
         takeScreenshot(named: "LoginPage")
-        DispatchQueue.main.sync {
-            userNameField.waitUntilExists().tap()
-            userNameField.typeText("test@frontegg.com")
-        }
+        
+        userNameField.safeTypeText("test@frontegg.com")
         
         await Mocker.mock(name: .mockSSOPrelogin, body: ["options": ["success":"true", "idpType": "saml"],
                                                          "partialRequestBody": ["email": "test@saml-domain.com"]])
         
-        let continueButton = app.webViews.buttons["Continue"]
-        DispatchQueue.main.sync {
-            continueButton.waitUntilExists().tap()
-        }
+        
+        app.getWebButton("Continue").safeTap()
         
         
-        let passwordField = app.webViews.secureTextFields["Enter your password"]
-        XCTAssert(passwordField.waitForExistence(timeout: 5))
+        let passwordField = app.getWebPasswordInput("Password is required")
         takeScreenshot(named: "PreLoginPassword")
         
         
-        DispatchQueue.main.sync {
-            userNameField.waitUntilExists().tap()
-            userNameField.press(forDuration: 1)
-            app.collectionViews.staticTexts["Select All"].waitUntilExists().tap()
-            userNameField.clearAndEnterText(text: "test@saml-domain.com")
-        }
+        userNameField.clearAndEnterText(app: app, "test@saml-domain.com")
         
-        
-        XCTAssert(continueButton.waitForExistence(timeout: 5))
-        DispatchQueue.main.sync {continueButton.tap()}
+        app.getWebButton("Continue").safeTap()
         
         
         let oktaLabel = app.webViews.staticTexts["OKTA SAML Mock Server"]
@@ -85,9 +73,10 @@ final class loginWithSSO_test: XCTestCase {
         
         
         
+        app.getWebButton("Login With Okta").safeTap()
+        
+        
         DispatchQueue.main.sync {
-            app.webViews.buttons["Login With Okta"].waitUntilExists().tap()
-            
             
             let backToLoginButton = app.webViews.staticTexts["Back to Sign-in"]
             backToLoginButton.waitUntilExists().tap()

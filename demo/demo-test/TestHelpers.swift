@@ -49,44 +49,80 @@ extension XCTestCase {
     }
 }
 
+
+extension XCUIApplication {
+    
+    func getWebButton(_ text: String) ->XCUIElement {
+        return self.webViews.buttons[text].waitUntilExists()
+    }
+    
+    func getWebInput(_ text: String) -> XCUIElement {
+        return self.webViews.textFields[text].waitUntilExists()
+    }
+    
+    
+    func getWebPasswordInput(_ text: String) -> XCUIElement {
+        return self.webViews.secureTextFields[text].waitUntilExists()
+    }
+}
+
 extension XCUIElement {
     /**
      Removes any current text in the field before typing in the new value
      - Parameter text: the text to enter into the field
      */
-    func clearAndEnterText(text: String) {
+    func clearAndEnterText(app: XCUIApplication, _ text: String) {
         guard let stringValue = self.value as? String else {
             XCTFail("Tried to clear and enter text into a non string value")
             return
         }
-
-        self.tap()
-
-        let deleteString = String(repeating: XCUIKeyboardKey.delete.rawValue, count: stringValue.count)
-
-        self.typeText(deleteString)
-        self.typeText(text)
+        
+        self.safeTap()
+        
+        DispatchQueue.main.sync {
+            
+            self.press(forDuration: 1)
+            app.collectionViews.staticTexts["Select All"].waitUntilExists().tap()
+            
+            let deleteString = String(repeating: XCUIKeyboardKey.delete.rawValue, count: stringValue.count)
+            
+            self.typeText(deleteString)
+            self.typeText(text)
+        }
     }
     func clearText() {
-            guard let stringValue = self.value as? String else {
-                return
-            }
-            // workaround for apple bug
-            if let placeholderString = self.placeholderValue, placeholderString == stringValue {
-                return
-            }
-
-            var deleteString = String()
-            for _ in stringValue {
-                deleteString += XCUIKeyboardKey.delete.rawValue
-            }
-            typeText(deleteString)
+        guard let stringValue = self.value as? String else {
+            return
         }
+        // workaround for apple bug
+        if let placeholderString = self.placeholderValue, placeholderString == stringValue {
+            return
+        }
+        
+        var deleteString = String()
+        for _ in stringValue {
+            deleteString += XCUIKeyboardKey.delete.rawValue
+        }
+        typeText(deleteString)
+    }
     
-    func waitUntilExists(timeout: TimeInterval = 5, file: StaticString = #file, line: UInt = #line) -> XCUIElement {
-
+    func waitUntilExists(timeout: TimeInterval = 20, file: StaticString = #file, line: UInt = #line) -> XCUIElement {
         XCTAssert(self.waitForExistence(timeout: timeout))
-            
-                return self
+        return self
+    }
+    
+    
+    
+    func safeTap(){
+        DispatchQueue.main.sync {
+            self.tap()
         }
+    }
+    
+    func safeTypeText(_ text:String) {
+        self.safeTap()
+        DispatchQueue.main.sync {
+            self.typeText(text)
+        }
+    }
 }
