@@ -40,9 +40,9 @@ jobs:
       - name: Show eligible build destinations for the "demo"
         run: xcodebuild -project demo/demo.xcodeproj -showdestinations -scheme "demo"
       - name: Build for Testing
-        run: xcodebuild CC=clang CPLUSPLUS=clang++ -derivedDataPath demo/build LD=clang LDPLUSPLUS=clang++ build-for-testing -scheme "demo" -project "demo/demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 14 Pro" -configuration "Debug" -enableCodeCoverage "YES"
+        run: xcodebuild CC=clang CPLUSPLUS=clang++ LD=clang LDPLUSPLUS=clang++ build-for-testing -scheme "demo" -project "demo/demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 14 Pro" -configuration "Debug" -enableCodeCoverage "YES"
       - name: Test without Building
-        run: xcodebuild CC=clang CPLUSPLUS=clang++ -derivedDataPath demo/build LD=clang LDPLUSPLUS=clang++ test-without-building -scheme "demo" -project "demo/demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 14 Pro" -configuration "Debug" -resultBundlePath "TestResults" -enableCodeCoverage "YES"
+        run: xcodebuild CC=clang CPLUSPLUS=clang++ LD=clang LDPLUSPLUS=clang++ test-without-building -scheme "demo" -project "demo/demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 14 Pro" -configuration "Debug" -resultBundlePath "TestResults" -enableCodeCoverage "YES"
       - name: "Parse Test XCResults"
         uses: kishikawakatsumi/xcresulttool@v1
         if: success() || failure()
