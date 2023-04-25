@@ -84,13 +84,9 @@ extension XCUIElement {
         }
     
     func waitUntilExists(timeout: TimeInterval = 5, file: StaticString = #file, line: UInt = #line) -> XCUIElement {
-            let elementExists = waitForExistence(timeout: timeout)
-            if elementExists {
-                return self
-            } else {
-                XCTFail("Could not find \(self) before timeout", file: file, line: line)
-            }
+
+        XCTAssert(self.waitForExistence(timeout: timeout))
             
-            return self
+                return self
         }
 }

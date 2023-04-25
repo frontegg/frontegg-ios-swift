@@ -78,23 +78,53 @@ final class loginWithSSO_test: XCTestCase {
         let oktaLabel = app.webViews.staticTexts["OKTA SAML Mock Server"]
         XCTAssert(oktaLabel.waitForExistence(timeout: 5))
         
-        let oktaButton = app.webViews.buttons["Login With Okta"]
-        XCTAssert(oktaButton.waitForExistence(timeout: 5))
-        takeScreenshot(named: "OktaSaml")
+        await Mocker.mock(name: .mockSSOAuthCallback, body: ["options":[
+            "success": false,
+            "baseUrl": config.baseUrl,
+        ]])
+        
+        
+        
+        DispatchQueue.main.sync {
+            app.webViews.buttons["Login With Okta"].waitUntilExists().tap()
+            
+            
+            let backToLoginButton = app.webViews.staticTexts["Back to Sign-in"]
+            backToLoginButton.waitUntilExists().tap()
+            
+            takeScreenshot(named: "Invalid Saml")
+        }
+        
+        DispatchQueue.main.sync {
+            let emailField = app.webViews.textFields["Email is required"]
+                .waitUntilExists()
+            emailField.tap()
+            emailField.typeText("test@saml-domain.com")
+        }
+        
+
+        
+        DispatchQueue.main.sync {
+            app.webViews.buttons["Continue"].waitUntilExists().tap()
+            
+        }
+        
         
         await Mocker.mockSuccessSamlLogin(code)
-        
-        DispatchQueue.main.sync {oktaButton.tap()}
+        DispatchQueue.main.sync {
+            app.webViews.buttons["Login With Okta"].waitUntilExists().tap()
+            
+        }
         
         
         let successField = app.staticTexts["test@saml-domain.com"]
-        XCTAssert(successField.waitForExistence(timeout: 100))
+        XCTAssert(successField.waitForExistence(timeout: 10))
         
         DispatchQueue.main.sync { app.terminate() }
         
         let relaunchApp = launchApp()
         
-        XCTAssert(relaunchApp.staticTexts["test@saml-domain.com"].waitForExistence(timeout: 100))
+        XCTAssert(relaunchApp.staticTexts["test@saml-domain.com"].waitForExistence(timeout: 10))
         
         
     }

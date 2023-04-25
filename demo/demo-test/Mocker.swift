@@ -11,6 +11,7 @@ import Foundation
 enum MockMethod: String {
     case mockEmbeddedRefreshToken
     case mockSSOPrelogin
+    case mockSSOAuthCallback
     case mockHostedLoginAuthorize
     case mockHostedLoginRefreshToken
     case mockLogout
@@ -63,7 +64,7 @@ struct Mocker {
     
     
     static func mockWithId(name: MockMethod, body: [String: Any?]) async -> String {
-        let urlStr = "http://localhost:4001/mock/\(name.rawValue)"
+        let urlStr = "\(Mocker.baseUrl!)/mock/\(name.rawValue)"
         let url = URL(string: urlStr)
         var request = URLRequest(url: url!)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
