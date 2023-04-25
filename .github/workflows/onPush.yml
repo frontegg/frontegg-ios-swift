@@ -50,4 +50,4 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: 'test.xcresult'
-          path: demo/test.xcresult
+          path: test.xcresult

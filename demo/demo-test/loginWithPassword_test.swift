@@ -58,7 +58,7 @@ final class loginWithPassword_test: XCTestCase {
         takeScreenshot(named: "PreLogin")
         DispatchQueue.main.sync {continueButton.tap()}
         
-        let passwordField = app.webViews.secureTextFields["Set a password"]
+        let passwordField = app.webViews.secureTextFields["Enter your password"]
         XCTAssert(passwordField.waitForExistence(timeout: 5))
         DispatchQueue.main.sync {
             passwordField.tap()
