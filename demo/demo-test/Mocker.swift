@@ -119,12 +119,13 @@ struct Mocker {
         request.httpMethod = "POST"
         _ = try! await URLSession.shared.data(for: request)
     }
-    static  func mockSuccessPasswordLogin() async {
+    
+    static  func mockSuccessPasswordLogin(_ oauthCode:String) async {
         
         let mockedUser = await Mocker.mockData(name: .generateUser, body: [Mocker.clientId!, ["email":"test@frontegg.com"]])
         as! [String: Any]
         
-        var authUserOptions: [String: Any] = [
+        let authUserOptions: [String: Any] = [
             "success":true,
             "user": mockedUser
         ]
@@ -142,9 +143,13 @@ struct Mocker {
                 "refreshTokenResponse": mockedUser["refreshTokenResponse"],
                 "refreshTokenCookie": mockedUser["refreshTokenCookie"],
             ]])
+        
         await Mocker.mock(name: .mockGetMeTenants, body: ["options":mockedUser])
         await Mocker.mock(name: .mockGetMe, body: ["options":mockedUser])
         await Mocker.mock(name: .mockSessionsConfigurations, body: [:])
+        
+        await Mocker.mock(name: .mockOauthPostlogin, body:[ "options": ["redirectUrl": "\(Mocker.baseUrl!)/oauth/mobile/callback?code=\(oauthCode)" ]])
+        await Mocker.mock(name: .mockLogout, body: [:])
         
         
     }
