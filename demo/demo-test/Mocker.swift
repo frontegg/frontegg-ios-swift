@@ -120,6 +120,7 @@ struct Mocker {
         _ = try! await URLSession.shared.data(for: request)
     }
     
+    
     static  func mockSuccessPasswordLogin(_ oauthCode:String) async {
         
         let mockedUser = await Mocker.mockData(name: .generateUser, body: [Mocker.clientId!, ["email":"test@frontegg.com"]])
@@ -150,8 +151,32 @@ struct Mocker {
         
         await Mocker.mock(name: .mockOauthPostlogin, body:[ "options": ["redirectUrl": "\(Mocker.baseUrl!)/oauth/mobile/callback?code=\(oauthCode)" ]])
         await Mocker.mock(name: .mockLogout, body: [:])
-        
-        
     }
     
+    
+    
+    static  func mockSuccessSamlLogin(_ oauthCode:String) async {
+        let mockedUser = await Mocker.mockData(name: .generateUser, body: [Mocker.clientId!, ["email":"test@saml-domain.com"]])
+        as! [String: Any]
+        
+        await Mocker.mock(name: .mockGetMeTenants, body: ["options":mockedUser])
+        await Mocker.mock(name: .mockGetMe, body: ["options":mockedUser])
+        await Mocker.mock(name: .mockSessionsConfigurations, body: [:])
+        
+        await Mocker.mock(name: .mockEmbeddedRefreshToken, body: [
+            "options":[
+                "success":true,
+                "refreshTokenResponse": mockedUser["refreshTokenResponse"],
+                "refreshTokenCookie": mockedUser["refreshTokenCookie"],
+            ]])
+        await Mocker.mock(name: .mockHostedLoginRefreshToken, body: [
+            "partialRequestBody": [:],
+            "options":[
+                "success":true,
+                "refreshTokenResponse": mockedUser["refreshTokenResponse"],
+                "refreshTokenCookie": mockedUser["refreshTokenCookie"],
+            ]])
+        await Mocker.mock(name: .mockOauthPostlogin, body:[ "options": ["redirectUrl": "\(Mocker.baseUrl!)/oauth/mobile/callback?code=\(oauthCode)" ]])
+        await Mocker.mock(name: .mockLogout, body: [:])
+    }
 }
