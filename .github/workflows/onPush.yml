@@ -46,14 +46,8 @@ jobs:
         run: xcodebuild CC=clang CPLUSPLUS=clang++ -derivedDataPath demo/build LD=clang LDPLUSPLUS=clang++ build-for-testing -scheme "demo" -project "demo/demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 14 Pro" -configuration "Debug" -enableCodeCoverage "YES"
       - name: Test without Building
         run: xcodebuild CC=clang CPLUSPLUS=clang++ -derivedDataPath demo/build LD=clang LDPLUSPLUS=clang++ test-without-building -scheme "demo" -project "demo/demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 14 Pro" -configuration "Debug" -resultBundlePath "TestResults" -enableCodeCoverage "YES"
-      - name: "Print XCResult Status"
+      - name: "Parse Test XCResults"
         uses: kishikawakatsumi/xcresulttool@v1
         if: success() || failure()
         with:
-          path: TestResults.xcresult
-      - name: "Upload test results"
-        if: success() || failure()
-        uses: actions/upload-artifact@v3
-        with:
-          name: 'TestResults.xcresult'
           path: TestResults.xcresult
