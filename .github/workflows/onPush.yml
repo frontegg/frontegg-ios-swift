@@ -7,7 +7,7 @@ on:
 jobs:
   build-and-test:
     name: "Test on  iOS Simulator (xcode: 14.2.0, macos: latest)"
-    runs-on: 'macos-latest-xl'
+    runs-on: 'macos-latest'
     steps:
       - name: Checkout
         uses: actions/checkout@v3
