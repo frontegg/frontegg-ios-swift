@@ -28,7 +28,7 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            const { default: modifyEntitlements } = require('.github/scripts/modify-entitlements.js')
+            const modifyEntitlements = require('.github/scripts/modify-entitlements.js')
             await modifyEntitlements({github, fetch})
       - name: Double-check macOS version (macos-latest)
         run: sw_vers
