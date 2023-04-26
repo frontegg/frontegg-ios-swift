@@ -20,16 +20,12 @@ jobs:
           path: mocker
       - name: Run Mock Server
         working-directory: mocker
+        env:
+          IOS_ASSOCIATED_DOMAIN_ENTITLEMENT_PATH: "${{ github.workspace }}/demo/demo/demo.entitlements"
         run: |
           yarn install
           (yarn start:mobile-mock&)
           sleep 10
-      - name: Register Ngrok
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const modifyEntitlements = require('.github/scripts/modify-entitlements.js')
-            await modifyEntitlements({github, fetch})
       - name: Double-check macOS version (macos-latest)
         run: sw_vers
       - name: Double-check Xcode.app selected
