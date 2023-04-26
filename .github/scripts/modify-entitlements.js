@@ -1,5 +1,5 @@
-export default async function modifyEntitlements({github, context, fetch}) {
-  const {writeFileSync} = await import("fs");
+module.exports = async ({github, fetch, fs}) => {
+  const {writeFileSync} = require('fs')
   await new Promise(resolve => {
     const intervalRef = setInterval(async () => {
       const response = await fetch('http://localhost:4001/ngrok');
@@ -8,7 +8,7 @@ export default async function modifyEntitlements({github, context, fetch}) {
         clearInterval(intervalRef)
         resolve(body);
 
-        console.log('ngrok YRL',body)
+        console.log('ngrok YRL', body)
         writeFileSync(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
