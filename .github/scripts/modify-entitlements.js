@@ -11,7 +11,8 @@ module.exports = async ({github, fetch, fs}) => {
         console.log('ngrok URL', body)
 
           const host = (new URL("https://d645-109-65-152-21.ngrok-free.app")).host
-        writeFileSync(`<?xml version="1.0" encoding="UTF-8"?>
+        writeFileSync(path.join(__dirname, `../../demo/demo/demo.entitlements`),
+          `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -21,7 +22,7 @@ module.exports = async ({github, fetch, fs}) => {
 \t</array>
 </dict>
 </plist>
-`, path.join(__dirname, `../../demo/demo/demo.entitlements`), {encoding: 'utf8'});
+` , {encoding: 'utf8'});
 
         resolve();
       }
