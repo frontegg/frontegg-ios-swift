@@ -22,8 +22,8 @@ jobs:
         working-directory: mocker
         run: |
           yarn install
-          cd packages/mobile-mocker
-          (yarn start&)
+          (yarn start:mobile-mock&)
+          sleep 10
       - name: Register Ngrok
         uses: actions/github-script@v6
         with:

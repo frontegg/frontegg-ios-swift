@@ -25,6 +25,6 @@ module.exports = async ({github, fetch, fs}) => {
 
         resolve();
       }
-    }, 500);
+    }, 2000);
   })
 }
