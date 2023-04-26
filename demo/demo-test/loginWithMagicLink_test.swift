@@ -47,6 +47,7 @@ final class loginWithMagicLink_test: XCTestCase {
         
         
         let userNameField = app.getWebInput("Email is required")
+        sleep(1)
         userNameField.safeTypeText("test@frontegg.com")
         
         
@@ -57,5 +58,24 @@ final class loginWithMagicLink_test: XCTestCase {
         
         app.waitWebLabel("Magic link sent!")
         
+        takeScreenshot(named: "MagicLinkSent")
+        
+        let magicLinkUrl = await Mocker.mockSuccessMagicLink(code)
+        let safari = DeepLinkUtils.openFromSafari(with: magicLinkUrl)
+        
+        safari.getWebButton("Sign In").safeTap()
+        
+        
+        XCTAssert(app.wait(for: .runningForeground, timeout: 10))
+        
+        
+        let successField = app.staticTexts["test@frontegg.com"]
+        XCTAssert(successField.waitForExistence(timeout: 20))
+        
+        DispatchQueue.main.sync { app.terminate() }
+        
+        let relaunchApp = launchApp()
+        
+        XCTAssert(relaunchApp.staticTexts["test@frontegg.com"].waitForExistence(timeout: 10))
     }
 }

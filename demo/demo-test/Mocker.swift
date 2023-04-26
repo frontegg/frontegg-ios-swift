@@ -23,7 +23,7 @@ enum MockMethod: String {
     case mockOauthPostlogin
     case mockVendorConfig
     case mockPreLoginWithMagicLink
-    
+    case mockPostLoginWithMagicLink
 }
 
 
@@ -61,10 +61,19 @@ struct Mocker {
         
         Mocker.baseUrl = baseUrl
         Mocker.clientId = clientId
+        
         return (clientId: clientId, baseUrl: baseUrl)
     }
     
-    
+    static func getNgrokUrl() async -> String {
+        let urlStr = "\(Mocker.baseUrl!)/ngrok"
+        let url = URL(string: urlStr)
+        var request = URLRequest(url: url!)
+        request.setValue(Mocker.baseUrl!, forHTTPHeaderField: "Origin")
+        request.httpMethod = "GET"
+        let (data, _) :(Data, URLResponse) = try! await URLSession.shared.data(for: request)
+        return String(data: data, encoding: .utf8)!
+    }
     
     static func mockWithId(name: MockMethod, body: [String: Any?]) async -> String {
         let urlStr = "\(Mocker.baseUrl!)/mock/\(name.rawValue)"
@@ -72,7 +81,7 @@ struct Mocker {
         var request = URLRequest(url: url!)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("http://localhost:4001", forHTTPHeaderField: "Origin")
+        request.setValue(Mocker.baseUrl!, forHTTPHeaderField: "Origin")
         request.httpMethod = "POST"
         
         let json = try? JSONSerialization.data(withJSONObject: body)
@@ -223,4 +232,51 @@ struct Mocker {
         await Mocker.mock(name: .mockOauthPostlogin, body:[ "options": ["redirectUrl": "\(Mocker.baseUrl!)/oauth/mobile/callback?code=\(oauthCode)" ]])
         await Mocker.mock(name: .mockLogout, body: [:])
     }
+    
+    
+    static  func mockSuccessMagicLink(_ oauthCode:String) async -> String {
+        
+        let token = UUID().uuidString
+        let ngrokUrl = await Mocker.getNgrokUrl()
+        
+        let mockedUser = await Mocker.mockData(name: .generateUser, body: [Mocker.clientId!, ["email":"test@frontegg.com"]])
+        as! [String: Any]
+        
+        let authUserOptions: [String: Any] = [
+            "success":true,
+            "user": mockedUser
+        ]
+        
+        await Mocker.mock(name: .mockPostLoginWithMagicLink, body: [
+            "options": authUserOptions,
+            "requestParitalBody":["token": token]
+        ])
+        
+        await Mocker.mock(name: .mockGetMeTenants, body: ["options":mockedUser])
+        await Mocker.mock(name: .mockGetMe, body: ["options":mockedUser])
+        await Mocker.mock(name: .mockSessionsConfigurations, body: [:])
+        
+        
+        await Mocker.mock(name: .mockEmbeddedRefreshToken, body: [
+            "options":[
+                "success":true,
+                "refreshTokenResponse": mockedUser["refreshTokenResponse"],
+                "refreshTokenCookie": mockedUser["refreshTokenCookie"],
+            ]])
+        
+        await Mocker.mock(name: .mockHostedLoginRefreshToken, body: [
+            "partialRequestBody": [:],
+            "options":[
+                "success":true,
+                "refreshTokenResponse": mockedUser["refreshTokenResponse"],
+                "refreshTokenCookie": mockedUser["refreshTokenCookie"],
+            ]])
+        await Mocker.mock(name: .mockOauthPostlogin, body:[ "options": ["redirectUrl": "\(Mocker.baseUrl!)/oauth/mobile/callback?code=\(oauthCode)" ]])
+        await Mocker.mock(name: .mockLogout, body: [:])
+        
+        
+        let magicLinkUrl = "http://localhost:3003/magic-link?ngrokUrl=\(ngrokUrl)&token=\(token)&redirectUrl=\(Mocker.baseUrl!)/oauth/"
+        return magicLinkUrl
+    }
+    
 }

@@ -39,6 +39,11 @@ public struct FronteggWrapper<Content: View>: View {
         .onOpenURL { url in
             if(url.absoluteString.hasPrefix(fronteggAuth.baseUrl)){
                 fronteggAuth.pendingAppLink = url
+            } else if(getenv("frontegg-testing") != nil){
+                if #available(iOS 16.0, *) {
+                    let testPendingAppLink = URL(string: "\(fronteggAuth.baseUrl)\(url.path())?\(url.query()!)")
+                    fronteggAuth.pendingAppLink = testPendingAppLink
+                }
             }
         }
     }

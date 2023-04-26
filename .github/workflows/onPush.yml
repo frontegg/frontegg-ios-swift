@@ -24,9 +24,12 @@ jobs:
           yarn install
           cd packages/mobile-mocker
           (yarn start&)
-      - name: Run HostedLogin Server
-        working-directory: mocker
-        run: (yarn start:hosted-login&)
+      - name: Register Ngrok
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { default: modifyEntitlements } = await import('${{ github.workspace }}/.github/scripts/modify-entitlements.js')
+            await modifyEntitlements({github, context, fetch})
       - name: Double-check macOS version (macos-latest)
         run: sw_vers
       - name: Double-check Xcode.app selected

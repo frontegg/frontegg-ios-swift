@@ -36,6 +36,10 @@ extension XCTestCase {
     func launchApp() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment = ["frontegg-testing":"true"]
+        app.launchArguments = [
+            "-AppleLanguages", "(es)",
+            "-AppleLocale", "es_ES"
+        ]
         DispatchQueue.main.sync { app.launch() }
         return app
     }
@@ -136,6 +140,41 @@ extension XCUIElement {
         self.safeTap()
         DispatchQueue.main.sync {
             self.typeText(text)
+        }
+    }
+}
+
+
+
+struct DeepLinkUtils {
+    static func openFromSafari(with urlString: String) -> XCUIApplication {
+        let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
+        
+        DispatchQueue.main.sync {
+            
+            
+            safari.launch()
+            XCTAssert(safari.wait(for: .runningForeground, timeout: 10))
+            
+            tapIfExists(app: safari, title: "Continue")
+            
+            safari.textFields["Address"].tap()
+            
+            tapIfExists(app: safari, title: "Continue")
+            safari.typeText(urlString)
+            safari.buttons["Go"].tap()
+            
+            tapIfExists(app: safari, title: "Open")
+            
+        }
+        return safari;
+    }
+    
+    static func tapIfExists(app: XCUIApplication, title: String) {
+        let button = app.buttons[title]
+        _ = button.waitForExistence(timeout: 2)
+        if button.exists {
+            button.tap()
         }
     }
 }
