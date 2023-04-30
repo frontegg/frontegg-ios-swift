@@ -23,6 +23,7 @@ jobs:
         env:
           IOS_ASSOCIATED_DOMAIN_ENTITLEMENT_PATH: "${{ github.workspace }}/demo/demo/demo.entitlements"
         run: |
+          echo "IOS_ASSOCIATED_DOMAIN_ENTITLEMENT_PATH: $IOS_ASSOCIATED_DOMAIN_ENTITLEMENT_PATH"
           yarn install
           (yarn start:mobile-mock&)
           sleep 20
