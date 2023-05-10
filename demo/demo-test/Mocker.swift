@@ -119,7 +119,7 @@ struct Mocker {
         let (data, _) :(Data, URLResponse) = try! await URLSession.shared.data(for: request)
         
         
-        return (try! JSONSerialization.jsonObject(with: data, options: []) as! [String: Any])["data"]
+        return (try! JSONSerialization.jsonObject(with: data, options: []) as! [String: Any])["data"] ?? nil
     }
     
     static  func mockClearMocks() async {
@@ -277,6 +277,39 @@ struct Mocker {
         
         let magicLinkUrl = "http://localhost:3003/magic-link?ngrokUrl=\(ngrokUrl)&token=\(token)&redirectUrl=\(Mocker.baseUrl!)/oauth/"
         return magicLinkUrl
+    }
+    
+    
+    
+    static  func mockRefreshToken() async {
+        
+        let mockedUser = await Mocker.mockData(name: .generateUser, body: [Mocker.clientId!, ["email":"test@frontegg.com"]])
+        as! [String: Any]
+        
+        let authUserOptions: [String: Any] = [
+            "success":true,
+            "user": mockedUser
+        ]
+        await Mocker.mock(name: .mockAuthUser, body: ["options": authUserOptions])
+        await Mocker.mock(name: .mockHostedLoginRefreshToken, body: [
+            "partialRequestBody": [:],
+            "options":[
+                "success":true,
+                "refreshTokenResponse": mockedUser["refreshTokenResponse"],
+                "refreshTokenCookie": mockedUser["refreshTokenCookie"],
+            ]])
+        await Mocker.mock(name: .mockEmbeddedRefreshToken, body: [
+            "options":[
+                "success":true,
+                "refreshTokenResponse": mockedUser["refreshTokenResponse"],
+                "refreshTokenCookie": mockedUser["refreshTokenCookie"],
+            ]])
+        
+        await Mocker.mock(name: .mockGetMeTenants, body: ["options":mockedUser])
+        await Mocker.mock(name: .mockGetMe, body: ["options":mockedUser])
+        await Mocker.mock(name: .mockSessionsConfigurations, body: [:])
+        
+        await Mocker.mock(name: .mockLogout, body: [:])
     }
     
 }

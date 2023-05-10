@@ -69,7 +69,7 @@ final class loginWithSAML_test: XCTestCase {
         await Mocker.mock(name: .mockSSOAuthSamlCallback, body: ["options":[
             "success": false,
             "baseUrl": config.baseUrl,
-        ]])
+        ] as [String : Any]])
         
         
         

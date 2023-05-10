@@ -30,7 +30,7 @@ public class CredentialManager {
                 kSecAttrService: serviceKey ?? "frontegg",
                 kSecAttrAccount: key,
                 kSecValueData: valueData
-            ] as CFDictionary
+            ] as [CFString : Any] as CFDictionary
             
             let status = SecItemAdd(query, nil)
             
@@ -40,7 +40,7 @@ public class CredentialManager {
                     kSecClass: kSecClassGenericPassword,
                     kSecAttrService: serviceKey ?? "frontegg",
                     kSecAttrAccount: key,
-                ] as CFDictionary
+                ] as [CFString : Any] as CFDictionary
                 
                 let newAttributes : CFDictionary = [
                     kSecValueData: value.data(using: .utf8)
@@ -70,7 +70,7 @@ public class CredentialManager {
             kSecAttrAccount: key,
             kSecReturnData: kCFBooleanTrue!,
             kSecMatchLimit: kSecMatchLimitOne
-        ] as CFDictionary
+        ] as [CFString : Any] as CFDictionary
         
         
         var result: AnyObject?
@@ -95,7 +95,7 @@ public class CredentialManager {
         let query = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: serviceKey ?? "frontegg"
-        ] as CFDictionary
+        ] as [CFString : Any] as CFDictionary
         let status = SecItemDelete(query)
         
         if status != errSecSuccess {
