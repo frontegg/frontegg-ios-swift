@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>baseUrl</key>
-	<string>http://localhost:4001</string>
+	<string>https://frontegg-test-local.ngrok.io</string>
 	<key>clientId</key>
 	<string>b6adfe4c-d695-4c04-b95f-3ec9fd0c6cca</string>
 	<key>logLevel</key>

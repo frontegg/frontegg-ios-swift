@@ -111,7 +111,7 @@ struct Mocker {
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("http://localhost:4001", forHTTPHeaderField: "Origin")
+        request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
         request.httpMethod = "GET"
         
         
@@ -128,7 +128,7 @@ struct Mocker {
         var request = URLRequest(url: url!)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("http://localhost:4001", forHTTPHeaderField: "Origin")
+        request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
         request.httpMethod = "POST"
         _ = try! await URLSession.shared.data(for: request)
     }
