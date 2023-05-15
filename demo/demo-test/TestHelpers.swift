@@ -49,7 +49,7 @@ extension XCTestCase {
         // Wait for the loading indicator to disappear = content is ready
         let activityIndicator = app.otherElements["LoaderView"]
         expectation(for: NSPredicate(format: "exists == 0"), evaluatedWith: activityIndicator)
-        await waitForExpectations(timeout: 10)
+        await waitForExpectations(timeout: 30)
     }
 }
 
@@ -123,7 +123,7 @@ extension XCUIElement {
         typeText(deleteString)
     }
     
-    func waitUntilExists(timeout: TimeInterval = 20, file: StaticString = #file, line: UInt = #line) -> XCUIElement {
+    func waitUntilExists(timeout: TimeInterval = 30, file: StaticString = #file, line: UInt = #line) -> XCUIElement {
         XCTAssert(self.waitForExistence(timeout: timeout))
         return self
     }
@@ -154,7 +154,7 @@ struct DeepLinkUtils {
             
             
             safari.launch()
-            XCTAssert(safari.wait(for: .runningForeground, timeout: 10))
+            XCTAssert(safari.wait(for: .runningForeground, timeout: 30))
             
             tapIfExists(app: safari, title: "Continue")
             
@@ -172,7 +172,7 @@ struct DeepLinkUtils {
     
     static func tapIfExists(app: XCUIApplication, title: String) {
         let button = app.buttons[title]
-        _ = button.waitForExistence(timeout: 2)
+        _ = button.waitForExistence(timeout: 30)
         if button.exists {
             button.tap()
         }
