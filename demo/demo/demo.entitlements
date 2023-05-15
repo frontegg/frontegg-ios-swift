@@ -4,8 +4,8 @@
         <dict>
         	<key>com.apple.developer.associated-domains</key>
         	<array>
-        		<string>applinks:frontegg-test-local.ngrok.io</string>
-        		<string>webcredentials:frontegg-test-local.ngrok.io</string>
+        		<string>applinks:frontegg-test.ngrok.io</string>
+        		<string>webcredentials:frontegg-test.ngrok.io</string>
         	</array>
         </dict>
         </plist>
