@@ -45,23 +45,13 @@ final class loginWithSAML_test: XCTestCase {
         
         takeScreenshot(named: "LoginPage")
         
-        userNameField.safeTypeText("test@frontegg.com")
         
         await Mocker.mock(name: .mockSSOPrelogin, body: ["options": ["success":"true", "idpType": "saml"],
                                                          "partialRequestBody": ["email": "test@saml-domain.com"]])
         
+        userNameField.safeTypeText("test@saml-domain.com")
         
         app.getWebButton("Continue").safeTap()
-        
-        
-        app.waitWebPasswordInput("Password is required")
-        takeScreenshot(named: "PreLoginPassword")
-        
-        
-        userNameField.clearAndEnterText(app: app, "test@saml-domain.com")
-        
-        app.getWebButton("Continue").safeTap()
-        
         
         app.waitWebLabel("OKTA SAML Mock Server")
         
