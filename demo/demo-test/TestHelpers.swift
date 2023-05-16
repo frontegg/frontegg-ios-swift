@@ -160,7 +160,6 @@ struct DeepLinkUtils {
             
             safari.textFields["Address"].tap()
             
-            tapIfExists(app: safari, title: "Continue")
             safari.typeText(urlString)
             safari.buttons["Go"].tap()
             
@@ -172,7 +171,7 @@ struct DeepLinkUtils {
     
     static func tapIfExists(app: XCUIApplication, title: String) {
         let button = app.buttons[title]
-        _ = button.waitForExistence(timeout: 30)
+        _ = button.waitForExistence(timeout: 10)
         if button.exists {
             button.tap()
         }
