@@ -6,9 +6,16 @@
 
 import Foundation
 
+public enum KeychainKeys: String {
+    case accessToken = "accessToken"
+    case refreshToken = "refreshToken"
+}
+
+
 public class CredentialManager {
     
-    enum KeychainError: Error {
+    
+    public enum KeychainError: Error {
         case duplicateEntry;
         case valueDataIsNil;
         case unknown(OSStatus);

@@ -26,7 +26,9 @@ public struct FronteggWrapper<Content: View>: View {
         ZStack {
             if !fronteggAuth.initializing && fronteggAuth.pendingAppLink == nil {
                 if(fronteggAuth.appLink != nil){
-                    FronteggLoginPage()
+                    
+                    
+
                 } else {
                     Group(content: content)
                 }

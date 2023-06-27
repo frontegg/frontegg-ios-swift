@@ -11,14 +11,21 @@ enum ApiError: Error {
     case invalidUrl(String)
 }
 public class Api {
+    private let logger = getLogger("Api")
     private let baseUrl: String
     private let clientId: String
+    private var cookieName: String
     private let credentialManager: CredentialManager
     
-    init(baseUrl: String, clientId: String, credentialManager: CredentialManager) {
+    init(baseUrl: String, clientId: String) {
         self.baseUrl = baseUrl
         self.clientId = clientId
-        self.credentialManager = credentialManager
+        self.credentialManager = CredentialManager(serviceKey: "frontegg")
+        
+        self.cookieName = "fe_refresh_\(clientId)"
+        if let range = self.cookieName.range(of: "-") {
+            self.cookieName.removeSubrange(range)
+        }
     }
     
     
@@ -48,7 +55,7 @@ public class Api {
         return try await URLSession.shared.data(for: request)
     }
     
-    private func getRequest(accessToken:String, path:String) async throws -> (Data, URLResponse) {
+    private func getRequest(path:String, accessToken:String?, refreshToken: String? = nil) async throws -> (Data, URLResponse) {
         
         let urlStr = "\(self.baseUrl)/\(path)"
         guard let url = URL(string: urlStr) else {
@@ -58,7 +65,13 @@ public class Api {
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "authorization")
+        if(accessToken != nil){
+            request.setValue("Bearer \(accessToken!)", forHTTPHeaderField: "authorization")
+        }
+        if(refreshToken != nil){
+            let cookieHeaderValue = "\(self.cookieName)=\(refreshToken!)"
+            request.setValue("\(self.cookieName)=\(refreshToken!)", forHTTPHeaderField: "cookie")
+        }
         request.httpMethod = "GET"
         
         return try await URLSession.shared.data(for: request)
@@ -80,7 +93,7 @@ public class Api {
     
     internal func exchangeToken(code: String,
                                 redirectUrl: String,
-                                codeVerifier: String) async -> AuthResponse? {
+                                codeVerifier: String) async -> (AuthResponse?, FronteggError?) {
         do {
             let (data, _) = try await postRequest(path: "oauth/token", body: [
                 "grant_type": "authorization_code",
@@ -89,21 +102,32 @@ public class Api {
                 "code_verifier": codeVerifier,
             ])
             
-            return try JSONDecoder().decode(AuthResponse.self, from: data)
+            return (try JSONDecoder().decode(AuthResponse.self, from: data), nil)
         }catch {
-            print(error)
-            return nil
+            return (nil, FronteggError.authError(error.localizedDescription))
         }
     }
     
     internal func me(accessToken: String) async throws -> User? {
-        let (data, _) = try await getRequest(accessToken: accessToken, path: "identity/resources/users/v2/me")
+        let (data, _) = try await getRequest(path: "identity/resources/users/v2/me", accessToken: accessToken)
         
         return try JSONDecoder().decode(User.self, from: data)
     }
     
-    internal func logout(refreshToken: String) async throws {
-        try await postRequest(path: "identity/resources/auth/v1/logout", body: ["refreshToken":refreshToken])
+    internal func logout(accessToken: String?, refreshToken: String?) async {
+        
+        do {
+            let (_, response) = try await getRequest(path: "frontegg/oauth/logout", accessToken: accessToken, refreshToken: refreshToken)
+            
+            if let res = response as? HTTPURLResponse, res.statusCode != 401 {
+                print(response)
+                self.logger.info("logged out successfully")
+            }else {
+                self.logger.info("Already logged out")
+            }
+        }catch {
+            self.logger.info("Uknonwn error when try to logout: \(error)")
+        }
     }
     
     

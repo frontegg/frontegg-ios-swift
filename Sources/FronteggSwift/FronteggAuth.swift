@@ -7,16 +7,8 @@
 import Foundation
 import WebKit
 import Combine
+import AuthenticationServices
 
-
-enum FronteggError: Error {
-    case configError(String)
-}
-
-enum KeychainKeys: String {
-    case accessToken = "accessToken"
-    case refreshToken = "refreshToken"
-}
 
 public class FronteggAuth: ObservableObject {
     @Published public var accessToken: String?
@@ -31,16 +23,19 @@ public class FronteggAuth: ObservableObject {
     @Published public var externalLink = false
     public var baseUrl = ""
     public var clientId = ""
-    public var codeVerifier = ""
+    public var codeVerifier: String? = nil
+    
     
     
     public static var shared: FronteggAuth {
         return FronteggApp.shared.auth
     }
     
+    private let logger = getLogger("FronteggAuth")
     private let credentialManager: CredentialManager
     public let api: Api
     private var subscribers = Set<AnyCancellable>()
+    private var webAuthentication: WebAuthentication? = nil
     
     init (baseUrl:String, clientId: String, api:Api, credentialManager: CredentialManager) {
         
@@ -128,48 +123,31 @@ public class FronteggAuth: ObservableObject {
         
         DispatchQueue.global(qos: .userInitiated).async {
             Task {
-                try? await self.api.logout(refreshToken: self.refreshToken ?? "")
-            }
-            DispatchQueue.main.sync {
-                let dataStore = WKWebsiteDataStore.default()
-                dataStore.fetchDataRecords(ofTypes: [WKWebsiteDataTypeCookies]) { records in
-                    dataStore.removeData(
-                        ofTypes: [WKWebsiteDataTypeCookies],
-                        for: records.filter { _ in true }) {
-                            self.credentialManager.clear()
-                            
-                            DispatchQueue.main.async {
-                                self.isAuthenticated = false
-                                self.isLoading = false
-                                self.user = nil
-                                self.accessToken = nil
-                                self.refreshToken = nil
-                                self.initializing = false
+                await self.api.logout(accessToken: self.accessToken, refreshToken: self.refreshToken)
+                
+                DispatchQueue.main.sync {
+                    let dataStore = WKWebsiteDataStore.default()
+                    dataStore.fetchDataRecords(ofTypes: [WKWebsiteDataTypeCookies]) { records in
+                        dataStore.removeData(
+                            ofTypes: [WKWebsiteDataTypeCookies],
+                            for: records.filter { _ in true }) {
+                                self.credentialManager.clear()
+                                
+                                DispatchQueue.main.async {
+                                    self.isAuthenticated = false
+                                    self.isLoading = false
+                                    self.user = nil
+                                    self.accessToken = nil
+                                    self.refreshToken = nil
+                                    self.initializing = false
+                                }
                             }
-                        }
+                    }
                 }
             }
             
         }
         
-    }
-    
-    
-    private static func plistValues(bundle: Bundle) throws -> (clientId: String, baseUrl: String, keychainService: String?) {
-        guard let path = bundle.path(forResource: "Frontegg", ofType: "plist"),
-              let values = NSDictionary(contentsOfFile: path) as? [String: Any] else {
-            let errorMessage = "Missing Frontegg.plist file with 'clientId' and 'baseUrl' entries in main bundle!"
-            print(errorMessage)
-            throw FronteggError.configError(errorMessage)
-        }
-        
-        guard let clientId = values["clientId"] as? String, let baseUrl = values["baseUrl"] as? String else {
-            let errorMessage = "Frontegg.plist file at \(path) is missing 'clientId' and/or 'baseUrl' entries!"
-            print(errorMessage)
-            throw FronteggError.configError(errorMessage)
-        }
-        
-        return (clientId: clientId, baseUrl: baseUrl, keychainService: values["keychainService"] as? String)
     }
     
     func refreshTokenIfNeeded() async {
@@ -188,19 +166,116 @@ public class FronteggAuth: ObservableObject {
         }
     }
     
-    func handleHostedLoginCallback(_ code: String) async -> Bool {
+    func handleHostedLoginCallback(_ code: String, _ codeVerifier: String, _ completion: @escaping FronteggAuth.CompletionHandler) {
         
-        let redirectUri = URLConstants.generateRedirectUri(baseUrl)
-        let codeVerifier = codeVerifier
+        let redirectUri = generateRedirectUri()
         
-        if let data = await api.exchangeToken(code: code, redirectUrl: redirectUri, codeVerifier: codeVerifier) {
-            await setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
-            return true
+        Task {
+            
+            let (responseData, error) = await api.exchangeToken(
+                code: code,
+                redirectUrl: redirectUri,
+                codeVerifier: codeVerifier
+            )
+            
+            guard error == nil else {
+                completion(.failure(error!))
+                return
+            }
+            
+            guard let data = responseData else {
+                completion(.failure(FronteggError.authError("Failed to authenticate with frontegg")))
+                return
+            }
+            
+            
+            
+            do {
+                let user = try await self.api.me(accessToken: data.access_token)
+                await setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
+                
+                completion(.success(user!))
+            } catch {
+                completion(.failure(FronteggError.authError("Failed to load user data: \(error.localizedDescription)")))
+                return
+            }
+            
         }
         
-        return false
+    }
+    
+    
+    func createCompletionHandler(message: String) -> ((Bool) -> Void) {
+        return { (isSuccess: Bool) in
+            if isSuccess {
+                print("\(message) - Task completed successfully.")
+            } else {
+                print("\(message) - Task failed.")
+            }
+        }
+    }
+    
+    internal func createOauthCallbackHandler(_ completion: @escaping FronteggAuth.CompletionHandler) -> ((URL?, Error?) -> Void) {
+            
+        return { callbackUrl, error in
+            
+            if error != nil {
+                completion(.failure(FronteggError.authError(error!.localizedDescription)))
+                return
+            }
+            
+            guard let url = callbackUrl else {
+                let errorMessage = "Unknown error occurred"
+                completion(.failure(FronteggError.authError(errorMessage)))
+                return
+            }
+
+            self.logger.trace("handleHostedLoginCallback, url: \(url)")
+            guard let queryItems = getQueryItems(url.absoluteString), let code = queryItems["code"] else {
+                let error = FronteggError.authError("Failed to get extract code from hostedLoginCallback url")
+                completion(.failure(error))
+                return
+            }
+
+            guard let codeVerifier = self.codeVerifier else {
+                let error = FronteggError.authError("IlligalState, codeVerifier not found")
+                completion(.failure(error))
+                return
+            }
+            print("code: \(code), codeVerifier: \(self.codeVerifier)")
+            
+            self.handleHostedLoginCallback(code, codeVerifier, completion)
+        }
         
     }
+    public typealias CompletionHandler = (Result<User, FronteggError>) -> Void
+    
+    public func login( completion: @escaping FronteggAuth.CompletionHandler) {
+        
+        self.webAuthentication?.webAuthSession?.cancel()
+        self.webAuthentication = WebAuthentication()
+        
+        let oauthCallback = createOauthCallbackHandler(completion)
+        let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate()
+        
+        self.codeVerifier = codeVerifier
+        self.webAuthentication!.start(authorizeUrl, completionHandler: oauthCallback)
+        
+        
+        // check if no error
+        // check if callbackUrl is magic link
+        //  - display magic link message
+        //  option 2:
+        //    - user close the popup
+        //    - app opened from email link
+        //    - open another time the login popup with the magic link
+        //    NOTE: require adding support to force relogin in authorize parameter
+        // check if callbackUrl is success login
+        //  - display loader
+        //  - exchange token
+        
+    }
+    
 }
 
 

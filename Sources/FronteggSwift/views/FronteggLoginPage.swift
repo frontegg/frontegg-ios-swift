@@ -15,7 +15,8 @@ public struct FronteggLoginPage: View {
         ZStack {
             NavigationView{
                 VStack(alignment: .center) {
-                    FronteggWebView()
+                    
+                    Text("Vuew")
                 }
                 
                 .toolbar {

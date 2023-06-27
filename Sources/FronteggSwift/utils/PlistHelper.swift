@@ -8,11 +8,17 @@
 import Foundation
 import Logging
 
+
+public enum FronteggError: Error {
+    case configError(String)
+    case authError(String)
+}
+
 struct PlistHelper {
     
     private static var logLevelCache: Logger.Level? = nil
     
-    public static func fronteggConfig() throws -> (clientId: String, baseUrl: String, keychainService: String?) {
+    public static func fronteggConfig() throws -> (clientId: String, baseUrl: String, keychainService: String, bundleIdentifier: String) {
         let bundle = Bundle.main;
         
         let resourceName = (getenv("frontegg-testing") != nil) ? "FronteggTest" : "Frontegg"
@@ -30,7 +36,9 @@ struct PlistHelper {
             throw FronteggError.configError(errorMessage)
         }
         
-        return (clientId: clientId, baseUrl: baseUrl, keychainService: values["keychainService"] as? String)
+        let keychainService = values["keychainService"] as? String ?? "frontegg"
+        
+        return (clientId: clientId, baseUrl: baseUrl, keychainService: keychainService, bundleIdentifier: bundle.bundleIdentifier!)
     }
     
     public static func getLogLevel() -> Logger.Level {
