@@ -70,7 +70,7 @@ public class Api {
         }
         if(refreshToken != nil){
             let cookieHeaderValue = "\(self.cookieName)=\(refreshToken!)"
-            request.setValue("\(self.cookieName)=\(refreshToken!)", forHTTPHeaderField: "cookie")
+            request.setValue(cookieHeaderValue, forHTTPHeaderField: "cookie")
         }
         request.httpMethod = "GET"
         
@@ -117,10 +117,10 @@ public class Api {
     internal func logout(accessToken: String?, refreshToken: String?) async {
         
         do {
-            let (_, response) = try await getRequest(path: "frontegg/oauth/logout", accessToken: accessToken, refreshToken: refreshToken)
+            let (_, response) = try await postRequest(path: "identity/resources/auth/v1/logout", body: ["refreshToken":refreshToken])
+//            let (_, response) = try await getRequest(path: "frontegg/oauth/logout", accessToken: accessToken, refreshToken: refreshToken)
             
             if let res = response as? HTTPURLResponse, res.statusCode != 401 {
-                print(response)
                 self.logger.info("logged out successfully")
             }else {
                 self.logger.info("Already logged out")

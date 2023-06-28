@@ -9,6 +9,7 @@ import Foundation
 public enum KeychainKeys: String {
     case accessToken = "accessToken"
     case refreshToken = "refreshToken"
+    case codeVerifier = "codeVerifier"
 }
 
 

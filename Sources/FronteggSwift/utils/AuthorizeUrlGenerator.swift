@@ -41,17 +41,18 @@ public class AuthorizeUrlGenerator {
     }
     
     func generate() -> (URL, String) {
+        
         let nonce = createRandomString()
         let codeVerifier = createRandomString()
         let codeChallenge = generateCodeChallenge(codeVerifier)
-        
+
         let baseUrl = FronteggApp.shared.baseUrl
         let redirectUri = generateRedirectUri();
         logger.trace("CodeVerifier saved in memory to be able to validate the response")
-        
-        
+
+
         var authorizeUrl = URLComponents(string: baseUrl)!
-        
+
         authorizeUrl.path = "/frontegg/oauth/authorize"
         authorizeUrl.queryItems = [
             URLQueryItem(name: "redirect_uri", value: redirectUri),
@@ -62,16 +63,27 @@ public class AuthorizeUrlGenerator {
             URLQueryItem(name: "code_challenge_method", value: "S256"),
             URLQueryItem(name: "nonce", value: nonce),
         ]
-        
+
         if let url = authorizeUrl.url{
             logger.trace("Generated url: \(url.absoluteString)")
-            return (url, codeVerifier)
+
+            if let encodedURL = url.absoluteString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+                var loginUrl = URLComponents(string: baseUrl)!
+
+                loginUrl.path = "/frontegg/oauth/logout"
+                loginUrl.queryItems = [
+                    URLQueryItem(name: "post_logout_redirect_uri", value: encodedURL),
+                ]
+                return (loginUrl.url!, codeVerifier)
+            } else {
+                logger.error("Failed to parse the generated url, baseUrl: \(baseUrl)")
+                fatalError("Failed to generate authorize url")
+            }
         } else {
             logger.error("Unkonwn error occured while generating authorize url, baseUrl: \(baseUrl)")
             fatalError("Failed to generate authorize url")
         }
-        
-        
+
     }
     
 }

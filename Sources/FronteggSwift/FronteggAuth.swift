@@ -23,7 +23,6 @@ public class FronteggAuth: ObservableObject {
     @Published public var externalLink = false
     public var baseUrl = ""
     public var clientId = ""
-    public var codeVerifier: String? = nil
     
     
     
@@ -188,8 +187,6 @@ public class FronteggAuth: ObservableObject {
                 return
             }
             
-            
-            
             do {
                 let user = try await self.api.me(accessToken: data.access_token)
                 await setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
@@ -237,12 +234,11 @@ public class FronteggAuth: ObservableObject {
                 return
             }
 
-            guard let codeVerifier = self.codeVerifier else {
+            guard let codeVerifier = try? self.credentialManager.get(key: KeychainKeys.codeVerifier.rawValue) else {
                 let error = FronteggError.authError("IlligalState, codeVerifier not found")
                 completion(.failure(error))
                 return
             }
-            print("code: \(code), codeVerifier: \(self.codeVerifier)")
             
             self.handleHostedLoginCallback(code, codeVerifier, completion)
         }
@@ -257,23 +253,32 @@ public class FronteggAuth: ObservableObject {
         
         let oauthCallback = createOauthCallbackHandler(completion)
         let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate()
+        try! credentialManager.save(key: KeychainKeys.codeVerifier.rawValue, value: codeVerifier)
         
-        self.codeVerifier = codeVerifier
         self.webAuthentication!.start(authorizeUrl, completionHandler: oauthCallback)
         
+    }
+    
+    public func handleOpenUrl(_ url: URL) -> Bool {
         
-        // check if no error
-        // check if callbackUrl is magic link
-        //  - display magic link message
-        //  option 2:
-        //    - user close the popup
-        //    - app opened from email link
-        //    - open another time the login popup with the magic link
-        //    NOTE: require adding support to force relogin in authorize parameter
-        // check if callbackUrl is success login
-        //  - display loader
-        //  - exchange token
+        if(!url.absoluteString.hasPrefix(self.baseUrl)){
+            return false
+        }
         
+        self.webAuthentication?.webAuthSession?.cancel()
+        self.webAuthentication = WebAuthentication()
+        let oauthCallback = createOauthCallbackHandler() { res in
+            
+            switch (res) {
+            case .success(let user) :
+                print("User \(user.id)")
+            case .failure(let error) :
+                print("Error \(error)")
+            }
+        }
+        self.webAuthentication!.start(url, completionHandler: oauthCallback)
+        
+        return true
     }
     
 }
