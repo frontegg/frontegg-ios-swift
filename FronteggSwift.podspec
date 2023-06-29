@@ -7,8 +7,8 @@ Pod::Spec.new do |s|
   s.license          = { :type => 'MIT', :file => 'LICENSE' }
   s.author           = { 'Frontegg LTD' => 'info@frontegg.com' }
   s.source           = { :git => 'https://github.com/frontegg/frontegg-ios-swift.git', :tag => 'v'+s.version.to_s }
-  s.swift_versions   = ['5.7', '5.8']
-  s.platform     = :ios, '14.0'
-  s.source_files = 'Sources/**/*'
+  s.swift_version    = '5.5'
+  s.platform         = :ios, '14.0'
+  s.source_files     = 'Sources/**/*'
   s.ios.deployment_target = '14.0'
 end
