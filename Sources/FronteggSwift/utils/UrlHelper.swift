@@ -1,55 +1,35 @@
 //
-//  File.swift
+//  UrlHelper.swift
 //  
 //
-//  Created by David Frontegg on 19/01/2023.
+//  Created by David Frontegg on 22/06/2023.
 //
 
 import Foundation
 import CommonCrypto
 
-
-enum OverrideUrlType {
+enum CallbackType {
     case HostedLoginCallback
-    case SocialLoginRedirectToBrowser
-    case SocialOauthPreLogin
-    case loginRoutes
-    case internalRoutes
+    case MagicLink
     case Unknown
 }
-func getOverrideUrlType (url: URL) -> OverrideUrlType {
+func getCallbackType (_ callbackUrl: URL?) -> CallbackType {
     
-    let urlStr = url.absoluteString
-    
-    if urlStr.starts(with: FronteggApp.shared.baseUrl) {
-        
-        switch(url.path) {
-        case "/oauth/mobile/callback": return .HostedLoginCallback
-        default:
-            if(url.path.hasPrefix("/frontegg/identity/resources/auth/v2/user/sso/default") &&
-               url.path.hasSuffix("/prelogin")){
-                return .SocialOauthPreLogin
-            }
-            if((URLConstants.successLoginRoutes.first { url.path.hasPrefix($0)}) != nil) {
-                return .internalRoutes
-            }
-            if((URLConstants.loginRoutes.first { url.path.hasPrefix($0)}) != nil) {
-                return .loginRoutes
-            }
-            
-            return .internalRoutes
-        }
+    guard let url = callbackUrl else {
+        return .Unknown
     }
     
-    if((URLConstants.oauthUrls.first { urlStr.hasPrefix($0)}) != nil) {
-        return .SocialLoginRedirectToBrowser
+    switch(url.path) {
+    case "/oauth/callback": return .HostedLoginCallback
+    case "/oauth/magic-link/callback": return .MagicLink
+    default:
+        return .Unknown
     }
     
-    return .Unknown
     
 }
 
-func getQueryItems(_ urlString: String) -> [String : String]? {
+public func getQueryItems(_ urlString: String) -> [String : String]? {
     var queryItems: [String : String] = [:]
     
     guard let components = getURLComonents(urlString) else {
@@ -62,11 +42,28 @@ func getQueryItems(_ urlString: String) -> [String : String]? {
     return queryItems
 }
 
-func getURLComonents(_ urlString: String?) -> NSURLComponents? {
+public func getURLComonents(_ urlString: String?) -> NSURLComponents? {
     var components: NSURLComponents? = nil
     let linkUrl = URL(string: urlString?.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed) ?? "")
     if let linkUrl = linkUrl {
         components = NSURLComponents(url: linkUrl, resolvingAgainstBaseURL: true)
     }
     return components
+}
+
+public func generateRedirectUri() -> String {
+    let config = try! PlistHelper.fronteggConfig()
+    let baseUrl = config.baseUrl
+    let bundleIdentifier = config.bundleIdentifier
+    
+    // return "com.frontegg.demo://auth.davidantoon.me/ios/oauth/callback
+    
+    guard let urlComponents = URLComponents(string: baseUrl) else {
+        
+        print("Failed to generate redirect uri, baseUrl: \(baseUrl)")
+        exit(1)
+    }
+    
+        return "\(bundleIdentifier)://\(urlComponents.host!)/ios/oauth/callback"
+    
 }

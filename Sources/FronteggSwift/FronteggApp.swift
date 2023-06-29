@@ -7,7 +7,6 @@
 
 import Foundation
 import UIKit
-import Logging
 
 public class FronteggApp {
     
@@ -29,7 +28,7 @@ public class FronteggApp {
         self.baseUrl = data.baseUrl
         self.clientId = data.clientId
         self.credentialManager = CredentialManager(serviceKey: data.keychainService)
-        self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, credentialManager: self.credentialManager)
+        self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId)
         
         self.auth = FronteggAuth(
             baseUrl: self.baseUrl,
@@ -44,6 +43,7 @@ public class FronteggApp {
     public func didFinishLaunchingWithOptions(){
         logger.info("Frontegg baseURL: \(self.baseUrl)")
     }
+    
     
     
 

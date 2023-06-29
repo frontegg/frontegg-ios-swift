@@ -26,7 +26,9 @@ public struct FronteggWrapper<Content: View>: View {
         ZStack {
             if !fronteggAuth.initializing && fronteggAuth.pendingAppLink == nil {
                 if(fronteggAuth.appLink != nil){
-                    FronteggLoginPage()
+                    
+                    
+
                 } else {
                     Group(content: content)
                 }
@@ -37,8 +39,8 @@ public struct FronteggWrapper<Content: View>: View {
         }
         .environmentObject(fronteggAuth)
         .onOpenURL { url in
-            if(url.absoluteString.hasPrefix(fronteggAuth.baseUrl)){
-                fronteggAuth.pendingAppLink = url
+            if(fronteggAuth.handleOpenUrl(url)){
+                return
             }
         }
     }

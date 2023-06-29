@@ -1,0 +1,59 @@
+name: "onPush( Build & Test )"
+
+on:
+  push:
+    ignore-branches: [ "master" ]
+
+jobs:
+  build-and-test:
+    name: "Test on  iOS Simulator (xcode: 14.2.0, macos: latest)"
+    runs-on: 'macos-latest'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Clone Mock Server
+        uses: actions/checkout@v3
+        with:
+          repository: frontegg/frontegg-mock-server
+          ssh-key: ${{ secrets.MOCK_SERVER_SSH_KEY }}
+          ref: "master"
+          path: mocker
+      - name: Install Mock Server
+        working-directory: mocker
+        run: yarn install
+      - name: Run Mock Server
+        working-directory: mocker
+        env:
+          NGROCK_AUTH_TOKEN: "${{ secrets.NGROCK_AUTH_TOKEN }}"
+          IOS_ASSOCIATED_DOMAIN_ENTITLEMENT_PATH: "${{ github.workspace }}/demo/demo/demo.entitlements"
+          IOS_CONFIG_PLIST_PATH: "${{ github.workspace }}/demo/demo-test/FronteggTest.plist"
+          SERVER_HOSTNAME: "localhost"
+          NGROCK_SUBDOMAIN: "frontegg-test"
+        run: |
+          echo "IOS_ASSOCIATED_DOMAIN_ENTITLEMENT_PATH: $IOS_ASSOCIATED_DOMAIN_ENTITLEMENT_PATH"
+          echo "IOS_CONFIG_PLIST_PATH: $IOS_CONFIG_PLIST_PATH"
+          echo "SERVER_HOSTNAME: $SERVER_HOSTNAME"
+          echo "NGROCK_SUBDOMAIN: $NGROCK_SUBDOMAIN"
+          (yarn start:mobile-mock&)
+          sleep 40
+      - name: Double-check macOS version (macos-latest)
+        run: sw_vers
+      - name: Double-check Xcode.app selected
+        run: xcode-select --print-path
+      - name: Check xcodebuild version
+        run: xcodebuild -project demo/demo.xcodeproj -version
+      - name: Check xcode embedded SDKs
+        run: xcodebuild -project demo/demo.xcodeproj -showsdks
+      - name: Show buildable schemes
+        run: xcodebuild -project demo/demo.xcodeproj -list
+      - name: Show eligible build destinations for the "demo"
+        run: xcodebuild -project demo/demo.xcodeproj -showdestinations -scheme "demo"
+      - name: Build for Testing
+        run: xcodebuild CC=clang CPLUSPLUS=clang++ LD=clang LDPLUSPLUS=clang++ build-for-testing -scheme "demo" -project "demo/demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 14 Pro" -configuration "Debug" -enableCodeCoverage "YES"
+      - name: Test without Building
+        run: xcodebuild CC=clang CPLUSPLUS=clang++ LD=clang LDPLUSPLUS=clang++ test-without-building -scheme "demo" -project "demo/demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 14 Pro" -configuration "Debug" -resultBundlePath "TestResults" -enableCodeCoverage "YES"
+      - name: "Parse Test XCResults"
+        uses: kishikawakatsumi/xcresulttool@v1
+        if: success() || failure()
+        with:
+          path: TestResults.xcresult

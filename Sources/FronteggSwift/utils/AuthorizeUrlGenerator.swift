@@ -10,7 +10,9 @@ import CommonCrypto
 
 
 
-class AuthorizeUrlGenerator {
+public class AuthorizeUrlGenerator {
+    
+    public static let shared = AuthorizeUrlGenerator()
     
     private let logger = getLogger("AuthorizeUrlGenerator")
     
@@ -38,22 +40,22 @@ class AuthorizeUrlGenerator {
             .replacingOccurrences(of: "/", with: "_")
     }
     
-    func generate() -> URL {
+    func generate() -> (URL, String) {
+        
         let nonce = createRandomString()
         let codeVerifier = createRandomString()
         let codeChallenge = generateCodeChallenge(codeVerifier)
-        
+
         let baseUrl = FronteggApp.shared.baseUrl
-        
+        let redirectUri = generateRedirectUri();
         logger.trace("CodeVerifier saved in memory to be able to validate the response")
-        FronteggAuth.shared.codeVerifier = codeVerifier
-        
-        
+
+
         var authorizeUrl = URLComponents(string: baseUrl)!
-        
-        authorizeUrl.path = "/oauth/authorize"
+
+        authorizeUrl.path = "/frontegg/oauth/authorize"
         authorizeUrl.queryItems = [
-            URLQueryItem(name: "redirect_uri", value: URLConstants.generateRedirectUri(baseUrl)),
+            URLQueryItem(name: "redirect_uri", value: redirectUri),
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "client_id", value: FronteggApp.shared.clientId),
             URLQueryItem(name: "scope", value: "openid email profile"),
@@ -61,16 +63,27 @@ class AuthorizeUrlGenerator {
             URLQueryItem(name: "code_challenge_method", value: "S256"),
             URLQueryItem(name: "nonce", value: nonce),
         ]
-        
+
         if let url = authorizeUrl.url{
             logger.trace("Generated url: \(url.absoluteString)")
-            return url
+
+            if let encodedURL = url.absoluteString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+                var loginUrl = URLComponents(string: baseUrl)!
+
+                loginUrl.path = "/frontegg/oauth/logout"
+                loginUrl.queryItems = [
+                    URLQueryItem(name: "post_logout_redirect_uri", value: encodedURL),
+                ]
+                return (loginUrl.url!, codeVerifier)
+            } else {
+                logger.error("Failed to parse the generated url, baseUrl: \(baseUrl)")
+                fatalError("Failed to generate authorize url")
+            }
         } else {
             logger.error("Unkonwn error occured while generating authorize url, baseUrl: \(baseUrl)")
             fatalError("Failed to generate authorize url")
         }
-        
-        
+
     }
     
 }
