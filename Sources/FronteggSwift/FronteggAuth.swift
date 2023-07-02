@@ -158,9 +158,9 @@ public class FronteggAuth: ObservableObject {
     func handleHostedLoginCallback(_ code: String, _ codeVerifier: String, _ completion: @escaping FronteggAuth.CompletionHandler) {
         
         let redirectUri = generateRedirectUri()
+        setIsLoading(true)
         
         Task {
-            
             let (responseData, error) = await api.exchangeToken(
                 code: code,
                 redirectUrl: redirectUri,
@@ -169,11 +169,13 @@ public class FronteggAuth: ObservableObject {
             
             guard error == nil else {
                 completion(.failure(error!))
+                setIsLoading(false)
                 return
             }
             
             guard let data = responseData else {
                 completion(.failure(FronteggError.authError("Failed to authenticate with frontegg")))
+                setIsLoading(false)
                 return
             }
             
@@ -182,8 +184,11 @@ public class FronteggAuth: ObservableObject {
                 await setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
                 
                 completion(.success(user!))
+                
+                setIsLoading(false)
             } catch {
                 completion(.failure(FronteggError.authError("Failed to load user data: \(error.localizedDescription)")))
+                setIsLoading(false)
                 return
             }
             
@@ -191,14 +196,9 @@ public class FronteggAuth: ObservableObject {
         
     }
     
-    
-    func createCompletionHandler(message: String) -> ((Bool) -> Void) {
-        return { (isSuccess: Bool) in
-            if isSuccess {
-                print("\(message) - Task completed successfully.")
-            } else {
-                print("\(message) - Task failed.")
-            }
+    internal func setIsLoading(_ isLoading: Bool){
+        DispatchQueue.main.async {
+            self.isLoading = isLoading
         }
     }
     
