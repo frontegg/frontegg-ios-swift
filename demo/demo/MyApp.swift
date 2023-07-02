@@ -27,16 +27,7 @@ struct MyApp: View {
                 }
             }else{
                 Button {
-                    fronteggAuth.login { res in
-                        switch res {
-                        case .success(let user):
-                            print("user: \(user)")
-                        
-                        case .failure(let error):
-                            print("error: \(error)")
-                        }
-                        
-                    }
+                    fronteggAuth.login()
                 } label: {
                     Text("Login Button")
                 }

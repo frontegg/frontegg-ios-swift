@@ -102,6 +102,7 @@ public class FronteggAuth: ObservableObject {
         DispatchQueue.main.sync {
             self.isLoading = false
             self.initializing = false
+            self.appLink = false
         }
     }
     
@@ -127,6 +128,7 @@ public class FronteggAuth: ObservableObject {
                                     self.accessToken = nil
                                     self.refreshToken = nil
                                     self.initializing = false
+                                    self.appLink = false
                                 }
                             }
                     }
@@ -234,8 +236,11 @@ public class FronteggAuth: ObservableObject {
     }
     public typealias CompletionHandler = (Result<User, FronteggError>) -> Void
     
-    public func login( completion: @escaping FronteggAuth.CompletionHandler) {
+    public func login(_ _completion: FronteggAuth.CompletionHandler? = nil) {
         
+        let completion = _completion ?? { res in
+            
+        }
         self.webAuthentication?.webAuthSession?.cancel()
         self.webAuthentication = WebAuthentication()
         

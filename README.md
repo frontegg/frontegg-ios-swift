@@ -53,7 +53,9 @@ Copy FronteggDomain to future steps from [Frontegg Portal Domain](https://portal
 
 - Navigate to [Login Method Settings](https://portal.frontegg.com/development/authentication/hosted)
 - Toggle Hosted login method
-- Add `{{LOGIN_URL}}/mobile/callback`
+- Add `{{IOS_BUNDLE_IDENTIFIER}}://{{FRONTEGG_BASE_URL}}/ios/oauth/callback`
+- Replace `IOS_BUNDLE_IDENTIFIER` with your application identifier
+- Replace `FRONTEGG_BASE_URL` with your frontegg base url
 
 
 ### Add frontegg package to the project
@@ -116,7 +118,12 @@ your root project directory, this file will store values to be used variables by
           if fronteggAuth.isAuthenticated {
             [YOU APPLICATION TABS / ROUTER / VIEWS]
           } else  {
-            FronteggLoginPage()
+            
+            Button {
+                fronteggAuth.login()
+            } label: {
+                Text("Login Button")
+            }
           }
         }
       }
@@ -187,19 +194,20 @@ your root project directory, this file will store values to be used variables by
                     url.stopAccessingSecurityScopedResource()
                 }
                 if url.absoluteString.hasPrefix( FronteggApp.shared.baseUrl ) {
-                    FronteggApp.shared.auth.pendingAppLink = url
-                    window?.rootViewController = FronteggController()
-                    window?.makeKeyAndVisible()
+                    if(FronteggApp.shared.auth.handleOpenUrl(url)){
+                        window?.rootViewController = FronteggController()
+                        window?.makeKeyAndVisible()
+                    }
                 }
                 
             }
         }
         func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
-            if let url = userActivity.webpageURL,
-               url.absoluteString.hasPrefix( FronteggApp.shared.baseUrl ){
-                FronteggApp.shared.auth.pendingAppLink = url
-                window?.rootViewController = FronteggController()
-                window?.makeKeyAndVisible()
+            if let url = userActivity.webpageURL {
+                if(FronteggApp.shared.auth.handleOpenUrl(url)){
+                    window?.rootViewController = FronteggController()
+                    window?.makeKeyAndVisible()
+                }
             }
         }
       ```
@@ -252,7 +260,6 @@ your root project directory, this file will store values to be used variables by
         
       ```
   
-
 
 
 ### Config iOS associated domain
