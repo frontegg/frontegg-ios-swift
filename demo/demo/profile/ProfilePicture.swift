@@ -12,23 +12,27 @@ struct ProfilePicture: View {
     
     
     var body: some View {
-        AsyncImage(
-            url: URL(string: self.fronteggAuth.user?.profilePictureUrl ?? ""),
-            content: { image in
-                image
-                    .resizable()
-                    .frame(width: 160, height: 160)
-                    .clipShape(Circle())
-                    .shadow(radius: 2)
-            },
-            placeholder: {
-                Image("ProfileImg")
-                    .resizable()
-                    .frame(width: 160, height: 160)
-                    .clipShape(Circle())
-                    .shadow(radius: 2)
-            }
+        if #available(iOS 15.0, *) {
+            AsyncImage(
+                url: URL(string: self.fronteggAuth.user?.profilePictureUrl ?? ""),
+                content: { image in
+                    image
+                        .resizable()
+                        .frame(width: 160, height: 160)
+                        .clipShape(Circle())
+                        .shadow(radius: 2)
+                },
+                placeholder: {
+                    Image("ProfileImg")
+                        .resizable()
+                        .frame(width: 160, height: 160)
+                        .clipShape(Circle())
+                        .shadow(radius: 2)
+                }
             )
+        } else {
+            // Fallback on earlier versions
+        }
     }
 }
 
