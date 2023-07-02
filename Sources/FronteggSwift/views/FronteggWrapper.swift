@@ -24,17 +24,12 @@ public struct FronteggWrapper<Content: View>: View {
     }
     public var body: some View {
         ZStack {
-            if !fronteggAuth.initializing && fronteggAuth.pendingAppLink == nil {
-                if(fronteggAuth.appLink != nil){
-                    
-                    
-
-                } else {
-                    Group(content: content)
-                }
-            }
-            if fronteggAuth.showLoader || fronteggAuth.pendingAppLink != nil {
+            if fronteggAuth.initializing
+                || fronteggAuth.showLoader
+                || fronteggAuth.appLink {
                 self.loaderView
+            } else {
+                Group(content: content)
             }
         }
         .environmentObject(fronteggAuth)

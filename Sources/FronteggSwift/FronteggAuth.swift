@@ -18,9 +18,7 @@ public class FronteggAuth: ObservableObject {
     @Published public var isLoading = true
     @Published public var initializing = true
     @Published public var showLoader = true
-    @Published public var pendingAppLink: URL?
-    @Published public var appLink: URL?
-    @Published public var externalLink = false
+    @Published public var appLink: Bool = false
     public var baseUrl = ""
     public var clientId = ""
     
@@ -47,15 +45,6 @@ public class FronteggAuth: ObservableObject {
             self.showLoader = initializingValue || (!isAuthenticatedValue && isLoadingValue)
         }.store(in: &subscribers)
         
-        
-        self.$pendingAppLink.sink() { pendingAppLinkValue in
-            if(pendingAppLinkValue != nil){
-                DispatchQueue.main.async {
-                    self.appLink = pendingAppLinkValue
-                    self.pendingAppLink = nil
-                }
-            }
-        }.store(in: &subscribers)
         
         if let refreshToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue),
            let accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
@@ -91,8 +80,7 @@ public class FronteggAuth: ObservableObject {
                 self.accessToken = accessToken
                 self.user = user
                 self.isAuthenticated = true
-                self.pendingAppLink = nil
-                self.appLink = nil
+                self.appLink = false
                 
                 let offset = Double((decode["exp"] as! Int) - Int(Date().timeIntervalSince1970))  * 0.9
                 DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + offset) {
@@ -262,8 +250,11 @@ public class FronteggAuth: ObservableObject {
     public func handleOpenUrl(_ url: URL) -> Bool {
         
         if(!url.absoluteString.hasPrefix(self.baseUrl)){
+            self.appLink = false
             return false
         }
+        
+        self.appLink = true
         
         self.webAuthentication?.webAuthSession?.cancel()
         self.webAuthentication = WebAuthentication()

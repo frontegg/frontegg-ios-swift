@@ -17,22 +17,14 @@ struct FronteggUIKitWrapper: View {
     }
     public var body: some View {
         ZStack {
-            if !fronteggAuth.initializing && fronteggAuth.pendingAppLink == nil {
-                if(fronteggAuth.appLink != nil){
-                    FronteggLoginPage()
-                } else {
-                    if(fronteggAuth.isAuthenticated){
-                        self.loaderView
-                        .onAppear() {
-                            self.navigateToAuthenticated()
-                        }
-                    }else {
-                        FronteggLoginPage()
-                    }
-                }
-            }
-            if fronteggAuth.showLoader || fronteggAuth.pendingAppLink != nil {
+            if fronteggAuth.initializing
+                || fronteggAuth.showLoader
+                || fronteggAuth.appLink {
                 self.loaderView
+            }else {
+                self.loaderView.onAppear() {
+                    self.navigateToAuthenticated()
+                }
             }
         }
         .environmentObject(fronteggAuth)
