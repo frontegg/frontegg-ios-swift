@@ -48,7 +48,6 @@ public class AuthorizeUrlGenerator {
 
         let baseUrl = FronteggApp.shared.baseUrl
         let redirectUri = generateRedirectUri();
-        logger.trace("CodeVerifier saved in memory to be able to validate the response")
 
 
         var authorizeUrl = URLComponents(string: baseUrl)!

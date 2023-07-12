@@ -151,6 +151,9 @@ public class FronteggAuth: ObservableObject {
                 self.initializing = false
                 self.isLoading = false
                 self.isAuthenticated = false
+                self.accessToken = nil
+                self.refreshToken = nil
+                self.credentialManager.clear()
             }
         }
     }
