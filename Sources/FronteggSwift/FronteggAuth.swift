@@ -18,9 +18,7 @@ public class FronteggAuth: ObservableObject {
     @Published public var isLoading = true
     @Published public var initializing = true
     @Published public var showLoader = true
-    @Published public var pendingAppLink: URL?
-    @Published public var appLink: URL?
-    @Published public var externalLink = false
+    @Published public var appLink: Bool = false
     public var baseUrl = ""
     public var clientId = ""
     
@@ -47,15 +45,6 @@ public class FronteggAuth: ObservableObject {
             self.showLoader = initializingValue || (!isAuthenticatedValue && isLoadingValue)
         }.store(in: &subscribers)
         
-        
-        self.$pendingAppLink.sink() { pendingAppLinkValue in
-            if(pendingAppLinkValue != nil){
-                DispatchQueue.main.async {
-                    self.appLink = pendingAppLinkValue
-                    self.pendingAppLink = nil
-                }
-            }
-        }.store(in: &subscribers)
         
         if let refreshToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue),
            let accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
@@ -91,8 +80,7 @@ public class FronteggAuth: ObservableObject {
                 self.accessToken = accessToken
                 self.user = user
                 self.isAuthenticated = true
-                self.pendingAppLink = nil
-                self.appLink = nil
+                self.appLink = false
                 
                 let offset = Double((decode["exp"] as! Int) - Int(Date().timeIntervalSince1970))  * 0.9
                 DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + offset) {
@@ -114,6 +102,7 @@ public class FronteggAuth: ObservableObject {
         DispatchQueue.main.sync {
             self.isLoading = false
             self.initializing = false
+            self.appLink = false
         }
     }
     
@@ -139,6 +128,7 @@ public class FronteggAuth: ObservableObject {
                                     self.accessToken = nil
                                     self.refreshToken = nil
                                     self.initializing = false
+                                    self.appLink = false
                                 }
                             }
                     }
@@ -161,6 +151,9 @@ public class FronteggAuth: ObservableObject {
                 self.initializing = false
                 self.isLoading = false
                 self.isAuthenticated = false
+                self.accessToken = nil
+                self.refreshToken = nil
+                self.credentialManager.clear()
             }
         }
     }
@@ -168,9 +161,9 @@ public class FronteggAuth: ObservableObject {
     func handleHostedLoginCallback(_ code: String, _ codeVerifier: String, _ completion: @escaping FronteggAuth.CompletionHandler) {
         
         let redirectUri = generateRedirectUri()
+        setIsLoading(true)
         
         Task {
-            
             let (responseData, error) = await api.exchangeToken(
                 code: code,
                 redirectUrl: redirectUri,
@@ -179,11 +172,13 @@ public class FronteggAuth: ObservableObject {
             
             guard error == nil else {
                 completion(.failure(error!))
+                setIsLoading(false)
                 return
             }
             
             guard let data = responseData else {
                 completion(.failure(FronteggError.authError("Failed to authenticate with frontegg")))
+                setIsLoading(false)
                 return
             }
             
@@ -192,8 +187,11 @@ public class FronteggAuth: ObservableObject {
                 await setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
                 
                 completion(.success(user!))
+                
+                setIsLoading(false)
             } catch {
                 completion(.failure(FronteggError.authError("Failed to load user data: \(error.localizedDescription)")))
+                setIsLoading(false)
                 return
             }
             
@@ -201,14 +199,9 @@ public class FronteggAuth: ObservableObject {
         
     }
     
-    
-    func createCompletionHandler(message: String) -> ((Bool) -> Void) {
-        return { (isSuccess: Bool) in
-            if isSuccess {
-                print("\(message) - Task completed successfully.")
-            } else {
-                print("\(message) - Task failed.")
-            }
+    internal func setIsLoading(_ isLoading: Bool){
+        DispatchQueue.main.async {
+            self.isLoading = isLoading
         }
     }
     
@@ -227,6 +220,7 @@ public class FronteggAuth: ObservableObject {
                 return
             }
 
+            
             self.logger.trace("handleHostedLoginCallback, url: \(url)")
             guard let queryItems = getQueryItems(url.absoluteString), let code = queryItems["code"] else {
                 let error = FronteggError.authError("Failed to get extract code from hostedLoginCallback url")
@@ -246,8 +240,11 @@ public class FronteggAuth: ObservableObject {
     }
     public typealias CompletionHandler = (Result<User, FronteggError>) -> Void
     
-    public func login( completion: @escaping FronteggAuth.CompletionHandler) {
+    public func login(_ _completion: FronteggAuth.CompletionHandler? = nil) {
         
+        let completion = _completion ?? { res in
+            
+        }
         self.webAuthentication?.webAuthSession?.cancel()
         self.webAuthentication = WebAuthentication()
         
@@ -262,8 +259,11 @@ public class FronteggAuth: ObservableObject {
     public func handleOpenUrl(_ url: URL) -> Bool {
         
         if(!url.absoluteString.hasPrefix(self.baseUrl)){
+            self.appLink = false
             return false
         }
+        
+        self.appLink = true
         
         self.webAuthentication?.webAuthSession?.cancel()
         self.webAuthentication = WebAuthentication()
