@@ -220,6 +220,7 @@ public class FronteggAuth: ObservableObject {
                 return
             }
 
+            
             self.logger.trace("handleHostedLoginCallback, url: \(url)")
             guard let queryItems = getQueryItems(url.absoluteString), let code = queryItems["code"] else {
                 let error = FronteggError.authError("Failed to get extract code from hostedLoginCallback url")
