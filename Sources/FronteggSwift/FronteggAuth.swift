@@ -190,6 +190,7 @@ public class FronteggAuth: ObservableObject {
                 
                 setIsLoading(false)
             } catch {
+                print("Failed to load user data: \(error.localizedDescription)")
                 completion(.failure(FronteggError.authError("Failed to load user data: \(error.localizedDescription)")))
                 setIsLoading(false)
                 return
@@ -279,6 +280,28 @@ public class FronteggAuth: ObservableObject {
         self.webAuthentication!.start(url, completionHandler: oauthCallback)
         
         return true
+    }
+    
+    public func  switchTenant(tenantId:String,_ completion: FronteggAuth.CompletionHandler? = nil) {
+        
+        self.setIsLoading(true)
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            Task {
+                try? await self.api.switchTenant(tenantId: tenantId)
+                await self.refreshTokenIfNeeded()
+                
+                if(completion != nil){
+                    if let user = self.user {
+                        completion?(.success(user))
+                    }else {
+                        completion?(.failure(FronteggError.authError("Failed to swift tenant")))
+                    }
+                }
+            }
+        }
+        
+        
     }
     
 }

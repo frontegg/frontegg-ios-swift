@@ -23,6 +23,8 @@ public struct User: Codable {
     public var permissions: [UserRolePermission]
     public var tenantId: String
     public var tenantIds: [String]
+    public var tenants: [Tenant]
+    public var activeTenant: Tenant
     public var activatedForTenant: Bool
     public var metadata: String?
     public var verified: Bool
@@ -43,9 +45,11 @@ public struct User: Codable {
         self.permissions = try container.decode([UserRolePermission].self, forKey: .permissions)
         self.tenantId = try container.decode(String.self, forKey: .tenantId)
         self.tenantIds = try container.decode([String].self, forKey: .tenantIds)
+        self.tenants = try container.decode([Tenant].self, forKey: .tenants)
+        self.activeTenant = try container.decode(Tenant.self, forKey: .activeTenant)
         self.activatedForTenant = (try? container.decodeIfPresent(Bool.self, forKey: .activatedForTenant)) ?? false
         self.metadata = try container.decodeIfPresent(String.self, forKey: .metadata)
-//        self.roleIds = try container.decode([String].self, forKey: .roleIds)
+
         self.verified = (try? container.decodeIfPresent(Bool.self, forKey: .verified)) ?? false
         self.superUser = (try? container.decodeIfPresent(Bool.self, forKey: .superUser)) ?? false
     }

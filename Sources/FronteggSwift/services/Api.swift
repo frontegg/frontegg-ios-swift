@@ -30,6 +30,29 @@ public class Api {
     
     
     
+    
+    private func putRequest(path:String, body: [String: Any?]) async throws -> (Data, URLResponse) {
+        let urlStr = "\(self.baseUrl)/\(path)"
+        guard let url = URL(string: urlStr) else {
+            throw ApiError.invalidUrl("invalid url: \(urlStr)")
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
+        
+    
+        if let accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "authorization")
+        }
+        
+        request.httpMethod = "PUT"
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        return try await URLSession.shared.data(for: request)
+    }
+    
     private func postRequest(path:String, body: [String: Any?], additionalHeaders: [String: String] = [:]) async throws -> (Data, URLResponse) {
         let urlStr = "\(self.baseUrl)/\(path)"
         guard let url = URL(string: urlStr) else {
@@ -109,16 +132,32 @@ public class Api {
     }
     
     internal func me(accessToken: String) async throws -> User? {
-        let (data, _) = try await getRequest(path: "identity/resources/users/v2/me", accessToken: accessToken)
+        let (meData, _) = try await getRequest(path: "identity/resources/users/v2/me", accessToken: accessToken)
         
-        return try JSONDecoder().decode(User.self, from: data)
+        var meObj = try JSONSerialization.jsonObject(with: meData, options: [])  as! [String: Any]
+        
+        let (tenantsData, _) = try await getRequest(path: "identity/resources/users/v3/me/tenants", accessToken: accessToken)
+        
+        let tenantsObj = try JSONSerialization.jsonObject(with: tenantsData, options: [])  as! [String: Any]
+        
+        meObj["tenants"] = tenantsObj["tenants"]
+        meObj["activeTenant"] = tenantsObj["activeTenant"]
+        
+        let mergedData = try JSONSerialization.data(withJSONObject: meObj)
+
+        
+        return try JSONDecoder().decode(User.self, from: mergedData)
+    }
+    
+    
+    public func switchTenant(tenantId: String) async throws -> Void {
+        try await putRequest(path: "identity/resources/users/v1/tenant", body: ["tenantId":tenantId])
     }
     
     internal func logout(accessToken: String?, refreshToken: String?) async {
         
         do {
             let (_, response) = try await postRequest(path: "identity/resources/auth/v1/logout", body: ["refreshToken":refreshToken])
-//            let (_, response) = try await getRequest(path: "frontegg/oauth/logout", accessToken: accessToken, refreshToken: refreshToken)
             
             if let res = response as? HTTPURLResponse, res.statusCode != 401 {
                 self.logger.info("logged out successfully")

@@ -23,8 +23,8 @@
 		415C011729293730007598C8 /* ProfileInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415C011129293730007598C8 /* ProfileInfo.swift */; };
 		415C011829293730007598C8 /* ProfilePicture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415C011229293730007598C8 /* ProfilePicture.swift */; };
 		415C011929293730007598C8 /* ProfileTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415C011329293730007598C8 /* ProfileTab.swift */; };
-		415C011A29293730007598C8 /* TaskList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415C011529293730007598C8 /* TaskList.swift */; };
-		415C011B29293730007598C8 /* TasksTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415C011629293730007598C8 /* TasksTab.swift */; };
+		415C011A29293730007598C8 /* TenantsList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415C011529293730007598C8 /* TenantsList.swift */; };
+		415C011B29293730007598C8 /* TenantsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415C011629293730007598C8 /* TenantsTab.swift */; };
 		415C0128292A3F23007598C8 /* FronteggSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 415C0127292A3F23007598C8 /* FronteggSwift */; };
 		41D0537A294920A800A54D16 /* LoaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41D05379294920A800A54D16 /* LoaderView.swift */; };
 		41DB5FBF29F048B8006F3EB6 /* Mocker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41DB5FBE29F048B8006F3EB6 /* Mocker.swift */; };
@@ -57,8 +57,8 @@
 		415C011129293730007598C8 /* ProfileInfo.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ProfileInfo.swift; sourceTree = "<group>"; };
 		415C011229293730007598C8 /* ProfilePicture.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ProfilePicture.swift; sourceTree = "<group>"; };
 		415C011329293730007598C8 /* ProfileTab.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ProfileTab.swift; sourceTree = "<group>"; };
-		415C011529293730007598C8 /* TaskList.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = TaskList.swift; sourceTree = "<group>"; };
-		415C011629293730007598C8 /* TasksTab.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = TasksTab.swift; sourceTree = "<group>"; };
+		415C011529293730007598C8 /* TenantsList.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = TenantsList.swift; sourceTree = "<group>"; };
+		415C011629293730007598C8 /* TenantsTab.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = TenantsTab.swift; sourceTree = "<group>"; };
 		415C0125292A3ED1007598C8 /* frontegg-swift */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = "frontegg-swift"; path = ..; sourceTree = "<group>"; };
 		415CE465297DBA8800EDCA18 /* demo-test.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "demo-test.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		41A7329C292D9859004A22D2 /* demo.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = demo.entitlements; sourceTree = "<group>"; };
@@ -143,8 +143,8 @@
 		415C011429293730007598C8 /* tasks */ = {
 			isa = PBXGroup;
 			children = (
-				415C011529293730007598C8 /* TaskList.swift */,
-				415C011629293730007598C8 /* TasksTab.swift */,
+				415C011529293730007598C8 /* TenantsList.swift */,
+				415C011629293730007598C8 /* TenantsTab.swift */,
 			);
 			path = tasks;
 			sourceTree = "<group>";
@@ -284,10 +284,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				415C011A29293730007598C8 /* TaskList.swift in Sources */,
+				415C011A29293730007598C8 /* TenantsList.swift in Sources */,
 				415C011929293730007598C8 /* ProfileTab.swift in Sources */,
 				415C011829293730007598C8 /* ProfilePicture.swift in Sources */,
-				415C011B29293730007598C8 /* TasksTab.swift in Sources */,
+				415C011B29293730007598C8 /* TenantsTab.swift in Sources */,
 				415C011729293730007598C8 /* ProfileInfo.swift in Sources */,
 				41D0537A294920A800A54D16 /* LoaderView.swift in Sources */,
 				415C00EA29293437007598C8 /* demoApp.swift in Sources */,
