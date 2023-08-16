@@ -22,6 +22,9 @@ struct ProfileInfo: View {
                 Text("Admin")
                     .font(.subheadline)
             }
+            Text(fronteggAuth.user?.activeTenant.name ?? "no tenant")
+                .font(.subheadline)
+            Spacer()
         }
         .padding()
     }

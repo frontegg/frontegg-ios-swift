@@ -7,21 +7,22 @@
 
 import SwiftUI
 
-struct TasksTab: View {
+struct TenantsTab: View {
+    
     var body: some View {
         NavigationView {
             VStack(alignment: .leading) {
-                TaskList()
+                TenantsList()
                 Spacer()
-            }.padding(.top, 20)
+            }.padding(.all, 20)
             
-            .navigationTitle("Tasks")
+            .navigationTitle("Tenants")
         }
     }
 }
 
 struct TasksTab_Previews: PreviewProvider {
     static var previews: some View {
-        TasksTab()
+        TenantsTab()
     }
 }

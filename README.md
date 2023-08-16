@@ -32,13 +32,7 @@ and integrate them into their SaaS portals in up to 5 lines of code.
 
 Major platform versions are supported, starting from:
 
-- iOS **14**
-
-[//]: # (- macOS **12**)
-
-[//]: # (- tvOS **14** )
-
-[//]: # (- watchOS **7**)
+- iOS **> 14**
 
 
 ## Getting Started

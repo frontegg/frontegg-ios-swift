@@ -19,10 +19,10 @@ struct MyApp: View {
                             Image(systemName: "person.circle")
                             Text("Profile")
                         }
-                    TasksTab()
+                    TenantsTab()
                         .tabItem {
                             Image(systemName: "checklist")
-                            Text("Tasks")
+                            Text("Tenants")
                         }
                 }
             }else{
