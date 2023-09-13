@@ -28,9 +28,6 @@ public class Api {
         }
     }
     
-    
-    
-    
     private func putRequest(path:String, body: [String: Any?]) async throws -> (Data, URLResponse) {
         let urlStr = "\(self.baseUrl)/\(path)"
         guard let url = URL(string: urlStr) else {
@@ -151,7 +148,7 @@ public class Api {
     
     
     public func switchTenant(tenantId: String) async throws -> Void {
-        try await putRequest(path: "identity/resources/users/v1/tenant", body: ["tenantId":tenantId])
+        _ = try await putRequest(path: "identity/resources/users/v1/tenant", body: ["tenantId":tenantId])
     }
     
     internal func logout(accessToken: String?, refreshToken: String?) async {

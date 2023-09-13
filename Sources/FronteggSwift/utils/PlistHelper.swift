@@ -57,4 +57,18 @@ struct PlistHelper {
         
         return Logger.Level.warning
     }
+    
+    public static func isEmbeddedMode() -> Bool {
+        
+        let bundle = Bundle.main;
+        if let path = bundle.path(forResource: "Frontegg", ofType: "plist"),
+           let values = NSDictionary(contentsOfFile: path) as? [String: Any],
+           let embeddedMode =  values["embeddedMode"] as? Bool {
+            
+            return embeddedMode
+        }
+        
+        return false
+    }
 }
+

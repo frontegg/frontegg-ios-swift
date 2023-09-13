@@ -19,8 +19,12 @@ public class FronteggAuth: ObservableObject {
     @Published public var initializing = true
     @Published public var showLoader = true
     @Published public var appLink: Bool = false
+    @Published public var externalLink: Bool = false
+    @Published public var embeddedMode: Bool = false
+    
     public var baseUrl = ""
     public var clientId = ""
+    public var pendingAppLink: URL? = nil
     
     
     
@@ -32,7 +36,7 @@ public class FronteggAuth: ObservableObject {
     private let credentialManager: CredentialManager
     public let api: Api
     private var subscribers = Set<AnyCancellable>()
-    private var webAuthentication: WebAuthentication? = nil
+    var webAuthentication: WebAuthentication? = nil
     
     init (baseUrl:String, clientId: String, api:Api, credentialManager: CredentialManager) {
         
@@ -262,6 +266,13 @@ public class FronteggAuth: ObservableObject {
         if(!url.absoluteString.hasPrefix(self.baseUrl)){
             self.appLink = false
             return false
+        }
+        
+        if(self.embeddedMode){
+            self.pendingAppLink = url
+            self.isLoading = true
+            // TODO: display login page
+            return true;
         }
         
         self.appLink = true

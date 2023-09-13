@@ -67,3 +67,44 @@ public func generateRedirectUri() -> String {
         return "\(bundleIdentifier)://\(urlComponents.host!)/ios/oauth/callback"
     
 }
+
+
+enum OverrideUrlType {
+    case HostedLoginCallback
+    case SocialLoginRedirectToBrowser
+    case SocialOauthPreLogin
+    case loginRoutes
+    case internalRoutes
+    case Unknown
+}
+
+func getOverrideUrlType (url: URL) -> OverrideUrlType {
+    
+    let urlStr = url.absoluteString
+    
+    if urlStr.starts(with: FronteggApp.shared.baseUrl) {
+        
+        if(url.path.hasPrefix("/identity/resources/auth/v2/user/sso/default") &&
+           url.path.hasSuffix("/prelogin")){
+            return .SocialOauthPreLogin
+        }
+        if((URLConstants.successLoginRoutes.first { url.path.hasPrefix($0)}) != nil) {
+            return .internalRoutes
+        }
+        if((URLConstants.loginRoutes.first { url.path.hasPrefix($0)}) != nil) {
+            return .loginRoutes
+        }
+        
+        return .internalRoutes
+    }
+    
+    if(url.absoluteString.starts(with: generateRedirectUri())){
+        return .HostedLoginCallback
+    }
+    if((URLConstants.oauthUrls.first { urlStr.hasPrefix($0)}) != nil) {
+        return .SocialLoginRedirectToBrowser
+    }
+    
+    return .Unknown
+    
+}
