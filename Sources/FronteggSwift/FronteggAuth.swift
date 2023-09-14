@@ -8,7 +8,8 @@ import Foundation
 import WebKit
 import Combine
 import AuthenticationServices
-
+import UIKit
+import SwiftUI
 
 public class FronteggAuth: ObservableObject {
     @Published public var accessToken: String?
@@ -20,7 +21,7 @@ public class FronteggAuth: ObservableObject {
     @Published public var showLoader = true
     @Published public var appLink: Bool = false
     @Published public var externalLink: Bool = false
-    @Published public var embeddedMode: Bool = false
+    public var embeddedMode: Bool = false
     
     public var baseUrl = ""
     public var clientId = ""
@@ -44,6 +45,7 @@ public class FronteggAuth: ObservableObject {
         self.clientId = clientId
         self.credentialManager = credentialManager
         self.api = api
+        self.embeddedMode = PlistHelper.isEmbeddedMode()
         
         self.$initializing.combineLatest(self.$isAuthenticated, self.$isLoading).sink(){ (initializingValue, isAuthenticatedValue, isLoadingValue) in
             self.showLoader = initializingValue || (!isAuthenticatedValue && isLoadingValue)
@@ -211,7 +213,7 @@ public class FronteggAuth: ObservableObject {
     }
     
     internal func createOauthCallbackHandler(_ completion: @escaping FronteggAuth.CompletionHandler) -> ((URL?, Error?) -> Void) {
-            
+        
         return { callbackUrl, error in
             
             if error != nil {
@@ -224,7 +226,7 @@ public class FronteggAuth: ObservableObject {
                 completion(.failure(FronteggError.authError(errorMessage)))
                 return
             }
-
+            
             
             self.logger.trace("handleHostedLoginCallback, url: \(url)")
             guard let queryItems = getQueryItems(url.absoluteString), let code = queryItems["code"] else {
@@ -232,7 +234,7 @@ public class FronteggAuth: ObservableObject {
                 completion(.failure(error))
                 return
             }
-
+            
             guard let codeVerifier = try? self.credentialManager.get(key: KeychainKeys.codeVerifier.rawValue) else {
                 let error = FronteggError.authError("IlligalState, codeVerifier not found")
                 completion(.failure(error))
@@ -246,6 +248,11 @@ public class FronteggAuth: ObservableObject {
     public typealias CompletionHandler = (Result<User, FronteggError>) -> Void
     
     public func login(_ _completion: FronteggAuth.CompletionHandler? = nil) {
+        
+        if(self.embeddedMode){
+            self.embeddedLogin(_completion)
+            return
+        }
         
         let completion = _completion ?? { res in
             
@@ -261,6 +268,25 @@ public class FronteggAuth: ObservableObject {
         
     }
     
+    public func embeddedLogin(_ _completion: FronteggAuth.CompletionHandler? = nil) {
+        
+        let hostingController = UIHostingController(rootView: EmbeddedLoginPage())
+        hostingController.modalPresentationStyle = .fullScreen
+        
+        var rootVC: UIViewController? = nil
+        if let lastWindow = UIApplication.shared.windows.last {
+            rootVC = lastWindow.rootViewController
+        } else if let appDelegate = UIApplication.shared.delegate,
+                  let window = appDelegate.window {
+            rootVC = window!.rootViewController
+        }
+        if let vc = rootVC {
+            vc.present(hostingController, animated: true, completion: nil)
+        }else {
+            print(FronteggError.authError("Unable to find root viewController"))
+            exit(500)
+        }
+    }
     public func handleOpenUrl(_ url: URL) -> Bool {
         
         if(!url.absoluteString.hasPrefix(self.baseUrl)){

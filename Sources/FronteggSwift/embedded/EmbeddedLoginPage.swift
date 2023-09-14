@@ -9,9 +9,11 @@ import Foundation
 import SwiftUI
 
 public struct EmbeddedLoginPage: View {
-    @EnvironmentObject var fronteggAuth: FronteggAuth
+    var fronteggAuth: FronteggAuth
     
-    public init(){}
+    public init(){
+        self.fronteggAuth = FronteggAuth.shared
+    }
     public var body: some View {
         ZStack {
             NavigationView{

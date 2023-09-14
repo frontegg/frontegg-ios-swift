@@ -44,8 +44,4 @@ public class FronteggApp {
         logger.info("Frontegg baseURL: \(self.baseUrl)")
     }
     
-    
-    
-
-    
 }

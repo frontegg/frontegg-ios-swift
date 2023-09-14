@@ -27,7 +27,14 @@ struct MyApp: View {
                         }
                 }
             } else {
-                EmbeddedLoginPage()
+                
+                // EmbeddedLoginPage()
+                
+                Button(action: {
+                    fronteggAuth.login()
+                }) {
+                    Text("Open Login")
+                }
             }
         }
     }
