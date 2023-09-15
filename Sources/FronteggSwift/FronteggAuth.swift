@@ -11,6 +11,7 @@ import AuthenticationServices
 import UIKit
 import SwiftUI
 
+
 public class FronteggAuth: ObservableObject {
     @Published public var accessToken: String?
     @Published public var refreshToken: String?
@@ -38,7 +39,7 @@ public class FronteggAuth: ObservableObject {
     private let credentialManager: CredentialManager
     public let api: Api
     private var subscribers = Set<AnyCancellable>()
-    var webAuthentication: WebAuthentication? = nil
+    var webAuthentication: WebAuthentication = WebAuthentication()
     
     init (baseUrl:String, clientId: String, api:Api, credentialManager: CredentialManager) {
         
@@ -258,24 +259,21 @@ public class FronteggAuth: ObservableObject {
         let completion = _completion ?? { res in
             
         }
-        self.webAuthentication?.webAuthSession?.cancel()
+        self.webAuthentication.webAuthSession?.cancel()
         self.webAuthentication = WebAuthentication()
         
         let oauthCallback = createOauthCallbackHandler(completion)
         let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate()
         try! credentialManager.save(key: KeychainKeys.codeVerifier.rawValue, value: codeVerifier)
         
-        self.webAuthentication!.start(authorizeUrl, completionHandler: oauthCallback)
+        self.webAuthentication.start(authorizeUrl, completionHandler: oauthCallback)
         
     }
     
-    public func embeddedLogin(_ _completion: FronteggAuth.CompletionHandler? = nil) {
-        
-        
-        
+    
+    internal func getRootVC() -> UIViewController? {
         
         var rootVC: UIViewController? = nil
-        
         
         if let lastWindow = UIApplication.shared.windows.last {
             rootVC = lastWindow.rootViewController
@@ -283,14 +281,26 @@ public class FronteggAuth: ObservableObject {
                   let window = appDelegate.window {
             rootVC = window!.rootViewController
         }
-        if let vc = rootVC {
+        
+        return rootVC
+    }
+    
+    public func registerPasskeys() {
+        
+        if let rootVC = self.getRootVC() {
             
+//            rootVC.view.addSubview(<#T##view: UIView##UIView#>)
+        }
+    }
+    
+    public func embeddedLogin(_ _completion: FronteggAuth.CompletionHandler? = nil) {
+        
+        if let rootVC = self.getRootVC() {
             let loginModal = EmbeddedLoginModal(parentVC: rootVC)
             let hostingController = UIHostingController(rootView: loginModal)
             hostingController.modalPresentationStyle = .fullScreen
             
-            vc.present(hostingController, animated: true, completion: nil)
-            
+            rootVC.present(hostingController, animated: false, completion: nil)
             
         } else {
             print(FronteggError.authError("Unable to find root viewController"))
@@ -306,14 +316,27 @@ public class FronteggAuth: ObservableObject {
         
         if(self.embeddedMode){
             self.pendingAppLink = url
-            self.isLoading = true
-            // TODO: display login page
+            self.webLoading = true
+            guard let rootVC = self.getRootVC() else {
+                print(FronteggError.authError("Unable to find root viewController"))
+                return false;
+            }
+            
+            let loginModal = EmbeddedLoginModal(parentVC: rootVC)
+            let hostingController = UIHostingController(rootView: loginModal)
+            hostingController.modalPresentationStyle = .fullScreen
+            
+            let presented = rootVC.presentedViewController
+            if presented is UIHostingController<EmbeddedLoginModal> {
+                rootVC.presentedViewController?.dismiss(animated: false)
+            }
+            rootVC.present(hostingController, animated: false, completion: nil)
             return true;
         }
         
         self.appLink = true
         
-        self.webAuthentication?.webAuthSession?.cancel()
+        self.webAuthentication.webAuthSession?.cancel()
         self.webAuthentication = WebAuthentication()
         let oauthCallback = createOauthCallbackHandler() { res in
             
@@ -324,7 +347,7 @@ public class FronteggAuth: ObservableObject {
                 print("Error \(error)")
             }
         }
-        self.webAuthentication!.start(url, completionHandler: oauthCallback)
+        self.webAuthentication.start(url, completionHandler: oauthCallback)
         
         return true
     }

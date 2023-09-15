@@ -8,24 +8,24 @@
 import Foundation
 
 public class Logger {
-    public enum Level: String, Codable, CaseIterable {
+    public enum Level: Int, Codable, CaseIterable {
         /// Appropriate for messages that contain information normally of use only when
         /// tracing the execution of a program.
-        case trace
+        case trace = 0
         
         /// Appropriate for messages that contain information normally of use only when
         /// debugging a program.
-        case debug
+        case debug = 1
         
         /// Appropriate for informational messages.
-        case info
+        case info = 2
         
         /// Appropriate for messages that are not error conditions, but more severe than
         /// `.notice`.
-        case warning
+        case warning = 3
         
         /// Appropriate for error conditions.
-        case error
+        case error = 4
         
         /// Appropriate for critical error conditions that usually require immediate
         /// attention.
@@ -33,7 +33,7 @@ public class Logger {
         /// When a `critical` message is logged, the logging backend (`LogHandler`) is free to perform
         /// more heavy-weight operations to capture system state (such as capturing stack traces) to facilitate
         /// debugging.
-        case critical
+        case critical = 5
     }
     
     public var logLevel: Logger.Level  = Level.error

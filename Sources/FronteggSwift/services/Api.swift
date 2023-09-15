@@ -28,7 +28,7 @@ public class Api {
         }
     }
     
-    private func putRequest(path:String, body: [String: Any?]) async throws -> (Data, URLResponse) {
+    internal func putRequest(path:String, body: [String: Any?]) async throws -> (Data, URLResponse) {
         let urlStr = "\(self.baseUrl)/\(path)"
         guard let url = URL(string: urlStr) else {
             throw ApiError.invalidUrl("invalid url: \(urlStr)")
@@ -50,7 +50,7 @@ public class Api {
         return try await URLSession.shared.data(for: request)
     }
     
-    private func postRequest(path:String, body: [String: Any?], additionalHeaders: [String: String] = [:]) async throws -> (Data, URLResponse) {
+    internal func postRequest(path:String, body: [String: Any?], additionalHeaders: [String: String] = [:]) async throws -> (Data, URLResponse) {
         let urlStr = "\(self.baseUrl)/\(path)"
         guard let url = URL(string: urlStr) else {
             throw ApiError.invalidUrl("invalid url: \(urlStr)")
@@ -75,7 +75,7 @@ public class Api {
         return try await URLSession.shared.data(for: request)
     }
     
-    private func getRequest(path:String, accessToken:String?, refreshToken: String? = nil) async throws -> (Data, URLResponse) {
+    internal func getRequest(path:String, accessToken:String?, refreshToken: String? = nil) async throws -> (Data, URLResponse) {
         
         let urlStr = "\(self.baseUrl)/\(path)"
         guard let url = URL(string: urlStr) else {
@@ -104,6 +104,8 @@ public class Api {
                 "refresh_token": refreshToken,
             ])
             
+            let text = String(data: data, encoding: .utf8)!
+            print("result \(text)")
             return try JSONDecoder().decode(AuthResponse.self, from: data)
         } catch {
             print(error)
@@ -165,6 +167,7 @@ public class Api {
             self.logger.info("Uknonwn error when try to logout: \(error)")
         }
     }
+    
     
     
 }

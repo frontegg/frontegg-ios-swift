@@ -13,6 +13,7 @@ public struct EmbeddedLoginModal: View {
     @StateObject var fronteggAuth = FronteggApp.shared.auth
     public var parentVC: UIViewController? = nil
     
+    
     init(parentVC: UIViewController? = nil) {
         self.parentVC = parentVC
     }

@@ -16,7 +16,12 @@ public struct EmbeddedLoginPage: View {
         ZStack {
             NavigationView{
                 VStack(alignment: .center) {
-                   FronteggWebView()
+                    ZStack{
+                        FronteggWebView()
+                        if fronteggAuth.webLoading {
+                           DefaultLoader()
+                       }
+                    }
                 }
                 .toolbar {
                     ToolbarItem(placement: .navigationBarLeading) {
@@ -43,9 +48,7 @@ public struct EmbeddedLoginPage: View {
                 .ignoresSafeArea(fronteggAuth.externalLink ? [] : [.all])
 
             }
-            if fronteggAuth.webLoading {
-               DefaultLoader()
-           }
+            
         }
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .center)
         .ignoresSafeArea()

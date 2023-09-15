@@ -19,19 +19,20 @@ class WebAuthentication: NSObject, ObservableObject, ASWebAuthenticationPresenta
     
     
     
-    func start(_ websiteURL:URL, completionHandler: @escaping ASWebAuthenticationSession.CompletionHandler){
+    func start(_ websiteURL:URL, completionHandler: @escaping ASWebAuthenticationSession.CompletionHandler) -> ASWebAuthenticationSession {
         
         let bundleIdentifier = try! PlistHelper.fronteggConfig().bundleIdentifier
-        webAuthSession = ASWebAuthenticationSession.init(
+        let webAuthSession = ASWebAuthenticationSession.init(
             url: websiteURL,
             callbackURLScheme: bundleIdentifier,
             completionHandler: completionHandler)
         // Run the session
-        webAuthSession?.presentationContextProvider = self
-        webAuthSession?.prefersEphemeralWebBrowserSession = false
+        webAuthSession.presentationContextProvider = self
+        webAuthSession.prefersEphemeralWebBrowserSession = false
         
-        DispatchQueue.main.async {
-            self.webAuthSession?.start()
-        }
+        webAuthSession.start()
+        self.webAuthSession = webAuthSession
+        
+        return webAuthSession
     }
 }

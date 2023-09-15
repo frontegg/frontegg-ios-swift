@@ -46,11 +46,21 @@ struct PlistHelper {
             return logLevel
         }
         
+        let map = [
+            "trace": 0,
+            "debug": 1,
+            "info": 2,
+            "warn": 3,
+            "error": 4,
+            "critical": 5
+        ]
+        
         let bundle = Bundle.main;
         if let path = bundle.path(forResource: "Frontegg", ofType: "plist"),
            let values = NSDictionary(contentsOfFile: path) as? [String: Any],
            let logLevelStr = values["logLevel"] as? String,
-           let logLevel = Logger.Level.init(rawValue: logLevelStr) {
+           let logLevelNum = map[logLevelStr],
+           let logLevel = Logger.Level.init(rawValue: logLevelNum) {
             
             return logLevel
         }

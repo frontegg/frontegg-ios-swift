@@ -22,7 +22,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         return accessoryView
     }
     
-    
+    private func isCancelledAsAuthenticationLoginError(_ error: Error) -> Bool {
+        (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue
+    }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
         logger.trace("navigationAction check for \(navigationAction.request.url?.absoluteString ?? "no Url")")
         if let url = navigationAction.request.url {
@@ -33,25 +35,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                 
             case .SocialLoginRedirectToBrowser: do {
                 
-                fronteggAuth.webAuthentication?.webAuthSession?.cancel()
-                fronteggAuth.webAuthentication = WebAuthentication()
-                fronteggAuth.webAuthentication!.start(url) { callbackUrl, error  in
-//                    _ = webView.load(URLRequest(url: url))
-                    if(callbackUrl == nil){
-                        print("Failed to login with social login \(error?.localizedDescription)")
-                        let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
-                        self.codeVerifier = codeVerifier
-                        _ = webView.load(URLRequest(url: newUrl))
-                    } else {
-                        
-                        let components = URLComponents(url: callbackUrl!, resolvingAgainstBaseURL: false)!
-                        let query = components.query!
-                        let resultUrl = URL(string:
-                                                "\(self.fronteggAuth.baseUrl)/oauth/account/social/success?\(query)")!
-                        _ = webView.load(URLRequest(url: resultUrl))
-                    }
-                }
-                return .cancel
+                return self.handleSocialLoginRedirectToBrowser(webView, url)
             }
             case .HostedLoginCallback: do {
                 return self.handleHostedLoginCallback(webView, url)
@@ -76,12 +60,17 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             
             logger.info("urlType: \(urlType)")
             
-            if(fronteggAuth.externalLink != (urlType == .Unknown)) {
-                fronteggAuth.externalLink = urlType == .Unknown
+            let isUnknown = (urlType == .Unknown)
+            if(fronteggAuth.externalLink != isUnknown) {
+                fronteggAuth.externalLink = isUnknown
             }
             
-            if(fronteggAuth.webLoading == false) {
-                fronteggAuth.webLoading = true
+            if(urlType != .SocialLoginRedirectToBrowser &&
+               urlType != .SocialOauthPreLogin){
+                
+                if(fronteggAuth.webLoading == false) {
+                    fronteggAuth.webLoading = true
+                }
             }
             
             logger.info("startProvisionalNavigation webLoading = \(fronteggAuth.webLoading)")
@@ -195,20 +184,67 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     private func setSocialLoginRedirectUri(_ webView:WKWebView, _ url:URL) -> WKNavigationActionPolicy {
         
         logger.trace("setSocialLoginRedirectUri()")
-        let queryItems = [URLQueryItem(name: "redirectUri", value: URLConstants.generateSocialLoginRedirectUri(fronteggAuth.baseUrl))]
+        let queryItems = [
+            URLQueryItem(name: "redirectUri", value: generateRedirectUri()),
+        ]
         var urlComps = URLComponents(string: url.absoluteString)!
         
         if(urlComps.query?.contains("redirectUri") ?? false){
             logger.trace("redirectUri exist, forward navigation to webView")
             return .allow
         }
+        
         urlComps.queryItems = (urlComps.queryItems ?? []) + queryItems
         
         
         logger.trace("added redirectUri to socialLogin auth url \(urlComps.url!)")
-        self.fronteggAuth.webLoading = true
         _ = webView.load(URLRequest(url: urlComps.url!))
         return .cancel
     }
-    
+ 
+    private func handleSocialLoginRedirectToBrowser(_ webView:WKWebView, _ socialLoginUrl:URL) -> WKNavigationActionPolicy{
+        
+        logger.trace("handleSocialLoginRedirectToBrowser()")
+        let queryItems = [
+            URLQueryItem(name: "prompt", value: "select_account"),
+        ]
+        var urlComps = URLComponents(string: socialLoginUrl.absoluteString)!
+        urlComps.queryItems = (urlComps.queryItems ?? []) + queryItems
+        
+        let url = urlComps.url!
+        
+        fronteggAuth.webLoading = false
+        fronteggAuth.webAuthentication.webAuthSession?.cancel()
+
+        
+        fronteggAuth.webAuthentication.start(url) { callbackUrl, error  in
+
+            if(error != nil){
+                if(self.isCancelledAsAuthenticationLoginError(error!)){
+                    print("Social login authentication canceled")
+                }else {
+                    print("Failed to login with social login \(error?.localizedDescription ?? "unknown error")")
+                    let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
+                    self.codeVerifier = codeVerifier
+                    _ = webView.load(URLRequest(url: newUrl))
+                }
+            }else if (callbackUrl == nil){
+                print("Failed to login with social login \(error?.localizedDescription ?? "unknown error")")
+                let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
+                self.codeVerifier = codeVerifier
+                _ = webView.load(URLRequest(url: newUrl))
+            }else {
+                let components = URLComponents(url: callbackUrl!, resolvingAgainstBaseURL: false)!
+                let query = components.query!
+                let resultUrl = URL(string:
+                                        "\(self.fronteggAuth.baseUrl)/oauth/account/social/success?\(query)")!
+                _ = webView.load(URLRequest(url: resultUrl))
+                
+                
+            }
+        }
+        
+        
+        return .cancel
+    }
 }
