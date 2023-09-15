@@ -64,7 +64,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             }
         } else {
             logger.warning("failed to get url from navigationAction")
-            self.fronteggAuth.isLoading = false
+            self.fronteggAuth.webLoading = false
             return .allow
         }
     }
@@ -80,15 +80,15 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                 fronteggAuth.externalLink = urlType == .Unknown
             }
             
-//            if(fronteggAuth.isLoading == false) {
-//                fronteggAuth.isLoading = true
-//            }
+            if(fronteggAuth.webLoading == false) {
+                fronteggAuth.webLoading = true
+            }
             
-            logger.info("startProvisionalNavigation isLoading = \(fronteggAuth.isLoading)")
+            logger.info("startProvisionalNavigation webLoading = \(fronteggAuth.webLoading)")
             logger.info("isExternalLink = \(fronteggAuth.externalLink)")
         } else {
             logger.warning("failed to get url from didStartProvisionalNavigation()")
-            self.fronteggAuth.isLoading = false
+            self.fronteggAuth.webLoading = false
         }
     }
     
@@ -101,26 +101,26 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             
             if urlType == .loginRoutes || urlType == .Unknown {
                 logger.info("hiding Loader screen")
-                if(fronteggAuth.isLoading) {
-                    fronteggAuth.isLoading = false
+                if(fronteggAuth.webLoading) {
+                    fronteggAuth.webLoading = false
                 }
             } else if let statusCode = self.lastResponseStatusCode {
                 self.lastResponseStatusCode = nil;
-                self.fronteggAuth.isLoading = false
+                self.fronteggAuth.webLoading = false
                 
                 
                 webView.evaluateJavaScript("JSON.parse(document.body.innerText).errors.join('\\n')") { [self] res, err in
                     let errorMessage = res as? String ?? "Unknown error occured"
                     
                     logger.error("Failed to load page: \(errorMessage), status: \(statusCode)")
-                    self.fronteggAuth.isLoading = false
+                    self.fronteggAuth.webLoading = false
                     let content = generateErrorPage(message: errorMessage, url: url.absoluteString,status: statusCode);
                     webView.loadHTMLString(content, baseURL: nil);
                 }
             }
         } else {
             logger.warning("failed to get url from didFinishNavigation()")
-            self.fronteggAuth.isLoading = false
+            self.fronteggAuth.webLoading = false
         }
     }
     
@@ -153,7 +153,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         let errorMessage = error.localizedDescription;
         let url = "\(error.userInfo["NSErrorFailingURLKey"] ?? error.userInfo)"
         logger.error("Failed to load page: \(errorMessage), status: \(statusCode), \(error)")
-        self.fronteggAuth.isLoading = false
+        self.fronteggAuth.webLoading = false
         let content = generateErrorPage(message: errorMessage, url: url, status: statusCode);
         webView.loadHTMLString(content, baseURL: nil);
     }
@@ -206,7 +206,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         
         
         logger.trace("added redirectUri to socialLogin auth url \(urlComps.url!)")
-//        self.fronteggAuth.isLoading = true
+        self.fronteggAuth.webLoading = true
         _ = webView.load(URLRequest(url: urlComps.url!))
         return .cancel
     }

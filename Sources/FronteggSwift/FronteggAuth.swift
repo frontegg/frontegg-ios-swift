@@ -17,6 +17,7 @@ public class FronteggAuth: ObservableObject {
     @Published public var user: User?
     @Published public var isAuthenticated = false
     @Published public var isLoading = true
+    @Published public var webLoading = true
     @Published public var initializing = true
     @Published public var showLoader = true
     @Published public var appLink: Bool = false
@@ -270,10 +271,12 @@ public class FronteggAuth: ObservableObject {
     
     public func embeddedLogin(_ _completion: FronteggAuth.CompletionHandler? = nil) {
         
-        let hostingController = UIHostingController(rootView: EmbeddedLoginPage())
-        hostingController.modalPresentationStyle = .fullScreen
+        
+        
         
         var rootVC: UIViewController? = nil
+        
+        
         if let lastWindow = UIApplication.shared.windows.last {
             rootVC = lastWindow.rootViewController
         } else if let appDelegate = UIApplication.shared.delegate,
@@ -281,8 +284,15 @@ public class FronteggAuth: ObservableObject {
             rootVC = window!.rootViewController
         }
         if let vc = rootVC {
+            
+            let loginModal = EmbeddedLoginModal(parentVC: rootVC)
+            let hostingController = UIHostingController(rootView: loginModal)
+            hostingController.modalPresentationStyle = .fullScreen
+            
             vc.present(hostingController, animated: true, completion: nil)
-        }else {
+            
+            
+        } else {
             print(FronteggError.authError("Unable to find root viewController"))
             exit(500)
         }

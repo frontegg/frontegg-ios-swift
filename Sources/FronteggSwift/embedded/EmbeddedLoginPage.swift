@@ -7,13 +7,11 @@
 
 import Foundation
 import SwiftUI
+import UIKit
 
 public struct EmbeddedLoginPage: View {
-    var fronteggAuth: FronteggAuth
+    @EnvironmentObject var fronteggAuth: FronteggAuth
     
-    public init(){
-        self.fronteggAuth = FronteggAuth.shared
-    }
     public var body: some View {
         ZStack {
             NavigationView{
@@ -45,7 +43,9 @@ public struct EmbeddedLoginPage: View {
                 .ignoresSafeArea(fronteggAuth.externalLink ? [] : [.all])
 
             }
-            
+            if fronteggAuth.webLoading {
+               DefaultLoader()
+           }
         }
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .center)
         .ignoresSafeArea()
