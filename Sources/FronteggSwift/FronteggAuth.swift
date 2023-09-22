@@ -89,6 +89,11 @@ public class FronteggAuth: ObservableObject {
                 self.user = user
                 self.isAuthenticated = true
                 self.appLink = false
+                self.initializing = false
+                self.appLink = false
+                
+                // isLoading must be at the bottom
+                self.isLoading = false
                 
                 let offset = Double((decode["exp"] as! Int) - Int(Date().timeIntervalSince1970))  * 0.9
                 DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + offset) {
@@ -104,13 +109,12 @@ public class FronteggAuth: ObservableObject {
                 self.accessToken = nil
                 self.user = nil
                 self.isAuthenticated = false
+                self.initializing = false
+                self.appLink = false
+                
+                // isLoading must be at the last bottom
+                self.isLoading = false
             }
-        }
-        
-        DispatchQueue.main.sync {
-            self.isLoading = false
-            self.initializing = false
-            self.appLink = false
         }
     }
     
@@ -131,12 +135,14 @@ public class FronteggAuth: ObservableObject {
                                 
                                 DispatchQueue.main.async {
                                     self.isAuthenticated = false
-                                    self.isLoading = false
                                     self.user = nil
                                     self.accessToken = nil
                                     self.refreshToken = nil
                                     self.initializing = false
                                     self.appLink = false
+                                    
+                                    // isLoading must be at the last bottom
+                                    self.isLoading = false
                                 }
                             }
                     }
@@ -195,8 +201,6 @@ public class FronteggAuth: ObservableObject {
                 await setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
                 
                 completion(.success(user!))
-                
-                setIsLoading(false)
             } catch {
                 print("Failed to load user data: \(error.localizedDescription)")
                 completion(.failure(FronteggError.authError("Failed to load user data: \(error.localizedDescription)")))
