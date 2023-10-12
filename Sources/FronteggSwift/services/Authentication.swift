@@ -5,11 +5,14 @@
 //
 
 import AuthenticationServices
+import UIKit
  
 
 class WebAuthentication: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
+    
+    var view: UIView? = nil
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        return ASPresentationAnchor()
+        return self.view?.window ?? ASPresentationAnchor()
     }
     override func responds(to aSelector: Selector!) -> Bool {
         return true
@@ -19,7 +22,7 @@ class WebAuthentication: NSObject, ObservableObject, ASWebAuthenticationPresenta
     
     
     
-    func start(_ websiteURL:URL, completionHandler: @escaping ASWebAuthenticationSession.CompletionHandler) -> ASWebAuthenticationSession {
+    func start(_ websiteURL:URL, completionHandler: @escaping ASWebAuthenticationSession.CompletionHandler) {
         
         let bundleIdentifier = try! PlistHelper.fronteggConfig().bundleIdentifier
         let webAuthSession = ASWebAuthenticationSession.init(
@@ -30,9 +33,9 @@ class WebAuthentication: NSObject, ObservableObject, ASWebAuthenticationPresenta
         webAuthSession.presentationContextProvider = self
         webAuthSession.prefersEphemeralWebBrowserSession = false
         
-        webAuthSession.start()
+
         self.webAuthSession = webAuthSession
-        
-        return webAuthSession
+        webAuthSession.start()
+
     }
 }

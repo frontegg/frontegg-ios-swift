@@ -217,7 +217,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         fronteggAuth.webAuthentication.webAuthSession?.cancel()
         fronteggAuth.webAuthentication = WebAuthentication()
 
-        
+        fronteggAuth.webAuthentication.view = self
         fronteggAuth.webAuthentication.start(url) { callbackUrl, error  in
 
             if(error != nil){
