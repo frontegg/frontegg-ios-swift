@@ -64,7 +64,7 @@ public func generateRedirectUri() -> String {
         exit(1)
     }
     
-        return "\(bundleIdentifier)://\(urlComponents.host!)/ios/oauth/callback"
+    return "\(bundleIdentifier.lowercased())://\(urlComponents.host!)/ios/oauth/callback"
     
 }
 

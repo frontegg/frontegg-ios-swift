@@ -10,14 +10,14 @@ struct TenantsList: View {
         
         ForEach(fronteggAuth.user?.tenants.sorted(by: { t1, t2 in
             return t1.name < t2.name
-        }) ?? [], id: \.id.self) { item in
+        }) ?? [], id: \.tenantId.self) { item in
             Button(action: {
-                switchingTenant = item.id
+                switchingTenant = item.tenantId
                 fronteggAuth.switchTenant(tenantId: item.tenantId) { _ in
                     switchingTenant = nil
                 }
             }) {
-                Text("\(item.name)\(fronteggAuth.user?.activeTenant.id == item.id ? " (active)" : switchingTenant == item.id ? " (swithcing...)" : "")")
+                Text("\(item.name)\(fronteggAuth.user?.activeTenant.tenantId == item.tenantId ? " (active)" : switchingTenant == item.tenantId ? " (swithcing...)" : "")")
                     .font(.title2)
                     .padding(.bottom, 8)
             }.frame(maxWidth: .infinity, alignment: .leading)  // Make the entire row clickable

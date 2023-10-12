@@ -153,7 +153,7 @@ public class FronteggAuth: ObservableObject {
         
     }
     
-    func refreshTokenIfNeeded() async {
+    public func refreshTokenIfNeeded() async {
         guard let refreshToken = self.refreshToken, let accessToken = self.accessToken else {
             return
         }
