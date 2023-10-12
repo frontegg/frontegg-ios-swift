@@ -215,6 +215,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         
         fronteggAuth.webLoading = false
         fronteggAuth.webAuthentication.webAuthSession?.cancel()
+        fronteggAuth.webAuthentication = WebAuthentication()
 
         
         fronteggAuth.webAuthentication.start(url) { callbackUrl, error  in

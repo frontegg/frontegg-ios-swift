@@ -78,7 +78,7 @@ struct PlistHelper {
             return embeddedMode
         }
         
-        return false
+        return true
     }
 }
 
