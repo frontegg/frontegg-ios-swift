@@ -15,7 +15,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     private let fronteggAuth: FronteggAuth = FronteggAuth.shared
     private let logger = getLogger("CustomWebView")
     private var lastResponseStatusCode: Int? = nil
-    var codeVerifier: String? = nil
     
     override var inputAccessoryView: UIView? {
         // remove/replace the default accessory view
@@ -152,11 +151,11 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         logger.trace("handleHostedLoginCallback, url: \(url)")
         guard let queryItems = getQueryItems(url.absoluteString),
               let code = queryItems["code"],
-              let savedCodeVerifier =  self.codeVerifier else {
+              let savedCodeVerifier =  CredentialManager.getCodeVerifier() else {
             logger.error("failed to get extract code from hostedLoginCallback url")
             logger.info("Restast the process by generating a new authorize url")
             let (url, codeVerifier) = AuthorizeUrlGenerator().generate()
-            self.codeVerifier = codeVerifier
+            CredentialManager.saveCodeVerifier(codeVerifier)
             _ = webView.load(URLRequest(url: url))
             return .cancel
         }
@@ -171,7 +170,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                         case .failure(let error):
                             print("Error \(error)")
                             let (url, codeVerifier)  = AuthorizeUrlGenerator().generate()
-                            self.codeVerifier = codeVerifier
+                            CredentialManager.saveCodeVerifier(codeVerifier)
                             _ = webView.load(URLRequest(url: url))
                     }
                 }
@@ -226,13 +225,13 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                 }else {
                     print("Failed to login with social login \(error?.localizedDescription ?? "unknown error")")
                     let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
-                    self.codeVerifier = codeVerifier
+                    CredentialManager.saveCodeVerifier(codeVerifier)
                     _ = webView.load(URLRequest(url: newUrl))
                 }
             }else if (callbackUrl == nil){
                 print("Failed to login with social login \(error?.localizedDescription ?? "unknown error")")
                 let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
-                self.codeVerifier = codeVerifier
+                CredentialManager.saveCodeVerifier(codeVerifier)
                 _ = webView.load(URLRequest(url: newUrl))
             }else {
                 let components = URLComponents(url: callbackUrl!, resolvingAgainstBaseURL: false)!

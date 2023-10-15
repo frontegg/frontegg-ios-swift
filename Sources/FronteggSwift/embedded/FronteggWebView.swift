@@ -54,16 +54,17 @@ struct FronteggWebView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let url: URL
-        let codeVerifier: String?;
+        let codeVerifier: String;
         if fronteggAuth.pendingAppLink != nil {
             url = fronteggAuth.pendingAppLink!
-            codeVerifier = try? FronteggApp.shared.credentialManager.get(key: "code_verifier")
+            codeVerifier = CredentialManager.getCodeVerifier()!
             fronteggAuth.pendingAppLink = nil
         } else {
            (url, codeVerifier) = AuthorizeUrlGenerator().generate()
+            CredentialManager.saveCodeVerifier(codeVerifier)
         }
 
-        self.webView.codeVerifier = codeVerifier
+        
         let request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy)
         webView.load(request)
 

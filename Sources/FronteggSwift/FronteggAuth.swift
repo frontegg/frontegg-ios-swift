@@ -289,13 +289,6 @@ public class FronteggAuth: ObservableObject {
         return rootVC
     }
     
-    public func registerPasskeys() {
-        
-        if let rootVC = self.getRootVC() {
-            
-//            rootVC.view.addSubview(<#T##view: UIView##UIView#>)
-        }
-    }
     
     public func embeddedLogin(_ _completion: FronteggAuth.CompletionHandler? = nil) {
         

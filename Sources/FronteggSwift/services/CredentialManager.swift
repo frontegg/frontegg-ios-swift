@@ -110,4 +110,12 @@ public class CredentialManager {
             logger.error("Failed to logout from Frontegg Services, errSec: \(status)")
         }
     }
+    
+    static func saveCodeVerifier(_ codeVerifier: String) {
+        UserDefaults.standard.set(codeVerifier, forKey: KeychainKeys.codeVerifier.rawValue)
+    }
+    
+    static func getCodeVerifier() -> String? {
+        return UserDefaults.standard.string(forKey: KeychainKeys.codeVerifier.rawValue)
+    }
 }

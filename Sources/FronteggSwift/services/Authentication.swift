@@ -21,7 +21,6 @@ class WebAuthentication: NSObject, ObservableObject, ASWebAuthenticationPresenta
     var webAuthSession: ASWebAuthenticationSession?
     
     
-    
     func start(_ websiteURL:URL, completionHandler: @escaping ASWebAuthenticationSession.CompletionHandler) {
         
         let bundleIdentifier = try! PlistHelper.fronteggConfig().bundleIdentifier
