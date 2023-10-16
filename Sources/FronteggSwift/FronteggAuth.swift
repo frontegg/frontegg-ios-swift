@@ -241,7 +241,7 @@ public class FronteggAuth: ObservableObject {
                 return
             }
             
-            guard let codeVerifier = try? self.credentialManager.get(key: KeychainKeys.codeVerifier.rawValue) else {
+            guard let codeVerifier = CredentialManager.getCodeVerifier() else {
                 let error = FronteggError.authError("IlligalState, codeVerifier not found")
                 completion(.failure(error))
                 return
