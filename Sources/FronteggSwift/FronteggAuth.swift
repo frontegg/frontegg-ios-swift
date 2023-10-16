@@ -66,7 +66,7 @@ public class FronteggAuth: ObservableObject {
                     await self.refreshTokenIfNeeded()
                 }
             }
-        }else {
+        } else {
             self.isLoading = false
             self.initializing = false
         }
