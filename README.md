@@ -20,6 +20,7 @@ and integrate them into their SaaS portals in up to 5 lines of code.
   - [UIKit Integration](#uikit-integration)
     - [Add Frontegg UIKit Wrapper](#add-frontegg-uikit-wrapper)
     - [Add custom UIKit loading screen (coming-soon)](#Add-custom-uikit-loading-screen)
+  - [Embedded Webview vs ASWebAuthenticationSession](#embedded-webview-vs-aswebauthenticationsession)
   - [Config iOS associated domain](#config-ios-associated-domain)
 
 ## Project Requirements
@@ -51,14 +52,12 @@ Copy FronteggDomain to future steps from [Frontegg Portal Domain](https://portal
 - Replace `IOS_BUNDLE_IDENTIFIER` with your application identifier
 - Replace `FRONTEGG_BASE_URL` with your frontegg base url
 
-
 ### Add frontegg package to the project
 
 - Open you project
 - Choose File -> Add Packages
 - Enter `https://github.com/frontegg/frontegg-ios-swift` in search field
 - Press `Add Package`
-
 
 ### Create Frontegg plist file
 
@@ -67,7 +66,7 @@ your root project directory, this file will store values to be used variables by
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN">
 <plist version="1.0">
 <dict>
 	<key>baseUrl</key>
@@ -135,7 +134,6 @@ your root project directory, this file will store values to be used variables by
       MyApp()
     }
     ```
-
 
 ### UIKit integration
 
@@ -267,7 +265,31 @@ your root project directory, this file will store values to be used variables by
         
       ```
 
+### Embedded Webview vs ASWebAuthenticationSession
 
+Frontegg SDK supports two authentication methods:
+- Embedded Webview
+- ASWebAuthenticationSession
+
+By default Frontegg SDK will use Embedded Webview, to use ASWebAuthenticationSession you have to set `embeddedMode` to `NO` in `Frontegg.plist` file:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN">
+<plist version="1.0">
+    <dict>
+        <key>baseUrl</key>
+        <string>https://[DOMAIN_HOST_FROM_PREVIOUS_STEP]</string>
+        <key>clientId</key>
+        <string>[CLIENT_ID_FROM_PREVIOUS_STEP]</string>
+
+        <!-- START -->
+        <key>embeddedMode</key>
+        <true/>
+        <!-- END -->
+    </dict>
+</plist>
+```
 
 ### Config iOS associated domain
 Configuring your iOS associated domain is required for Magic Link authentication / Reset Password / Activate Account.

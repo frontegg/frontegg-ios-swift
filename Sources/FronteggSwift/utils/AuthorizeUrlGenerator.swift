@@ -52,7 +52,7 @@ public class AuthorizeUrlGenerator {
 
         var authorizeUrl = URLComponents(string: baseUrl)!
 
-        authorizeUrl.path = "/frontegg/oauth/authorize"
+        authorizeUrl.path = "/oauth/authorize"
         authorizeUrl.queryItems = [
             URLQueryItem(name: "redirect_uri", value: redirectUri),
             URLQueryItem(name: "response_type", value: "code"),
@@ -69,7 +69,7 @@ public class AuthorizeUrlGenerator {
             if let encodedURL = url.absoluteString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
                 var loginUrl = URLComponents(string: baseUrl)!
 
-                loginUrl.path = "/frontegg/oauth/logout"
+                loginUrl.path = "/oauth/logout"
                 loginUrl.queryItems = [
                     URLQueryItem(name: "post_logout_redirect_uri", value: encodedURL),
                 ]

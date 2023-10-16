@@ -64,6 +64,64 @@ public func generateRedirectUri() -> String {
         exit(1)
     }
     
-        return "\(bundleIdentifier)://\(urlComponents.host!)/ios/oauth/callback"
+    return "\(bundleIdentifier.lowercased())://\(urlComponents.host!)/ios/oauth/callback"
+    
+}
+
+
+enum OverrideUrlType {
+    case HostedLoginCallback
+    case SocialLoginRedirectToBrowser
+    case SocialOauthPreLogin
+    case loginRoutes
+    case internalRoutes
+    case Unknown
+}
+
+
+func isSocialLoginPath(_ string: String) -> Bool {
+    let patterns = [
+        "^/frontegg/identity/resources/auth/v2/user/sso/default/[^/]+/prelogin$",
+        "^/identity/resources/auth/v2/user/sso/default/[^/]+/prelogin$"
+    ]
+    
+    for pattern in patterns {
+        if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+            let matches = regex.matches(in: string, options: [], range: NSRange(location: 0, length: string.utf16.count))
+            if !matches.isEmpty {
+                return true
+            }
+        }
+    }
+    
+    return false
+}
+func getOverrideUrlType (url: URL) -> OverrideUrlType {
+    
+    let urlStr = url.absoluteString
+    
+    if urlStr.starts(with: FronteggApp.shared.baseUrl) {
+        
+        if(isSocialLoginPath(url.path)){
+            return .SocialOauthPreLogin
+        }
+        if((URLConstants.successLoginRoutes.first { url.path.hasPrefix($0)}) != nil) {
+            return .internalRoutes
+        }
+        if((URLConstants.loginRoutes.first { url.path.hasPrefix($0)}) != nil) {
+            return .loginRoutes
+        }
+        
+        return .internalRoutes
+    }
+    
+    if(url.absoluteString.starts(with: generateRedirectUri())){
+        return .HostedLoginCallback
+    }
+    if((URLConstants.oauthUrls.first { urlStr.hasPrefix($0)}) != nil) {
+        return .SocialLoginRedirectToBrowser
+    }
+    
+    return .Unknown
     
 }

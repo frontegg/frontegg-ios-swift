@@ -9,13 +9,19 @@ import SwiftUI
 
 public struct DefaultLoader: View {
     
+    static var customLoaderView: AnyView? = nil
     
     public init(){}
     public var body: some View {
         ZStack {
             Color(red: 0.95, green:  0.95, blue:  0.95).ignoresSafeArea(.all)
             VStack {
-                ProgressView()
+                if(DefaultLoader.customLoaderView != nil){
+                    DefaultLoader.customLoaderView
+                }else {
+                    ProgressView()
+                }
+            
             }
         }
         
