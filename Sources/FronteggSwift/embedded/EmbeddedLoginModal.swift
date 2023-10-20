@@ -14,7 +14,7 @@ public struct EmbeddedLoginModal: View {
     public var parentVC: UIViewController? = nil
     
     
-    init(parentVC: UIViewController? = nil) {
+    public init(parentVC: UIViewController? = nil) {
         self.parentVC = parentVC
     }
     
