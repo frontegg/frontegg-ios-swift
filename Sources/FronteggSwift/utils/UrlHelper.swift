@@ -118,9 +118,9 @@ func getOverrideUrlType (url: URL) -> OverrideUrlType {
     if(url.absoluteString.starts(with: generateRedirectUri())){
         return .HostedLoginCallback
     }
-    if((URLConstants.oauthUrls.first { urlStr.hasPrefix($0)}) != nil) {
-        return .SocialLoginRedirectToBrowser
-    }
+//    if((URLConstants.oauthUrls.first { urlStr.hasPrefix($0)}) != nil) {
+//        return .SocialLoginRedirectToBrowser
+//    }
     
     return .Unknown
     
