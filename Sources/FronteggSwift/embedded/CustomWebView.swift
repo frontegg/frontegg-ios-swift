@@ -32,10 +32,10 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             logger.info("urlType: \(urlType)")
             switch(urlType){
                 
-            case .SocialLoginRedirectToBrowser: do {
-                
-                return self.handleSocialLoginRedirectToBrowser(webView, url)
-            }
+//            case .SocialLoginRedirectToBrowser: do {
+//                
+//                return self.handleSocialLoginRedirectToBrowser(webView, url)
+//            }
             case .HostedLoginCallback: do {
                 return self.handleHostedLoginCallback(webView, url)
             }
@@ -184,7 +184,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         
         logger.trace("setSocialLoginRedirectUri()")
         let queryItems = [
-            URLQueryItem(name: "redirectUri", value: generateRedirectUri()),
+            URLQueryItem(name: "redirectUri", value: generateRedirectUri())
         ]
         var urlComps = URLComponents(string: url.absoluteString)!
         
@@ -197,7 +197,37 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         
         
         logger.trace("added redirectUri to socialLogin auth url \(urlComps.url!)")
-        _ = webView.load(URLRequest(url: urlComps.url!))
+//        _ = webView.load(URLRequest(url: urlComps.url!))
+        
+        let followUrl = urlComps.url!
+        DispatchQueue.global(qos: .background).async {
+            var request = URLRequest(url: followUrl)
+            request.httpMethod = "GET"
+            
+            let noRedirectDelegate = NoRedirectSessionDelegate()
+            let noRedirectSession = URLSession(configuration: .default, delegate: noRedirectDelegate, delegateQueue: nil)
+            
+            let task = noRedirectSession.dataTask(with: request) { (data, response, error) in
+                // Check for errors
+                if let error = error {
+                    print("Error: \(error.localizedDescription)")
+                    return
+                }
+                
+                // Check for valid HTTP response
+                if let httpResponse = response as? HTTPURLResponse {
+                    
+                    if let location = httpResponse.value(forHTTPHeaderField: "Location"),
+                    let socialLoginUrl = URL(string: location){
+                        
+                        self.handleSocialLoginRedirectToBrowser(webView, socialLoginUrl)
+                    }
+                    
+                }
+            }
+            task.resume()
+        }
+        
         return .cancel
     }
  
@@ -212,7 +242,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         
         let url = urlComps.url!
         
-        fronteggAuth.webLoading = false
         fronteggAuth.webAuthentication.webAuthSession?.cancel()
         fronteggAuth.webAuthentication = WebAuthentication()
 
