@@ -96,7 +96,7 @@ public class FronteggAuth: ObservableObject {
                 self.isLoading = false
                 
                 let offset = Double((decode["exp"] as! Int) - Int(Date().timeIntervalSince1970))  * 0.9
-                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + offset) {
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + offset) {
                     Task{
                         await self.refreshTokenIfNeeded()
                     }
@@ -124,31 +124,32 @@ public class FronteggAuth: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async {
             Task {
                 await self.api.logout(accessToken: self.accessToken, refreshToken: self.refreshToken)
+            }
+            DispatchQueue.main.async {
                 
-                DispatchQueue.main.sync {
-                    let dataStore = WKWebsiteDataStore.default()
-                    dataStore.fetchDataRecords(ofTypes: [WKWebsiteDataTypeCookies]) { records in
-                        dataStore.removeData(
-                            ofTypes: [WKWebsiteDataTypeCookies],
-                            for: records.filter { _ in true }) {
-                                self.credentialManager.clear()
-                                
-                                DispatchQueue.main.async {
-                                    self.isAuthenticated = false
-                                    self.user = nil
-                                    self.accessToken = nil
-                                    self.refreshToken = nil
-                                    self.initializing = false
-                                    self.appLink = false
-                                    
-                                    // isLoading must be at the last bottom
-                                    self.isLoading = false
-                                }
-                            }
-                    }
+                let dataTypesToRemove: Set<String> = [WKWebsiteDataTypeCookies, WKWebsiteDataTypeLocalStorage]
+
+
+                let dateFrom = Date(timeIntervalSince1970: 0)
+                WKWebsiteDataStore.default().removeData(ofTypes: dataTypesToRemove, modifiedSince: dateFrom) {
+                    print("cookie removed")
+                }
+                
+                self.credentialManager.clear()
+                
+                
+                DispatchQueue.main.async {
+                    self.isAuthenticated = false
+                    self.user = nil
+                    self.accessToken = nil
+                    self.refreshToken = nil
+                    self.initializing = false
+                    self.appLink = false
+                    
+                    // isLoading must be at the last bottom
+                    self.isLoading = false
                 }
             }
-            
         }
         
     }

@@ -200,7 +200,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
 //        _ = webView.load(URLRequest(url: urlComps.url!))
         
         let followUrl = urlComps.url!
-        DispatchQueue.global(qos: .background).async {
+        DispatchQueue.global(qos: .userInitiated).async {
             var request = URLRequest(url: followUrl)
             request.httpMethod = "GET"
             
