@@ -39,11 +39,10 @@ jobs:
       - name: Install Cocoapods
         run: gem install cocoapods
 
-      - name: Deploy to Cocoapods
+      - name: Validate to Cocoapods
         run: |
-          set -eo pipefail
-          pod lib lint
-          pod spec lint
+          pod lib lint --verbose
+          pod spec lint  --verbose
       - name: Double-check macOS version (macos-latest)
         run: sw_vers
       - name: Double-check Xcode.app selected
