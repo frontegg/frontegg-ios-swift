@@ -227,7 +227,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         return .cancel
     }
  
-    private func handleSocialLoginRedirectToBrowser(_ webView:WKWebView, _ socialLoginUrl:URL) {
+    private func handleSocialLoginRedirectToBrowser(_ webView:WKWebView, _ socialLoginUrl:URL) -> Void {
         
         logger.trace("handleSocialLoginRedirectToBrowser()")
         let queryItems = [
