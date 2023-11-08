@@ -1,0 +1,61 @@
+name: Pull Request Merge Workflow
+on:
+  pull_request:
+    branches:
+      - master
+    types: [ closed ]
+env:
+  CI: true
+jobs:
+  createReleasePullRequest:
+    if: "!contains(join(github.event.pull_request.labels.*.name, ','), 'Release') && github.event.pull_request.merged == true"
+    name: 'Create Release Pull Request'
+    runs-on: 'macos-latest'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Git Identity
+        run: |
+          git config --global user.name 'frontegg'
+          git config --global user.email 'frontegg@users.noreply.github.com'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+        id: 'incremented-version'
+      - name: Incremented version
+        uses: actions/github-script@v6
+        id: incremented-version
+        with:
+          result-encoding: string
+          script: |
+            const {default: fs} = await import('fs');
+            let content = fs.readFileSync('./FronteggSwift.podspec', {encoding: "utf-8"});
+            const currentVersion = /s\.version[ ]+=[ ]+'([^']+)'/g.exec(content)[1];
+            const version = currentVersion.split('.');
+            const newVersion = `${version[0]}.${version[1]}.${parseInt(version[2]) + 1}`;
+            
+            content = content.replace(/s\.version[ ]+=[ ]+'([^']+)'/g, `s.version          = '${newVersion}'`);
+            fs.writeFileSync('./FronteggSwift.podspec', content);
+            return newVersion;
+      - name: Commit changes
+        shell: bash -ex {0}
+        run: |
+          git add . && git commit -m "chore(release): publish ${{ steps.incremented-version.outputs.result }}"
+      - name: Create Release Pull Request
+        id: cpr
+        uses: peter-evans/create-pull-request@v3.5.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ secrets.GITHUB_WORKSPACE }}
+          commit-message: "Update v${{ steps.incremented-version.outputs.result }}"
+          committer: GitHub <noreply@github.com>
+          author: "${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>"
+          title: 'v${{ steps.incremented-version.outputs.result }}'
+          body: |
+            # v${{ steps.incremented-version.outputs.result }}
+
+          labels: "Type: Release"
+          branch: "release/next"
+
+

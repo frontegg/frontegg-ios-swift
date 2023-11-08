@@ -2,7 +2,8 @@ name: "onPush( Build & Test )"
 
 on:
   push:
-    ignore-branches: [ "master" ]
+    branches-ignore:
+      - master
 
 jobs:
   build-and-test:
@@ -36,21 +37,7 @@ jobs:
 #          echo "NGROCK_SUBDOMAIN: $NGROCK_SUBDOMAIN"
 #          (yarn start:mobile-mock&)
 #          sleep 40
-      - name: Install Cocoapods
-        run: gem install cocoapods
 
-      - name: Setup PodSpec Version
-        run: |
-          cp ./FronteggSwift.podspec ./FronteggSwift.podspec.bak
-          sed -i '' -E "s/s\.version[ ]+=[ ]+'[^']+'/s.version          = '$GITHUB_SHA'/g" ./FronteggSwift.podspec
-      - name: Validate to Cocoapods
-        run: |
-          pod lib lint --verbose
-          pod spec lint  --verbose
-      - name: Return correct podspec
-        run: |
-          rm -rf ./FronteggSwift.podspec
-          mv ./FronteggSwift.podspec.bak ./FronteggSwift.podspec
       - name: Double-check macOS version (macos-latest)
         run: sw_vers
       - name: Double-check Xcode.app selected
