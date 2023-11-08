@@ -32,10 +32,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             logger.info("urlType: \(urlType)")
             switch(urlType){
                 
-//            case .SocialLoginRedirectToBrowser: do {
-//                
-//                return self.handleSocialLoginRedirectToBrowser(webView, url)
-//            }
             case .HostedLoginCallback: do {
                 return self.handleHostedLoginCallback(webView, url)
             }
@@ -200,7 +196,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
 //        _ = webView.load(URLRequest(url: urlComps.url!))
         
         let followUrl = urlComps.url!
-        DispatchQueue.global(qos: .background).async {
+        DispatchQueue.global(qos: .userInitiated).async {
             var request = URLRequest(url: followUrl)
             request.httpMethod = "GET"
             
@@ -231,7 +227,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         return .cancel
     }
  
-    private func handleSocialLoginRedirectToBrowser(_ webView:WKWebView, _ socialLoginUrl:URL) -> WKNavigationActionPolicy{
+    private func handleSocialLoginRedirectToBrowser(_ webView:WKWebView, _ socialLoginUrl:URL) -> Void {
         
         logger.trace("handleSocialLoginRedirectToBrowser()")
         let queryItems = [
@@ -273,7 +269,5 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             }
         }
         
-        
-        return .cancel
     }
 }
