@@ -9,7 +9,7 @@ env:
 jobs:
   publish:
     if: "contains(join(github.event.pull_request.labels.*.name, ','), 'Release') && github.event.pull_request.merged == true"
-    name: 'Install | Build | Test'
+    name: 'Publish to Cocoapods'
     runs-on: 'macos-latest-large'
     steps:
       - name: Checkout
