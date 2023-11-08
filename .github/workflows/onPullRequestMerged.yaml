@@ -22,7 +22,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-        id: 'incremented-version'
       - name: Incremented version
         uses: actions/github-script@v6
         id: incremented-version
