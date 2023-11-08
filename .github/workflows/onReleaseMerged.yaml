@@ -76,11 +76,15 @@ jobs:
           draft: false
           prerelease: false
       - name: Validate to Cocoapods
+        env:
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
         run: |
           pod lib lint --verbose
           pod spec lint  --verbose
 
       - name: Publish to Trunk to Cocoapods
+        env:
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
         run: |
           pod trunk push FronteggSwift.podspec
 
