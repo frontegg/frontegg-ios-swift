@@ -28,16 +28,10 @@ public struct EmbeddedLoginPage: View {
                 .toolbar {
                     ToolbarItem(placement: .navigationBarLeading) {
                         Button("Back to login") {
-                            fronteggAuth.accessToken = nil
-                            fronteggAuth.refreshToken = nil
-                            fronteggAuth.user = nil
-                            fronteggAuth.isAuthenticated = false
-                            fronteggAuth.isLoading = true
-                            fronteggAuth.initializing = true
                             fronteggAuth.pendingAppLink = nil
                             fronteggAuth.appLink = false
                             fronteggAuth.externalLink = false
-                            fronteggAuth.logout()
+                            fronteggAuth.login()
                         }
                     }
                 }

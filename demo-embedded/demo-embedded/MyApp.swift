@@ -28,18 +28,11 @@ struct MyApp: View {
                 }
             } else {
                 
-                // EmbeddedLoginPage()
-                
                 DefaultLoader().onAppear(){
                     if(!FronteggAuth.shared.isAuthenticated){
                         fronteggAuth.login()
                     }
                 }
-//                Button(action: {
-//                    fronteggAuth.login()
-//                }) {
-//                    Text("Open Login")
-//                }
             }
         }
     }

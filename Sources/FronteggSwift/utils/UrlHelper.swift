@@ -81,8 +81,8 @@ enum OverrideUrlType {
 
 func isSocialLoginPath(_ string: String) -> Bool {
     let patterns = [
-        "^/frontegg/identity/resources/auth/v2/user/sso/default/[^/]+/prelogin$",
-        "^/identity/resources/auth/v2/user/sso/default/[^/]+/prelogin$"
+        "^/frontegg/identity/resources/auth/[^/]+/user/sso/default/[^/]+/prelogin$",
+        "^/identity/resources/auth/[^/]+/user/sso/default/[^/]+/prelogin$"
     ]
     
     for pattern in patterns {
@@ -118,10 +118,6 @@ func getOverrideUrlType (url: URL) -> OverrideUrlType {
     if(url.absoluteString.starts(with: generateRedirectUri())){
         return .HostedLoginCallback
     }
-//    if((URLConstants.oauthUrls.first { urlStr.hasPrefix($0)}) != nil) {
-//        return .SocialLoginRedirectToBrowser
-//    }
-    
     return .Unknown
     
 }

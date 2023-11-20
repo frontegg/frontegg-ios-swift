@@ -12,6 +12,12 @@ import UIKit
 import SwiftUI
 
 
+extension UIWindow {
+    static var key: UIWindow? {
+        return UIApplication.shared.windows.filter {$0.isKeyWindow}.first
+    }
+}
+
 public class FronteggAuth: ObservableObject {
     @Published public var accessToken: String?
     @Published public var refreshToken: String?
@@ -127,16 +133,7 @@ public class FronteggAuth: ObservableObject {
             }
             DispatchQueue.main.async {
                 
-                let dataTypesToRemove: Set<String> = [WKWebsiteDataTypeCookies, WKWebsiteDataTypeLocalStorage]
-
-
-                let dateFrom = Date(timeIntervalSince1970: 0)
-                WKWebsiteDataStore.default().removeData(ofTypes: dataTypesToRemove, modifiedSince: dateFrom) {
-                    print("cookie removed")
-                }
-                
                 self.credentialManager.clear()
-                
                 
                 DispatchQueue.main.async {
                     self.isAuthenticated = false
@@ -271,7 +268,8 @@ public class FronteggAuth: ObservableObject {
         
         let oauthCallback = createOauthCallbackHandler(completion)
         let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate()
-        try! credentialManager.save(key: KeychainKeys.codeVerifier.rawValue, value: codeVerifier)
+        CredentialManager.saveCodeVerifier(codeVerifier)
+        
         
         self.webAuthentication.start(authorizeUrl, completionHandler: oauthCallback)
         
@@ -281,19 +279,65 @@ public class FronteggAuth: ObservableObject {
     internal func getRootVC() -> UIViewController? {
         
         if let appDelegate = UIApplication.shared.delegate,
-            let window = appDelegate.window,
-            let rootVC = window?.rootViewController {
-                    return rootVC
+           let window = appDelegate.window,
+           let rootVC = window?.rootViewController {
+                return rootVC
         }
         
+        if let rootVC = UIWindow.key?.rootViewController {
+            return rootVC
+        }
         if let lastWindow = UIApplication.shared.windows.last,
            let rootVC = lastWindow.rootViewController {
             return rootVC
         }
         
+        
         return nil
     }
     
+    
+    func loginWithSSO(email: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
+        let completion = _completion ?? { res in
+            
+        }
+        
+        let oauthCallback = createOauthCallbackHandler(completion)
+        self.webAuthentication.webAuthSession?.cancel()
+        self.webAuthentication = WebAuthentication()
+        
+        let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: email)
+        CredentialManager.saveCodeVerifier(codeVerifier)
+        
+        self.webAuthentication.start(authorizeUrl, completionHandler: oauthCallback)
+    }
+    
+    func loginWithSocialLogin(socialLoginUrl: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
+        let completion = _completion ?? { res in
+            
+        }
+        
+        let oauthCallback = createOauthCallbackHandler(completion)
+        self.webAuthentication.webAuthSession?.cancel()
+        self.webAuthentication = WebAuthentication()
+        
+        let directLogin: [String: Any] = [
+            "type": "direct",
+            "data": socialLoginUrl,
+        ]
+        var generatedUrl: (URL, String)
+        if let jsonData = try? JSONSerialization.data(withJSONObject: directLogin, options: []) {
+            let jsonString = jsonData.base64EncodedString()
+            generatedUrl = AuthorizeUrlGenerator.shared.generate(loginAction: jsonString)
+        } else {
+            generatedUrl = AuthorizeUrlGenerator.shared.generate()
+        }
+        
+        let (authorizeUrl, codeVerifier) = generatedUrl
+        CredentialManager.saveCodeVerifier(codeVerifier)
+        
+        self.webAuthentication.start(authorizeUrl, completionHandler: oauthCallback)
+    }
     
     public func embeddedLogin(_ _completion: FronteggAuth.CompletionHandler? = nil) {
         
@@ -301,6 +345,11 @@ public class FronteggAuth: ObservableObject {
             let loginModal = EmbeddedLoginModal(parentVC: rootVC)
             let hostingController = UIHostingController(rootView: loginModal)
             hostingController.modalPresentationStyle = .fullScreen
+            
+            if(rootVC.presentedViewController?.classForCoder == hostingController.classForCoder){
+                print("same");
+                rootVC.presentedViewController?.dismiss(animated: false)
+            }
             
             rootVC.present(hostingController, animated: false, completion: nil)
             
