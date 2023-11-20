@@ -37,11 +37,11 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             case .HostedLoginCallback: do {
                 return self.handleHostedLoginCallback(webView, url)
             }
-            case .Unknown: do {
-                return self.openExternalBrowser(webView, url)
-            }
             case .SocialOauthPreLogin: do {
                 return self.setSocialLoginRedirectUri(webView, url)
+            }
+            case .Unknown: do {
+                return self.openExternalBrowser(webView, url)
             }
             default:
                 return .allow
