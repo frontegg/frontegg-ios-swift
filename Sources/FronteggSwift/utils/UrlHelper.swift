@@ -71,7 +71,6 @@ public func generateRedirectUri() -> String {
 
 enum OverrideUrlType {
     case HostedLoginCallback
-    case SocialLoginRedirectToBrowser
     case SocialOauthPreLogin
     case loginRoutes
     case internalRoutes

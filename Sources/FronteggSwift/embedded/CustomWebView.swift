@@ -60,8 +60,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             
             logger.info("urlType: \(urlType)")
             
-            if(urlType != .SocialLoginRedirectToBrowser &&
-               urlType != .SocialOauthPreLogin &&
+            if(urlType != .SocialOauthPreLogin &&
                urlType != .Unknown){
                 
                 if(fronteggAuth.webLoading == false) {
@@ -183,7 +182,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         ]
         var urlComps = URLComponents(string: url.absoluteString)!
         
-        var filteredQueryItems = urlComps.queryItems?.filter {
+        let filteredQueryItems = urlComps.queryItems?.filter {
             $0.name == "redirectUri"
         } ?? []
         
