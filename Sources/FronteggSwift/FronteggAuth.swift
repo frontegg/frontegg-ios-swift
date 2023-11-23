@@ -41,13 +41,19 @@ public class FronteggAuth: ObservableObject {
     private var subscribers = Set<AnyCancellable>()
     var webAuthentication: WebAuthentication = WebAuthentication()
     
-    init (baseUrl:String, clientId: String, api:Api, credentialManager: CredentialManager) {
-        
+    init (baseUrl:String, clientId: String, api:Api, credentialManager: CredentialManager, requestAuthorize: Bool) {
         self.baseUrl = baseUrl
         self.clientId = clientId
         self.credentialManager = credentialManager
         self.api = api
         self.embeddedMode = PlistHelper.isEmbeddedMode()
+        
+        
+        if ( requestAuthorize == false ) {
+            // skip automatic authorize for regional config
+            return;
+        }
+        
         
         self.$initializing.combineLatest(self.$isAuthenticated, self.$isLoading).sink(){ (initializingValue, isAuthenticatedValue, isLoadingValue) in
             self.showLoader = initializingValue || (!isAuthenticatedValue && isLoadingValue)
