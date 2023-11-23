@@ -354,21 +354,21 @@ For each region, configure the associated domains in your application's settings
 Example Associated Domain Configuration:
 [demo-multi-region.entitlements](demo-multi-region%2Fdemo-multi-region%2Fdemo-multi-region.entitlements)
 
-follow [this guide](‘https://docs.frontegg.com/reference/getting-started-with-your-api’) to add your iOS associated domain to your Frontegg application.
+Follow [Config iOS associated domain](#config-ios-associated-domain) to add your iOS associated domain to your Frontegg application.
 
 
 ### Step 3: Implement Region Selection UI
 
-The final step is to implement a UI for the user to select their region. This can be done in any way you see fit. 
+The final step is to implement a UI for the user to select their region. **This can be done in any way you see fit**. 
 The example application uses a simple picker view to allow the user to select their region.
 
 **Important Considerations**
 - **Switching Regions**: To switch regions, update the selection in UserDefaults. If issues arise, a **re-installation** of the application might be necessary.
 - **Data Isolation**: Ensure data handling and APIs are region-specific to prevent data leakage between regions.
 
-Select EU Region             |  Select US Region
-:-------------------------:|:-------------------------:
-![eu-region-example.gif](assets%2Feu-region-example.gif)  |  ![us-region-example.gif](assets%2Fus-region-example.gif)
+|                     Select EU Region                     |                     Select US Region                     |
+|:--------------------------------------------------------:|:--------------------------------------------------------:|
+| ![eu-region-example.gif](assets%2Feu-region-example.gif) | ![us-region-example.gif](assets%2Fus-region-example.gif) |
 
 Example Region Selection UI:
 ```swift
