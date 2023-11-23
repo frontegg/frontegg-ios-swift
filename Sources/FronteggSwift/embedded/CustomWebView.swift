@@ -1,6 +1,5 @@
 //
 //  CustomWebView.swift
-//
 //  Created by David Frontegg on 24/10/2022.
 //
 
@@ -16,15 +15,18 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     private let logger = getLogger("CustomWebView")
     private var lastResponseStatusCode: Int? = nil
     
+    
     override var inputAccessoryView: UIView? {
         // remove/replace the default accessory view
         return accessoryView
     }
     
-    private func isCancelledAsAuthenticationLoginError(_ error: Error) -> Bool {
+    private static func isCancelledAsAuthenticationLoginError(_ error: Error) -> Bool {
         (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue
     }
-    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+    func webView(_ _webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+        
+        weak var webView = _webView
         logger.trace("navigationAction check for \(navigationAction.request.url?.absoluteString ?? "no Url")")
         if let url = navigationAction.request.url {
             let urlType = getOverrideUrlType(url: url)
@@ -37,6 +39,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             }
             case .SocialOauthPreLogin: do {
                 return self.setSocialLoginRedirectUri(webView, url)
+            }
+            case .Unknown: do {
+                return self.openExternalBrowser(webView, url)
             }
             default:
                 return .allow
@@ -55,21 +60,13 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             
             logger.info("urlType: \(urlType)")
             
-            let isUnknown = (urlType == .Unknown)
-            if(fronteggAuth.externalLink != isUnknown) {
-                fronteggAuth.externalLink = isUnknown
-            }
-            
-            if(urlType != .SocialLoginRedirectToBrowser &&
-               urlType != .SocialOauthPreLogin){
+            if(urlType != .SocialOauthPreLogin &&
+               urlType != .Unknown){
                 
                 if(fronteggAuth.webLoading == false) {
                     fronteggAuth.webLoading = true
                 }
             }
-            
-            logger.info("startProvisionalNavigation webLoading = \(fronteggAuth.webLoading)")
-            logger.info("isExternalLink = \(fronteggAuth.externalLink)")
         } else {
             logger.warning("failed to get url from didStartProvisionalNavigation()")
             self.fronteggAuth.webLoading = false
@@ -143,7 +140,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     }
     
     
-    private func handleHostedLoginCallback(_ webView: WKWebView, _ url: URL) -> WKNavigationActionPolicy {
+    private func handleHostedLoginCallback(_ webView: WKWebView?, _ url: URL) -> WKNavigationActionPolicy {
         logger.trace("handleHostedLoginCallback, url: \(url)")
         guard let queryItems = getQueryItems(url.absoluteString),
               let code = queryItems["code"],
@@ -152,7 +149,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             logger.info("Restast the process by generating a new authorize url")
             let (url, codeVerifier) = AuthorizeUrlGenerator().generate()
             CredentialManager.saveCodeVerifier(codeVerifier)
-            _ = webView.load(URLRequest(url: url))
+            _ = webView?.load(URLRequest(url: url))
             return .cancel
         }
         
@@ -160,14 +157,14 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             Task {
                 FronteggAuth.shared.handleHostedLoginCallback(code, savedCodeVerifier ) { res in
                     switch (res) {
-                        case .success(let user):
-                            print("User \(user.id)")
+                    case .success(let user):
+                        print("User \(user.id)")
                         
-                        case .failure(let error):
-                            print("Error \(error)")
-                            let (url, codeVerifier)  = AuthorizeUrlGenerator().generate()
-                            CredentialManager.saveCodeVerifier(codeVerifier)
-                            _ = webView.load(URLRequest(url: url))
+                    case .failure(let error):
+                        print("Error \(error)")
+                        let (url, codeVerifier)  = AuthorizeUrlGenerator().generate()
+                        CredentialManager.saveCodeVerifier(codeVerifier)
+                        _ = webView?.load(URLRequest(url: url))
                     }
                 }
             }
@@ -176,27 +173,27 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     }
     
     
-    private func setSocialLoginRedirectUri(_ webView:WKWebView, _ url:URL) -> WKNavigationActionPolicy {
+    private func setSocialLoginRedirectUri(_ _webView:WKWebView?, _ url:URL) -> WKNavigationActionPolicy {
         
+        weak var webView = _webView
         logger.trace("setSocialLoginRedirectUri()")
         let queryItems = [
             URLQueryItem(name: "redirectUri", value: generateRedirectUri())
         ]
         var urlComps = URLComponents(string: url.absoluteString)!
         
-        if(urlComps.query?.contains("redirectUri") ?? false){
-            logger.trace("redirectUri exist, forward navigation to webView")
-            return .allow
-        }
+        let filteredQueryItems = urlComps.queryItems?.filter {
+            $0.name == "redirectUri"
+        } ?? []
         
-        urlComps.queryItems = (urlComps.queryItems ?? []) + queryItems
         
+        urlComps.queryItems = filteredQueryItems + queryItems
         
         logger.trace("added redirectUri to socialLogin auth url \(urlComps.url!)")
-//        _ = webView.load(URLRequest(url: urlComps.url!))
         
         let followUrl = urlComps.url!
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).sync {
+            
             var request = URLRequest(url: followUrl)
             request.httpMethod = "GET"
             
@@ -214,7 +211,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                 if let httpResponse = response as? HTTPURLResponse {
                     
                     if let location = httpResponse.value(forHTTPHeaderField: "Location"),
-                    let socialLoginUrl = URL(string: location){
+                       let socialLoginUrl = URL(string: location) {
                         
                         self.handleSocialLoginRedirectToBrowser(webView, socialLoginUrl)
                     }
@@ -226,9 +223,47 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         
         return .cancel
     }
- 
-    private func handleSocialLoginRedirectToBrowser(_ webView:WKWebView, _ socialLoginUrl:URL) -> Void {
+    
+    private func startExternalBrowser(_ _webView:WKWebView?, _ url:URL, _ ephemeralSesion:Bool = false) -> Void {
         
+        weak var webView = _webView
+        fronteggAuth.webAuthentication.webAuthSession?.cancel()
+        fronteggAuth.webAuthentication = WebAuthentication()
+        fronteggAuth.webAuthentication.ephemeralSesion = ephemeralSesion
+        
+        fronteggAuth.webAuthentication.window = self.window
+        fronteggAuth.webAuthentication.start(url) { callbackUrl, error  in
+            print("Social login authentication canceled")
+            if(error != nil){
+                if(CustomWebView.isCancelledAsAuthenticationLoginError(error!)){
+                    print("Social login authentication canceled")
+                }else {
+                    print("Failed to login with social login \(error?.localizedDescription ?? "unknown error")")
+                    let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
+                    CredentialManager.saveCodeVerifier(codeVerifier)
+                    _ = webView?.load(URLRequest(url: newUrl))
+                }
+            }else if (callbackUrl == nil){
+                print("Failed to login with social login \(error?.localizedDescription ?? "unknown error")")
+                let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
+                CredentialManager.saveCodeVerifier(codeVerifier)
+                _ = webView?.load(URLRequest(url: newUrl))
+                
+            }else {
+                let components = URLComponents(url: callbackUrl!, resolvingAgainstBaseURL: false)!
+                let query = components.query!
+                let resultUrl = URL(string:
+                                        "\(FronteggAuth.shared.baseUrl)/oauth/account/social/success?\(query)")!
+                _ = webView?.load(URLRequest(url: resultUrl))
+                
+                
+            }
+        }
+    }
+    
+    private func handleSocialLoginRedirectToBrowser(_ _webView:WKWebView?, _ socialLoginUrl:URL) -> Void {
+        
+        weak var webView = _webView
         logger.trace("handleSocialLoginRedirectToBrowser()")
         let queryItems = [
             URLQueryItem(name: "prompt", value: "select_account"),
@@ -238,36 +273,19 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         
         let url = urlComps.url!
         
-        fronteggAuth.webAuthentication.webAuthSession?.cancel()
-        fronteggAuth.webAuthentication = WebAuthentication()
-
-        fronteggAuth.webAuthentication.view = self
-        fronteggAuth.webAuthentication.start(url) { callbackUrl, error  in
-
-            if(error != nil){
-                if(self.isCancelledAsAuthenticationLoginError(error!)){
-                    print("Social login authentication canceled")
-                }else {
-                    print("Failed to login with social login \(error?.localizedDescription ?? "unknown error")")
-                    let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
-                    CredentialManager.saveCodeVerifier(codeVerifier)
-                    _ = webView.load(URLRequest(url: newUrl))
-                }
-            }else if (callbackUrl == nil){
-                print("Failed to login with social login \(error?.localizedDescription ?? "unknown error")")
-                let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
-                CredentialManager.saveCodeVerifier(codeVerifier)
-                _ = webView.load(URLRequest(url: newUrl))
-            }else {
-                let components = URLComponents(url: callbackUrl!, resolvingAgainstBaseURL: false)!
-                let query = components.query!
-                let resultUrl = URL(string:
-                                        "\(self.fronteggAuth.baseUrl)/oauth/account/social/success?\(query)")!
-                _ = webView.load(URLRequest(url: resultUrl))
-                
-                
-            }
+        DispatchQueue.main.sync {
+            self.startExternalBrowser(webView, url)
         }
-        
     }
+    
+    
+    
+    private func openExternalBrowser(_ _webView:WKWebView?, _ url:URL) -> WKNavigationActionPolicy {
+        weak var webView = _webView
+        self.startExternalBrowser(webView, url, true)
+        return .cancel
+    }
+    
+    
+    
 }

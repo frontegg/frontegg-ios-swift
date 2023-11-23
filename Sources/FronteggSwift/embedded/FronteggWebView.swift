@@ -11,48 +11,36 @@ import AuthenticationServices
 
 
 
-struct FronteggWebView: UIViewRepresentable {
-    typealias UIViewType = WKWebView
-
-    let webView: CustomWebView
-    
+public struct FronteggWebView: UIViewRepresentable {
+    public typealias UIViewType = WKWebView
     private var fronteggAuth: FronteggAuth
 
-    init() {
+    public init() {
         self.fronteggAuth = FronteggApp.shared.auth;
-
-        let metadataSource:String = "let interval = setInterval(function(){" +
-                "   if(document.getElementsByTagName('head').length > 0){" +
-                "       clearInterval(interval);" +
-                "       var meta = document.createElement('meta');" +
-                "       meta.name = 'viewport';" +
-                "       meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';" +
-                "       var head = document.getElementsByTagName('head')[0];" +
-                "       head.appendChild(meta);" +
-                "       var style = document.createElement('style');" +
-                "       style.innerHTML = 'html {font-size: 16px;}';" +
-                "       style.setAttribute('type', 'text/css');" +
-                "       document.head.appendChild(style); " +
-                "   }" +
-                "}, 10);"
-
-                
         
+    }
+
+    public func makeUIView(context: Context) -> WKWebView {
+        let controller: FronteggWKContentController = FronteggWKContentController()
         let userContentController: WKUserContentController = WKUserContentController()
-        userContentController.add(FronteggWKContentController(), name: "fronteggNative")
-        userContentController.addUserScript(WKUserScript(source: metadataSource, injectionTime: .atDocumentEnd, forMainFrameOnly: false))
+        userContentController.add(controller, name: "FronteggNativeBridge")
+
 
         let conf = WKWebViewConfiguration()
         conf.userContentController = userContentController
         conf.websiteDataStore = WKWebsiteDataStore.default()
 
-        webView = CustomWebView(frame: .zero, configuration: conf)
+        let webView = CustomWebView(frame: .zero, configuration: conf)
         webView.navigationDelegate = webView;
+        controller.webView = webView
 
         
-    }
-
-    func makeUIView(context: Context) -> WKWebView {
+//        if #available(iOS 16.4, *) {
+//            webView.isInspectable = true
+//        } else {
+//            // Fallback on earlier versions
+//        }
+        
         let url: URL
         let codeVerifier: String;
         if fronteggAuth.pendingAppLink != nil {
@@ -71,7 +59,7 @@ struct FronteggWebView: UIViewRepresentable {
         return webView
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {
+    public func updateUIView(_ uiView: WKWebView, context: Context) {
         
     }
 }
