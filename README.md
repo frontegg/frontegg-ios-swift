@@ -22,6 +22,7 @@ and integrate them into their SaaS portals in up to 5 lines of code.
     - [Add custom UIKit loading screen (coming-soon)](#Add-custom-uikit-loading-screen)
   - [Embedded Webview vs ASWebAuthenticationSession](#embedded-webview-vs-aswebauthenticationsession)
   - [Config iOS associated domain](#config-ios-associated-domain)
+  - [Multi-Region support](#multi-region-support)
 
 ## Project Requirements
 
@@ -301,3 +302,121 @@ In order to add your iOS associated domain to your Frontegg application, you wil
 }
 ```
 In order to use our API’s, follow [this guide](‘https://docs.frontegg.com/reference/getting-started-with-your-api’) to generate a vendor token.
+
+Next, you will need to add your associated domain to your iOS application. To do so, follow the steps below:
+
+1. Open your project in Xcode.
+2. Select your project in the Project Navigator.
+3. Select your target.
+4. Select the Signing & Capabilities tab.
+5. Expand the Associated Domains section.
+6. Click the + button.
+7. Enter your associated domain in the format `applinks:[YOUR_ASSOCIATED_DOMAIN]`.
+7. Enter your associated domain in the format `webcredentials:[YOUR_ASSOCIATED_DOMAIN]`.
+8. Click Done.
+
+`[YOUR_ASSOCIATED_DOMAIN]` is the associated domain that you would like to use with your iOS application. 
+For example, if you would like to use `https://example.com` as your associated domain, you would enter `applinks:example.com` and `webcredentials:example.com`.
+
+
+## Multi-Region Support
+
+This guide outlines the steps to configure your iOS application to support multiple regions.
+
+### Step 1: Modify the Frontegg.plist File
+
+First, adjust your Frontegg.plist file to handle multiple regions:
+
+**Modifications**:
+- **Remove** the existing `baseUrl` and `clientId` keys.
+- **Add** a new array key named `regions`. This array will hold dictionaries for each region.
+
+Example Frontegg.plist Structure:
+```xml
+<key>regions</key>
+<array>
+  <dict>
+    <key>key</key>
+    <string>us-region</string>
+    <key>baseUrl</key>
+    <string>https://us-region-api.frontegg.com</string>
+    <key>clientId</key>
+    <string>your-client-id-for-us-region</string>
+  </dict>
+  <!-- Add additional regions in a similar format -->
+</array>
+```
+
+### Step 2: Add Associated Domains for Each Region
+
+For each region, configure the associated domains in your application's settings. This is vital for proper API routing and authentication.
+
+Example Associated Domain Configuration:
+[demo-multi-region.entitlements](demo-multi-region%2Fdemo-multi-region%2Fdemo-multi-region.entitlements)
+
+follow [this guide](‘https://docs.frontegg.com/reference/getting-started-with-your-api’) to add your iOS associated domain to your Frontegg application.
+
+
+### Step 3: Implement Region Selection UI
+
+The final step is to implement a UI for the user to select their region. This can be done in any way you see fit. 
+The example application uses a simple picker view to allow the user to select their region.
+
+**Important Considerations**
+- **Switching Regions**: To switch regions, update the selection in UserDefaults. If issues arise, a **re-installation** of the application might be necessary.
+- **Data Isolation**: Ensure data handling and APIs are region-specific to prevent data leakage between regions.
+
+<div style="display: flex; flex-direction: row; justify-content: center">
+  <div style="max-height: 400px">
+    ![eu-region-example.gif](assets%2Feu-region-example.gif)
+  </div>
+  <div style="max-height: 400px">
+    ![us-region-example.gif](assets%2Fus-region-example.gif)
+  </div>
+</div>
+
+Example Region Selection UI:
+```swift
+import SwiftUI
+import FronteggSwift
+
+struct SelectRegionView: View {
+    @EnvironmentObject var fronteggAuth: FronteggAuth
+    
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text("Welcome to MyApp")
+                .font(.largeTitle)
+            
+            Text("Select your region:")
+                .padding(.top, 8)
+                .padding(.bottom, 20)
+                .font(.title2)
+            
+            
+            ForEach(fronteggAuth.regionData, id: \.key.self) { item in
+                Button(action: {
+                    FronteggApp.shared.initWithRegion(regionKey: item.key)
+                }) {
+                    VStack(alignment: .leading) {
+                        Text("Region - \(item.key.uppercased())")
+                            .font(.title2)
+                            .padding(.bottom, 1)
+                        Text("\(item.baseUrl)")
+                            .font(.caption)
+                            .tint(.black)
+                            .padding(.bottom, 8)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            
+            Spacer()
+            
+        }
+        .padding()
+        .navigationTitle("Region")
+    }
+}
+```
