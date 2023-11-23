@@ -9,7 +9,7 @@ import SwiftUI
 import FronteggSwift
 
 @main
-struct demo_embeddedApp: App {
+struct MultiRegionApp: App {
     var body: some Scene {
         WindowGroup {
             FronteggWrapper() {

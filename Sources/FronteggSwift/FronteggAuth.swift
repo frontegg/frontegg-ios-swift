@@ -23,13 +23,15 @@ public class FronteggAuth: ObservableObject {
     @Published public var showLoader = true
     @Published public var appLink: Bool = false
     @Published public var externalLink: Bool = false
-    public var embeddedMode: Bool = false
+    @Published public var selectedRegion: RegionConfig? = nil
     
-    public var baseUrl = ""
-    public var clientId = ""
+    public var embeddedMode: Bool
+    public var isRegional: Bool
+    public var regionData: [RegionConfig]
+    public var baseUrl: String
+    public var clientId: String
     public var pendingAppLink: URL? = nil
-    
-    
+
     
     public static var shared: FronteggAuth {
         return FronteggApp.shared.auth
@@ -37,24 +39,64 @@ public class FronteggAuth: ObservableObject {
     
     private let logger = getLogger("FronteggAuth")
     private let credentialManager: CredentialManager
-    public let api: Api
+    public var api: Api
     private var subscribers = Set<AnyCancellable>()
     var webAuthentication: WebAuthentication = WebAuthentication()
     
-    init (baseUrl:String, clientId: String, api:Api, credentialManager: CredentialManager, requestAuthorize: Bool) {
+    init (baseUrl:String,
+          clientId: String,
+          credentialManager: CredentialManager,
+          isRegional: Bool,
+          regionData: [RegionConfig]) {
+        self.isRegional = isRegional
+        self.regionData = regionData
+        self.credentialManager = credentialManager
+        
+        self.embeddedMode = PlistHelper.isEmbeddedMode()
         self.baseUrl = baseUrl
         self.clientId = clientId
-        self.credentialManager = credentialManager
-        self.api = api
-        self.embeddedMode = PlistHelper.isEmbeddedMode()
+        self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId)
+        self.selectedRegion = self.getSelectedRegion()
         
-        
-        if ( requestAuthorize == false ) {
-            // skip automatic authorize for regional config
+        if ( isRegional ) {
             return;
         }
         
         
+        self.initializeSubscriptions()
+    }
+    
+    
+    public func reinitWithRegion(config:RegionConfig) {
+        self.baseUrl = config.baseUrl
+        self.clientId = config.clientId
+        self.selectedRegion = config
+        self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId)
+        
+        self.initializeSubscriptions()
+    }
+    
+    
+    public func getSelectedRegion() -> RegionConfig? {
+        guard let selectedRegionKey = CredentialManager.getSelectedRegion() else {
+            return nil
+        }
+        
+        guard let config = self.regionData.first(where: { config in
+            config.key == selectedRegionKey
+        }) else {
+            let keys: String = self.regionData.map { config in
+                config.key
+            }.joined(separator: ", ")
+            logger.critical("invalid region key \(selectedRegionKey). available regions: \(keys)")
+            return nil
+        }
+        
+        return config
+        
+    }
+    
+    public func initializeSubscriptions() {
         self.$initializing.combineLatest(self.$isAuthenticated, self.$isLoading).sink(){ (initializingValue, isAuthenticatedValue, isLoadingValue) in
             self.showLoader = initializingValue || (!isAuthenticatedValue && isLoadingValue)
         }.store(in: &subscribers)
@@ -77,7 +119,6 @@ public class FronteggAuth: ObservableObject {
             self.initializing = false
         }
     }
-    
     
     public func setCredentials(accessToken: String, refreshToken: String) async {
         

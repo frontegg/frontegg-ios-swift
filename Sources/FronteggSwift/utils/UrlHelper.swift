@@ -52,9 +52,9 @@ public func getURLComonents(_ urlString: String?) -> NSURLComponents? {
 }
 
 public func generateRedirectUri() -> String {
-    let config = try! PlistHelper.fronteggConfig()
-    let baseUrl = config.baseUrl
-    let bundleIdentifier = config.bundleIdentifier
+
+    let baseUrl = FronteggApp.shared.baseUrl
+    let bundleIdentifier = FronteggApp.shared.bundleIdentifier
     
     // return "com.frontegg.demo://auth.davidantoon.me/ios/oauth/callback
     

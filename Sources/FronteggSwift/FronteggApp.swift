@@ -15,36 +15,45 @@ public class FronteggApp {
     public var auth: FronteggAuth
     public var baseUrl: String = ""
     public var clientId: String = ""
-    var api: Api
+    public var bundleIdentifier: String = ""
+    
+    public var regionData: [RegionConfig] = []
     let credentialManager: CredentialManager
     let logger = getLogger("FronteggApp")
-    var regionData: [RegionConfig] = []
-    var selectedRegion: String? = nil
-    var isRegional: Bool = false
+    
     
     init() {
         
         if let data = try? PlistHelper.fronteggRegionalConfig() {
             logger.info("Regional frontegg initialization")
-            self.regionData = data.regions;
-            self.isRegional = true
-            self.baseUrl = ""
-            self.clientId = ""
+            self.bundleIdentifier = data.bundleIdentifier
             self.credentialManager = CredentialManager(serviceKey: data.keychainService)
-            self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId)
+            self.regionData = data.regions
+            
+            
             
             self.auth = FronteggAuth(
                 baseUrl: self.baseUrl,
                 clientId: self.clientId,
-                api: self.api,
                 credentialManager: self.credentialManager,
-                requestAuthorize: false
+                isRegional:true,
+                regionData: self.regionData
             )
             
-            self.selectedRegion = CredentialManager.getSelectedRegion()
-            if let region = self.selectedRegion {
-                self.initWithRegion(regionKey: region)
+            if let config = self.auth.selectedRegion {
+                self.baseUrl = config.baseUrl
+                self.clientId = config.clientId
+                self.auth.reinitWithRegion(config: config)
+                
+                logger.info("Frontegg Initialized succcessfully (region: \(config.key))")
+                return;
+            }else {
+                // skip automatic authorize for regional config
+                self.auth.initializing = false
+                self.auth.isLoading = false
+                self.auth.showLoader = false
             }
+            
             return;
         }
         
@@ -57,15 +66,15 @@ public class FronteggApp {
         
         self.baseUrl = data.baseUrl
         self.clientId = data.clientId
+        self.bundleIdentifier = data.bundleIdentifier
         self.credentialManager = CredentialManager(serviceKey: data.keychainService)
-        self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId)
         
         self.auth = FronteggAuth(
             baseUrl: self.baseUrl,
             clientId: self.clientId,
-            api: self.api,
             credentialManager: self.credentialManager,
-            requestAuthorize: true
+            isRegional: false,
+            regionData: []
         )
         
         logger.info("Frontegg Initialized succcessfully")
@@ -82,6 +91,8 @@ public class FronteggApp {
             exit(1)
         }
         
+        
+        
         guard let config = self.regionData.first(where: { config in
             config.key == regionKey
         }) else {
@@ -93,17 +104,10 @@ public class FronteggApp {
         }
         
         CredentialManager.saveSelectedRegion(regionKey)
+        
         self.baseUrl = config.baseUrl
         self.clientId = config.clientId
-        self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId)
-        
-        self.auth = FronteggAuth(
-            baseUrl: self.baseUrl,
-            clientId: self.clientId,
-            api: self.api,
-            credentialManager: self.credentialManager,
-            requestAuthorize: true
-        )
+        self.auth.reinitWithRegion(config: config)
         
         logger.info("Frontegg Initialized succcessfully (region: \(regionKey))")
     }

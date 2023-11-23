@@ -14,10 +14,10 @@ public enum FronteggError: Error {
 }
 
 
-struct RegionConfig {
-    var key: String
-    var baseUrl: String
-    var clientId: String
+public struct RegionConfig {
+    public var key: String
+    public var baseUrl: String
+    public var clientId: String
 }
 
 struct PlistHelper {
@@ -60,6 +60,10 @@ struct PlistHelper {
         }
         
         guard let regions = values["regions"] as? [[String: String]] else {
+            throw FronteggError.configError("no regions in Frontegg.plist")
+        }
+        
+        if ( regions.count == 0 ) {
             throw FronteggError.configError("no regions in Frontegg.plist")
         }
         
