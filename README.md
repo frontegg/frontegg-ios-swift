@@ -366,14 +366,9 @@ The example application uses a simple picker view to allow the user to select th
 - **Switching Regions**: To switch regions, update the selection in UserDefaults. If issues arise, a **re-installation** of the application might be necessary.
 - **Data Isolation**: Ensure data handling and APIs are region-specific to prevent data leakage between regions.
 
-<div style="display: flex; flex-direction: row; justify-content: center">
-  <div style="max-height: 400px">
-    ![eu-region-example.gif](assets%2Feu-region-example.gif)
-  </div>
-  <div style="max-height: 400px">
-    ![us-region-example.gif](assets%2Fus-region-example.gif)
-  </div>
-</div>
+Select EU Region             |  Select US Region
+:-------------------------:|:-------------------------:
+![eu-region-example.gif](assets%2Feu-region-example.gif)  |  ![us-region-example.gif](assets%2Fus-region-example.gif)
 
 Example Region Selection UI:
 ```swift
