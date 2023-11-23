@@ -10,9 +10,12 @@ import UIKit
 
 class WebAuthentication: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
     
-    var view: UIView? = nil
+    weak var window: UIWindow? = nil
+    var ephemeralSesion: Bool = false
+    
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        return self.view?.window ?? ASPresentationAnchor()
+
+        return  FronteggAuth.shared.getRootVC()?.view.window ?? ASPresentationAnchor()
     }
     override func responds(to aSelector: Selector!) -> Bool {
         return true
@@ -30,7 +33,7 @@ class WebAuthentication: NSObject, ObservableObject, ASWebAuthenticationPresenta
             completionHandler: completionHandler)
         // Run the session
         webAuthSession.presentationContextProvider = self
-        webAuthSession.prefersEphemeralWebBrowserSession = false
+        webAuthSession.prefersEphemeralWebBrowserSession = self.ephemeralSesion
         
 
         self.webAuthSession = webAuthSession
