@@ -9,7 +9,8 @@ import Foundation
 public enum KeychainKeys: String {
     case accessToken = "accessToken"
     case refreshToken = "refreshToken"
-    case codeVerifier = "codeVerifier"
+    case codeVerifier = "fe_codeVerifier"
+    case region = "fe_region"
 }
 
 
@@ -117,5 +118,14 @@ public class CredentialManager {
     
     static func getCodeVerifier() -> String? {
         return UserDefaults.standard.string(forKey: KeychainKeys.codeVerifier.rawValue)
+    }
+    
+    
+    static func saveSelectedRegion(_ region: String) {
+        UserDefaults.standard.set(region, forKey: KeychainKeys.region.rawValue)
+    }
+    
+    static func getSelectedRegion() -> String? {
+        return UserDefaults.standard.string(forKey: KeychainKeys.region.rawValue)
     }
 }

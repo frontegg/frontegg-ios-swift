@@ -13,7 +13,10 @@ struct MyApp: View {
     
     var body: some View {
         ZStack {
-            if fronteggAuth.isAuthenticated {
+            
+            if fronteggAuth.isRegional && fronteggAuth.selectedRegion == nil {
+                SelectRegionView()
+            } else if fronteggAuth.isAuthenticated {
                 TabView {
                     ProfileTab()
                         .tabItem {

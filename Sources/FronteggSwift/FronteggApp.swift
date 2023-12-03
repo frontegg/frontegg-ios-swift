@@ -12,14 +12,53 @@ public class FronteggApp {
     
     public static let shared = FronteggApp()
     
-    public let auth: FronteggAuth
-    public let baseUrl: String
-    public let clientId: String
-    let api: Api
+    public var auth: FronteggAuth
+    public var baseUrl: String = ""
+    public var clientId: String = ""
+    public var bundleIdentifier: String = ""
+    
+    public var regionData: [RegionConfig] = []
     let credentialManager: CredentialManager
     let logger = getLogger("FronteggApp")
     
+    
     init() {
+        
+        if let data = try? PlistHelper.fronteggRegionalConfig() {
+            logger.info("Regional frontegg initialization")
+            self.bundleIdentifier = data.bundleIdentifier
+            self.credentialManager = CredentialManager(serviceKey: data.keychainService)
+            self.regionData = data.regions
+            
+            
+            
+            self.auth = FronteggAuth(
+                baseUrl: self.baseUrl,
+                clientId: self.clientId,
+                credentialManager: self.credentialManager,
+                isRegional:true,
+                regionData: self.regionData
+            )
+            
+            if let config = self.auth.selectedRegion {
+                self.baseUrl = config.baseUrl
+                self.clientId = config.clientId
+                self.auth.reinitWithRegion(config: config)
+                
+                logger.info("Frontegg Initialized succcessfully (region: \(config.key))")
+                return;
+            }else {
+                // skip automatic authorize for regional config
+                self.auth.initializing = false
+                self.auth.isLoading = false
+                self.auth.showLoader = false
+            }
+            
+            return;
+        }
+        
+        
+        logger.info("Standard frontegg initialization")
         guard let data = try? PlistHelper.fronteggConfig() else {
             exit(1)
         }
@@ -27,14 +66,15 @@ public class FronteggApp {
         
         self.baseUrl = data.baseUrl
         self.clientId = data.clientId
+        self.bundleIdentifier = data.bundleIdentifier
         self.credentialManager = CredentialManager(serviceKey: data.keychainService)
-        self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId)
         
         self.auth = FronteggAuth(
             baseUrl: self.baseUrl,
             clientId: self.clientId,
-            api: self.api,
-            credentialManager: self.credentialManager
+            credentialManager: self.credentialManager,
+            isRegional: false,
+            regionData: []
         )
         
         logger.info("Frontegg Initialized succcessfully")
@@ -42,6 +82,34 @@ public class FronteggApp {
  
     public func didFinishLaunchingWithOptions(){
         logger.info("Frontegg baseURL: \(self.baseUrl)")
+    }
+    
+    public func initWithRegion( regionKey:String ){
+        
+        if ( self.regionData.count == 0 ){
+            logger.critical("illegal state. Frontegg.plist does not contains regions array")
+            exit(1)
+        }
+        
+        
+        
+        guard let config = self.regionData.first(where: { config in
+            config.key == regionKey
+        }) else {
+            let keys: String = self.regionData.map { config in
+                config.key
+            }.joined(separator: ", ")
+            logger.critical("invalid region key \(regionKey). available regions: \(keys)")
+            exit(1)
+        }
+        
+        CredentialManager.saveSelectedRegion(regionKey)
+        
+        self.baseUrl = config.baseUrl
+        self.clientId = config.clientId
+        self.auth.reinitWithRegion(config: config)
+        
+        logger.info("Frontegg Initialized succcessfully (region: \(regionKey))")
     }
     
 }

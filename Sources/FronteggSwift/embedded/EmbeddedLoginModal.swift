@@ -9,14 +9,19 @@ import Foundation
 import SwiftUI
 
 
+class VCHolder :ObservableObject  {
+    var vc: UIViewController?
+    
+    public static let shared = VCHolder()
+}
+
 public struct EmbeddedLoginModal: View {
     @StateObject var fronteggAuth = FronteggApp.shared.auth
-    public var parentVC: UIViewController? = nil
-    
     
     public init(parentVC: UIViewController? = nil) {
-        self.parentVC = parentVC
+        VCHolder.shared.vc = parentVC
     }
+    
     
     
     public var body: some View {
@@ -26,9 +31,10 @@ public struct EmbeddedLoginModal: View {
             } else if !fronteggAuth.initializing
                 && !fronteggAuth.showLoader
                 && fronteggAuth.isAuthenticated {
-                
+
                 DefaultLoader().onAppear() {
-                    parentVC?.presentedViewController?.dismiss(animated: true)
+                    VCHolder.shared.vc?.presentedViewController?.dismiss(animated: true)
+                    VCHolder.shared.vc = nil
                 }
             } else {
                 EmbeddedLoginPage()

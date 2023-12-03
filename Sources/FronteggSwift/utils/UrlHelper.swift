@@ -52,9 +52,9 @@ public func getURLComonents(_ urlString: String?) -> NSURLComponents? {
 }
 
 public func generateRedirectUri() -> String {
-    let config = try! PlistHelper.fronteggConfig()
-    let baseUrl = config.baseUrl
-    let bundleIdentifier = config.bundleIdentifier
+
+    let baseUrl = FronteggApp.shared.baseUrl
+    let bundleIdentifier = FronteggApp.shared.bundleIdentifier
     
     // return "com.frontegg.demo://auth.davidantoon.me/ios/oauth/callback
     
@@ -71,7 +71,6 @@ public func generateRedirectUri() -> String {
 
 enum OverrideUrlType {
     case HostedLoginCallback
-    case SocialLoginRedirectToBrowser
     case SocialOauthPreLogin
     case loginRoutes
     case internalRoutes
@@ -81,8 +80,8 @@ enum OverrideUrlType {
 
 func isSocialLoginPath(_ string: String) -> Bool {
     let patterns = [
-        "^/frontegg/identity/resources/auth/v2/user/sso/default/[^/]+/prelogin$",
-        "^/identity/resources/auth/v2/user/sso/default/[^/]+/prelogin$"
+        "^/frontegg/identity/resources/auth/[^/]+/user/sso/default/[^/]+/prelogin$",
+        "^/identity/resources/auth/[^/]+/user/sso/default/[^/]+/prelogin$"
     ]
     
     for pattern in patterns {
@@ -118,10 +117,6 @@ func getOverrideUrlType (url: URL) -> OverrideUrlType {
     if(url.absoluteString.starts(with: generateRedirectUri())){
         return .HostedLoginCallback
     }
-//    if((URLConstants.oauthUrls.first { urlStr.hasPrefix($0)}) != nil) {
-//        return .SocialLoginRedirectToBrowser
-//    }
-    
     return .Unknown
     
 }

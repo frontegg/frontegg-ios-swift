@@ -13,6 +13,13 @@ public enum FronteggError: Error {
     case authError(String)
 }
 
+
+public struct RegionConfig {
+    public var key: String
+    public var baseUrl: String
+    public var clientId: String
+}
+
 struct PlistHelper {
     
     private static var logLevelCache: Logger.Level? = nil
@@ -21,7 +28,7 @@ struct PlistHelper {
         let bundle = Bundle.main;
         
         let resourceName = (getenv("frontegg-testing") != nil) ? "FronteggTest" : "Frontegg"
-            
+        
         guard let path = bundle.path(forResource: resourceName, ofType: "plist"),
               let values = NSDictionary(contentsOfFile: path) as? [String: Any] else {
             let errorMessage = "Missing Frontegg.plist file with 'clientId' and 'baseUrl' entries in main bundle!"
@@ -39,6 +46,40 @@ struct PlistHelper {
         
         return (clientId: clientId, baseUrl: baseUrl, keychainService: keychainService, bundleIdentifier: bundle.bundleIdentifier!)
     }
+    
+    public static func fronteggRegionalConfig() throws -> (regions: [RegionConfig], keychainService: String, bundleIdentifier: String) {
+        let bundle = Bundle.main;
+        
+        let resourceName = (getenv("frontegg-testing") != nil) ? "FronteggTest" : "Frontegg"
+        
+        guard let path = bundle.path(forResource: resourceName, ofType: "plist"),
+              let values = NSDictionary(contentsOfFile: path) as? [String: Any] else {
+            let errorMessage = "Missing Frontegg.plist file with 'clientId' and 'baseUrl' entries in main bundle!"
+            print(errorMessage)
+            throw FronteggError.configError(errorMessage)
+        }
+        
+        guard let regions = values["regions"] as? [[String: String]] else {
+            throw FronteggError.configError("no regions in Frontegg.plist")
+        }
+        
+        if ( regions.count == 0 ) {
+            throw FronteggError.configError("no regions in Frontegg.plist")
+        }
+        
+        let keychainService = values["keychainService"] as? String ?? "frontegg"
+        
+        let regionConfigs = try regions.map { dict in
+            guard let key = dict["key"],
+                    let baseUrl = dict["baseUrl"],
+                  let clientId = dict["clientId"] else {
+                        throw FronteggError.configError("Frontegg.plist file at \(path) has invalid regions data, regions must be array of (key, baseUrl, clientId)")
+                  }
+            return RegionConfig(key: key, baseUrl: baseUrl, clientId: clientId)
+        }
+        return (regions: regionConfigs, keychainService: keychainService, bundleIdentifier: bundle.bundleIdentifier!)
+    }
+    
     
     public static func getLogLevel() -> Logger.Level {
         

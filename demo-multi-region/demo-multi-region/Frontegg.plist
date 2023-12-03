@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>regions</key>
+	<array>
+		<dict>
+			<key>key</key>
+			<string>eu</string>
+			<key>baseUrl</key>
+			<string>https://auth.davidantoon.me</string>
+			<key>clientId</key>
+			<string>b6adfe4c-d695-4c04-b95f-3ec9fd0c6cca</string>
+		</dict>
+		<dict>
+			<key>key</key>
+			<string>us</string>
+			<key>baseUrl</key>
+			<string>https://davidprod.frontegg.com</string>
+			<key>clientId</key>
+			<string>d7d07347-2c57-4450-8418-0ec7ee6e096b</string>
+		</dict>
+	</array>
+	<key>embeddedMode</key>
+	<true/>
+	<key>logLevel</key>
+	<string>trace</string>
+</dict>
+</plist>
