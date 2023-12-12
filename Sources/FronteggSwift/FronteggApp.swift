@@ -16,6 +16,7 @@ public class FronteggApp {
     public var baseUrl: String = ""
     public var clientId: String = ""
     public var bundleIdentifier: String = ""
+    public var embeddedMode: Bool = true;
     
     public var regionData: [RegionConfig] = []
     let credentialManager: CredentialManager
@@ -24,20 +25,39 @@ public class FronteggApp {
     
     init() {
         
+        self.embeddedMode = PlistHelper.isEmbeddedMode()
+        let keychainService = PlistHelper.getKeychainService()
+        self.credentialManager = CredentialManager(serviceKey: keychainService)
+        self.bundleIdentifier = PlistHelper.bundleIdentifier()
+        
+        
+        /**
+         lateInit used for react-native and ionic-capacitor initialization
+         */
+        if(PlistHelper.isLateInit()){
+            self.auth = FronteggAuth(
+                baseUrl: self.baseUrl,
+                clientId: self.clientId,
+                credentialManager: self.credentialManager,
+                isRegional: false,
+                regionData: self.regionData,
+                embeddedMode: self.embeddedMode,
+                isLateInit: true
+            )
+            return
+        }
+        
         if let data = try? PlistHelper.fronteggRegionalConfig() {
             logger.info("Regional frontegg initialization")
-            self.bundleIdentifier = data.bundleIdentifier
-            self.credentialManager = CredentialManager(serviceKey: data.keychainService)
             self.regionData = data.regions
-            
-            
             
             self.auth = FronteggAuth(
                 baseUrl: self.baseUrl,
                 clientId: self.clientId,
                 credentialManager: self.credentialManager,
                 isRegional:true,
-                regionData: self.regionData
+                regionData: self.regionData,
+                embeddedMode: self.embeddedMode
             )
             
             if let config = self.auth.selectedRegion {
@@ -66,24 +86,35 @@ public class FronteggApp {
         
         self.baseUrl = data.baseUrl
         self.clientId = data.clientId
-        self.bundleIdentifier = data.bundleIdentifier
-        self.credentialManager = CredentialManager(serviceKey: data.keychainService)
         
         self.auth = FronteggAuth(
             baseUrl: self.baseUrl,
             clientId: self.clientId,
             credentialManager: self.credentialManager,
             isRegional: false,
-            regionData: []
+            regionData: [],
+            embeddedMode: self.embeddedMode
         )
         
         logger.info("Frontegg Initialized succcessfully")
     }
- 
+    
     public func didFinishLaunchingWithOptions(){
         logger.info("Frontegg baseURL: \(self.baseUrl)")
     }
     
+    public func manualInit(baseUrl: String, cliendId:String) {
+        self.baseUrl = baseUrl
+        self.clientId = cliendId
+        
+        self.auth.manualInit(baseUrl: baseUrl, clientId: cliendId)
+    }
+    public func manualInitRegions(regions: [RegionConfig]) {
+        self.regionData = regions
+        self.auth.manualInitRegions(regions: regions)
+        self.baseUrl = self.auth.baseUrl
+        self.clientId = self.auth.clientId
+    }
     public func initWithRegion( regionKey:String ){
         
         if ( self.regionData.count == 0 ){

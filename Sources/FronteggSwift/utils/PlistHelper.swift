@@ -81,6 +81,7 @@ struct PlistHelper {
     }
     
     
+    
     public static func getLogLevel() -> Logger.Level {
         
         if let logLevel = PlistHelper.logLevelCache {
@@ -109,6 +110,12 @@ struct PlistHelper {
         return Logger.Level.warning
     }
     
+    
+    public static func bundleIdentifier() -> String {
+        let bundle = Bundle.main;
+        return bundle.bundleIdentifier!
+    }
+    
     public static func isEmbeddedMode() -> Bool {
         
         let bundle = Bundle.main;
@@ -120,6 +127,29 @@ struct PlistHelper {
         }
         
         return true
+    }
+    
+    public static func isLateInit() -> Bool {
+        let bundle = Bundle.main;
+        if let path = bundle.path(forResource: "Frontegg", ofType: "plist"),
+           let values = NSDictionary(contentsOfFile: path) as? [String: Any],
+           let lateInit =  values["lateInit"] as? Bool {
+            
+           return lateInit
+        }
+        return false
+    }
+    
+    
+    public static func getKeychainService() -> String {
+        let bundle = Bundle.main;
+        if let path = bundle.path(forResource: "Frontegg", ofType: "plist"),
+           let values = NSDictionary(contentsOfFile: path) as? [String: Any],
+           let keychainService =  values["keychainService"] as? String {
+            
+           return keychainService
+        }
+        return "frontegg"
     }
 }
 
