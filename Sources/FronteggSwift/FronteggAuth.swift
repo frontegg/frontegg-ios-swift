@@ -225,6 +225,8 @@ public class FronteggAuth: ObservableObject {
         setIsLoading(true)
         
         Task {
+            
+            print("Going to exchange token")
             let (responseData, error) = await api.exchangeToken(
                 code: code,
                 redirectUrl: redirectUri,
@@ -244,6 +246,7 @@ public class FronteggAuth: ObservableObject {
             }
             
             do {
+                print("Going to load user data")
                 let user = try await self.api.me(accessToken: data.access_token)
                 await setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
                 
@@ -352,6 +355,8 @@ public class FronteggAuth: ObservableObject {
         let oauthCallback = createOauthCallbackHandler(completion)
         self.webAuthentication.webAuthSession?.cancel()
         self.webAuthentication = WebAuthentication()
+        self.webAuthentication.ephemeralSesion = true
+        self.webAuthentication.window = getRootVC()?.view.window
         
         let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: email)
         CredentialManager.saveCodeVerifier(codeVerifier)
@@ -367,6 +372,7 @@ public class FronteggAuth: ObservableObject {
         let oauthCallback = createOauthCallbackHandler(completion)
         self.webAuthentication.webAuthSession?.cancel()
         self.webAuthentication = WebAuthentication()
+        self.webAuthentication.window = getRootVC()?.view.window
         
         let directLogin: [String: Any] = [
             "type": "direct",

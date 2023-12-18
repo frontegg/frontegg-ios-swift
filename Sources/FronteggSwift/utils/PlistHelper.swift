@@ -121,5 +121,48 @@ struct PlistHelper {
         
         return true
     }
+    
+    public static func isLateInit() -> Bool {
+        let bundle = Bundle.main;
+        if let path = bundle.path(forResource: "Frontegg", ofType: "plist"),
+           let values = NSDictionary(contentsOfFile: path) as? [String: Any],
+           let lateInit =  values["lateInit"] as? Bool {
+            
+           return lateInit
+        }
+        return false
+    }
+    
+    
+    public static func getKeychainService() -> String {
+        let bundle = Bundle.main;
+        if let path = bundle.path(forResource: "Frontegg", ofType: "plist"),
+           let values = NSDictionary(contentsOfFile: path) as? [String: Any],
+           let keychainService =  values["keychainService"] as? String {
+            
+           return keychainService
+        }
+        return "frontegg"
+    }
+    
+    public static func getNativeBridgeOptions() -> [String: Bool] {
+        let bundle = Bundle.main;
+        
+        var loginWithSocialLogin:Bool = true
+        var loginWithSSO:Bool = false
+        
+        if let path = bundle.path(forResource: "Frontegg", ofType: "plist"),
+           let values = NSDictionary(contentsOfFile: path) as? [String: Any] {
+            
+            loginWithSocialLogin = (values["loginWithSocialLogin"] as? Bool) ?? true
+            loginWithSSO = (values["loginWithSSO"] as? Bool) ?? false
+            
+        }
+        return [
+            "loginWithSocialLogin": loginWithSocialLogin,
+            "loginWithSSO": loginWithSSO
+        ]
+    }
+    
 }
 
