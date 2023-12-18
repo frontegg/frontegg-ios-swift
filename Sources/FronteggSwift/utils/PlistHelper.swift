@@ -109,6 +109,15 @@ struct PlistHelper {
         return Logger.Level.warning
     }
     
+    
+    
+    public static func bundleIdentifier() -> String {
+        let bundle = Bundle.main;
+        return bundle.bundleIdentifier!
+    }
+    
+
+    
     public static func isEmbeddedMode() -> Bool {
         
         let bundle = Bundle.main;

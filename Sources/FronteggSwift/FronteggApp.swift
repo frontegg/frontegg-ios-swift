@@ -55,7 +55,6 @@ public class FronteggApp {
         if let data = try? PlistHelper.fronteggRegionalConfig() {
             logger.info("Regional frontegg initialization")
             self.bundleIdentifier = data.bundleIdentifier
-            self.credentialManager = CredentialManager(serviceKey: data.keychainService)
             self.regionData = data.regions
             
             
@@ -65,7 +64,8 @@ public class FronteggApp {
                 clientId: self.clientId,
                 credentialManager: self.credentialManager,
                 isRegional:true,
-                regionData: self.regionData
+                regionData: self.regionData,
+                embeddedMode: self.embeddedMode
             )
             
             if let config = self.auth.selectedRegion {
@@ -94,15 +94,15 @@ public class FronteggApp {
         
         self.baseUrl = data.baseUrl
         self.clientId = data.clientId
-        self.bundleIdentifier = data.bundleIdentifier
-        self.credentialManager = CredentialManager(serviceKey: data.keychainService)
+        
         
         self.auth = FronteggAuth(
             baseUrl: self.baseUrl,
             clientId: self.clientId,
             credentialManager: self.credentialManager,
             isRegional: false,
-            regionData: []
+            regionData: [],
+            embeddedMode: self.embeddedMode
         )
         
         logger.info("Frontegg Initialized succcessfully")

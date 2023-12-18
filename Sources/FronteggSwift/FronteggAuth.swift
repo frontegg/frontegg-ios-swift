@@ -26,6 +26,7 @@ public class FronteggAuth: ObservableObject {
     @Published public var isLoading = true
     @Published public var webLoading = true
     @Published public var initializing = true
+    @Published public var lateInit = false
     @Published public var showLoader = true
     @Published public var appLink: Bool = false
     @Published public var externalLink: Bool = false
@@ -53,18 +54,23 @@ public class FronteggAuth: ObservableObject {
           clientId: String,
           credentialManager: CredentialManager,
           isRegional: Bool,
-          regionData: [RegionConfig]) {
+          regionData: [RegionConfig],
+          embeddedMode: Bool,
+          isLateInit: Bool? = false) {
         self.isRegional = isRegional
         self.regionData = regionData
+        self.lateInit = isLateInit ?? false
         self.credentialManager = credentialManager
         
-        self.embeddedMode = PlistHelper.isEmbeddedMode()
+        self.embeddedMode = embeddedMode
         self.baseUrl = baseUrl
         self.clientId = clientId
         self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId)
         self.selectedRegion = self.getSelectedRegion()
         
-        if ( isRegional ) {
+        if ( isRegional || isLateInit == true ) {
+            initializing = false
+            showLoader = false
             return;
         }
         
@@ -72,7 +78,30 @@ public class FronteggAuth: ObservableObject {
         self.initializeSubscriptions()
     }
     
+    public func manualInit(baseUrl:String, clientId:String) {
+        self.lateInit = false
+        self.baseUrl = baseUrl
+        self.clientId = clientId
+        self.isRegional = false
+        self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId)
+        self.initializeSubscriptions()
+    }
     
+    public func manualInitRegions(regions:[RegionConfig]) {
+        
+        self.lateInit = false
+        self.isRegional = true
+        self.regionData = regions
+        
+        if let config = self.selectedRegion {
+            self.baseUrl = config.baseUrl
+            self.clientId = config.clientId
+            self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId)
+            self.initializeSubscriptions()
+        }
+    }
+    
+
     public func reinitWithRegion(config:RegionConfig) {
         self.baseUrl = config.baseUrl
         self.clientId = config.clientId
