@@ -92,6 +92,7 @@ public class FronteggAuth: ObservableObject {
         self.lateInit = false
         self.isRegional = true
         self.regionData = regions
+        self.selectedRegion = self.getSelectedRegion()
         
         if let config = self.selectedRegion {
             self.baseUrl = config.baseUrl
