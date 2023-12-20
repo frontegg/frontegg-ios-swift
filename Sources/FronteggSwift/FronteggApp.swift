@@ -16,6 +16,9 @@ public class FronteggApp {
     public var baseUrl: String = ""
     public var clientId: String = ""
     public var bundleIdentifier: String = ""
+    public var embeddedMode: Bool = true
+    public var handleLoginWithSocialLogin:Bool = true
+    public var handleLoginWithSSO:Bool = false
     
     public var regionData: [RegionConfig] = []
     let credentialManager: CredentialManager
@@ -24,10 +27,34 @@ public class FronteggApp {
     
     init() {
         
+        self.embeddedMode = PlistHelper.isEmbeddedMode()
+        let keychainService = PlistHelper.getKeychainService()
+        self.credentialManager = CredentialManager(serviceKey: keychainService)
+        self.bundleIdentifier = PlistHelper.bundleIdentifier()
+        
+        let bridgeOptions = PlistHelper.getNativeBridgeOptions()
+        self.handleLoginWithSocialLogin = bridgeOptions["loginWithSocialLogin"] ?? true
+        self.handleLoginWithSSO = bridgeOptions["loginWithSSO"] ?? false
+        
+        /**
+         lateInit used for react-native and ionic-capacitor initialization
+         */
+        if(PlistHelper.isLateInit()){
+            self.auth = FronteggAuth(
+                baseUrl: self.baseUrl,
+                clientId: self.clientId,
+                credentialManager: self.credentialManager,
+                isRegional: false,
+                regionData: self.regionData,
+                embeddedMode: self.embeddedMode,
+                isLateInit: true
+            )
+            return
+        }
+        
         if let data = try? PlistHelper.fronteggRegionalConfig() {
             logger.info("Regional frontegg initialization")
             self.bundleIdentifier = data.bundleIdentifier
-            self.credentialManager = CredentialManager(serviceKey: data.keychainService)
             self.regionData = data.regions
             
             
@@ -37,7 +64,8 @@ public class FronteggApp {
                 clientId: self.clientId,
                 credentialManager: self.credentialManager,
                 isRegional:true,
-                regionData: self.regionData
+                regionData: self.regionData,
+                embeddedMode: self.embeddedMode
             )
             
             if let config = self.auth.selectedRegion {
@@ -66,15 +94,15 @@ public class FronteggApp {
         
         self.baseUrl = data.baseUrl
         self.clientId = data.clientId
-        self.bundleIdentifier = data.bundleIdentifier
-        self.credentialManager = CredentialManager(serviceKey: data.keychainService)
+        
         
         self.auth = FronteggAuth(
             baseUrl: self.baseUrl,
             clientId: self.clientId,
             credentialManager: self.credentialManager,
             isRegional: false,
-            regionData: []
+            regionData: [],
+            embeddedMode: self.embeddedMode
         )
         
         logger.info("Frontegg Initialized succcessfully")
@@ -84,6 +112,31 @@ public class FronteggApp {
         logger.info("Frontegg baseURL: \(self.baseUrl)")
     }
     
+    public func manualInit(
+            baseUrl: String,
+            cliendId: String,
+            handleLoginWithSocialLogin: Bool = true,
+            handleLoginWithSSO:Bool = false
+    ) {
+        self.baseUrl = baseUrl
+        self.clientId = cliendId
+        
+        self.handleLoginWithSocialLogin = handleLoginWithSocialLogin
+        self.handleLoginWithSSO = handleLoginWithSSO
+        
+        self.auth.manualInit(baseUrl: baseUrl, clientId: cliendId)
+    }
+    public func manualInitRegions(regions: [RegionConfig],
+                                  handleLoginWithSocialLogin: Bool = true,
+                                  handleLoginWithSSO:Bool = false) {
+        self.regionData = regions
+        self.handleLoginWithSocialLogin = handleLoginWithSocialLogin
+        self.handleLoginWithSSO = handleLoginWithSSO
+        self.auth.manualInitRegions(regions: regions)
+        self.baseUrl = self.auth.baseUrl
+        self.clientId = self.auth.clientId
+    }
+
     public func initWithRegion( regionKey:String ){
         
         if ( self.regionData.count == 0 ){

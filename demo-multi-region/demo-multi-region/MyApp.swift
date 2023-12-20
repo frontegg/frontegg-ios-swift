@@ -31,11 +31,22 @@ struct MyApp: View {
                 }
             } else {
                 
-                DefaultLoader().onAppear(){
-                    if(!FronteggAuth.shared.isAuthenticated){
-                        fronteggAuth.login()
+                if(fronteggAuth.lateInit) {
+                    Button("EU") {
+                        FronteggApp.shared.manualInit(baseUrl: "https://auth.davidantoon.me", cliendId: "b6adfe4c-d695-4c04-b95f-3ec9fd0c6cca")
+                    }.padding(.top, 40)
+                    
+                    Button("US") {
+                        FronteggApp.shared.manualInit(baseUrl: "https://davidprod.frontegg.com", cliendId: "d7d07347-2c57-4450-8418-0ec7ee6e096b")
+                    }
+                }else {
+                    DefaultLoader().onAppear(){
+                        if(!fronteggAuth.isAuthenticated && !fronteggAuth.initializing){
+                            fronteggAuth.login()
+                        }
                     }
                 }
+                
             }
         }
     }

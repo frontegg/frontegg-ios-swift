@@ -26,6 +26,16 @@ public struct FronteggWebView: UIViewRepresentable {
         userContentController.add(controller, name: "FronteggNativeBridge")
 
 
+        let fronteggApp = FronteggApp.shared
+        let jsObject = String(data: try! JSONSerialization.data(withJSONObject: [
+            "loginWithSocialLogin": fronteggApp.handleLoginWithSocialLogin,
+            "loginWithSSO": fronteggApp.handleLoginWithSSO,
+        ]), encoding: .utf8)
+        
+        let jsScript = WKUserScript(source: "window.FronteggNativeBridgeFunctions = \(jsObject ?? "{}");", injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+        userContentController.addUserScript(jsScript)
+        
+        
         let conf = WKWebViewConfiguration()
         conf.userContentController = userContentController
         conf.websiteDataStore = WKWebsiteDataStore.default()
@@ -35,11 +45,11 @@ public struct FronteggWebView: UIViewRepresentable {
         controller.webView = webView
 
         
-//        if #available(iOS 16.4, *) {
-//            webView.isInspectable = true
-//        } else {
-//            // Fallback on earlier versions
-//        }
+        if #available(iOS 16.4, *) {
+            webView.isInspectable = true
+        } else {
+            // Fallback on earlier versions
+        }
         
         let url: URL
         let codeVerifier: String;
