@@ -18,6 +18,12 @@ public struct RegionConfig {
     public var key: String
     public var baseUrl: String
     public var clientId: String
+    
+    public init(key: String, baseUrl: String, clientId: String){
+        self.key = key
+        self.baseUrl = baseUrl
+        self.clientId = clientId
+    }
 }
 
 struct PlistHelper {
