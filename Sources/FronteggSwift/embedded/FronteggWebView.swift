@@ -45,11 +45,11 @@ public struct FronteggWebView: UIViewRepresentable {
         controller.webView = webView
 
         
-        if #available(iOS 16.4, *) {
-            webView.isInspectable = true
-        } else {
-            // Fallback on earlier versions
-        }
+//        if #available(iOS 16.4, *) {
+//            webView.isInspectable = true
+//        } else {
+//            // Fallback on earlier versions
+//        }
         
         let url: URL
         let codeVerifier: String;
