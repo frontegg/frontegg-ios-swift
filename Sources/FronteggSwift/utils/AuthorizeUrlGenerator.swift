@@ -69,6 +69,16 @@ public class AuthorizeUrlGenerator {
         
         if(loginAction != nil){
             queryParams.append(URLQueryItem(name: "login_direct_action", value: loginAction))
+            queryParams.append(URLQueryItem(name: "prompt", value: "login"))
+        
+            authorizeUrl.queryItems = queryParams
+            
+            if let url = authorizeUrl.url{
+                return (url, codeVerifier)
+            } else {
+                logger.error("Unkonwn error occured while generating authorize url, baseUrl: \(baseUrl)")
+                fatalError("Failed to generate authorize url")
+            }
         }
         
         authorizeUrl.queryItems = queryParams
@@ -76,18 +86,13 @@ public class AuthorizeUrlGenerator {
         if let url = authorizeUrl.url{
             logger.trace("Generated url: \(url.absoluteString)")
 
-//            if let encodedURL = url.absoluteString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
-                var loginUrl = URLComponents(string: baseUrl)!
+            var loginUrl = URLComponents(string: baseUrl)!
 
-                loginUrl.path = "/oauth/logout"
-                loginUrl.queryItems = [
-                    URLQueryItem(name: "post_logout_redirect_uri", value: url.absoluteString),
-                ]
-                return (loginUrl.url!, codeVerifier)
-//            } else {
-//                logger.error("Failed to parse the generated url, baseUrl: \(baseUrl)")
-//                fatalError("Failed to generate authorize url")
-//            }
+            loginUrl.path = "/oauth/logout"
+            loginUrl.queryItems = [
+                URLQueryItem(name: "post_logout_redirect_uri", value: url.absoluteString),
+            ]
+            return (loginUrl.url!, codeVerifier)
         } else {
             logger.error("Unkonwn error occured while generating authorize url, baseUrl: \(baseUrl)")
             fatalError("Failed to generate authorize url")

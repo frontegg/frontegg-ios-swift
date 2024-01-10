@@ -33,6 +33,7 @@ public struct EmbeddedLoginModal: View {
                 && fronteggAuth.isAuthenticated {
 
                 DefaultLoader().onAppear() {
+                    
                     VCHolder.shared.vc?.presentedViewController?.dismiss(animated: true)
                     VCHolder.shared.vc = nil
                 }
