@@ -358,10 +358,15 @@ public class FronteggAuth: ObservableObject {
     
     internal func getRootVC() -> UIViewController? {
         
+        
         if let appDelegate = UIApplication.shared.delegate,
            let window = appDelegate.window,
            let rootVC = window?.rootViewController {
+            if let presented = rootVC.presentedViewController {
+                return presented
+            }else {
                 return rootVC
+            }
         }
         
         if let rootVC = UIWindow.key?.rootViewController {
