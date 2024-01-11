@@ -30,6 +30,7 @@ public struct FronteggWebView: UIViewRepresentable {
         let jsObject = String(data: try! JSONSerialization.data(withJSONObject: [
             "loginWithSocialLogin": fronteggApp.handleLoginWithSocialLogin,
             "loginWithSSO": fronteggApp.handleLoginWithSSO,
+            "shouldPromptSocialLoginConsent": fronteggApp.shouldPromptSocialLoginConsent
         ]), encoding: .utf8)
         
         let jsScript = WKUserScript(source: "window.FronteggNativeBridgeFunctions = \(jsObject ?? "{}");", injectionTime: .atDocumentEnd, forMainFrameOnly: false)
