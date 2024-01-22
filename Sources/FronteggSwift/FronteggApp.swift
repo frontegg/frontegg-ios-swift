@@ -20,6 +20,10 @@ public class FronteggApp {
     public var handleLoginWithSocialLogin:Bool = true
     public var handleLoginWithSSO:Bool = false
     
+    /* force consent when authenticate with social login */
+    public var shouldPromptSocialLoginConsent:Bool = true
+    
+    
     public var regionData: [RegionConfig] = []
     let credentialManager: CredentialManager
     let logger = getLogger("FronteggApp")
