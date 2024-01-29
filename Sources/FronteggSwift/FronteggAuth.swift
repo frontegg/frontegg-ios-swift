@@ -201,7 +201,7 @@ public class FronteggAuth: ObservableObject {
         }
     }
     
-    public func logout() {
+    public func logout(_ completion: @escaping (Result<Bool, FronteggError>) -> Void) {
         self.isLoading = true
         
         DispatchQueue.global(qos: .userInitiated).async {
@@ -222,10 +222,15 @@ public class FronteggAuth: ObservableObject {
                     
                     // isLoading must be at the last bottom
                     self.isLoading = false
+                    completion(.success(true));
                 }
             }
         }
-        
+    }
+    public func logout() {
+        logout { res in
+            print("logged out")
+        }
     }
     
     public func refreshTokenIfNeeded() async {

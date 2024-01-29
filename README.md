@@ -149,16 +149,16 @@ your root project directory, this file will store values to be used variables by
           return true
       }
     ```
-  - Create FronteggController class that extends AbstractFronteggController from FronteggSwift
+  - Create AuthenticationController class that extends AbstractFronteggController from FronteggSwift
     ```swift 
       //
-      //  FronteggController.swift
+      //  AuthenticationController.swift
       //
       
       import UIKit
       import FronteggSwift
       
-      class FronteggController: AbstractFronteggController {
+      class AuthenticationController: AbstractFronteggController {
       
           override func navigateToAuthenticated(){
               // This function will be called when the user is authenticated
@@ -237,29 +237,14 @@ your root project directory, this file will store values to be used variables by
                 // if the user is not authenticated
  
                 let fronteggAuth = FronteggApp.shared.auth
-                let sub = AnySubscriber<Bool, Never>(
-                    receiveSubscription: {query in
-                        query.request(.unlimited)
-                    }, receiveValue: { showLoader in
-                       self.showLoader = showLoader
-                       self.label.text = fronteggAuth.user?.email ?? "Unknown"
-                       
-                       if(!showLoader && !fronteggAuth.isAuthenticated){
-                           // Display your own Authentication View Controller
-                           // to handle after oauth callback
-                           window?.rootViewController = AuthenticationController()
-                           window?.makeKeyAndVisible()
-                           return .none
-                       }
-                       return .unlimited
-                    })
-      
-                FronteggApp.shared.auth.$showLoader.subscribe(sub)
-                
+                self.label.text = fronteggAuth.user?.email ?? "Unknown"
             }
              
             @IBAction func logoutButton (){
-                FronteggApp.shared.auth.logout()
+                FronteggApp.shared.auth.logout() { _ in
+                    window?.rootViewController = AuthenticationController()
+                    window?.makeKeyAndVisible()  
+                }
             }
 
         }

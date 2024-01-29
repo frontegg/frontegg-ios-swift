@@ -132,11 +132,14 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         }
         
         let errorMessage = error.localizedDescription;
-        let url = "\(error.userInfo["NSErrorFailingURLKey"] ?? error.userInfo)"
+        let url = "\(error.userInfo["NSErrorFailingURLKey"] ?? "")"
         logger.error("Failed to load page: \(errorMessage), status: \(statusCode), \(error)")
+        
+        
         self.fronteggAuth.webLoading = false
         let content = generateErrorPage(message: errorMessage, url: url, status: statusCode);
         webView.loadHTMLString(content, baseURL: nil);
+        
     }
     
     
