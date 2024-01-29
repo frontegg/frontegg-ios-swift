@@ -8,10 +8,10 @@
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
     </dependencies>
     <scenes>
-        <!--Frontegg Controller-->
+        <!--Authentication Controller-->
         <scene sceneID="wEe-dg-Fkf">
             <objects>
-                <viewController storyboardIdentifier="fronteggController" id="nxb-iA-gng" customClass="FronteggController" customModule="demo_uikit" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="fronteggController" id="nxb-iA-gng" customClass="AuthenticationController" customModule="demo_uikit" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="W2D-H9-wLn">
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
