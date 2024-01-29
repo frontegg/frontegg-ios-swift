@@ -11,14 +11,7 @@
         <!--Authentication Controller-->
         <scene sceneID="wEe-dg-Fkf">
             <objects>
-                <viewController storyboardIdentifier="fronteggController" id="nxb-iA-gng" customClass="AuthenticationController" customModule="demo_uikit" customModuleProvider="target" sceneMemberID="viewController">
-                    <view key="view" contentMode="scaleToFill" id="W2D-H9-wLn">
-                        <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
-                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
-                        <viewLayoutGuide key="safeArea" id="yDd-Gz-bVp"/>
-                        <color key="backgroundColor" systemColor="systemBackgroundColor"/>
-                    </view>
-                </viewController>
+                <viewController storyboardIdentifier="fronteggController" id="nxb-iA-gng" customClass="AuthenticationController" customModule="demo_uikit" customModuleProvider="target" sceneMemberID="viewController"/>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="YCS-hS-XTC" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
             </objects>
             <point key="canvasLocation" x="-760" y="-23"/>
