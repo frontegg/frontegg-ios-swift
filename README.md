@@ -165,6 +165,8 @@ your root project directory, this file will store values to be used variables by
               // to navigate your application to the authenticated screen
               
               let mainStoryboard: UIStoryboard = UIStoryboard(name: "Main", bundle: nil)
+              
+              // TODO: Set Storyboard ID 'authenticatedScreen' for your authenticated screen
               let viewController = mainStoryboard.instantiateViewController(withIdentifier: "authenticatedScreen")
               self.view.window?.rootViewController = viewController
               self.view.window?.makeKeyAndVisible()
@@ -172,12 +174,12 @@ your root project directory, this file will store values to be used variables by
       
       }
     ```
-  - Create new ViewController and set FronteggController as view custom class from the previous step
-    ![ViewController custom class](./assets/README_custom-class.png)
+  - Create a new ViewController for AuthenticationController: 
+    1. Change viewController's class to `AuthenticationController`
+    2. Set Storyboard ID to `fronteggController`
+    3. Make sure that the view controller is the initial view controller
+    ![AuthenticationController](./assets/README_authentication_controller.png)
     
-  - Mark FronteggController as **Storyboard Entry Point**
-    ![ViewController entry point](./assets/README_entry-point.png)
-  
   - Setup SceneDelegate for Frontegg universal links:
       ```swift
         func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
