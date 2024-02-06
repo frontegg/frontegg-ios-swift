@@ -421,19 +421,24 @@ struct SelectRegionView: View {
 
 ## Login with ASWebAuthenticationSession
 
-Starting from version 1.3.0, Frontegg SDK supports ASWebAuthenticationSession for login.
+Starting from version 1.3.0, the Frontegg SDK has introduced support for ASWebAuthenticationSession, enhancing the login
+experience. This new feature allows for a more streamlined and secure authentication process.
 
-`FronteggAuth.shared.loginWithPopup` parameters:
+A `loginWithPopup` method has added with parameters to accommodate the integration of ASWebAuthenticationSession:
 
-- `window`: The window to present the login view controller. If not provided, the SDK will use the key window.
-- `ephemeralSesion`: A Boolean value that indicates whether the session should be ephemeral. Default is `true`.
-- `loginHint`: The login hint to use for the login process. Default is `nil`.
-- `loginAction`: The login action to use for the login process. Default is `nil`.
-- `completion`: The completion handler to call when the login process is finished.
+- `window`: Specifies the window where the login view controller will be presented. If this parameter is not provided,
+  the SDK will default to using the key window.
+- `ephemeralSession`: A Boolean flag indicating if the session should be ephemeral. By default, this is set to `true`.
+- `loginHint`: An optional parameter for the login hint to be used during the login process. It is `nil` by default.
+- `loginAction`: An optional parameter that defines the login action to be used. It also defaults to `nil`.
+- `completion`: A completion handler that is called once the login process concludes.
 
-Example of how to use ASWebAuthenticationSession:
+Below are examples demonstrating how to utilize ASWebAuthenticationSession with the Frontegg SDK in both UIKit and SwiftUI applications.
 
-### **UIKit:**
+
+### UIKit Implementation
+
+For developers using UIKit, the login process can be initiated as follows:
 
 ```swift
 import UIKit
@@ -443,21 +448,23 @@ class ViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
     }
-    
-    @IBAction func loginButton() {
+
+    @IBAction func loginButtonTapped() {
         FronteggAuth.shared.loginWithPopup(window: self.view.window) { result in
             switch result {
             case .success(let user):
                 print("User logged in: \(user)")
             case .failure(let error):
-                print("Error: \(error)")
+                print("Error logging in: \(error)")
             }
         }
-  }
+    }
 }
 ```
 
-### **Swift UI:**
+### SwiftUI Implementation
+
+For those preferring SwiftUI, the integration is similarly straightforward:
 
 ```swift
 import SwiftUI
@@ -469,7 +476,7 @@ struct ContentView: View {
     var body: some View {
         VStack {
             if fronteggAuth.isAuthenticated {
-                Text("Authenticated")
+                Text("User Authenticated")
             } else {
                 Button("Login") {
                     fronteggAuth.loginWithPopup()
