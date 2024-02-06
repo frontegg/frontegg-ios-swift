@@ -186,7 +186,7 @@ public class FronteggAuth: ObservableObject {
                 }
             }
         } catch {
-            print(error)
+            logger.error("Failed to load user data, \(error)")
             DispatchQueue.main.sync {
                 self.refreshToken = nil
                 self.accessToken = nil
@@ -261,7 +261,7 @@ public class FronteggAuth: ObservableObject {
         
         Task {
             
-            print("Going to exchange token")
+            logger.info("Going to exchange token")
             let (responseData, error) = await api.exchangeToken(
                 code: code,
                 redirectUrl: redirectUri,
@@ -281,13 +281,13 @@ public class FronteggAuth: ObservableObject {
             }
             
             do {
-                print("Going to load user data")
+                logger.info("Going to load user data")
                 let user = try await self.api.me(accessToken: data.access_token)
                 await setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
                 
                 completion(.success(user!))
             } catch {
-                print("Failed to load user data: \(error.localizedDescription)")
+                logger.error("Failed to load user data: \(error.localizedDescription)")
                 completion(.failure(FronteggError.authError("Failed to load user data: \(error.localizedDescription)")))
                 setIsLoading(false)
                 return
@@ -361,6 +361,23 @@ public class FronteggAuth: ObservableObject {
     }
     
     
+    public func loginWithPopup(window: UIWindow?, ephemeralSesion: Bool? = true, loginHint: String? = nil, loginAction: String? = nil, _completion: FronteggAuth.CompletionHandler? = nil) {
+        
+        self.webAuthentication.webAuthSession?.cancel()
+        self.webAuthentication = WebAuthentication()
+        self.webAuthentication.window = window;
+        self.webAuthentication.ephemeralSesion = ephemeralSesion ?? true
+        
+        let completion = _completion ?? { res in
+            
+        }
+        
+        let oauthCallback = createOauthCallbackHandler(completion)
+        let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: loginHint, loginAction: loginAction)
+        CredentialManager.saveCodeVerifier(codeVerifier)
+        self.webAuthentication.start(authorizeUrl, completionHandler: oauthCallback)
+    }
+    
     internal func getRootVC() -> UIViewController? {
         
         
@@ -387,7 +404,7 @@ public class FronteggAuth: ObservableObject {
     }
     
     
-    func loginWithSSO(email: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
+    public func loginWithSSO(email: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
         let completion = _completion ?? { res in
             
         }
@@ -440,14 +457,13 @@ public class FronteggAuth: ObservableObject {
             hostingController.modalPresentationStyle = .fullScreen
             
             if(rootVC.presentedViewController?.classForCoder == hostingController.classForCoder){
-                print("same");
                 rootVC.presentedViewController?.dismiss(animated: false)
             }
             
             rootVC.present(hostingController, animated: false, completion: nil)
             
         } else {
-            print(FronteggError.authError("Unable to find root viewController"))
+            logger.critical(FronteggError.authError("Unable to find root viewController").localizedDescription)
             exit(500)
         }
     }
@@ -462,7 +478,7 @@ public class FronteggAuth: ObservableObject {
             self.pendingAppLink = url
             self.webLoading = true
             guard let rootVC = self.getRootVC() else {
-                print(FronteggError.authError("Unable to find root viewController"))
+                logger.error(FronteggError.authError("Unable to find root viewController").localizedDescription)
                 return false;
             }
             
@@ -486,9 +502,9 @@ public class FronteggAuth: ObservableObject {
             
             switch (res) {
             case .success(let user) :
-                print("User \(user.id)")
+                self.logger.trace("User \(user.id)")
             case .failure(let error) :
-                print("Error \(error)")
+                self.logger.trace("Error \(error)")
             }
         }
         self.webAuthentication.start(url, completionHandler: oauthCallback)
