@@ -421,7 +421,7 @@ struct SelectRegionView: View {
 
 ## Login with ASWebAuthenticationSession
 
-Starting from version 1.3.0, the Frontegg SDK has introduced support for ASWebAuthenticationSession, enhancing the login
+Starting from version 1.2.9, the Frontegg SDK has introduced support for ASWebAuthenticationSession, enhancing the login
 experience. This new feature allows for a more streamlined and secure authentication process.
 
 A `loginWithPopup` method has added with parameters to accommodate the integration of ASWebAuthenticationSession:
