@@ -1,4 +1,3 @@
-
 ![Frontegg_SwiftUI_SDK](https://github.com/frontegg/frontegg-ios-swift/raw/master/logo.png)
 
 Frontegg is a web platform where SaaS companies can set up their fully managed, scalable and brand aware - SaaS features
@@ -23,6 +22,7 @@ and integrate them into their SaaS portals in up to 5 lines of code.
   - [Embedded Webview vs ASWebAuthenticationSession](#embedded-webview-vs-aswebauthenticationsession)
   - [Config iOS associated domain](#config-ios-associated-domain)
   - [Multi-Region support](#multi-region-support)
+  - [Login with ASWebAuthenticationSession](#login-with-aswebauthenticationsession)
 
 ## Project Requirements
 
@@ -36,14 +36,14 @@ Major platform versions are supported, starting from:
 
 - iOS **> 14**
 
-
 ## Getting Started
 
 ### Prepare Frontegg workspace
 
 Navigate to [Frontegg Portal Settings](https://portal.frontegg.com/development/settings), If you don't have application
 follow integration steps after signing up.
-Copy FronteggDomain to future steps from [Frontegg Portal Domain](https://portal.frontegg.com/development/settings/domains)
+Copy FronteggDomain to future steps
+from [Frontegg Portal Domain](https://portal.frontegg.com/development/settings/domains)
 
 ### Setup Hosted Login
 
@@ -62,19 +62,20 @@ Copy FronteggDomain to future steps from [Frontegg Portal Domain](https://portal
 
 ### Create Frontegg plist file
 
-To setup your SwiftUI application to communicate with Frontegg, you have to create a new file named `Frontegg.plist` under
-your root project directory, this file will store values to be used variables by Frontegg SDK: 
+To setup your SwiftUI application to communicate with Frontegg, you have to create a new file named `Frontegg.plist`
+under
+your root project directory, this file will store values to be used variables by Frontegg SDK:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN">
 <plist version="1.0">
-<dict>
-	<key>baseUrl</key>
-	<string>https://[DOMAIN_HOST_FROM_PREVIOUS_STEP]</string>
-	<key>clientId</key>
-	<string>[CLIENT_ID_FROM_PREVIOUS_STEP]</string>
-</dict>
+    <dict>
+        <key>baseUrl</key>
+        <string>https://[DOMAIN_HOST_FROM_PREVIOUS_STEP]</string>
+        <key>clientId</key>
+        <string>[CLIENT_ID_FROM_PREVIOUS_STEP]</string>
+    </dict>
 </plist>
 ```
 
@@ -102,7 +103,7 @@ your root project directory, this file will store values to be used variables by
   - Modify `MyApp.swift` file to render content if user is authenticated:
     1. Add `@EnvironmentObject var fronteggAuth: FronteggAuth` to
     2. Render your entire application based on `fronteggAuth.isAuthenticated`
-  
+
     ```swift
     struct MyApp: View {
       @EnvironmentObject var fronteggAuth: FronteggAuth
@@ -127,7 +128,7 @@ your root project directory, this file will store values to be used variables by
   - ### Add custom loading screen
 
   To use your own `LoadingView` / `SplashScreen`:
-  
+
   - Build your loading view in separated file
   - Pass `LoadingView` as AnyView to the FronteggWrapper
     ```swift
@@ -174,12 +175,12 @@ your root project directory, this file will store values to be used variables by
       
       }
     ```
-  - Create a new ViewController for AuthenticationController: 
+  - Create a new ViewController for AuthenticationController:
     1. Change viewController's class to `AuthenticationController`
     2. Set Storyboard ID to `fronteggController`
     3. Make sure that the view controller is the initial view controller
-    ![AuthenticationController](./assets/README_authentication_controller.png)
-    
+       ![AuthenticationController](./assets/README_authentication_controller.png)
+
   - Setup SceneDelegate for Frontegg universal links:
       ```swift
         func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
@@ -256,10 +257,12 @@ your root project directory, this file will store values to be used variables by
 ### Embedded Webview vs ASWebAuthenticationSession
 
 Frontegg SDK supports two authentication methods:
+
 - Embedded Webview
 - ASWebAuthenticationSession
 
-By default Frontegg SDK will use Embedded Webview, to use ASWebAuthenticationSession you have to set `embeddedMode` to `NO` in `Frontegg.plist` file:
+By default Frontegg SDK will use Embedded Webview, to use ASWebAuthenticationSession you have to set `embeddedMode`
+to `NO` in `Frontegg.plist` file:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -280,15 +283,21 @@ By default Frontegg SDK will use Embedded Webview, to use ASWebAuthenticationSes
 ```
 
 ### Config iOS associated domain
+
 Configuring your iOS associated domain is required for Magic Link authentication / Reset Password / Activate Account.
 
-In order to add your iOS associated domain to your Frontegg application, you will need to update in each of your integrated Frontegg Environments the iOS associated domain that you would like to use with that Environment. Send a POST request to `https://api.frontegg.com/vendors/resources/associated-domains/v1/ios` with the following payload:
+In order to add your iOS associated domain to your Frontegg application, you will need to update in each of your
+integrated Frontegg Environments the iOS associated domain that you would like to use with that Environment. Send a POST
+request to `https://api.frontegg.com/vendors/resources/associated-domains/v1/ios` with the following payload:
+
 ```
 {
     “appId”:[YOUR_ASSOCIATED_DOMAIN]
 }
 ```
-In order to use our API’s, follow [this guide](‘https://docs.frontegg.com/reference/getting-started-with-your-api’) to generate a vendor token.
+
+In order to use our API’s, follow [this guide](‘https://docs.frontegg.com/reference/getting-started-with-your-api’) to
+generate a vendor token.
 
 Next, you will need to add your associated domain to your iOS application. To do so, follow the steps below:
 
@@ -302,9 +311,9 @@ Next, you will need to add your associated domain to your iOS application. To do
 7. Enter your associated domain in the format `webcredentials:[YOUR_ASSOCIATED_DOMAIN]`.
 8. Click Done.
 
-`[YOUR_ASSOCIATED_DOMAIN]` is the associated domain that you would like to use with your iOS application. 
-For example, if you would like to use `https://example.com` as your associated domain, you would enter `applinks:example.com` and `webcredentials:example.com`.
-
+`[YOUR_ASSOCIATED_DOMAIN]` is the associated domain that you would like to use with your iOS application.
+For example, if you would like to use `https://example.com` as your associated domain, you would
+enter `applinks:example.com` and `webcredentials:example.com`.
 
 ## Multi-Region Support
 
@@ -315,42 +324,48 @@ This guide outlines the steps to configure your iOS application to support multi
 First, adjust your Frontegg.plist file to handle multiple regions:
 
 **Modifications**:
+
 - **Remove** the existing `baseUrl` and `clientId` keys.
 - **Add** a new array key named `regions`. This array will hold dictionaries for each region.
 
 Example Frontegg.plist Structure:
+
 ```xml
+
 <key>regions</key>
 <array>
-  <dict>
+<dict>
     <key>key</key>
     <string>us-region</string>
     <key>baseUrl</key>
     <string>https://us-region-api.frontegg.com</string>
     <key>clientId</key>
     <string>your-client-id-for-us-region</string>
-  </dict>
-  <!-- Add additional regions in a similar format -->
+</dict>
+<!-- Add additional regions in a similar format -->
 </array>
 ```
 
 ### Step 2: Add Associated Domains for Each Region
 
-For each region, configure the associated domains in your application's settings. This is vital for proper API routing and authentication.
+For each region, configure the associated domains in your application's settings. This is vital for proper API routing
+and authentication.
 
 Example Associated Domain Configuration:
 [demo-multi-region.entitlements](demo-multi-region%2Fdemo-multi-region%2Fdemo-multi-region.entitlements)
 
-Follow [Config iOS associated domain](#config-ios-associated-domain) to add your iOS associated domain to your Frontegg application.
-
+Follow [Config iOS associated domain](#config-ios-associated-domain) to add your iOS associated domain to your Frontegg
+application.
 
 ### Step 3: Implement Region Selection UI
 
-The final step is to implement a UI for the user to select their region. **This can be done in any way you see fit**. 
+The final step is to implement a UI for the user to select their region. **This can be done in any way you see fit**.
 The example application uses a simple picker view to allow the user to select their region.
 
 **Important Considerations**
-- **Switching Regions**: To switch regions, update the selection in UserDefaults. If issues arise, a **re-installation** of the application might be necessary.
+
+- **Switching Regions**: To switch regions, update the selection in UserDefaults. If issues arise, a **re-installation**
+  of the application might be necessary.
 - **Data Isolation**: Ensure data handling and APIs are region-specific to prevent data leakage between regions.
 
 |                     Select EU Region                     |                     Select US Region                     |
@@ -358,6 +373,7 @@ The example application uses a simple picker view to allow the user to select th
 | ![eu-region-example.gif](assets%2Feu-region-example.gif) | ![us-region-example.gif](assets%2Fus-region-example.gif) |
 
 Example Region Selection UI:
+
 ```swift
 import SwiftUI
 import FronteggSwift
@@ -399,6 +415,67 @@ struct SelectRegionView: View {
         }
         .padding()
         .navigationTitle("Region")
+    }
+}
+```
+
+## Login with ASWebAuthenticationSession
+
+Starting from version 1.3.0, Frontegg SDK supports ASWebAuthenticationSession for login.
+
+`FronteggAuth.shared.loginWithPopup` parameters:
+
+- `window`: The window to present the login view controller. If not provided, the SDK will use the key window.
+- `ephemeralSesion`: A Boolean value that indicates whether the session should be ephemeral. Default is `true`.
+- `loginHint`: The login hint to use for the login process. Default is `nil`.
+- `loginAction`: The login action to use for the login process. Default is `nil`.
+- `completion`: The completion handler to call when the login process is finished.
+
+Example of how to use ASWebAuthenticationSession:
+
+### **UIKit:**
+
+```swift
+import UIKit
+import FronteggSwift
+
+class ViewController: UIViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+    }
+    
+    @IBAction func loginButton() {
+        FronteggAuth.shared.loginWithPopup(window: self.view.window) { result in
+            switch result {
+            case .success(let user):
+                print("User logged in: \(user)")
+            case .failure(let error):
+                print("Error: \(error)")
+            }
+        }
+  }
+}
+```
+
+### **Swift UI:**
+
+```swift
+import SwiftUI
+import FronteggSwift
+
+struct ContentView: View {
+    @EnvironmentObject var fronteggAuth: FronteggAuth
+    
+    var body: some View {
+        VStack {
+            if fronteggAuth.isAuthenticated {
+                Text("Authenticated")
+            } else {
+                Button("Login") {
+                    fronteggAuth.loginWithPopup()
+                }
+            }
+        }
     }
 }
 ```
