@@ -378,6 +378,42 @@ public class FronteggAuth: ObservableObject {
         self.webAuthentication.start(authorizeUrl, completionHandler: oauthCallback)
     }
     
+    public func directLoginAction(window: UIWindow?, type: String, data: String, ephemeralSesion: Bool? = true, _completion: FronteggAuth.CompletionHandler? = nil) {
+        
+        self.webAuthentication.webAuthSession?.cancel()
+        self.webAuthentication = WebAuthentication()
+        self.webAuthentication.window = window ?? getRootVC()?.view.window;
+        self.webAuthentication.ephemeralSesion = ephemeralSesion ?? true
+        
+        let completion = _completion ?? { res in
+            
+        }
+        
+        let directLogin = [
+            "type": type,
+            "data": data,
+            "additionalQueryParams": [
+                "prompt": "consent"
+            ]
+        ] as [String : Any]
+        
+        var generatedUrl: (URL, String)
+        if let jsonData = try? JSONSerialization.data(withJSONObject: directLogin, options: []) {
+            let jsonString = jsonData.base64EncodedString()
+            generatedUrl = AuthorizeUrlGenerator.shared.generate(loginAction: jsonString)
+        } else {
+            generatedUrl = AuthorizeUrlGenerator.shared.generate()
+        }
+        
+        let oauthCallback = createOauthCallbackHandler(completion)
+        let (authorizeUrl, codeVerifier) = generatedUrl
+        CredentialManager.saveCodeVerifier(codeVerifier)
+        self.webAuthentication.start(authorizeUrl, completionHandler: oauthCallback)
+        
+        
+        
+    }
+    
     internal func getRootVC() -> UIViewController? {
         
         
