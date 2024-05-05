@@ -40,10 +40,10 @@ public class AuthorizeUrlGenerator {
             .replacingOccurrences(of: "/", with: "_")
     }
     
-    func generate(loginHint: String? = nil, loginAction: String? = nil) -> (URL, String) {
+    func generate(loginHint: String? = nil, loginAction: String? = nil, remainCodeVerifier: Bool = false) -> (URL, String) {
         
         let nonce = createRandomString()
-        let codeVerifier = createRandomString()
+        let codeVerifier = remainCodeVerifier ? (CredentialManager.getCodeVerifier() ?? createRandomString()) : createRandomString()
         let codeChallenge = generateCodeChallenge(codeVerifier)
 
         let baseUrl = FronteggApp.shared.baseUrl
@@ -62,6 +62,7 @@ public class AuthorizeUrlGenerator {
             URLQueryItem(name: "code_challenge", value: codeChallenge),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
             URLQueryItem(name: "nonce", value: nonce),
+            URLQueryItem(name: "prompt", value: "login"),
         ]
         if(loginHint != nil){
             queryParams.append(URLQueryItem(name: "login_hint", value: loginHint))
@@ -69,7 +70,6 @@ public class AuthorizeUrlGenerator {
         
         if(loginAction != nil){
             queryParams.append(URLQueryItem(name: "login_direct_action", value: loginAction))
-            queryParams.append(URLQueryItem(name: "prompt", value: "login"))
         
             authorizeUrl.queryItems = queryParams
             
@@ -80,6 +80,7 @@ public class AuthorizeUrlGenerator {
                 fatalError("Failed to generate authorize url")
             }
         }
+        
         
         authorizeUrl.queryItems = queryParams
         

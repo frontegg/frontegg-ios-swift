@@ -451,7 +451,7 @@ public class FronteggAuth: ObservableObject {
         self.webAuthentication.ephemeralSesion = true
         self.webAuthentication.window = getRootVC()?.view.window
         
-        let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: email)
+        let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: email, remainCodeVerifier: true)
         CredentialManager.saveCodeVerifier(codeVerifier)
         
         self.webAuthentication.start(authorizeUrl, completionHandler: oauthCallback)
@@ -474,7 +474,7 @@ public class FronteggAuth: ObservableObject {
         var generatedUrl: (URL, String)
         if let jsonData = try? JSONSerialization.data(withJSONObject: directLogin, options: []) {
             let jsonString = jsonData.base64EncodedString()
-            generatedUrl = AuthorizeUrlGenerator.shared.generate(loginAction: jsonString)
+            generatedUrl = AuthorizeUrlGenerator.shared.generate(loginAction: jsonString, remainCodeVerifier: true)
         } else {
             generatedUrl = AuthorizeUrlGenerator.shared.generate()
         }
