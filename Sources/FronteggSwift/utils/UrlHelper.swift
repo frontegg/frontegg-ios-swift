@@ -105,7 +105,7 @@ func getOverrideUrlType (url: URL) -> OverrideUrlType {
             return .SocialOauthPreLogin
         }
         if((URLConstants.successLoginRoutes.first { url.path.hasPrefix($0)}) != nil) {
-            return .internalRoutes
+            return .loginRoutes
         }
         if((URLConstants.loginRoutes.first { url.path.hasPrefix($0)}) != nil) {
             return .loginRoutes

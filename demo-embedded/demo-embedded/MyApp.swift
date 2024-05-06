@@ -28,10 +28,21 @@ struct MyApp: View {
                 }
             } else {
                 
-                DefaultLoader().onAppear(){
-                    if(!FronteggAuth.shared.isAuthenticated){
-                        fronteggAuth.login()
+                if(!fronteggAuth.isAuthenticated){
+                    VStack {
+                        Button {
+                            fronteggAuth.login()
+                        } label: {
+                            Text("Login")
+                        }.padding(.vertical, 20)
+                        
+                        Button {
+                            fronteggAuth.directLoginAction(window: nil, type: "social-login", data: "google")
+                        } label: {
+                            Text("Login with popup")
+                        }
                     }
+                    
                 }
             }
         }
