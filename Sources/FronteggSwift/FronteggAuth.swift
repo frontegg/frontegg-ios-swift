@@ -233,13 +233,14 @@ public class FronteggAuth: ObservableObject {
         }
     }
     
-    public func refreshTokenIfNeeded() async {
+    public func refreshTokenIfNeeded() async -> Bool {
         guard let refreshToken = self.refreshToken, let accessToken = self.accessToken else {
-            return
+            return false
         }
         
         if let data = await self.api.refreshToken(accessToken: accessToken, refreshToken: refreshToken) {
             await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
+            return true
         } else {
             DispatchQueue.main.sync {
                 self.initializing = false
@@ -252,6 +253,7 @@ public class FronteggAuth: ObservableObject {
                 self.isLoading = false
             }
         }
+        return false
     }
     
     func handleHostedLoginCallback(_ code: String, _ codeVerifier: String, _ completion: @escaping FronteggAuth.CompletionHandler) {
