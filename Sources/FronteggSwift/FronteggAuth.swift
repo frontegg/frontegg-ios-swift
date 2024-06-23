@@ -564,7 +564,7 @@ public class FronteggAuth: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async {
             Task {
                 try? await self.api.switchTenant(tenantId: tenantId)
-                await self.refreshTokenIfNeeded()
+                _ = await self.refreshTokenIfNeeded()
                 
                 if(completion != nil){
                     if let user = self.user {
