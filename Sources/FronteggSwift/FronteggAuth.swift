@@ -416,16 +416,21 @@ public class FronteggAuth: ObservableObject {
         
     }
     
-    internal func getRootVC() -> UIViewController? {
+    internal func getRootVC(_ useAppRootVC: Bool = false) -> UIViewController? {
         
         
         if let appDelegate = UIApplication.shared.delegate,
            let window = appDelegate.window,
            let rootVC = window?.rootViewController {
-            if let presented = rootVC.presentedViewController {
-                return presented
-            }else {
+            
+            if(useAppRootVC){
                 return rootVC
+            }else {
+                if let presented = rootVC.presentedViewController {
+                    return presented
+                }else {
+                    return rootVC
+                }
             }
         }
         
@@ -505,20 +510,22 @@ public class FronteggAuth: ObservableObject {
             exit(500)
         }
     }
-    public func handleOpenUrl(_ url: URL) -> Bool {
+    public func handleOpenUrl(_ url: URL, _ useAppRootVC: Bool = false) -> Bool {
         
         if(!url.absoluteString.hasPrefix(self.baseUrl)){
             self.appLink = false
             return false
         }
         
+        guard let rootVC = self.getRootVC(useAppRootVC) else {
+            logger.error(FronteggError.authError("Unable to find root viewController").localizedDescription)
+            return false;
+        }
+        
         if(self.embeddedMode){
             self.pendingAppLink = url
             self.webLoading = true
-            guard let rootVC = self.getRootVC() else {
-                logger.error(FronteggError.authError("Unable to find root viewController").localizedDescription)
-                return false;
-            }
+            
             
             let loginModal = EmbeddedLoginModal(parentVC: rootVC)
             let hostingController = UIHostingController(rootView: loginModal)
