@@ -564,15 +564,13 @@ public class FronteggAuth: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async {
             Task {
                 try? await self.api.switchTenant(tenantId: tenantId)
-                _ = await self.refreshTokenIfNeeded()
                 
-                if(completion != nil){
-                    if let user = self.user {
-                        completion?(.success(user))
-                    }else {
-                        completion?(.failure(FronteggError.authError("Failed to swift tenant")))
-                    }
+                if let user = self.user, await self.refreshTokenIfNeeded() && completion != nil {
+                    completion?(.success(user))
+                } else {
+                    completion?(.failure(FronteggError.authError("Failed to swift tenant")))
                 }
+                
             }
         }
         
