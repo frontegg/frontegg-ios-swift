@@ -14,6 +14,7 @@ public struct EmbeddedLoginPage: View {
     
     public init() {}
     
+    
     public var body: some View {
         ZStack {
             NavigationView{
@@ -40,10 +41,10 @@ public struct EmbeddedLoginPage: View {
                 .navigationBarTitleDisplayMode(.inline)
 
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .center)
-
                 .ignoresSafeArea(fronteggAuth.externalLink ? [] : [.all])
 
             }
+            .navigationViewStyle(StackNavigationViewStyle())
             
         }
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .center)
