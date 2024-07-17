@@ -7,13 +7,6 @@
 
 import Foundation
 
-
-public enum FronteggError: Error {
-    case configError(String)
-    case authError(String)
-}
-
-
 public struct RegionConfig {
     public var key: String
     public var baseUrl: String
@@ -29,7 +22,8 @@ public struct RegionConfig {
 struct PlistHelper {
     
     private static var logLevelCache: Logger.Level? = nil
-    
+    private static var logger = getLogger("PlistHelper")
+
     public static func fronteggConfig() throws -> (clientId: String, baseUrl: String, keychainService: String, bundleIdentifier: String) {
         let bundle = Bundle.main;
         
@@ -37,15 +31,15 @@ struct PlistHelper {
         
         guard let path = bundle.path(forResource: resourceName, ofType: "plist"),
               let values = NSDictionary(contentsOfFile: path) as? [String: Any] else {
-            let errorMessage = "Missing Frontegg.plist file with 'clientId' and 'baseUrl' entries in main bundle!"
-            print(errorMessage)
-            throw FronteggError.configError(errorMessage)
+            let error = FronteggError.configError(.missingPlist)
+            logger.debug(error.localizedDescription)
+            throw error
         }
         
         guard let clientId = values["clientId"] as? String, let baseUrl = values["baseUrl"] as? String else {
-            let errorMessage = "Frontegg.plist file at \(path) is missing 'clientId' and/or 'baseUrl' entries!"
-            print(errorMessage)
-            throw FronteggError.configError(errorMessage)
+            let error = FronteggError.configError(.missingClientIdOrBaseURL(path))
+            logger.debug(error.localizedDescription)
+            throw error
         }
         
         let keychainService = values["keychainService"] as? String ?? "frontegg"
@@ -60,27 +54,32 @@ struct PlistHelper {
         
         guard let path = bundle.path(forResource: resourceName, ofType: "plist"),
               let values = NSDictionary(contentsOfFile: path) as? [String: Any] else {
-            let errorMessage = "Missing Frontegg.plist file with 'clientId' and 'baseUrl' entries in main bundle!"
-            print(errorMessage)
-            throw FronteggError.configError(errorMessage)
+            let error = FronteggError.configError(.missingPlist)
+            logger.debug(error.localizedDescription)
+            throw error
         }
         
-        guard let regions = values["regions"] as? [[String: String]] else {
-            throw FronteggError.configError("no regions in Frontegg.plist")
-        }
-        
-        if ( regions.count == 0 ) {
-            throw FronteggError.configError("no regions in Frontegg.plist")
+        guard 
+            let regions = values["regions"] as? [[String: String]],
+            !regions.isEmpty
+        else {
+            let error = FronteggError.configError(.missingRegions)
+            logger.debug(error.localizedDescription)
+            throw error
         }
         
         let keychainService = values["keychainService"] as? String ?? "frontegg"
         
         let regionConfigs = try regions.map { dict in
-            guard let key = dict["key"],
-                    let baseUrl = dict["baseUrl"],
-                  let clientId = dict["clientId"] else {
-                        throw FronteggError.configError("Frontegg.plist file at \(path) has invalid regions data, regions must be array of (key, baseUrl, clientId)")
-                  }
+            guard 
+                let key = dict["key"],
+                let baseUrl = dict["baseUrl"],
+                let clientId = dict["clientId"] 
+            else {
+                let error = FronteggError.configError(.invalidRegions(path))
+                logger.debug(error.localizedDescription)
+                throw error
+            }
             return RegionConfig(key: key, baseUrl: baseUrl, clientId: clientId)
         }
         return (regions: regionConfigs, keychainService: keychainService, bundleIdentifier: bundle.bundleIdentifier!)

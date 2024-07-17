@@ -126,7 +126,7 @@ public class Api {
             
             return (try JSONDecoder().decode(AuthResponse.self, from: data), nil)
         }catch {
-            return (nil, FronteggError.authError(error.localizedDescription))
+            return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
         }
     }
     
