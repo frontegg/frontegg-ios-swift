@@ -15,6 +15,7 @@ public class FronteggApp {
     public var auth: FronteggAuth
     public var baseUrl: String = ""
     public var clientId: String = ""
+    public var applicationId: String? = nil
     public var bundleIdentifier: String = ""
     public var embeddedMode: Bool = true
     public var handleLoginWithSocialLogin:Bool = true
@@ -47,6 +48,7 @@ public class FronteggApp {
             self.auth = FronteggAuth(
                 baseUrl: self.baseUrl,
                 clientId: self.clientId,
+                applicationId: self.applicationId,
                 credentialManager: self.credentialManager,
                 isRegional: false,
                 regionData: self.regionData,
@@ -66,8 +68,9 @@ public class FronteggApp {
             self.auth = FronteggAuth(
                 baseUrl: self.baseUrl,
                 clientId: self.clientId,
+                applicationId: self.applicationId,
                 credentialManager: self.credentialManager,
-                isRegional:true,
+                isRegional: true,
                 regionData: self.regionData,
                 embeddedMode: self.embeddedMode
             )
@@ -75,11 +78,12 @@ public class FronteggApp {
             if let config = self.auth.selectedRegion {
                 self.baseUrl = config.baseUrl
                 self.clientId = config.clientId
+                self.applicationId = config.applicationId
                 self.auth.reinitWithRegion(config: config)
                 
                 logger.info("Frontegg Initialized succcessfully (region: \(config.key))")
                 return;
-            }else {
+            } else {
                 // skip automatic authorize for regional config
                 self.auth.initializing = false
                 self.auth.isLoading = false
@@ -98,11 +102,13 @@ public class FronteggApp {
         
         self.baseUrl = data.baseUrl
         self.clientId = data.clientId
+        self.applicationId = data.applicationId
         
         
         self.auth = FronteggAuth(
             baseUrl: self.baseUrl,
             clientId: self.clientId,
+            applicationId: self.applicationId,
             credentialManager: self.credentialManager,
             isRegional: false,
             regionData: [],
@@ -119,16 +125,18 @@ public class FronteggApp {
     public func manualInit(
             baseUrl: String,
             cliendId: String,
+            applicationId: String? = nil,
             handleLoginWithSocialLogin: Bool = true,
             handleLoginWithSSO:Bool = false
     ) {
         self.baseUrl = baseUrl
         self.clientId = cliendId
+        self.applicationId = applicationId
         
         self.handleLoginWithSocialLogin = handleLoginWithSocialLogin
         self.handleLoginWithSSO = handleLoginWithSSO
         
-        self.auth.manualInit(baseUrl: baseUrl, clientId: cliendId)
+        self.auth.manualInit(baseUrl: baseUrl, clientId: cliendId, applicationId: applicationId)
     }
     public func manualInitRegions(regions: [RegionConfig],
                                   handleLoginWithSocialLogin: Bool = true,
@@ -139,6 +147,7 @@ public class FronteggApp {
         self.auth.manualInitRegions(regions: regions)
         self.baseUrl = self.auth.baseUrl
         self.clientId = self.auth.clientId
+        self.applicationId = self.auth.applicationId
     }
 
     public func initWithRegion( regionKey:String ){
@@ -164,6 +173,7 @@ public class FronteggApp {
         
         self.baseUrl = config.baseUrl
         self.clientId = config.clientId
+        self.applicationId = config.applicationId
         self.auth.reinitWithRegion(config: config)
         
         logger.info("Frontegg Initialized succcessfully (region: \(regionKey))")

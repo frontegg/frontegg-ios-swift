@@ -37,6 +37,7 @@ public class FronteggAuth: ObservableObject {
     public var regionData: [RegionConfig]
     public var baseUrl: String
     public var clientId: String
+    public var applicationId: String? = nil
     public var pendingAppLink: URL? = nil
 
     
@@ -52,6 +53,7 @@ public class FronteggAuth: ObservableObject {
     
     init (baseUrl:String,
           clientId: String,
+          applicationId: String?,
           credentialManager: CredentialManager,
           isRegional: Bool,
           regionData: [RegionConfig],
@@ -65,7 +67,8 @@ public class FronteggAuth: ObservableObject {
         self.embeddedMode = embeddedMode
         self.baseUrl = baseUrl
         self.clientId = clientId
-        self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId)
+        self.applicationId = applicationId
+        self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
         self.selectedRegion = self.getSelectedRegion()
         
         if ( isRegional || isLateInit == true ) {
@@ -78,12 +81,13 @@ public class FronteggAuth: ObservableObject {
         self.initializeSubscriptions()
     }
     
-    public func manualInit(baseUrl:String, clientId:String) {
+    public func manualInit(baseUrl:String, clientId:String, applicationId: String?) {
         self.lateInit = false
         self.baseUrl = baseUrl
         self.clientId = clientId
+        self.applicationId = applicationId
         self.isRegional = false
-        self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId)
+        self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
         self.initializeSubscriptions()
     }
     
@@ -97,7 +101,8 @@ public class FronteggAuth: ObservableObject {
         if let config = self.selectedRegion {
             self.baseUrl = config.baseUrl
             self.clientId = config.clientId
-            self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId)
+            self.applicationId = config.applicationId
+            self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
             self.initializeSubscriptions()
         }
     }
@@ -106,8 +111,9 @@ public class FronteggAuth: ObservableObject {
     public func reinitWithRegion(config:RegionConfig) {
         self.baseUrl = config.baseUrl
         self.clientId = config.clientId
+        self.applicationId = config.applicationId
         self.selectedRegion = config
-        self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId)
+        self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
         
         self.initializeSubscriptions()
     }

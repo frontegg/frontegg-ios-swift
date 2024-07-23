@@ -57,7 +57,7 @@ public class AuthorizeUrlGenerator {
         var queryParams = [
             URLQueryItem(name: "redirect_uri", value: redirectUri),
             URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "client_id", value: FronteggApp.shared.clientId),
+            URLQueryItem(name: "client_id", value: FronteggApp.shared.applicationId ?? FronteggApp.shared.clientId),
             URLQueryItem(name: "scope", value: "openid email profile"),
             URLQueryItem(name: "code_challenge", value: codeChallenge),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
