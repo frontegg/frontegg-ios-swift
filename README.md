@@ -21,6 +21,7 @@ and integrate them into their SaaS portals in up to 5 lines of code.
     - [Add custom UIKit loading screen (coming-soon)](#Add-custom-uikit-loading-screen)
   - [Embedded Webview vs ASWebAuthenticationSession](#embedded-webview-vs-aswebauthenticationsession)
   - [Config iOS associated domain](#config-ios-associated-domain)
+  - [Multi-apps Support](#multi-apps-support)
   - [Multi-Region support](#multi-region-support)
   - [Login with ASWebAuthenticationSession](#login-with-aswebauthenticationsession)
 
@@ -314,6 +315,27 @@ Next, you will need to add your associated domain to your iOS application. To do
 `[YOUR_ASSOCIATED_DOMAIN]` is the associated domain that you would like to use with your iOS application.
 For example, if you would like to use `https://example.com` as your associated domain, you would
 enter `applinks:example.com` and `webcredentials:example.com`.
+
+## Multi-apps Support
+
+This guide outlines the steps to configure your iOS application to support multiple applications.
+
+### Step 1: Modify the Frontegg.plist File
+
+Add `applicationId` to Frontegg.plist file:
+
+```xml
+<plist version="1.0">
+  <dict>
+    <key>applicationId</key>  
+    <string>your-application-id-uuid</string>
+    <key>baseUrl</key>
+    <string>https://your-domain.fronteg.com</string>
+    <key>clientId</key>
+    <string>your-client-id-uuid</string>
+  </dict>
+</plist>
+```
 
 ## Multi-Region Support
 

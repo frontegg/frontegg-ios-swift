@@ -14,12 +14,14 @@ public class Api {
     private let logger = getLogger("Api")
     private let baseUrl: String
     private let clientId: String
+    private let applicationId: String?
     private var cookieName: String
     private let credentialManager: CredentialManager
     
-    init(baseUrl: String, clientId: String) {
+    init(baseUrl: String, clientId: String, applicationId: String?) {
         self.baseUrl = baseUrl
         self.clientId = clientId
+        self.applicationId = applicationId
         self.credentialManager = CredentialManager(serviceKey: "frontegg")
         
         self.cookieName = "fe_refresh_\(clientId)"
@@ -39,7 +41,10 @@ public class Api {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
         
-    
+        if (self.applicationId != nil) {
+            request.setValue(self.applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
+        }
+        
         if let accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
             request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "authorization")
         }
@@ -60,6 +65,10 @@ public class Api {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
+        
+        if (self.applicationId != nil) {
+            request.setValue(self.applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
+        }
         
         additionalHeaders.forEach({ (key: String, value: String) in
             request.setValue(value, forHTTPHeaderField: key)
@@ -91,6 +100,9 @@ public class Api {
         if(refreshToken != nil){
             let cookieHeaderValue = "\(self.cookieName)=\(refreshToken!)"
             request.setValue(cookieHeaderValue, forHTTPHeaderField: "cookie")
+        }
+        if (self.applicationId != nil) {
+            request.setValue(self.applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
         }
         request.httpMethod = "GET"
         
@@ -167,7 +179,6 @@ public class Api {
             self.logger.info("Uknonwn error when try to logout: \(error)")
         }
     }
-    
     
     
 }
