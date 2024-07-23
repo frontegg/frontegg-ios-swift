@@ -283,7 +283,7 @@ public class FronteggAuth: ObservableObject {
             }
             
             guard let data = responseData else {
-                completion(.failure(FronteggError.authError("Failed to authenticate with frontegg")))
+                completion(.failure(FronteggError.authError(.failedToAuthenticate)))
                 setIsLoading(false)
                 return
             }
@@ -296,7 +296,7 @@ public class FronteggAuth: ObservableObject {
                 completion(.success(user!))
             } catch {
                 logger.error("Failed to load user data: \(error.localizedDescription)")
-                completion(.failure(FronteggError.authError("Failed to load user data: \(error.localizedDescription)")))
+                completion(.failure(FronteggError.authError(.failedToLoadUserData(error.localizedDescription))))
                 setIsLoading(false)
                 return
             }
@@ -315,27 +315,26 @@ public class FronteggAuth: ObservableObject {
         
         return { callbackUrl, error in
             
-            if error != nil {
-                completion(.failure(FronteggError.authError(error!.localizedDescription)))
+            if let error {
+                completion(.failure(FronteggError.authError(.other(error))))
                 return
             }
             
             guard let url = callbackUrl else {
-                let errorMessage = "Unknown error occurred"
-                completion(.failure(FronteggError.authError(errorMessage)))
+                completion(.failure(FronteggError.authError(.unknown)))
                 return
             }
             
             
             self.logger.trace("handleHostedLoginCallback, url: \(url)")
             guard let queryItems = getQueryItems(url.absoluteString), let code = queryItems["code"] else {
-                let error = FronteggError.authError("Failed to get extract code from hostedLoginCallback url")
+                let error = FronteggError.authError(.failedToExtractCode)
                 completion(.failure(error))
                 return
             }
             
             guard let codeVerifier = CredentialManager.getCodeVerifier() else {
-                let error = FronteggError.authError("IlligalState, codeVerifier not found")
+                let error = FronteggError.authError(.codeVerifierNotFound)
                 completion(.failure(error))
                 return
             }
@@ -512,7 +511,7 @@ public class FronteggAuth: ObservableObject {
             rootVC.present(hostingController, animated: false, completion: nil)
             
         } else {
-            logger.critical(FronteggError.authError("Unable to find root viewController").localizedDescription)
+            logger.critical(FronteggError.authError(.couldNotFindRootViewController).localizedDescription)
             exit(500)
         }
     }
@@ -524,7 +523,7 @@ public class FronteggAuth: ObservableObject {
         }
         
         guard let rootVC = self.getRootVC(useAppRootVC) else {
-            logger.error(FronteggError.authError("Unable to find root viewController").localizedDescription)
+            logger.error(FronteggError.authError(.couldNotFindRootViewController).localizedDescription)
             return false;
         }
         
@@ -574,7 +573,7 @@ public class FronteggAuth: ObservableObject {
                 if let user = self.user, await self.refreshTokenIfNeeded() && completion != nil {
                     completion?(.success(user))
                 } else {
-                    completion?(.failure(FronteggError.authError("Failed to swift tenant")))
+                    completion?(.failure(FronteggError.authError(.failedToSwitchTenant)))
                 }
                 
             }
