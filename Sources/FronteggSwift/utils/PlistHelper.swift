@@ -11,11 +11,13 @@ public struct RegionConfig {
     public var key: String
     public var baseUrl: String
     public var clientId: String
+    public var applicationId: String?
     
-    public init(key: String, baseUrl: String, clientId: String){
+    public init(key: String, baseUrl: String, clientId: String, applicationId: String?){
         self.key = key
         self.baseUrl = baseUrl
         self.clientId = clientId
+        self.applicationId = applicationId
     }
 }
 
@@ -24,7 +26,7 @@ struct PlistHelper {
     private static var logLevelCache: Logger.Level? = nil
     private static var logger = getLogger("PlistHelper")
 
-    public static func fronteggConfig() throws -> (clientId: String, baseUrl: String, keychainService: String, bundleIdentifier: String) {
+    public static func fronteggConfig() throws -> (clientId: String, baseUrl: String, applicationId: String?, keychainService: String, bundleIdentifier: String) {
         let bundle = Bundle.main;
         
         let resourceName = (getenv("frontegg-testing") != nil) ? "FronteggTest" : "Frontegg"
@@ -42,9 +44,11 @@ struct PlistHelper {
             throw error
         }
         
+        let applicationId = values["applicationId"] as? String
+        
         let keychainService = values["keychainService"] as? String ?? "frontegg"
         
-        return (clientId: clientId, baseUrl: baseUrl, keychainService: keychainService, bundleIdentifier: bundle.bundleIdentifier!)
+        return (clientId: clientId, baseUrl: baseUrl, applicationId: applicationId, keychainService: keychainService, bundleIdentifier: bundle.bundleIdentifier!)
     }
     
     public static func fronteggRegionalConfig() throws -> (regions: [RegionConfig], keychainService: String, bundleIdentifier: String) {
@@ -80,7 +84,9 @@ struct PlistHelper {
                 logger.debug(error.localizedDescription)
                 throw error
             }
-            return RegionConfig(key: key, baseUrl: baseUrl, clientId: clientId)
+                                             
+            let applicationId = dict["applicationId"] 
+            return RegionConfig(key: key, baseUrl: baseUrl, clientId: clientId, applicationId: applicationId)
         }
         return (regions: regionConfigs, keychainService: keychainService, bundleIdentifier: bundle.bundleIdentifier!)
     }
