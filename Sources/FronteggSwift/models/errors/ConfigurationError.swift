@@ -10,7 +10,7 @@ import Foundation
 // MARK: - ConfigurationError
 extension FronteggError {
 
-    public enum Configuration: LocalizedError {
+    public enum Configuration: LocalizedError, Equatable {
         case missingPlist
         case missingClientIdOrBaseURL(_ atPath: String)
         case missingRegions
