@@ -29,64 +29,7 @@ struct PlistHelper {
         return try decode(FronteggPlist.self, from: data, at: url.path)
     }
 
-    public static func fronteggConfig() throws -> SingleRegionConfig {
-
-        let resourceName = (getenv("frontegg-testing") != nil) ? "FronteggTest" : "Frontegg"
-        
-        guard 
-            let url = Bundle.main.url(forResource: resourceName, withExtension: "plist"),
-            let data = try? Data(contentsOf: url)
-        else {
-            let error = FronteggError.configError(.missingPlist)
-            logger.debug(error.localizedDescription)
-            throw error
-        }
-
-        return try decode(SingleRegionConfig.self, from: data, at: url.path)
-    }
-    
-    public static func fronteggRegionalConfig() throws -> (regions: [RegionConfig], keychainService: String, bundleIdentifier: String) {
-        let bundle = Bundle.main;
-        
-        let resourceName = (getenv("frontegg-testing") != nil) ? "FronteggTest" : "Frontegg"
-        
-        guard let path = bundle.path(forResource: resourceName, ofType: "plist"),
-              let values = NSDictionary(contentsOfFile: path) as? [String: Any] else {
-            let error = FronteggError.configError(.missingPlist)
-            logger.debug(error.localizedDescription)
-            throw error
-        }
-        
-        guard 
-            let regions = values["regions"] as? [[String: String]],
-            !regions.isEmpty
-        else {
-            let error = FronteggError.configError(.missingRegions)
-            logger.debug(error.localizedDescription)
-            throw error
-        }
-        
-        let keychainService = values["keychainService"] as? String ?? "frontegg"
-        
-        let regionConfigs = try regions.map { dict in
-            guard 
-                let key = dict["key"],
-                let baseUrl = dict["baseUrl"],
-                let clientId = dict["clientId"] 
-            else {
-                let error = FronteggError.configError(.invalidRegions(path))
-                logger.debug(error.localizedDescription)
-                throw error
-            }
-
-            let applicationId = dict["applicationId"]
-            return RegionConfig(key: key, baseUrl: baseUrl, clientId: clientId, applicationId: applicationId)
-        }
-        return (regions: regionConfigs, keychainService: keychainService, bundleIdentifier: bundle.bundleIdentifier!)
-    }
-    
-    
-    public static func getLogLevel() -> Logger.Level {
+    static func getLogLevel() -> Logger.Level {
         
         if let logLevel = PlistHelper.logLevelCache {
             return logLevel
@@ -113,69 +56,10 @@ struct PlistHelper {
         
         return Logger.Level.warning
     }
-    
-    
-    
+
     public static func bundleIdentifier() -> String {
         let bundle = Bundle.main;
         return bundle.bundleIdentifier!
-    }
-    
-
-    
-    public static func isEmbeddedMode() -> Bool {
-        
-        let bundle = Bundle.main;
-        if let path = bundle.path(forResource: "Frontegg", ofType: "plist"),
-           let values = NSDictionary(contentsOfFile: path) as? [String: Any],
-           let embeddedMode =  values["embeddedMode"] as? Bool {
-            
-            return embeddedMode
-        }
-        
-        return true
-    }
-    
-    public static func isLateInit() -> Bool {
-        let bundle = Bundle.main;
-        if let path = bundle.path(forResource: "Frontegg", ofType: "plist"),
-           let values = NSDictionary(contentsOfFile: path) as? [String: Any],
-           let lateInit =  values["lateInit"] as? Bool {
-            
-           return lateInit
-        }
-        return false
-    }
-    
-    
-    public static func getKeychainService() -> String {
-        let bundle = Bundle.main;
-        if let path = bundle.path(forResource: "Frontegg", ofType: "plist"),
-           let values = NSDictionary(contentsOfFile: path) as? [String: Any],
-           let keychainService =  values["keychainService"] as? String {
-            
-           return keychainService
-        }
-        return "frontegg"
-    }
-    
-    public static func getNativeBridgeOptions() -> [String: Bool] {
-        let bundle = Bundle.main;
-        
-        var loginWithSocialLogin:Bool = true
-        var loginWithSSO:Bool = false
-        
-        if let path = bundle.path(forResource: "Frontegg", ofType: "plist"),
-           let values = NSDictionary(contentsOfFile: path) as? [String: Any] {
-            
-            loginWithSocialLogin = (values["loginWithSocialLogin"] as? Bool) ?? true
-            loginWithSSO = (values["loginWithSSO"] as? Bool) ?? false
-            
-        }
-        return [
-            "loginWithSocialLogin": loginWithSocialLogin,
-            "loginWithSSO": loginWithSSO
-        ]
     }
     
 }

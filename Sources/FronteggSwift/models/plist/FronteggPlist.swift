@@ -43,4 +43,25 @@ extension FronteggPlist {
         case .multiRegion(let config): config.embeddedMode
         }
     }
+
+    var loginWithSocialLogin: Bool {
+        switch self {
+        case .singleRegion(let config): config.loginWithSocialLogin
+        case .multiRegion(let config): config.loginWithSocialLogin
+        }
+    }
+
+    var loginWithSSO: Bool {
+        switch self {
+        case .singleRegion(let config): config.loginWithSSO
+        case .multiRegion(let config): config.loginWithSSO
+        }
+    }
+
+    var lateInit: Bool {
+        switch self {
+        case .singleRegion(let config): config.lateInit
+        case .multiRegion(let config): config.lateInit
+        }
+    }
 }

@@ -10,13 +10,26 @@ import Foundation
 struct MultiRegionConfig: Decodable, Equatable {
 
     let keychainService: String
-    let embeddedMode: Bool
     let regions: [RegionConfig]
+    let embeddedMode: Bool
+    let loginWithSocialLogin: Bool
+    let loginWithSSO: Bool
+    let lateInit: Bool
 
-    init(keychainService: String, embeddedMode: Bool, regions: [RegionConfig]) {
+    init(
+        keychainService: String,
+        regions: [RegionConfig],
+        embeddedMode: Bool = true,
+        loginWithSocialLogin: Bool = true,
+        loginWithSSO: Bool = false,
+        lateInit: Bool = false
+    ) {
         self.keychainService = keychainService
         self.embeddedMode = embeddedMode
         self.regions = regions
+        self.loginWithSocialLogin = loginWithSocialLogin
+        self.loginWithSSO = loginWithSSO
+        self.lateInit = lateInit
     }
 
     init(from decoder: any Decoder) throws {
@@ -28,6 +41,15 @@ struct MultiRegionConfig: Decodable, Equatable {
         let embeddedMode = try container.decodeIfPresent(Bool.self, forKey: .embeddedMode)
         self.embeddedMode = embeddedMode ?? true
 
+        let socialLogin = try container.decodeIfPresent(Bool.self, forKey: .loginWithSocialLogin)
+        self.loginWithSocialLogin = socialLogin ?? true
+
+        let ssoLogin = try container.decodeIfPresent(Bool.self, forKey: .loginWithSSO)
+        self.loginWithSSO = ssoLogin ?? false
+
+        let lateInit = try container.decodeIfPresent(Bool.self, forKey: .lateInit)
+        self.lateInit = lateInit ?? false
+
         self.regions = try container.decode([RegionConfig].self, forKey: .regions)
 
     }
@@ -36,5 +58,8 @@ struct MultiRegionConfig: Decodable, Equatable {
         case keychainService
         case embeddedMode
         case regions
+        case loginWithSocialLogin
+        case loginWithSSO
+        case lateInit
     }
 }

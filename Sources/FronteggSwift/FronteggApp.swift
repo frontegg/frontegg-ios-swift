@@ -40,14 +40,13 @@ public class FronteggApp {
         self.credentialManager = CredentialManager(serviceKey: config.keychainService)
         self.bundleIdentifier = PlistHelper.bundleIdentifier()
         
-        let bridgeOptions = PlistHelper.getNativeBridgeOptions()
-        self.handleLoginWithSocialLogin = bridgeOptions["loginWithSocialLogin"] ?? true
-        self.handleLoginWithSSO = bridgeOptions["loginWithSSO"] ?? false
-        
+        self.handleLoginWithSocialLogin = config.loginWithSocialLogin
+        self.handleLoginWithSSO = config.loginWithSSO
+
         /**
          lateInit used for react-native and ionic-capacitor initialization
          */
-        if(PlistHelper.isLateInit()){
+        if config.lateInit {
             self.auth = FronteggAuth(
                 baseUrl: self.baseUrl,
                 clientId: self.clientId,
@@ -132,9 +131,11 @@ public class FronteggApp {
         
         self.auth.manualInit(baseUrl: baseUrl, clientId: cliendId, applicationId: applicationId)
     }
-    public func manualInitRegions(regions: [RegionConfig],
-                                  handleLoginWithSocialLogin: Bool = true,
-                                  handleLoginWithSSO:Bool = false) {
+    public func manualInitRegions(
+        regions: [RegionConfig],
+        handleLoginWithSocialLogin: Bool = true,
+        handleLoginWithSSO:Bool = false
+    ) {
         self.regionData = regions
         self.handleLoginWithSocialLogin = handleLoginWithSocialLogin
         self.handleLoginWithSSO = handleLoginWithSSO
@@ -144,7 +145,7 @@ public class FronteggApp {
         self.applicationId = self.auth.applicationId
     }
 
-    public func initWithRegion( regionKey:String ){
+    public func initWithRegion(regionKey: String){
         
         if self.regionData.count == 0 {
             fatalError("illegal state. Frontegg.plist does not contains regions array")
