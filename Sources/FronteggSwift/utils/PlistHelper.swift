@@ -186,3 +186,34 @@ struct PlistHelper {
     
 }
 
+extension PlistHelper {
+
+    static func decode<Plist: Decodable>(_ type: Plist.Type, from data: Data, at path: String) throws -> Plist {
+        do {
+            return try decoder.decode(type, from: data)
+        } catch let error as DecodingError {
+            let mappedError = map(decodingError: error, at: path)
+
+            logger.debug(mappedError.localizedDescription)
+            throw mappedError
+        } catch {
+            logger.debug(error.localizedDescription)
+            throw error
+        }
+    }
+}
+
+// MARK: - Error mapping
+extension PlistHelper {
+
+    private static func map(decodingError error: DecodingError, at path: String) -> any Error {
+        switch error {
+        case
+            let .keyNotFound(key, _) where key.stringValue == RegionConfig.CodingKeys.baseUrl.stringValue,
+            let .keyNotFound(key, _) where key.stringValue == RegionConfig.CodingKeys.clientId.stringValue:
+            return FronteggError.Configuration.missingClientIdOrBaseURL(path)
+        default:
+            return error
+        }
+    }
+}
