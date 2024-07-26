@@ -36,14 +36,14 @@ public class FronteggApp {
         } catch {
             fatalError(FronteggError.configError(.couldNotLoadPlist(error.localizedDescription)).localizedDescription)
         }
-        self.embeddedMode = config.embeddedMode
-        self.credentialManager = CredentialManager(serviceKey: config.keychainService)
 
         guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
             fatalError(FronteggError.configError(.couldNotLoadPlist(Bundle.main.bundlePath)).localizedDescription)
         }
-        self.bundleIdentifier = bundleIdentifier
 
+        self.embeddedMode = config.embeddedMode
+        self.credentialManager = CredentialManager(serviceKey: config.keychainService)
+        self.bundleIdentifier = bundleIdentifier
         self.handleLoginWithSocialLogin = config.loginWithSocialLogin
         self.handleLoginWithSSO = config.loginWithSSO
 
