@@ -50,11 +50,6 @@ struct PlistHelper {
             return .warning
         }
     }
-
-    public static func bundleIdentifier() -> String {
-        let bundle = Bundle.main;
-        return bundle.bundleIdentifier!
-    }
     
 }
 
