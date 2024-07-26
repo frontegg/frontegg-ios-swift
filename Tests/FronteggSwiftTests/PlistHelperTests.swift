@@ -180,6 +180,32 @@ extension PlistHelperTests {
             XCTAssertEqual(error as? FronteggError.Configuration, .missingClientIdOrBaseURL("testPath"))
         }
     }
-}
 
-private struct TestError: Error {}
+    func test_decodeMultiRegion_willThrowCorrectError_whenRegionIsMissing() throws {
+
+
+        XCTAssertThrowsError(
+            try PlistHelper.decode(
+                MultiRegionConfig.self,
+                from: MockRegion.multiRegionMissingRegions.data,
+                at: "testPath"
+            )
+        ) { error in
+            XCTAssertEqual(error as? FronteggError.Configuration, .missingRegions)
+        }
+    }
+
+    func test_decodeMultiRegion_willThrowCorrectError_whenKeyIsMissing() throws {
+
+
+        XCTAssertThrowsError(
+            try PlistHelper.decode(
+                MultiRegionConfig.self,
+                from: MockRegion.multiRegionMissingKey.data,
+                at: "testPath"
+            )
+        ) { error in
+            XCTAssertEqual(error as? FronteggError.Configuration, .invalidRegions("testPath"))
+        }
+    }
+}

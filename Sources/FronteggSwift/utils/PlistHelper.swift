@@ -90,6 +90,12 @@ extension PlistHelper {
             let .keyNotFound(key, _) where key.stringValue == RegionConfig.CodingKeys.baseUrl.stringValue,
             let .keyNotFound(key, _) where key.stringValue == RegionConfig.CodingKeys.clientId.stringValue:
             return FronteggError.Configuration.missingClientIdOrBaseURL(path)
+        case
+            let .keyNotFound(key, _) where key.stringValue == MultiRegionConfig.CodingKeys.regions.stringValue:
+            return FronteggError.Configuration.missingRegions
+        case
+            let .keyNotFound(key, _) where key.stringValue == RegionConfig.CodingKeys.key.stringValue:
+            return FronteggError.Configuration.invalidRegions(path)
         default:
             return error
         }

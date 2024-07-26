@@ -17,6 +17,8 @@ enum MockRegion: String {
     case validMultiRegionMinimumKeys
     case multiRegionMissingBaseUrl
     case multiRegionMissingClientId
+    case multiRegionMissingRegions
+    case multiRegionMissingKey
 
     var url: URL {
         get throws {

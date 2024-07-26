@@ -14,4 +14,8 @@ struct MultiRegionConfig: Decodable, Equatable {
     init(regions: [RegionConfig]) {
         self.regions = regions
     }
+
+    enum CodingKeys: String, CodingKey {
+        case regions
+    }
 }
