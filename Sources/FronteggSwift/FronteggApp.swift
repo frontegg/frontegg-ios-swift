@@ -38,7 +38,7 @@ public class FronteggApp {
         }
 
         guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
-            fatalError(FronteggError.configError(.couldNotLoadPlist(Bundle.main.bundlePath)).localizedDescription)
+            fatalError(FronteggError.configError(.couldNotGetBundleID(Bundle.main.bundlePath)).localizedDescription)
         }
 
         self.embeddedMode = config.embeddedMode
