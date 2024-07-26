@@ -13,7 +13,7 @@ final class PlistHelperTests: XCTestCase {}
 // MARK: - Valid FronteggConfig Tests
 extension PlistHelperTests {
 
-    func test_decodePlist_willDecodeSingleRegionCorrectly() throws {
+    func test_decodePlist_willDecodeSingleRegionCorrectly_whenAllKeysProvided() throws {
 
         let expectedPlist = FronteggPlist(
             keychainService: "testService",
@@ -37,7 +37,7 @@ extension PlistHelperTests {
         XCTAssertEqual(expectedPlist, decodedPlist)
     }
 
-    func test_decodePlist_willDecodeMultiRegionCorrectly() throws {
+    func test_decodePlist_willDecodeMultiRegionCorrectly_whenAllKeysProvided() throws {
 
         let expectedPlist = FronteggPlist(
             keychainService: "testService",
