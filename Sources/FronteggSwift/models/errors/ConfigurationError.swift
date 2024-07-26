@@ -17,6 +17,8 @@ extension FronteggError {
         case missingClientIdOrBaseURL(_ atPath: String)
         case missingRegions
         case invalidRegions(_ atPath: String)
+        case invalidRegionKey(_ regionKey: String, _ availableKeys: String)
+        case failedToGenerateAuthorizeURL
     }
 }
 
@@ -31,6 +33,8 @@ extension FronteggError.Configuration {
         case let .missingClientIdOrBaseURL(path): "Frontegg.plist file at \(path) is missing 'clientId' and/or 'baseUrl' entries!"
         case .missingRegions: "no regions in Frontegg.plist"
         case let .invalidRegions(path): "Frontegg.plist file at \(path) has invalid regions data, regions must be array of (key, baseUrl, clientId)"
+        case let .invalidRegionKey(regionKey, availableKeys): "invalid region key \(regionKey). available regions: \(availableKeys)"
+        case .failedToGenerateAuthorizeURL: "Failed to generate authorize url"
         }
     }
 }

@@ -152,7 +152,7 @@ public class FronteggApp {
     public func initWithRegion(regionKey: String){
         
         if self.regionData.count == 0 {
-            fatalError("illegal state. Frontegg.plist does not contains regions array")
+            fatalError(FronteggError.configError(.missingRegions).localizedDescription)
         }
         
         guard let config = self.regionData.first(where: { config in
@@ -161,7 +161,7 @@ public class FronteggApp {
             let keys: String = self.regionData.map { config in
                 config.key
             }.joined(separator: ", ")
-            fatalError("invalid region key \(regionKey). available regions: \(keys)")
+            fatalError(FronteggError.configError(.invalidRegionKey(regionKey, keys)).localizedDescription)
         }
         
         CredentialManager.saveSelectedRegion(regionKey)
