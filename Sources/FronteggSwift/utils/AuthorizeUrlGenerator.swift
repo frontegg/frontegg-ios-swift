@@ -77,7 +77,7 @@ public class AuthorizeUrlGenerator {
                 return (url, codeVerifier)
             } else {
                 logger.error("Unkonwn error occured while generating authorize url, baseUrl: \(baseUrl)")
-                fatalError("Failed to generate authorize url")
+                fatalError(FronteggError.configError(.failedToGenerateAuthorizeURL).localizedDescription)
             }
         }
         
@@ -96,7 +96,7 @@ public class AuthorizeUrlGenerator {
             return (loginUrl.url!, codeVerifier)
         } else {
             logger.error("Unkonwn error occured while generating authorize url, baseUrl: \(baseUrl)")
-            fatalError("Failed to generate authorize url")
+            fatalError(FronteggError.configError(.failedToGenerateAuthorizeURL).localizedDescription)
         }
 
     }

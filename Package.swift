@@ -29,5 +29,14 @@ let package = Package(
                 // .package(url: /* package url */, from: "1.0.0"),
             ]
         ),
+        .testTarget(
+            name: "FronteggSwiftTests",
+            dependencies: [
+                "FronteggSwift"
+            ],
+            resources: [
+                .copy("MockRegions")
+            ]
+        )
     ]
 )
