@@ -13,7 +13,17 @@ struct PlistHelper {
     private static var logger = getLogger("PlistHelper")
     private static let decoder = PropertyListDecoder()
 
-    static func plist() throws -> FronteggPlist {
+    static func fronteggConfig() throws -> FronteggPlist {
+
+        do {
+            return try plist()
+        } catch {
+            logger.debug(error.localizedDescription)
+            throw error
+        }
+    }
+
+    private static func plist() throws -> FronteggPlist {
 
         let resourceName = (getenv("frontegg-testing") != nil) ? "FronteggTest" : "Frontegg"
 
@@ -21,9 +31,7 @@ struct PlistHelper {
             let url = Bundle.main.url(forResource: resourceName, withExtension: "plist"),
             let data = try? Data(contentsOf: url)
         else {
-            let error = FronteggError.configError(.missingPlist)
-            logger.debug(error.localizedDescription)
-            throw error
+            throw FronteggError.configError(.missingPlist)
         }
 
         return try decode(FronteggPlist.self, from: data, at: url.path)
@@ -34,27 +42,13 @@ struct PlistHelper {
         if let logLevel = PlistHelper.logLevelCache {
             return logLevel
         }
-        
-        let map = [
-            "trace": 0,
-            "debug": 1,
-            "info": 2,
-            "warn": 3,
-            "error": 4,
-            "critical": 5
-        ]
-        
-        let bundle = Bundle.main;
-        if let path = bundle.path(forResource: "Frontegg", ofType: "plist"),
-           let values = NSDictionary(contentsOfFile: path) as? [String: Any],
-           let logLevelStr = values["logLevel"] as? String,
-           let logLevelNum = map[logLevelStr],
-           let logLevel = Logger.Level.init(rawValue: logLevelNum) {
-            
-            return logLevel
+
+        do {
+            let plist = try plist()
+            return .init(with: plist.logLevel)
+        } catch {
+            return .warning
         }
-        
-        return Logger.Level.warning
     }
 
     public static func bundleIdentifier() -> String {

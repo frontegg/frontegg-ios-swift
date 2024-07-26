@@ -21,6 +21,7 @@ extension PlistHelperTests {
             loginWithSocialLogin: false,
             loginWithSSO: true,
             lateInit: true,
+            logLevel: .critical,
             payload: .singleRegion(.init(
                 baseUrl: "https://test.com",
                 clientId: "d37ad699-e466-451a-a9d1-d590869dba1a",
@@ -44,6 +45,7 @@ extension PlistHelperTests {
             loginWithSocialLogin: false,
             loginWithSSO: true,
             lateInit: true,
+            logLevel: .critical,
             payload: .multiRegion(.init(regions: [
                 .init(
                     key: "region1",
@@ -76,6 +78,7 @@ extension PlistHelperTests {
             loginWithSocialLogin: true,
             loginWithSSO: false,
             lateInit: false,
+            logLevel: .warn,
             payload: .singleRegion(.init(
                 baseUrl: "https://test.com",
                 clientId: "d37ad699-e466-451a-a9d1-d590869dba1a",
@@ -99,6 +102,7 @@ extension PlistHelperTests {
             loginWithSocialLogin: true,
             loginWithSSO: false,
             lateInit: false,
+            logLevel: .warn,
             payload: .multiRegion(.init(regions: [
                 .init(
                     key: "region1",

@@ -35,5 +35,7 @@
 	<true/>
 	<key>lateInit</key>
 	<true/>
+	<key>logLevel</key>
+	<string>critical</string>
 </dict>
 </plist>

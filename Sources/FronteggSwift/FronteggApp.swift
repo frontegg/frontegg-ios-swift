@@ -32,7 +32,7 @@ public class FronteggApp {
     init() {
         let config: FronteggPlist
         do {
-            config = try PlistHelper.plist()
+            config = try PlistHelper.fronteggConfig()
         } catch {
             fatalError("Fatal Error: Could not load Frontegg Plist: \(error)")
         }
