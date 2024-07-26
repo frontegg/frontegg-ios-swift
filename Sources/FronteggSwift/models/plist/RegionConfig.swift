@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct RegionConfig: Decodable, Equatable, Identifiable {
+public struct RegionConfig: Decodable, Equatable, Identifiable, Sendable, Hashable {
 
     public var id: String { key }
     public let key: String

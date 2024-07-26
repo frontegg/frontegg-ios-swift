@@ -13,6 +13,8 @@ struct PlistHelper {
     private static var logger = getLogger("PlistHelper")
     private static let decoder = PropertyListDecoder()
 
+    /// Decodes the Frontegg configuration plist and logs any error that occurs
+    /// - Returns: the decoded model (``FronteggPlist``)
     static func fronteggConfig() throws -> FronteggPlist {
 
         do {
@@ -22,7 +24,9 @@ struct PlistHelper {
             throw error
         }
     }
-
+    
+    /// Decodes the Frontegg configuration plist
+    /// - Returns: the decoded model (``FronteggPlist``)
     private static func plist() throws -> FronteggPlist {
 
         let resourceName = (getenv("frontegg-testing") != nil) ? "FronteggTest" : "Frontegg"
@@ -36,7 +40,9 @@ struct PlistHelper {
 
         return try decode(FronteggPlist.self, from: data, at: url.path)
     }
-
+    
+    /// Gets the required log level from cache if it exists, or attempts to read it from the Frontegg configuration plist if it wasn't previously loaded
+    /// - Returns: the required logger level (``Logger/Level``)
     static func getLogLevel() -> Logger.Level {
         
         if let logLevel = PlistHelper.logLevelCache {
@@ -54,7 +60,13 @@ struct PlistHelper {
 }
 
 extension PlistHelper {
-
+    
+    /// Decodes a plist model using a PropertyListDecoder, and maps the errors to the internal ``FronteggError`` before logging and rethrowing them. Any unmapped errors will be logged and thrown
+    /// - Parameters:
+    ///   - type: The type to decode
+    ///   - data: The data to decode the model from
+    ///   - path: The path of the plist
+    /// - Returns: The decoded model
     static func decode<Plist: Decodable>(_ type: Plist.Type, from data: Data, at path: String) throws -> Plist {
         do {
             return try decoder.decode(type, from: data)
@@ -72,7 +84,12 @@ extension PlistHelper {
 
 // MARK: - Error mapping
 extension PlistHelper {
-
+    
+    /// Maps a DecodingError to the internal ``FronteggError``
+    /// - Parameters:
+    ///   - error: the decoding error to attempt to map
+    ///   - path: the path of the plist (used as part of some of the error description)
+    /// - Returns: A ``FronteggError`` if any mapping was found, or the original, unmapped error otherwise
     private static func map(decodingError error: DecodingError, at path: String) -> any Error {
         switch error {
         case

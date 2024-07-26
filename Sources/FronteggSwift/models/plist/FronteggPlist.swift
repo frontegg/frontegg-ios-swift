@@ -7,6 +7,7 @@
 
 import Foundation
 
+// MARK: - Frontegg Plist
 struct FronteggPlist: Decodable, Equatable {
     
     let keychainService: String
@@ -69,6 +70,7 @@ struct FronteggPlist: Decodable, Equatable {
     }
 }
 
+// MARK: - Payload
 extension FronteggPlist {
 
     enum Payload: Equatable {
@@ -91,6 +93,7 @@ extension FronteggPlist.Payload: Decodable {
     }
 }
 
+// MARK: - LogLevel
 extension FronteggPlist {
 
     enum LogLevel: String, Decodable {
