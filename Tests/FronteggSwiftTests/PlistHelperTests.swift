@@ -15,14 +15,17 @@ extension PlistHelperTests {
 
     func test_decodePlist_willDecodeSingleRegionCorrectly() throws {
 
-        let expectedPlist = FronteggPlist.singleRegion(
-            .init(
-                keychainService: "testService",
+        let expectedPlist = FronteggPlist(
+            keychainService: "testService",
+            embeddedMode: false,
+            loginWithSocialLogin: false,
+            loginWithSSO: true,
+            lateInit: true,
+            payload: .singleRegion(.init(
                 baseUrl: "https://test.com",
                 clientId: "d37ad699-e466-451a-a9d1-d590869dba1a",
-                applicationId: "f87f8fea-8cb3-4a46-bab8-0169726a5704",
-                embeddedMode: false
-            )
+                applicationId: "f87f8fea-8cb3-4a46-bab8-0169726a5704"
+            ))
         )
         let decodedPlist = try PlistHelper.decode(
             FronteggPlist.self,
@@ -35,25 +38,26 @@ extension PlistHelperTests {
 
     func test_decodePlist_willDecodeMultiRegionCorrectly() throws {
 
-        let expectedPlist = FronteggPlist.multiRegion(
-            .init(
-                keychainService: "testService",
-                embeddedMode: false,
-                regions: [
-                    .init(
-                        key: "region1",
-                        baseUrl: "https://region1.test.com",
-                        clientId: "f87f8fea-8cb3-4a46-bab8-0169726a5704",
-                        applicationId: "549e3240-84e2-495a-91ea-be467f807272"
-                    ),
-                    .init(
-                        key: "region2",
-                        baseUrl: "https://region2.test.com",
-                        clientId: "d37ad699-e466-451a-a9d1-d590869dba1a",
-                        applicationId: "199d93c3-0d82-4eac-ab95-4b9e3d617053"
-                    )
-                ]
-            )
+        let expectedPlist = FronteggPlist(
+            keychainService: "testService",
+            embeddedMode: false,
+            loginWithSocialLogin: false,
+            loginWithSSO: true,
+            lateInit: true,
+            payload: .multiRegion(.init(regions: [
+                .init(
+                    key: "region1",
+                    baseUrl: "https://region1.test.com",
+                    clientId: "f87f8fea-8cb3-4a46-bab8-0169726a5704",
+                    applicationId: "549e3240-84e2-495a-91ea-be467f807272"
+                ),
+                .init(
+                    key: "region2",
+                    baseUrl: "https://region2.test.com",
+                    clientId: "d37ad699-e466-451a-a9d1-d590869dba1a",
+                    applicationId: "199d93c3-0d82-4eac-ab95-4b9e3d617053"
+                )
+            ]))
         )
         let decodedPlist = try PlistHelper.decode(
             FronteggPlist.self,

@@ -29,5 +29,11 @@
 			<string>199d93c3-0d82-4eac-ab95-4b9e3d617053</string>
 		</dict>
 	</array>
+	<key>loginWithSocialLogin</key>
+	<false/>
+	<key>loginWithSSO</key>
+	<true/>
+	<key>lateInit</key>
+	<true/>
 </dict>
 </plist>

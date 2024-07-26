@@ -60,7 +60,7 @@ public class FronteggApp {
             return
         }
 
-        switch config {
+        switch config.payload {
         case let .multiRegion(config):
             logger.info("Regional frontegg initialization")
             self.regionData = config.regions

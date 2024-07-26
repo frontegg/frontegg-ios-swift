@@ -12,5 +12,11 @@
 	<string>https://test.com</string>
 	<key>clientId</key>
 	<string>d37ad699-e466-451a-a9d1-d590869dba1a</string>
+	<key>loginWithSocialLogin</key>
+	<false/>
+	<key>loginWithSSO</key>
+	<true/>
+	<key>lateInit</key>
+	<true/>
 </dict>
 </plist>
