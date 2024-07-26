@@ -14,6 +14,7 @@ struct FronteggPlist: Decodable, Equatable {
     let loginWithSocialLogin: Bool
     let loginWithSSO: Bool
     let lateInit: Bool
+    let logLevel: LogLevel
     let payload: Payload
 
     enum CodingKeys: CodingKey {
@@ -22,6 +23,7 @@ struct FronteggPlist: Decodable, Equatable {
         case loginWithSocialLogin
         case loginWithSSO
         case lateInit
+        case logLevel
     }
 
     init(
@@ -30,13 +32,15 @@ struct FronteggPlist: Decodable, Equatable {
         loginWithSocialLogin: Bool = true,
         loginWithSSO: Bool = false,
         lateInit: Bool = false,
-        payload: FronteggPlist.Payload
+        logLevel: LogLevel = .warn,
+        payload: Payload
     ) {
         self.keychainService = keychainService
         self.embeddedMode = embeddedMode
         self.loginWithSocialLogin = loginWithSocialLogin
         self.loginWithSSO = loginWithSSO
         self.lateInit = lateInit
+        self.logLevel = logLevel
         self.payload = payload
     }
 
@@ -58,6 +62,9 @@ struct FronteggPlist: Decodable, Equatable {
         let lateInit = try container.decodeIfPresent(Bool.self, forKey: .lateInit)
         self.lateInit = lateInit ?? false
 
+        let logLevel = try container.decodeIfPresent(LogLevel.self, forKey: .logLevel)
+        self.logLevel = logLevel ?? .warn
+
         self.payload = try Payload(from: decoder)
     }
 }
@@ -71,7 +78,6 @@ extension FronteggPlist {
     }
 }
 
-// MARK: - Init
 extension FronteggPlist.Payload: Decodable {
 
     init(from decoder: any Decoder) throws {
@@ -81,6 +87,33 @@ extension FronteggPlist.Payload: Decodable {
         } catch {
             let singleRegion = try decoder.singleValueContainer().decode(SingleRegionConfig.self)
             self = .singleRegion(singleRegion)
+        }
+    }
+}
+
+extension FronteggPlist {
+
+    enum LogLevel: String, Decodable {
+
+        case trace
+        case debug
+        case info
+        case warn
+        case error
+        case critical
+    }
+}
+
+extension Logger.Level {
+
+    init(with logLevel: FronteggPlist.LogLevel) {
+        switch logLevel {
+        case .trace: self = .trace
+        case .debug: self = .debug
+        case .info: self = .info
+        case .warn: self = .warning
+        case .error: self = .error
+        case .critical: self = .critical
         }
     }
 }
