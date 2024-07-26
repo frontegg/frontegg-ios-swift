@@ -10,9 +10,11 @@ import XCTest
 enum MockRegion: String {
 
     case validSingleRegion
+    case validSingleRegionMinimumKeys
     case singleRegionMissingBaseUrl
     case singleRegionMissingClientId
     case validMultiRegion
+    case validMultiRegionMinimumKeys
     case multiRegionMissingBaseUrl
     case multiRegionMissingClientId
 

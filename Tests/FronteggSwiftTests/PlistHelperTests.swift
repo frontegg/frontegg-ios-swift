@@ -67,6 +67,61 @@ extension PlistHelperTests {
 
         XCTAssertEqual(expectedPlist, decodedPlist)
     }
+
+    func test_decodePlist_willDecodeSingleRegionCorrectly_whenMinimumKeysProvided() throws {
+
+        let expectedPlist = FronteggPlist(
+            keychainService: "frontegg",
+            embeddedMode: true,
+            loginWithSocialLogin: true,
+            loginWithSSO: false,
+            lateInit: false,
+            payload: .singleRegion(.init(
+                baseUrl: "https://test.com",
+                clientId: "d37ad699-e466-451a-a9d1-d590869dba1a",
+                applicationId: nil
+            ))
+        )
+        let decodedPlist = try PlistHelper.decode(
+            FronteggPlist.self,
+            from: MockRegion.validSingleRegionMinimumKeys.data,
+            at: "testPath"
+        )
+
+        XCTAssertEqual(expectedPlist, decodedPlist)
+    }
+
+    func test_decodePlist_willDecodeMultiRegionCorrectly_whenMinimumKeysProvided() throws {
+
+        let expectedPlist = FronteggPlist(
+            keychainService: "frontegg",
+            embeddedMode: true,
+            loginWithSocialLogin: true,
+            loginWithSSO: false,
+            lateInit: false,
+            payload: .multiRegion(.init(regions: [
+                .init(
+                    key: "region1",
+                    baseUrl: "https://region1.test.com",
+                    clientId: "f87f8fea-8cb3-4a46-bab8-0169726a5704",
+                    applicationId: nil
+                ),
+                .init(
+                    key: "region2",
+                    baseUrl: "https://region2.test.com",
+                    clientId: "d37ad699-e466-451a-a9d1-d590869dba1a",
+                    applicationId: nil
+                )
+            ]))
+        )
+        let decodedPlist = try PlistHelper.decode(
+            FronteggPlist.self,
+            from: MockRegion.validMultiRegionMinimumKeys.data,
+            at: "testPath"
+        )
+
+        XCTAssertEqual(expectedPlist, decodedPlist)
+    }
 }
 
 // MARK: - DecodingError Mapping Tests
