@@ -41,33 +41,33 @@ final class loginWithPassword_test: XCTestCase {
         
         await waitForLoader(app)
         
-        let userNameField = app.getWebInput("Email is required")
+        let userNameField = await app.getWebInput("Email is required")
 
         takeScreenshot(named: "LoginPage")
         
-        userNameField.safeTypeText("test@frontegg.com")
+        await userNameField.safeTypeText("test@frontegg.com")
         
         
         await Mocker.mock(name: .mockSSOPrelogin, body: [ "options": ["success": false]])
         
-        let continueButton = app.getWebButton("Continue")
+        let continueButton = await app.getWebButton("Continue")
         
         takeScreenshot(named: "PreLogin")
-        continueButton.safeTap()
+        await continueButton.safeTap()
         
         
-        let passwordField = app.getWebPasswordInput("Password is required")
+        let passwordField = await app.getWebPasswordInput("Password is required")
         
-        passwordField.safeTypeText("Testpassword")
+        await passwordField.safeTypeText("Testpassword")
         
         
         await Mocker.mockSuccessPasswordLogin(code)
         
         
-        app.getWebButton("Sign in").safeTap()
+        await app.getWebButton("Sign in").safeTap()
         
         
-        let successField = app.staticTexts["test@frontegg.com"]
+        let successField = await app.staticTexts["test@frontegg.com"]
         XCTAssert(successField.waitForExistence(timeout: 10))
         
         DispatchQueue.main.sync { app.terminate() }

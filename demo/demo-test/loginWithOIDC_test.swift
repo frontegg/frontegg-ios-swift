@@ -42,23 +42,23 @@ final class loginWithOIDC_test: XCTestCase {
         
         await waitForLoader(app)
         
-        app.getWebInput("Email is required")
+        await app.getWebInput("Email is required")
             .safeTypeText("test@oidc-domain.com")
         
         await Mocker.mock(name: .mockSSOPrelogin, body: ["options": ["success":"true", "idpType": "oidc"],
                                                          "partialRequestBody": ["email": "test@oidc-domain.com"]])
         
-        app.getWebButton("Continue").safeTap()
+        await app.getWebButton("Continue").safeTap()
         
-        app.waitWebLabel("OKTA OIDC Mock Server")
+        await app.waitWebLabel("OKTA OIDC Mock Server")
         
         
         await Mocker.mockSuccessOidcLogin(code)
         
-        app.getWebButton("Login With Okta").safeTap()
+        await app.getWebButton("Login With Okta").safeTap()
         
         
-        let successField = app.staticTexts["test@oidc-domain.com"]
+        let successField = await app.staticTexts["test@oidc-domain.com"]
         XCTAssert(successField.waitForExistence(timeout: 10))
         
         DispatchQueue.main.sync { app.terminate() }
