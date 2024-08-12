@@ -38,7 +38,8 @@ public class CredentialManager {
                 kSecClass: kSecClassGenericPassword,
                 kSecAttrService: serviceKey ?? "frontegg",
                 kSecAttrAccount: key,
-                kSecValueData: valueData
+                kSecValueData: valueData,
+                kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlock
             ] as [CFString : Any] as CFDictionary
             
             let status = SecItemAdd(query, nil)
