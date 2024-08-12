@@ -40,7 +40,7 @@ final class loginWithSAML_test: XCTestCase {
         
         await waitForLoader(app)
         
-        let userNameField = app.getWebInput("Email is required")
+        let userNameField = await app.getWebInput("Email is required")
         
         
         takeScreenshot(named: "LoginPage")
@@ -49,11 +49,11 @@ final class loginWithSAML_test: XCTestCase {
         await Mocker.mock(name: .mockSSOPrelogin, body: ["options": ["success":"true", "idpType": "saml"],
                                                          "partialRequestBody": ["email": "test@saml-domain.com"]])
         
-        userNameField.safeTypeText("test@saml-domain.com")
+        await userNameField.safeTypeText("test@saml-domain.com")
         
-        app.getWebButton("Continue").safeTap()
+        await app.getWebButton("Continue").safeTap()
         
-        app.waitWebLabel("OKTA SAML Mock Server")
+        await app.waitWebLabel("OKTA SAML Mock Server")
         
         
         await Mocker.mock(name: .mockSSOAuthSamlCallback, body: ["options":[
@@ -63,25 +63,25 @@ final class loginWithSAML_test: XCTestCase {
         
         
         
-        app.getWebButton("Login With Okta").safeTap()
+        await app.getWebButton("Login With Okta").safeTap()
         
         
-        let backToLoginButton = app.getWebLabel("Back to Sign-in")
+        let backToLoginButton = await app.getWebLabel("Back to Sign-in")
         takeScreenshot(named: "Invalid Saml")
-        backToLoginButton.safeTap()
+        await backToLoginButton.safeTap()
         
         
-        app.getWebInput("Email is required").safeTypeText("test@saml-domain.com")
+        await app.getWebInput("Email is required").safeTypeText("test@saml-domain.com")
 
-        app.getWebButton("Continue").safeTap()
+        await app.getWebButton("Continue").safeTap()
         
         
         await Mocker.mockSuccessSamlLogin(code)
         
-        app.getWebButton("Login With Okta").safeTap()
+        await app.getWebButton("Login With Okta").safeTap()
         
         
-        let successField = app.staticTexts["test@saml-domain.com"]
+        let successField = await app.staticTexts["test@saml-domain.com"]
         XCTAssert(successField.waitForExistence(timeout: 10))
         
         DispatchQueue.main.sync { app.terminate() }

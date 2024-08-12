@@ -47,7 +47,7 @@ extension XCTestCase {
     
     func waitForLoader(_ app: XCUIApplication) async {
         // Wait for the loading indicator to disappear = content is ready
-        let activityIndicator = app.otherElements["LoaderView"]
+        let activityIndicator = await app.otherElements["LoaderView"]
         expectation(for: NSPredicate(format: "exists == 0"), evaluatedWith: activityIndicator)
         await waitForExpectations(timeout: 30)
     }
