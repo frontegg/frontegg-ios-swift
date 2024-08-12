@@ -50,6 +50,7 @@ public class CredentialManager {
                     kSecClass: kSecClassGenericPassword,
                     kSecAttrService: serviceKey ?? "frontegg",
                     kSecAttrAccount: key,
+                    kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlock
                 ] as [CFString : Any] as CFDictionary
                 
                 let newAttributes : CFDictionary = [
