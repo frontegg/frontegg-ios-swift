@@ -32,7 +32,7 @@ final class keepSessionAlive_test: XCTestCase {
         
         
         
-        let successField = app.staticTexts["test@frontegg.com"]
+        let successField = await app.staticTexts["test@frontegg.com"]
         XCTAssert(successField.waitForExistence(timeout: 10))
         
         DispatchQueue.main.sync { app.terminate() }
