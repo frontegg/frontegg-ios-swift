@@ -51,6 +51,7 @@ from [Frontegg Portal Domain](https://portal.frontegg.com/development/settings/d
 - Navigate to [Login Method Settings](https://portal.frontegg.com/development/authentication/hosted)
 - Toggle Hosted login method
 - Add `{{IOS_BUNDLE_IDENTIFIER}}://{{FRONTEGG_BASE_URL}}/ios/oauth/callback`
+- Add `{{FRONTEGG_BASE_URL}}/oauth/authorize`
 - Replace `IOS_BUNDLE_IDENTIFIER` with your application identifier
 - Replace `FRONTEGG_BASE_URL` with your frontegg base url
 
