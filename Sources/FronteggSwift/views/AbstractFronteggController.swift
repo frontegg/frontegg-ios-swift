@@ -15,7 +15,7 @@ open class AbstractFronteggController: UIViewController {
     
     open func navigateToAuthenticated() {
         logger.error("Missing AbstractFronteggController implementation class")
-        fatalError("Not implemented")
+        assertionFailure("Not implemented")
     }
     
     public override func viewDidLoad() {
