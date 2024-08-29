@@ -88,7 +88,7 @@ public class CredentialManager {
         let status = SecItemCopyMatching(query, &result)
         
         if status != errSecSuccess {
-            logger.error("Unknown error occured while trying to retrieve the key: \(key) from keyhcain")
+            //logger.error("Unknown error occured while trying to retrieve the key: \(key) from keyhcain")
             throw KeychainError.unknown(status)
         }
         

@@ -143,7 +143,6 @@ public class FronteggAuth: ObservableObject {
             self.showLoader = initializingValue || (!isAuthenticatedValue && isLoadingValue)
         }.store(in: &subscribers)
         
-        
         if let refreshToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue),
            let accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
             
@@ -161,6 +160,7 @@ public class FronteggAuth: ObservableObject {
             self.initializing = false
         }
     }
+    
     
     public func setCredentials(accessToken: String, refreshToken: String) async {
         
@@ -368,12 +368,12 @@ public class FronteggAuth: ObservableObject {
     }
     
     
-    public func loginWithPopup(window: UIWindow?, ephemeralSesion: Bool? = true, loginHint: String? = nil, loginAction: String? = nil, _completion: FronteggAuth.CompletionHandler? = nil) {
+    public func loginWithPopup(window: UIWindow?, ephemeralSession: Bool? = true, loginHint: String? = nil, loginAction: String? = nil, _completion: FronteggAuth.CompletionHandler? = nil) {
         
         self.webAuthentication.webAuthSession?.cancel()
         self.webAuthentication = WebAuthentication()
         self.webAuthentication.window = window;
-        self.webAuthentication.ephemeralSesion = ephemeralSesion ?? true
+        self.webAuthentication.ephemeralSession = ephemeralSession ?? true
         
         let completion = _completion ?? { res in
             
@@ -385,12 +385,12 @@ public class FronteggAuth: ObservableObject {
         self.webAuthentication.start(authorizeUrl, completionHandler: oauthCallback)
     }
     
-    public func directLoginAction(window: UIWindow?, type: String, data: String, ephemeralSesion: Bool? = true, _completion: FronteggAuth.CompletionHandler? = nil) {
+    public func directLoginAction(window: UIWindow?, type: String, data: String, ephemeralSession: Bool? = true, _completion: FronteggAuth.CompletionHandler? = nil) {
         
         self.webAuthentication.webAuthSession?.cancel()
         self.webAuthentication = WebAuthentication()
         self.webAuthentication.window = window ?? getRootVC()?.view.window;
-        self.webAuthentication.ephemeralSesion = ephemeralSesion ?? true
+        self.webAuthentication.ephemeralSession = ephemeralSession ?? true
         
         let completion = _completion ?? { res in
             
@@ -460,7 +460,7 @@ public class FronteggAuth: ObservableObject {
         let oauthCallback = createOauthCallbackHandler(completion)
         self.webAuthentication.webAuthSession?.cancel()
         self.webAuthentication = WebAuthentication()
-        self.webAuthentication.ephemeralSesion = true
+        self.webAuthentication.ephemeralSession = true
         self.webAuthentication.window = getRootVC()?.view.window
         
         let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: email, remainCodeVerifier: true)
