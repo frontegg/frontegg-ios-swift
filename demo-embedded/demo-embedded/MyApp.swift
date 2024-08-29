@@ -37,7 +37,7 @@ struct MyApp: View {
                         }.padding(.vertical, 20)
                         
                         Button {
-                            fronteggAuth.directLoginAction(window: nil, type: "social-login", data: "google")
+                            fronteggAuth.directLoginAction(window: nil, type: "social-login", data: "google", ephemeralSession: false)
                         } label: {
                             Text("Login with popup")
                         }
