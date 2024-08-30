@@ -373,7 +373,7 @@ public class FronteggAuth: ObservableObject {
         let accessToken = self.accessToken ?? ""
         
         DispatchQueue.main.sync {
-            self.refreshingToken=false
+            self.refreshingToken=true
         }
         if let data = await self.api.refreshToken(accessToken: accessToken, refreshToken: refreshToken) {
             await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
