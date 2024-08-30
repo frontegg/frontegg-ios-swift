@@ -89,6 +89,21 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                 self.lastResponseStatusCode = nil;
                 self.fronteggAuth.webLoading = false
                 
+                if(url.absoluteString.starts(with: "\(fronteggAuth.baseUrl)/oauth/authorize")){
+                    self.fronteggAuth.webLoading = false
+                    
+                    let encodedUrl = url.absoluteString.replacingOccurrences(of: "\"", with: "\\\"")
+                    let reloadScript = "setTimeout(()=>window.location.href=\"\(encodedUrl)\", 4000)"
+                    let jsCode = "(function(){\n" +
+                            "                var script = document.createElement('script');\n" +
+                            "                script.innerHTML=`\(reloadScript)`;" +
+                            "                document.body.appendChild(script)\n" +
+                            "            })()"
+                    webView.evaluateJavaScript(jsCode)
+                    logger.error("Failed to load page \(encodedUrl), status: \(statusCode)")
+                    self.fronteggAuth.webLoading = false
+                    return
+                }
                 
                 webView.evaluateJavaScript("JSON.parse(document.body.innerText).errors.join('\\n')") { [self] res, err in
                     let errorMessage = res as? String ?? "Unknown error occured"
@@ -113,7 +128,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                 let urlType = getOverrideUrlType(url: url)
                 logger.info("urlType: \(urlType), for: \(url.absoluteString)")
                 
-                if(urlType == .internalRoutes && response.mimeType == "application/json"){
+                if(urlType == .internalRoutes){
                     self.lastResponseStatusCode = response.statusCode
                     decisionHandler(.allow)
                     return
@@ -227,12 +242,12 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         return .cancel
     }
     
-    private func startExternalBrowser(_ _webView:WKWebView?, _ url:URL, _ ephemeralSesion:Bool = false) -> Void {
+    private func startExternalBrowser(_ _webView:WKWebView?, _ url:URL, _ ephemeralSession:Bool = false) -> Void {
         
         weak var webView = _webView
         fronteggAuth.webAuthentication.webAuthSession?.cancel()
         fronteggAuth.webAuthentication = WebAuthentication()
-        fronteggAuth.webAuthentication.ephemeralSesion = ephemeralSesion
+        fronteggAuth.webAuthentication.ephemeralSession = ephemeralSession
         
         fronteggAuth.webAuthentication.window = self.window
         fronteggAuth.webAuthentication.start(url) { callbackUrl, error  in
