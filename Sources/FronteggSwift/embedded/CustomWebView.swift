@@ -110,7 +110,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                     
                     logger.error("Failed to load page: \(errorMessage), status: \(statusCode)")
                     self.fronteggAuth.webLoading = false
-                    let content = generateErrorPage(message: errorMessage, url: url.absoluteString,status: statusCode);
+                    let content = generateErrorPage(message: errorMessage, url: url.absoluteString, status: statusCode);
                     webView.loadHTMLString(content, baseURL: nil);
                 }
             }
