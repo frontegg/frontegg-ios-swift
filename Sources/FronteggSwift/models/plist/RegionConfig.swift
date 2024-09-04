@@ -21,4 +21,11 @@ public struct RegionConfig: Decodable, Equatable, Identifiable, Sendable, Hashab
         case clientId
         case applicationId
     }
+    
+    init(key: String, baseUrl: String, clientId: String, applicationId: String?) {
+        self.key = key
+        self.baseUrl = baseUrl
+        self.clientId = clientId
+        self.applicationId = applicationId
+    }
 }
