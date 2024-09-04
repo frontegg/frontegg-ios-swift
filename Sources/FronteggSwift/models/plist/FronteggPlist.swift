@@ -7,6 +7,8 @@
 
 import Foundation
 
+
+
 // MARK: - Frontegg Plist
 struct FronteggPlist: Decodable, Equatable {
     
@@ -65,8 +67,18 @@ struct FronteggPlist: Decodable, Equatable {
 
         let logLevel = try container.decodeIfPresent(LogLevel.self, forKey: .logLevel)
         self.logLevel = logLevel ?? .warn
-
-        self.payload = try Payload(from: decoder)
+        
+        do {
+            self.payload = try Payload(from: decoder)
+        } catch {
+            if lateInit != true {
+                throw error
+            }
+            
+            let emptyPayload = try JSONSerialization.data(withJSONObject: ["baseUrl":"", "clientId":""], options: [])
+            let defaultLateInitPayload = try JSONDecoder().decode(Payload.self, from: emptyPayload)
+            self.payload = defaultLateInitPayload
+        }
     }
 }
 
