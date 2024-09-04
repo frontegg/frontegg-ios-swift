@@ -372,6 +372,10 @@ public class FronteggAuth: ObservableObject {
         self.logger.info("refreshing token")
         let accessToken = self.accessToken ?? ""
         
+        if(self.refreshingToken){
+            self.logger.info("refreshing token in progress")
+            return false
+        }
         DispatchQueue.main.sync {
             self.refreshingToken=true
         }
