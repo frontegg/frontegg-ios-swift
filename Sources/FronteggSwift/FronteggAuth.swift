@@ -40,7 +40,7 @@ public class FronteggAuth: ObservableObject {
     public var clientId: String
     public var applicationId: String? = nil
     public var pendingAppLink: URL? = nil
-
+    
     
     public static var shared: FronteggAuth {
         return FronteggApp.shared.auth
@@ -104,7 +104,7 @@ public class FronteggAuth: ObservableObject {
         NotificationCenter.default.removeObserver(self, name: UIApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: UIApplication.didEnterBackgroundNotification, object: nil)
     }
-
+    
     
     public func manualInit(baseUrl:String, clientId:String, applicationId: String?) {
         self.lateInit = false
@@ -132,7 +132,7 @@ public class FronteggAuth: ObservableObject {
         }
     }
     
-
+    
     @objc private func applicationDidBecomeActive() {
         logger.info("application become active")
         
@@ -250,10 +250,10 @@ public class FronteggAuth: ObservableObject {
     func calculateOffset(expirationTime: Int) -> TimeInterval {
         let now = Date().timeIntervalSince1970 * 1000 // Current time in milliseconds
         let remainingTime = (Double(expirationTime) * 1000) - now
-
+        
         let minRefreshWindow: Double = 20000 // Minimum 20 seconds before expiration, in milliseconds
         let adaptiveRefreshTime = remainingTime * 0.8 // 80% of remaining time
-
+        
         return remainingTime > minRefreshWindow ? adaptiveRefreshTime / 1000 : max((remainingTime - minRefreshWindow) / 1000, 0)
     }
     
@@ -268,7 +268,7 @@ public class FronteggAuth: ObservableObject {
             }
             
             logger.debug("Refresh token is available. Checking access token...")
-
+            
             // Check if the access token is available
             guard let accessToken = self.accessToken else {
                 logger.debug("No access token found. Attempting to refresh token...")
@@ -284,7 +284,7 @@ public class FronteggAuth: ObservableObject {
             let decode = try JWTHelper.decode(jwtToken: accessToken)
             let expirationTime = decode["exp"] as! Int
             logger.debug("JWT decoded successfully. Expiration time: \(expirationTime)")
-
+            
             let offset = calculateOffset(expirationTime: expirationTime)
             logger.debug("Calculated offset for token refresh: \(offset) seconds")
             
@@ -305,7 +305,7 @@ public class FronteggAuth: ObservableObject {
             }
         }
     }
-
+    
     
     
     func scheduleTokenRefresh(offset: TimeInterval) {
@@ -372,15 +372,24 @@ public class FronteggAuth: ObservableObject {
         self.logger.info("refreshing token")
         let accessToken = self.accessToken ?? ""
         
+        if(self.refreshingToken){
+            self.logger.info("Skip refreshing token - already in progress")
+            return false
+        }
         DispatchQueue.main.sync {
             self.refreshingToken=true
         }
+        defer {
+            
+            // cleanup scope
+            DispatchQueue.main.sync {
+                self.refreshingToken = false
+            }
+        }
+        
         if let data = await self.api.refreshToken(accessToken: accessToken, refreshToken: refreshToken) {
             await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
             self.logger.info("token refreshed successfully")
-            DispatchQueue.main.sync {
-                self.refreshingToken=false
-            }
             return true
         } else {
             self.logger.info("refresh token failed, isAuthenticated = false")
@@ -390,12 +399,12 @@ public class FronteggAuth: ObservableObject {
                 self.accessToken = nil
                 self.refreshToken = nil
                 self.credentialManager.clear()
-                self.refreshingToken=false
                 // isLoading must be at the last bottom
                 self.isLoading = false
             }
         }
         return false
+        
     }
     
     func handleHostedLoginCallback(_ code: String, _ codeVerifier: String, _ completion: @escaping FronteggAuth.CompletionHandler) {
