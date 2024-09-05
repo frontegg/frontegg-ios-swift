@@ -380,6 +380,8 @@ public class FronteggAuth: ObservableObject {
             self.refreshingToken=true
         }
         defer {
+            
+            // cleanup scope
             DispatchQueue.main.sync {
                 self.refreshingToken = false
             }
