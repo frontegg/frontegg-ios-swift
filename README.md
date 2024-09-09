@@ -1,7 +1,7 @@
 ![Frontegg_SwiftUI_SDK](https://github.com/frontegg/frontegg-ios-swift/raw/master/logo.png)
 
-Frontegg is a web platform where SaaS companies can set up their fully managed, scalable and brand aware - SaaS features
-and integrate them into their SaaS portals in up to 5 lines of code.
+Welcome to the @frontegg/ios Swift SDK! This SDK provides a seamless way to integrate Frontegg's authentication and user management capabilities into your iOS applications.
+
 
 ## Table of Contents
 
