@@ -116,8 +116,6 @@ public class Api {
                 "refresh_token": refreshToken,
             ])
             
-            let text = String(data: data, encoding: .utf8)!
-            print("result \(text)")
             return try JSONDecoder().decode(AuthResponse.self, from: data)
         } catch {
             print(error)

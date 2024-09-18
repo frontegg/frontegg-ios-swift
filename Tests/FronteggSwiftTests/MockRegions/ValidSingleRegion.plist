@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>embeddedMode</key>
+	<false/>
+	<key>keychainService</key>
+	<string>testService</string>
+	<key>applicationId</key>
+	<string>f87f8fea-8cb3-4a46-bab8-0169726a5704</string>
+	<key>baseUrl</key>
+	<string>https://test.com</string>
+	<key>clientId</key>
+	<string>d37ad699-e466-451a-a9d1-d590869dba1a</string>
+	<key>loginWithSocialLogin</key>
+	<false/>
+	<key>loginWithSSO</key>
+	<true/>
+	<key>lateInit</key>
+	<true/>
+	<key>logLevel</key>
+	<string>critical</string>
+</dict>
+</plist>

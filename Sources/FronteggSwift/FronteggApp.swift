@@ -28,27 +28,32 @@ public class FronteggApp {
     public var regionData: [RegionConfig] = []
     let credentialManager: CredentialManager
     let logger = getLogger("FronteggApp")
-    
-    
+
     init() {
-        
-        self.embeddedMode = PlistHelper.isEmbeddedMode()
-        let keychainService = PlistHelper.getKeychainService()
-        self.credentialManager = CredentialManager(serviceKey: keychainService)
-        self.bundleIdentifier = PlistHelper.bundleIdentifier()
-        
-        let bridgeOptions = PlistHelper.getNativeBridgeOptions()
-        self.handleLoginWithSocialLogin = bridgeOptions["loginWithSocialLogin"] ?? true
-        self.handleLoginWithSSO = bridgeOptions["loginWithSSO"] ?? false
-        
-        if FronteggApp.clearKeychain() {
-            self.credentialManager.clear()
+        let config: FronteggPlist
+        do {
+            config = try PlistHelper.fronteggConfig()
+        } catch {
+            fatalError(FronteggError.configError(.couldNotLoadPlist(error.localizedDescription)).localizedDescription)
         }
-        
+
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
+            fatalError(FronteggError.configError(.couldNotGetBundleID(Bundle.main.bundlePath)).localizedDescription)
+        }
+
+        self.embeddedMode = config.embeddedMode
+        self.credentialManager = CredentialManager(serviceKey: config.keychainService)
+        self.bundleIdentifier = bundleIdentifier
+        self.handleLoginWithSocialLogin = config.loginWithSocialLogin
+        self.handleLoginWithSSO = config.loginWithSSO
+
+        if FronteggApp.clearKeychain() {
+             self.credentialManager.clear()
+        }
         /**
          lateInit used for react-native and ionic-capacitor initialization
          */
-        if(PlistHelper.isLateInit()){
+        if config.lateInit {
             self.auth = FronteggAuth(
                 baseUrl: self.baseUrl,
                 clientId: self.clientId,
@@ -61,14 +66,12 @@ public class FronteggApp {
             )
             return
         }
-        
-        if let data = try? PlistHelper.fronteggRegionalConfig() {
+
+        switch config.payload {
+        case let .multiRegion(config):
             logger.info("Regional frontegg initialization")
-            self.bundleIdentifier = data.bundleIdentifier
-            self.regionData = data.regions
-            
-            
-            
+            self.regionData = config.regions
+
             self.auth = FronteggAuth(
                 baseUrl: self.baseUrl,
                 clientId: self.clientId,
@@ -78,13 +81,13 @@ public class FronteggApp {
                 regionData: self.regionData,
                 embeddedMode: self.embeddedMode
             )
-            
+
             if let config = self.auth.selectedRegion {
                 self.baseUrl = config.baseUrl
                 self.clientId = config.clientId
                 self.applicationId = config.applicationId
                 self.auth.reinitWithRegion(config: config)
-                
+
                 logger.info("Frontegg Initialized succcessfully (region: \(config.key))")
                 return;
             } else {
@@ -93,33 +96,26 @@ public class FronteggApp {
                 self.auth.isLoading = false
                 self.auth.showLoader = false
             }
-            
-            return;
+
+        case let .singleRegion(config):
+            logger.info("Standard frontegg initialization")
+
+            self.baseUrl = config.baseUrl
+            self.clientId = config.clientId
+            self.applicationId = config.applicationId
+
+            self.auth = FronteggAuth(
+                baseUrl: self.baseUrl,
+                clientId: self.clientId,
+                applicationId: self.applicationId,
+                credentialManager: self.credentialManager,
+                isRegional: false,
+                regionData: [],
+                embeddedMode: self.embeddedMode
+            )
+
+            logger.info("Frontegg Initialized succcessfully")
         }
-        
-        
-        logger.info("Standard frontegg initialization")
-        guard let data = try? PlistHelper.fronteggConfig() else {
-            exit(1)
-        }
-        
-        
-        self.baseUrl = data.baseUrl
-        self.clientId = data.clientId
-        self.applicationId = data.applicationId
-        
-        
-        self.auth = FronteggAuth(
-            baseUrl: self.baseUrl,
-            clientId: self.clientId,
-            applicationId: self.applicationId,
-            credentialManager: self.credentialManager,
-            isRegional: false,
-            regionData: [],
-            embeddedMode: self.embeddedMode
-        )
-        
-        logger.info("Frontegg Initialized succcessfully")
     }
  
     public func didFinishLaunchingWithOptions(){
@@ -142,9 +138,11 @@ public class FronteggApp {
         
         self.auth.manualInit(baseUrl: baseUrl, clientId: cliendId, applicationId: applicationId)
     }
-    public func manualInitRegions(regions: [RegionConfig],
-                                  handleLoginWithSocialLogin: Bool = true,
-                                  handleLoginWithSSO:Bool = false) {
+    public func manualInitRegions(
+        regions: [RegionConfig],
+        handleLoginWithSocialLogin: Bool = true,
+        handleLoginWithSSO:Bool = false
+    ) {
         self.regionData = regions
         self.handleLoginWithSocialLogin = handleLoginWithSocialLogin
         self.handleLoginWithSSO = handleLoginWithSSO
@@ -154,14 +152,11 @@ public class FronteggApp {
         self.applicationId = self.auth.applicationId
     }
 
-    public func initWithRegion( regionKey:String ){
+    public func initWithRegion(regionKey: String){
         
-        if ( self.regionData.count == 0 ){
-            logger.critical("illegal state. Frontegg.plist does not contains regions array")
-            exit(1)
+        if self.regionData.count == 0 {
+            fatalError(FronteggError.configError(.missingRegions).localizedDescription)
         }
-        
-        
         
         guard let config = self.regionData.first(where: { config in
             config.key == regionKey
@@ -169,8 +164,7 @@ public class FronteggApp {
             let keys: String = self.regionData.map { config in
                 config.key
             }.joined(separator: ", ")
-            logger.critical("invalid region key \(regionKey). available regions: \(keys)")
-            exit(1)
+            fatalError(FronteggError.configError(.invalidRegionKey(regionKey, keys)).localizedDescription)
         }
         
         CredentialManager.saveSelectedRegion(regionKey)
@@ -187,7 +181,7 @@ public class FronteggApp {
         if PlistHelper.keepUserAfterReinstall() {
             return false
         }
-        
+
         let userDefaults = UserDefaults.standard
         if !userDefaults.bool(forKey: "IsFronteggFirstApplicationRun") {
             userDefaults.set(true, forKey: "IsFronteggFirstApplicationRun")

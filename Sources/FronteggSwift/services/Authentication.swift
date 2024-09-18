@@ -11,7 +11,7 @@ import UIKit
 class WebAuthentication: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
     
     weak var window: UIWindow? = nil
-    var ephemeralSesion: Bool = false
+    var ephemeralSession: Bool = false
     
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
 
@@ -33,7 +33,7 @@ class WebAuthentication: NSObject, ObservableObject, ASWebAuthenticationPresenta
             completionHandler: completionHandler)
         // Run the session
         webAuthSession.presentationContextProvider = self
-        webAuthSession.prefersEphemeralWebBrowserSession = self.ephemeralSesion
+        webAuthSession.prefersEphemeralWebBrowserSession = self.ephemeralSession
         
 
         self.webAuthSession = webAuthSession

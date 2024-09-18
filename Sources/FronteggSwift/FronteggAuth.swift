@@ -31,6 +31,7 @@ public class FronteggAuth: ObservableObject {
     @Published public var appLink: Bool = false
     @Published public var externalLink: Bool = false
     @Published public var selectedRegion: RegionConfig? = nil
+    @Published public var refreshingToken: Bool = false
     
     public var embeddedMode: Bool
     public var isRegional: Bool
@@ -39,7 +40,7 @@ public class FronteggAuth: ObservableObject {
     public var clientId: String
     public var applicationId: String? = nil
     public var pendingAppLink: URL? = nil
-
+    
     
     public static var shared: FronteggAuth {
         return FronteggApp.shared.auth
@@ -49,6 +50,8 @@ public class FronteggAuth: ObservableObject {
     private let credentialManager: CredentialManager
     public var api: Api
     private var subscribers = Set<AnyCancellable>()
+    private var refreshTokenDispatch: DispatchWorkItem?
+    
     var webAuthentication: WebAuthentication = WebAuthentication()
     
     init (baseUrl:String,
@@ -71,6 +74,20 @@ public class FronteggAuth: ObservableObject {
         self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
         self.selectedRegion = self.getSelectedRegion()
         
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        
         if ( isRegional || isLateInit == true ) {
             initializing = false
             showLoader = false
@@ -80,6 +97,14 @@ public class FronteggAuth: ObservableObject {
         
         self.initializeSubscriptions()
     }
+    
+    
+    deinit {
+        // Remove the observer when the instance is deallocated
+        NotificationCenter.default.removeObserver(self, name: UIApplication.didBecomeActiveNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: UIApplication.didEnterBackgroundNotification, object: nil)
+    }
+    
     
     public func manualInit(baseUrl:String, clientId:String, applicationId: String?) {
         self.lateInit = false
@@ -107,7 +132,20 @@ public class FronteggAuth: ObservableObject {
         }
     }
     
-
+    
+    @objc private func applicationDidBecomeActive() {
+        logger.info("application become active")
+        
+        if(initializing){
+            return
+        }
+        refreshTokenWhenNeeded()
+    }
+    
+    @objc private func applicationDidEnterBackground(){
+        logger.info("application enter background")
+    }
+    
     public func reinitWithRegion(config:RegionConfig) {
         self.baseUrl = config.baseUrl
         self.clientId = config.clientId
@@ -143,7 +181,6 @@ public class FronteggAuth: ObservableObject {
             self.showLoader = initializingValue || (!isAuthenticatedValue && isLoadingValue)
         }.store(in: &subscribers)
         
-        
         if let refreshToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue),
            let accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
             
@@ -161,6 +198,7 @@ public class FronteggAuth: ObservableObject {
             self.initializing = false
         }
     }
+    
     
     public func setCredentials(accessToken: String, refreshToken: String) async {
         
@@ -184,12 +222,11 @@ public class FronteggAuth: ObservableObject {
                 // isLoading must be at the bottom
                 self.isLoading = false
                 
-                let offset = Double((decode["exp"] as! Int) - Int(Date().timeIntervalSince1970))  * 0.9
-                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + offset) {
-                    Task{
-                        await self.refreshTokenIfNeeded()
-                    }
-                }
+                
+                let offset = calculateOffset(expirationTime: decode["exp"] as! Int)
+                
+                scheduleTokenRefresh(offset: offset)
+                
             }
         } catch {
             logger.error("Failed to load user data, \(error)")
@@ -205,6 +242,93 @@ public class FronteggAuth: ObservableObject {
                 self.isLoading = false
             }
         }
+    }
+    
+    /// Calculates the optimal delay for refreshing the token based on the expiration time.
+    /// - Parameter expirationTime: The expiration time of the token in seconds since the Unix epoch.
+    /// - Returns: The calculated offset in seconds before the token should be refreshed. If the remaining time is less than 20 seconds, it returns 0 for immediate refresh.
+    func calculateOffset(expirationTime: Int) -> TimeInterval {
+        let now = Date().timeIntervalSince1970 * 1000 // Current time in milliseconds
+        let remainingTime = (Double(expirationTime) * 1000) - now
+        
+        let minRefreshWindow: Double = 20000 // Minimum 20 seconds before expiration, in milliseconds
+        let adaptiveRefreshTime = remainingTime * 0.8 // 80% of remaining time
+        
+        return remainingTime > minRefreshWindow ? adaptiveRefreshTime / 1000 : max((remainingTime - minRefreshWindow) / 1000, 0)
+    }
+    
+    func refreshTokenWhenNeeded() {
+        do {
+            logger.info("Checking if refresh token is available...")
+            
+            // Check if the refresh token is available
+            guard let _ = self.refreshToken else {
+                logger.debug("No refresh token available. Exiting...")
+                return
+            }
+            
+            logger.debug("Refresh token is available. Checking access token...")
+            
+            // Check if the access token is available
+            guard let accessToken = self.accessToken else {
+                logger.debug("No access token found. Attempting to refresh token...")
+                Task {
+                    await self.refreshTokenIfNeeded()
+                }
+                return
+            }
+            
+            logger.debug("Access token found. Attempting to decode JWT...")
+            
+            // Decode the access token to get the expiration time
+            let decode = try JWTHelper.decode(jwtToken: accessToken)
+            let expirationTime = decode["exp"] as! Int
+            logger.debug("JWT decoded successfully. Expiration time: \(expirationTime)")
+            
+            let offset = calculateOffset(expirationTime: expirationTime)
+            logger.debug("Calculated offset for token refresh: \(offset) seconds")
+            
+            // If offset is zero, refresh immediately
+            if offset == 0 {
+                logger.info("Offset is zero. Refreshing token immediately...")
+                Task {
+                    await self.refreshTokenIfNeeded()
+                }
+            } else {
+                logger.info("Scheduling token refresh after \(offset) seconds")
+                self.scheduleTokenRefresh(offset: offset)
+            }
+        } catch {
+            logger.error("Failed to decode JWT: \(error.localizedDescription)")
+            Task {
+                await self.refreshTokenIfNeeded()
+            }
+        }
+    }
+    
+    
+    
+    func scheduleTokenRefresh(offset: TimeInterval) {
+        cancelScheduledTokenRefresh()
+        logger.info("Schedule token refresh after, (\(offset) s)")
+        
+        var workItem: DispatchWorkItem? = nil
+        workItem = DispatchWorkItem {
+            if !(workItem!.isCancelled) {
+                Task {
+                    await self.refreshTokenIfNeeded()
+                }
+            }
+        }
+        refreshTokenDispatch = workItem
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + offset, execute: workItem!)
+        
+    }
+    
+    func cancelScheduledTokenRefresh() {
+        logger.info("Canceling previous refresh token task")
+        refreshTokenDispatch?.cancel()
+        refreshTokenDispatch = nil
     }
     
     public func logout(_ completion: @escaping (Result<Bool, FronteggError>) -> Void) {
@@ -240,26 +364,47 @@ public class FronteggAuth: ObservableObject {
     }
     
     public func refreshTokenIfNeeded() async -> Bool {
-        guard let refreshToken = self.refreshToken, let accessToken = self.accessToken else {
+        guard let refreshToken = self.refreshToken else {
+            self.logger.info("no refresh token found")
             return false
+        }
+        
+        self.logger.info("refreshing token")
+        let accessToken = self.accessToken ?? ""
+        
+        if(self.refreshingToken){
+            self.logger.info("Skip refreshing token - already in progress")
+            return false
+        }
+        DispatchQueue.main.sync {
+            self.refreshingToken=true
+        }
+        defer {
+            
+            // cleanup scope
+            DispatchQueue.main.sync {
+                self.refreshingToken = false
+            }
         }
         
         if let data = await self.api.refreshToken(accessToken: accessToken, refreshToken: refreshToken) {
             await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
+            self.logger.info("token refreshed successfully")
             return true
         } else {
+            self.logger.info("refresh token failed, isAuthenticated = false")
             DispatchQueue.main.sync {
                 self.initializing = false
                 self.isAuthenticated = false
                 self.accessToken = nil
                 self.refreshToken = nil
                 self.credentialManager.clear()
-                
                 // isLoading must be at the last bottom
                 self.isLoading = false
             }
         }
         return false
+        
     }
     
     func handleHostedLoginCallback(_ code: String, _ codeVerifier: String, _ completion: @escaping FronteggAuth.CompletionHandler) {
@@ -368,12 +513,12 @@ public class FronteggAuth: ObservableObject {
     }
     
     
-    public func loginWithPopup(window: UIWindow?, ephemeralSesion: Bool? = true, loginHint: String? = nil, loginAction: String? = nil, _completion: FronteggAuth.CompletionHandler? = nil) {
+    public func loginWithPopup(window: UIWindow?, ephemeralSession: Bool? = true, loginHint: String? = nil, loginAction: String? = nil, _completion: FronteggAuth.CompletionHandler? = nil) {
         
         self.webAuthentication.webAuthSession?.cancel()
         self.webAuthentication = WebAuthentication()
         self.webAuthentication.window = window;
-        self.webAuthentication.ephemeralSesion = ephemeralSesion ?? true
+        self.webAuthentication.ephemeralSession = ephemeralSession ?? true
         
         let completion = _completion ?? { res in
             
@@ -385,12 +530,12 @@ public class FronteggAuth: ObservableObject {
         self.webAuthentication.start(authorizeUrl, completionHandler: oauthCallback)
     }
     
-    public func directLoginAction(window: UIWindow?, type: String, data: String, ephemeralSesion: Bool? = true, _completion: FronteggAuth.CompletionHandler? = nil) {
+    public func directLoginAction(window: UIWindow?, type: String, data: String, ephemeralSession: Bool? = true, _completion: FronteggAuth.CompletionHandler? = nil) {
         
         self.webAuthentication.webAuthSession?.cancel()
         self.webAuthentication = WebAuthentication()
         self.webAuthentication.window = window ?? getRootVC()?.view.window;
-        self.webAuthentication.ephemeralSesion = ephemeralSesion ?? true
+        self.webAuthentication.ephemeralSession = ephemeralSession ?? true
         
         let completion = _completion ?? { res in
             
@@ -460,7 +605,7 @@ public class FronteggAuth: ObservableObject {
         let oauthCallback = createOauthCallbackHandler(completion)
         self.webAuthentication.webAuthSession?.cancel()
         self.webAuthentication = WebAuthentication()
-        self.webAuthentication.ephemeralSesion = true
+        self.webAuthentication.ephemeralSession = true
         self.webAuthentication.window = getRootVC()?.view.window
         
         let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: email, remainCodeVerifier: true)
