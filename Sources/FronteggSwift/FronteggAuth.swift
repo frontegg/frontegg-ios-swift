@@ -364,6 +364,14 @@ public class FronteggAuth: ObservableObject {
     }
     
     public func refreshTokenIfNeeded() async -> Bool {
+        
+        guard await NetworkStatusMonitor.isActive else {
+            self.logger.info("Refresh rescheduled due to inactive internet")
+
+            scheduleTokenRefresh(offset: 10)
+            return false
+        }
+
         guard let refreshToken = self.refreshToken else {
             self.logger.info("no refresh token found")
             return false
