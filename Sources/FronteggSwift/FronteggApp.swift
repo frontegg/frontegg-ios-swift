@@ -46,9 +46,9 @@ public class FronteggApp {
         self.bundleIdentifier = bundleIdentifier
         self.handleLoginWithSocialLogin = config.loginWithSocialLogin
         self.handleLoginWithSSO = config.loginWithSSO
-
-        if FronteggApp.clearKeychain() {
-             self.credentialManager.clear()
+        
+        if FronteggApp.clearKeychain(config: config) {
+            self.credentialManager.clear()
         }
         /**
          lateInit used for react-native and ionic-capacitor initialization
@@ -177,11 +177,11 @@ public class FronteggApp {
         logger.info("Frontegg Initialized succcessfully (region: \(regionKey))")
     }
     
-    private static func clearKeychain() -> Bool {
-        if PlistHelper.keepUserAfterReinstall() {
+    private static func clearKeychain(config: FronteggPlist) -> Bool {
+        if config.keepUserAfterReinstall {
             return false
         }
-
+        
         let userDefaults = UserDefaults.standard
         if !userDefaults.bool(forKey: "IsFronteggFirstApplicationRun") {
             userDefaults.set(true, forKey: "IsFronteggFirstApplicationRun")

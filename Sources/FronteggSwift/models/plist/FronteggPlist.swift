@@ -19,6 +19,7 @@ struct FronteggPlist: Decodable, Equatable {
     let lateInit: Bool
     let logLevel: LogLevel
     let payload: Payload
+    let keepUserAfterReinstall: Bool
 
     enum CodingKeys: CodingKey {
         case keychainService
@@ -27,6 +28,7 @@ struct FronteggPlist: Decodable, Equatable {
         case loginWithSSO
         case lateInit
         case logLevel
+        case keepUserAfterReinstall
     }
 
     init(
@@ -36,7 +38,8 @@ struct FronteggPlist: Decodable, Equatable {
         loginWithSSO: Bool = false,
         lateInit: Bool = false,
         logLevel: LogLevel = .warn,
-        payload: Payload
+        payload: Payload,
+        keepUserAfterReinstall: Bool
     ) {
         self.keychainService = keychainService
         self.embeddedMode = embeddedMode
@@ -45,6 +48,7 @@ struct FronteggPlist: Decodable, Equatable {
         self.lateInit = lateInit
         self.logLevel = logLevel
         self.payload = payload
+        self.keepUserAfterReinstall = keepUserAfterReinstall
     }
 
     init(from decoder: any Decoder) throws {
@@ -67,6 +71,9 @@ struct FronteggPlist: Decodable, Equatable {
 
         let logLevel = try container.decodeIfPresent(LogLevel.self, forKey: .logLevel)
         self.logLevel = logLevel ?? .warn
+        
+        let keepUserAfterReinstall = try container.decodeIfPresent(Bool.self, forKey: .keepUserAfterReinstall)
+        self.keepUserAfterReinstall = keepUserAfterReinstall ?? true
         
         do {
             self.payload = try Payload(from: decoder)
