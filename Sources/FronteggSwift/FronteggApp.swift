@@ -41,6 +41,10 @@ public class FronteggApp {
         self.handleLoginWithSocialLogin = bridgeOptions["loginWithSocialLogin"] ?? true
         self.handleLoginWithSSO = bridgeOptions["loginWithSSO"] ?? false
         
+        if FronteggApp.clearKeychain() {
+            self.credentialManager.clear()
+        }
+        
         /**
          lateInit used for react-native and ionic-capacitor initialization
          */
@@ -179,4 +183,16 @@ public class FronteggApp {
         logger.info("Frontegg Initialized succcessfully (region: \(regionKey))")
     }
     
+    private static func clearKeychain() -> Bool {
+        if PlistHelper.keepUserAfterReinstall() {
+            return false
+        }
+        
+        let userDefaults = UserDefaults.standard
+        if !userDefaults.bool(forKey: "IsFronteggFirstApplicationRun") {
+            userDefaults.set(true, forKey: "IsFronteggFirstApplicationRun")
+            return true
+        }
+        return false
+    }
 }

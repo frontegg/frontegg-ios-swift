@@ -153,7 +153,16 @@ struct PlistHelper {
         return false
     }
     
-    
+    public static func keepUserAfterReinstall() -> Bool {
+        let bundle = Bundle.main;
+        if let path = bundle.path(forResource: "Frontegg", ofType: "plist"),
+           let values = NSDictionary(contentsOfFile: path) as? [String: Any],
+           let value =  values["keepUserAfterReinstall"] as? Bool {
+            return value
+        }
+        return true
+    }
+
     public static func getKeychainService() -> String {
         let bundle = Bundle.main;
         if let path = bundle.path(forResource: "Frontegg", ofType: "plist"),
