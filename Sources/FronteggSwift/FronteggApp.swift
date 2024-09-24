@@ -178,7 +178,7 @@ public class FronteggApp {
     }
     
     private static func clearKeychain(config: FronteggPlist) -> Bool {
-        if config.keepUserAfterReinstall {
+        if config.keepUserLoggedInAfterReinstall {
             return false
         }
         
