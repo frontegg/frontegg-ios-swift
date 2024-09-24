@@ -40,11 +40,11 @@ struct PlistHelper {
 
         return try decode(FronteggPlist.self, from: data, at: url.path)
     }
-    
+
     /// Gets the required log level from cache if it exists, or attempts to read it from the Frontegg configuration plist if it wasn't previously loaded
     /// - Returns: the required logger level (``Logger/Level``)
     static func getLogLevel() -> Logger.Level {
-        
+
         if let logLevel = PlistHelper.logLevelCache {
             return logLevel
         }
@@ -56,11 +56,11 @@ struct PlistHelper {
             return .warning
         }
     }
-    
+
 }
 
 extension PlistHelper {
-    
+
     /// Decodes a plist model using a PropertyListDecoder, and maps the errors to the internal ``FronteggError`` before logging and rethrowing them. Any unmapped errors will be logged and thrown
     /// - Parameters:
     ///   - type: The type to decode
@@ -84,7 +84,7 @@ extension PlistHelper {
 
 // MARK: - Error mapping
 extension PlistHelper {
-    
+
     /// Maps a DecodingError to the internal ``FronteggError``
     /// - Parameters:
     ///   - error: the decoding error to attempt to map

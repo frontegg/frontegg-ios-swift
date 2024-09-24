@@ -442,6 +442,22 @@ struct SelectRegionView: View {
 }
 ```
 
+## Logout User after application was uninstall
+
+If you want that user not to keep logged in after reinstalling an application please add the `keepUserLoggedInAfterReinstall` property to the `Frontegg.plist` file:
+
+```xml
+<plist version="1.0">
+  <dict>
+    <key>keepUserLoggedInAfterReinstall</key>
+    <false/>
+    ...
+  </dict>
+</plist>
+```
+
+By default `keepUserLoggedInAfterReinstall` is `true`.
+
 ## Login with ASWebAuthenticationSession
 
 Starting from version 1.2.9, the Frontegg SDK has introduced support for ASWebAuthenticationSession, enhancing the login
