@@ -40,7 +40,8 @@ public class FronteggAuth: ObservableObject {
     public var clientId: String
     public var applicationId: String? = nil
     public var pendingAppLink: URL? = nil
-    
+    public var loginHint: String? = nil
+
     
     public static var shared: FronteggAuth {
         return FronteggApp.shared.auth
@@ -498,10 +499,10 @@ public class FronteggAuth: ObservableObject {
     }
     public typealias CompletionHandler = (Result<User, FronteggError>) -> Void
     
-    public func login(_ _completion: FronteggAuth.CompletionHandler? = nil) {
+    public func login(_ _completion: FronteggAuth.CompletionHandler? = nil, loginHint: String? = nil) {
         
         if(self.embeddedMode){
-            self.embeddedLogin(_completion)
+            self.embeddedLogin(_completion, loginHint: loginHint)
             return
         }
         
@@ -512,7 +513,7 @@ public class FronteggAuth: ObservableObject {
         self.webAuthentication = WebAuthentication()
         
         let oauthCallback = createOauthCallbackHandler(completion)
-        let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate()
+        let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: loginHint)
         CredentialManager.saveCodeVerifier(codeVerifier)
         
         
@@ -650,9 +651,10 @@ public class FronteggAuth: ObservableObject {
         self.webAuthentication.start(authorizeUrl, completionHandler: oauthCallback)
     }
     
-    public func embeddedLogin(_ _completion: FronteggAuth.CompletionHandler? = nil) {
+    public func embeddedLogin(_ _completion: FronteggAuth.CompletionHandler? = nil, loginHint: String?) {
         
         if let rootVC = self.getRootVC() {
+            self.loginHint = loginHint
             let loginModal = EmbeddedLoginModal(parentVC: rootVC)
             let hostingController = UIHostingController(rootView: loginModal)
             hostingController.modalPresentationStyle = .fullScreen
