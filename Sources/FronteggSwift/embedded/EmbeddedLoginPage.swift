@@ -11,8 +11,11 @@ import UIKit
 
 public struct EmbeddedLoginPage: View {
     @EnvironmentObject var fronteggAuth: FronteggAuth
+    private let loginHint: String?
     
-    public init() {}
+    public init(loginHint: String? = nil) {
+        self.loginHint = loginHint
+    }
     
     
     public var body: some View {
@@ -20,7 +23,7 @@ public struct EmbeddedLoginPage: View {
             NavigationView{
                 VStack(alignment: .center) {
                     ZStack{
-                        FronteggWebView()
+                        FronteggWebView(loginHint: loginHint)
                         if fronteggAuth.webLoading {
                            DefaultLoader()
                        }

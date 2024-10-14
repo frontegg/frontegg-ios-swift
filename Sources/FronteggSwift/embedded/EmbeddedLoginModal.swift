@@ -17,9 +17,11 @@ class VCHolder :ObservableObject  {
 
 public struct EmbeddedLoginModal: View {
     @StateObject var fronteggAuth = FronteggApp.shared.auth
+    private let loginHint: String?
     
-    public init(parentVC: UIViewController? = nil) {
+    public init(parentVC: UIViewController? = nil, loginHint:String? = nil) {
         VCHolder.shared.vc = parentVC
+        self.loginHint = loginHint
     }
     
     
@@ -38,7 +40,7 @@ public struct EmbeddedLoginModal: View {
                     VCHolder.shared.vc = nil
                 }
             } else {
-                EmbeddedLoginPage()
+                EmbeddedLoginPage(loginHint: loginHint)
             }
             
         }

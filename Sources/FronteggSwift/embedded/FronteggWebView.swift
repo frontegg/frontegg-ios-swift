@@ -14,10 +14,11 @@ import AuthenticationServices
 public struct FronteggWebView: UIViewRepresentable {
     public typealias UIViewType = WKWebView
     private var fronteggAuth: FronteggAuth
+    private let loginHint: String?
 
-    public init() {
+    public init(loginHint: String? = nil) {
+        self.loginHint = loginHint
         self.fronteggAuth = FronteggApp.shared.auth;
-        
     }
 
     public func makeUIView(context: Context) -> WKWebView {
@@ -59,7 +60,7 @@ public struct FronteggWebView: UIViewRepresentable {
             codeVerifier = CredentialManager.getCodeVerifier()!
             fronteggAuth.pendingAppLink = nil
         } else {
-           (url, codeVerifier) = AuthorizeUrlGenerator().generate()
+            (url, codeVerifier) = AuthorizeUrlGenerator().generate(loginHint: loginHint)
             CredentialManager.saveCodeVerifier(codeVerifier)
         }
 
