@@ -40,7 +40,8 @@ public class FronteggAuth: ObservableObject {
     public var clientId: String
     public var applicationId: String? = nil
     public var pendingAppLink: URL? = nil
-    
+    public var loginHint: String? = nil
+
     
     public static var shared: FronteggAuth {
         return FronteggApp.shared.auth
@@ -653,7 +654,8 @@ public class FronteggAuth: ObservableObject {
     public func embeddedLogin(_ _completion: FronteggAuth.CompletionHandler? = nil, loginHint: String?) {
         
         if let rootVC = self.getRootVC() {
-            let loginModal = EmbeddedLoginModal(parentVC: rootVC, loginHint: loginHint)
+            self.loginHint = loginHint
+            let loginModal = EmbeddedLoginModal(parentVC: rootVC)
             let hostingController = UIHostingController(rootView: loginModal)
             hostingController.modalPresentationStyle = .fullScreen
             
