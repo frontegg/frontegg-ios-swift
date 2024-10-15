@@ -13,3 +13,4 @@ demo/build
 test.xcresult
 TestResults.xcresult
 TestResults
+demo-embedded/build
