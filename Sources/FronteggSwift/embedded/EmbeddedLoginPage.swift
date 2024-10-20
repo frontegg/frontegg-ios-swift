@@ -12,7 +12,9 @@ import UIKit
 public struct EmbeddedLoginPage: View {
     @EnvironmentObject var fronteggAuth: FronteggAuth
     
-    public init() {}
+    public init() {
+        
+    }
     
     
     public var body: some View {

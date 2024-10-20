@@ -83,6 +83,12 @@ public class AuthorizeUrlGenerator {
         
         
         authorizeUrl.queryItems = queryParams
+
+        // https://stackoverflow.com/a/37314144
+        if (loginHint?.contains("+") ?? false){
+            logger.error(authorizeUrl.percentEncodedQuery!)
+            authorizeUrl.percentEncodedQuery=authorizeUrl.percentEncodedQuery?.replacingOccurrences(of:"+",with: "%2B")
+        }
         
         if let url = authorizeUrl.url{
             logger.trace("Generated url: \(url.absoluteString)")
