@@ -737,6 +737,16 @@ public class FronteggAuth: ObservableObject {
         
     }
     
+    public func loginWithPasskeys (){
+        
+        if #available(iOS 15.0, *) {
+            Task {
+                await PasskeysAuthenticator.shared.loginWithPasskeys()
+            }
+        } else {
+            // Fallback on earlier versions
+        }
+    }
     public func registerPasskeys() {
         
         if #available(iOS 15.0, *) {

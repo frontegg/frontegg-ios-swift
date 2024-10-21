@@ -34,12 +34,18 @@ struct MyApp: View {
                             fronteggAuth.login()
                         } label: {
                             Text("Login")
-                        }.padding(.vertical, 20)
+                        }.padding(.vertical, 30)
                         
                         Button {
                             fronteggAuth.directLoginAction(window: nil, type: "custom-social-login", data: "e9a221f3-3d2a-413d-8183-dc9904fc70af", ephemeralSession: false)
                         } label: {
                             Text("Login with popup")
+                        }.padding(.vertical, 30)
+                        
+                        Button {
+                            fronteggAuth.loginWithPasskeys()
+                        }  label: {
+                            Text("Login with passkeys")
                         }
                     }
                     

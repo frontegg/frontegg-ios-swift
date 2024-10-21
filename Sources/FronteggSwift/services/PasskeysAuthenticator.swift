@@ -61,9 +61,10 @@ struct CreatePasskeysRequest: Codable {
 class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
 
     public static let shared = PasskeysAuthenticator()
-    
+
     
     private var callbackAction: ((_ data:[String: Any]?, _ error: Error?)-> Void)? = nil
+    private var logger = getLogger("PasskeysAuthenticator")
     func startWebAuthn() {
         
         let baseUrl = FronteggAuth.shared.baseUrl
@@ -106,7 +107,6 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
               let challengeData = base64UrlDecode(challenge) else {
             
             throw FronteggError.authError(.invalidPasskeysRequest)
-            return
         }
         
         let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: rpId)
@@ -129,30 +129,31 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
             let attestationObject = credential.rawAttestationObject
             let clientDataJSON = credential.rawClientDataJSON
             let credentialID = credential.credentialID
-
+            let publicKey = [
+                "id": base64UrlEncode(credentialID),
+                "response": [
+                    "clientDataJSON": base64UrlEncode(clientDataJSON),
+                    "attestationObject": base64UrlEncode(attestationObject)
+                ],
+                "authenticatorAttachment": "platform"
+            ] as [String : Any]
+            
             if let callback = self.callbackAction {
-                let publicKey = [
-                    "id": base64UrlEncode(credentialID),
-                    "response": [
-                        "clientDataJSON": base64UrlEncode(clientDataJSON),
-                        "attestationObject": base64UrlEncode(attestationObject)
-                    ],
-                    "authenticatorAttachment": "platform"
-                ] as [String : Any]
+                
                 
                 callback(publicKey, nil)
                 
             } else {
-                // Send the publicKey and result to verify on the backend
-                let publicKey = [
-                    "id": credentialID.base64EncodedString(),
-                    "response": [
-                        "clientDataJSON": clientDataJSON.base64EncodedString(),
-                        "attestationObject": attestationObject?.base64EncodedString()
-                    ],
-                    "authenticatorAttachment": "platform"
-                ] as [String : Any]
-                
+//                // Send the publicKey and result to verify on the backend
+//                let publicKey = [
+//                    "id": credentialID.base64EncodedString(),
+//                    "response": [
+//                        "clientDataJSON": clientDataJSON.base64EncodedString(),
+//                        "attestationObject": attestationObject?.base64EncodedString()
+//                    ],
+//                    "authenticatorAttachment": "platform"
+//                ] as [String : Any]
+//                
                 verifyNewDeviceSession(publicKey: publicKey)
             }
         }
@@ -164,28 +165,72 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
             let credentialID = credential.credentialID
             let userHandle = credential.userID
 
+            let publicKey = [
+                "id": base64UrlEncode(credentialID),
+                "rawId": base64UrlEncode(credentialID),
+                "response": [
+                    "clientDataJSON": base64UrlEncode(clientDataJSON),
+                    "authenticatorData": base64UrlEncode(authenticatorData),
+                    "signature": base64UrlEncode(signature),
+                    "userHandle": base64UrlEncode(userHandle)
+                ],
+                "authenticatorAttachment": "platform",
+                "type": "public-key"
+            ] as [String : Any]
+            
             if let callback = self.callbackAction {
                 // Send the publicKey and result to verify on the backend
-                let publicKey = [
-                    "id": base64UrlEncode(credentialID),
-                    "rawId": base64UrlEncode(credentialID),
-                    "response": [
-                        "clientDataJSON": base64UrlEncode(clientDataJSON),
-                        "authenticatorData": base64UrlEncode(authenticatorData),
-                        "signature": base64UrlEncode(signature),
-                        "userHandle": base64UrlEncode(userHandle)
-                    ],
-                    "authenticatorAttachment": "platform",
-                    "type": "public-key"
-                ] as [String : Any]
-            
                 callback(publicKey, nil)
-            }else {
-                // direct call baseUrl login
+            } else {
+                
+                //verifyPassekeysSession(publicKey: publicKey)
             }
         }
         
         self.callbackAction = nil
+    }
+    
+    func loginWithPasskeys() async {
+        _ = FronteggAuth.shared.baseUrl
+        // 1. Create New Device Session (request options)
+        
+        do {
+            let (preloginResponse, _) = try await FronteggAuth.shared.api.postRequest(path: "frontegg/identity/resources/auth/v1/webauthn/prelogin", body: [:])
+            
+            guard
+                let preloginChallenge = try JSONSerialization.jsonObject(with: preloginResponse, options: [])  as? [String: Any],
+                let options = preloginChallenge["options"] as? [String: Any],
+                  let challenge = options["challenge"] as? String,
+                  let rpId = options["rpId"] as? String,
+                  let challengeData = base64UrlDecode(challenge) else {
+                throw FronteggError.authError(.invalidPasskeysRequest)
+            }
+            
+            
+            self.callbackAction = { (data, error) in
+                if let challengeResponse = data {
+                
+                    Task {
+                        
+                        let (postloginResponse, response) = try await FronteggAuth.shared.api.postRequest(path: "frontegg/identity/resources/auth/v1/webauthn/postlogin", body: challengeResponse)
+                        if let res = response as? HTTPURLResponse, res.statusCode != 401 {
+                            
+                            if let postLoginData = try JSONSerialization.jsonObject(with: postloginResponse, options: [])  as? [String: Any],
+                                let accesstoken = postLoginData["accessToken"] as? String,
+                                let refreshToken = FronteggAuth.shared.api.getRefreshTokenFromHeaders(response:res) {
+                                
+                                await FronteggApp.shared.auth.setCredentials(accessToken:accesstoken , refreshToken: refreshToken)
+                            }
+                        }
+                    }
+                }
+                
+            }
+            getCredentialAssertionRequest(challengeData, rpId: rpId)
+            
+        }catch {
+            
+        }
     }
     
     // Delegate method for failed WebAuthn session
@@ -201,7 +246,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
     // 2. Verify New Device Session
     func verifyNewDeviceSession(publicKey: [String: Any]) {
         let baseUrl = FronteggAuth.shared.baseUrl
-        guard let url = URL(string: "\(baseUrl)/identity/resources/users/webauthn/v1/devices/verify") else { return }
+        guard let url = URL(string: "\(baseUrl)/frontegg/identity/resources/users/webauthn/v1/devices/verify") else { return }
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"

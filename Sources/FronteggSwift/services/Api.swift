@@ -178,5 +178,26 @@ public class Api {
         }
     }
     
+    internal func getRefreshTokenFromHeaders(response: HTTPURLResponse) -> String? {
+        let setCookieHeader = response.value(forHTTPHeaderField: "Set-Cookie") ?? ""
+        let cookieName = "fe_refresh"
+
+        // Regular expression to find the fe_refresh cookie value
+        let pattern = "\(cookieName)_\\S+=([^;]+)"
+        if let regex = try? NSRegularExpression(pattern: pattern, options: []),
+           let match = regex.firstMatch(in: setCookieHeader, options: [], range: NSRange(setCookieHeader.startIndex..., in: setCookieHeader)) {
+            
+            if let range = Range(match.range(at: 1), in: setCookieHeader) {
+                let feRefreshValue = String(setCookieHeader[range])
+                self.logger.info("fe_refresh cookie found!")
+                return feRefreshValue
+            } else {
+                self.logger.info("fe_refresh cookie not found")
+            }
+        } else {
+            self.logger.error("Invalid regex or no match found")
+        }
+        return nil
+    }
     
 }
