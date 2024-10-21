@@ -737,6 +737,15 @@ public class FronteggAuth: ObservableObject {
         
     }
     
+    public func registerPasskeys() {
+        
+        if #available(iOS 15.0, *) {
+            PasskeysAuthenticator.shared.startWebAuthn()
+        } else {
+            // Fallback on earlier versions
+        }
+    }
+    
 }
 
 

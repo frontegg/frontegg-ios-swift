@@ -23,7 +23,7 @@ struct ProfileTab: View {
                 
                 Button("register-passkeys") {
                     
-//                    fronteggAuth.registerPasskeys()
+                    fronteggAuth.registerPasskeys()
 //                    
 //                    
                 }

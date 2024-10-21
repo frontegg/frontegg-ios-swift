@@ -18,6 +18,7 @@ extension FronteggError {
         case failedToSwitchTenant
         case codeVerifierNotFound
         case couldNotFindRootViewController
+        case invalidPasskeysRequest
         case unknown
         case other(Error)
     }
@@ -35,6 +36,7 @@ extension FronteggError.Authentication {
         case .failedToSwitchTenant: "Failed to switch tenant"
         case .codeVerifierNotFound: "Code verifier not found"
         case .couldNotFindRootViewController: "Unable to find root viewController"
+        case .invalidPasskeysRequest: "Invalid passkeys request"
         case .unknown: "Unknown error occurred"
         case let .other(error): error.localizedDescription
         }

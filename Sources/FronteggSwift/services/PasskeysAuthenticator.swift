@@ -8,15 +8,65 @@
 import Foundation
 import AuthenticationServices
 
+
+
+struct GetPasskeysRequest: Codable {
+    
+    struct PublicKeyCredential: Codable {
+        var timeout: Int
+        var rpId: String
+        var userVerification: String
+        var challenge: String
+    }
+    var publicKey: PublicKeyCredential
+}
+
+struct CreatePasskeysRequest: Codable {
+    struct PublicKeyCredential: Codable {
+        struct Rp: Codable {
+            let name: String
+            let id: String
+        }
+
+        struct User: Codable {
+            let id: [String: String] // Assuming it's a dictionary, as it appears empty in the provided JSON.
+            let name: String
+            let displayName: String
+        }
+
+        struct PubKeyCredParam: Codable {
+            let type: String
+            let alg: Int
+        }
+
+        struct AuthenticatorSelection: Codable {
+            let userVerification: String
+        }
+
+        let rp: Rp
+        let user: User
+        let challenge: String
+        let pubKeyCredParams: [PubKeyCredParam]
+        let timeout: Int
+        let attestation: String
+        let authenticatorSelection: AuthenticatorSelection
+        let excludeCredentials: [String] // Assuming it's an empty array for now
+    }
+    
+    var publicKey: PublicKeyCredential
+}
+
 // Coordinator to handle ASAuthorizationController delegation
 @available(iOS 15.0, *)
 class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
 
     public static let shared = PasskeysAuthenticator()
-    let baseUrl:String = "https://autheu.davidantoon.me"
     
+    
+    private var callbackAction: ((_ data:[String: Any]?, _ error: Error?)-> Void)? = nil
     func startWebAuthn() {
         
+        let baseUrl = FronteggAuth.shared.baseUrl
         // 1. Create New Device Session (request options)
         guard let url = URL(string: "\(baseUrl)/frontegg/identity/resources/users/webauthn/v1/devices") else { return }
         
@@ -24,7 +74,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(FronteggAuth.shared.accessToken ?? "")", forHTTPHeaderField: "authorization")
-        request.setValue("https://autheu.davidantoon.me", forHTTPHeaderField: "origin")
+        request.setValue(baseUrl, forHTTPHeaderField: "origin")
         
         // You may need to add body data here for user identification
         
@@ -38,7 +88,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
             if let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
                let options = json["options"] as? [String: Any] {
                 // Proceed with WebAuthn registration using the options from the server
-                self.createCredentialRegistrationRequest(with: options)
+                try? self.createCredentialRegistrationRequest(with: options)
             }
         }
         
@@ -46,18 +96,23 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
     }
 
     // This function handles the WebAuthn creation request
-    func createCredentialRegistrationRequest(with options: [String: Any]) {
+    func createCredentialRegistrationRequest(with options: [String: Any]) throws -> Void {
         guard let challenge = options["challenge"] as? String,
-              let userId = options["user"] as? [String: Any],
-              let userIdData = base64UrlDecode(userId["id"] as! String),
+              let user = options["user"] as? [String: Any],
+              let rp = options["rp"] as? [String: String],
+              let rpId = rp["id"],
+              let name = user["name"] as? String,
+              let userIdData = base64UrlDecode(user["id"] as! String),
               let challengeData = base64UrlDecode(challenge) else {
+            
+            throw FronteggError.authError(.invalidPasskeysRequest)
             return
         }
         
-        let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: "davidantoon.me")
+        let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: rpId)
         let registrationRequest = provider.createCredentialRegistrationRequest(
             challenge: challengeData,
-            name: "Passkey \(FronteggAuth.shared.user?.email ?? "")",
+            name: name,
             userID: userIdData
         )
         
@@ -75,18 +130,62 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
             let clientDataJSON = credential.rawClientDataJSON
             let credentialID = credential.credentialID
 
-            // Send the publicKey and result to verify on the backend
-            let publicKey = [
-                "id": credentialID.base64EncodedString(),
-                "response": [
-                    "clientDataJSON": clientDataJSON.base64EncodedString(),
-                    "attestationObject": attestationObject?.base64EncodedString()
-                ],
-                "authenticatorAttachment": "platform"
-            ] as [String : Any]
-            
-            verifyNewDeviceSession(publicKey: publicKey)
+            if let callback = self.callbackAction {
+                let publicKey = [
+                    "id": base64UrlEncode(credentialID),
+                    "response": [
+                        "clientDataJSON": base64UrlEncode(clientDataJSON),
+                        "attestationObject": base64UrlEncode(attestationObject)
+                    ],
+                    "authenticatorAttachment": "platform"
+                ] as [String : Any]
+                
+                callback(publicKey, nil)
+                
+            } else {
+                // Send the publicKey and result to verify on the backend
+                let publicKey = [
+                    "id": credentialID.base64EncodedString(),
+                    "response": [
+                        "clientDataJSON": clientDataJSON.base64EncodedString(),
+                        "attestationObject": attestationObject?.base64EncodedString()
+                    ],
+                    "authenticatorAttachment": "platform"
+                ] as [String : Any]
+                
+                verifyNewDeviceSession(publicKey: publicKey)
+            }
         }
+        
+        if let credential = authorization.credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion {
+            let clientDataJSON = credential.rawClientDataJSON
+            let authenticatorData = credential.rawAuthenticatorData
+            let signature = credential.signature
+            let credentialID = credential.credentialID
+            let userHandle = credential.userID
+
+            if let callback = self.callbackAction {
+                // Send the publicKey and result to verify on the backend
+                let publicKey = [
+                    "id": base64UrlEncode(credentialID),
+                    "rawId": base64UrlEncode(credentialID),
+                    "response": [
+                        "clientDataJSON": base64UrlEncode(clientDataJSON),
+                        "authenticatorData": base64UrlEncode(authenticatorData),
+                        "signature": base64UrlEncode(signature),
+                        "userHandle": base64UrlEncode(userHandle)
+                    ],
+                    "authenticatorAttachment": "platform",
+                    "type": "public-key"
+                ] as [String : Any]
+            
+                callback(publicKey, nil)
+            }else {
+                // direct call baseUrl login
+            }
+        }
+        
+        self.callbackAction = nil
     }
     
     // Delegate method for failed WebAuthn session
@@ -101,13 +200,14 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
 
     // 2. Verify New Device Session
     func verifyNewDeviceSession(publicKey: [String: Any]) {
+        let baseUrl = FronteggAuth.shared.baseUrl
         guard let url = URL(string: "\(baseUrl)/identity/resources/users/webauthn/v1/devices/verify") else { return }
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(FronteggAuth.shared.accessToken ?? "")", forHTTPHeaderField: "authorization")
-        request.setValue("https://autheu.davidantoon.me", forHTTPHeaderField: "origin")
+        request.setValue(baseUrl, forHTTPHeaderField: "origin")
         
         let deviceType = publicKey["authenticatorAttachment"] as? String == "platform" ? "Platform" : "CrossPlatform"
         var requestBody = publicKey
@@ -141,6 +241,19 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
         }
     }
     
+    
+    // Function to handle retrieving passkey (get)
+    func getCredentialAssertionRequest(_ challengeData:Data, rpId:String) {
+        
+        let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier:rpId)
+        let assertionRequest = provider.createCredentialAssertionRequest(challenge: challengeData)
+        
+        let authController = ASAuthorizationController(authorizationRequests: [assertionRequest])
+        authController.delegate = self
+        authController.presentationContextProvider = self
+        authController.performRequests()
+    }
+    
     // Helper method for Base64 URL decoding
     func base64UrlDecode(_ input: String) -> Data? {
         var base64 = input.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
@@ -151,4 +264,180 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
         }
         return Data(base64Encoded: base64)
     }
+    
+    // Helper method for Base64 URL encoding
+    func base64UrlEncode(_ inputData: Data?) -> String {
+        guard let input = inputData else {
+            return ""
+        }
+        var base64 = input.base64EncodedString()
+        
+        // Replace characters to make it URL-safe
+        base64 = base64
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "="))
+        
+        return base64
+    }
+    
+    
+    func handleHostedLoginRequest(_ message: HostedLoginMessage, callback:@escaping (_ data:[String: Any]?, _ error: Error?) -> Void) throws {
+        
+        guard let jsonData = message.payload.data(using: .utf8) else {
+            throw FronteggError.authError(.invalidPasskeysRequest)
+        }
+
+        if(message.action == "getPasskey") {
+            
+            let request = try JSONDecoder().decode(GetPasskeysRequest.self, from: jsonData)
+            
+            guard let challengeData = base64UrlDecode(request.publicKey.challenge) else {
+                throw FronteggError.authError(.invalidPasskeysRequest)
+            }
+            self.callbackAction = callback
+            getCredentialAssertionRequest(challengeData, rpId: request.publicKey.rpId)
+        }
+        if (message.action == "createPasskey") {
+            let jsonObject = try JSONSerialization.jsonObject(with: jsonData, options: [])
+            guard let dictionary = jsonObject as? [String: Any],
+                  let publicKey = dictionary["publicKey"] as? [String: Any] else {
+                throw FronteggError.authError(.invalidPasskeysRequest)
+            }
+        
+            self.callbackAction = callback
+            try createCredentialRegistrationRequest(with: publicKey)
+        }
+    }
+    
+    
+    
+    
+public static let ios15PasskeysHook = """
+
+window.navigator.credentials = {
+  helpers: {
+    listeners: new Map(),
+    chars: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_',
+    base64urlEncode: (arraybuffer) => {
+      const chars = window.navigator.credentials.helpers.chars;
+      const bytes = new Uint8Array(arraybuffer);
+      const len = bytes.length;
+      let base64url = '';
+
+      for (let i = 0; i < len; i += 3) {
+        base64url += chars[bytes[i] >> 2];
+        base64url += chars[((bytes[i] & 3) << 4) | (bytes[i + 1] >> 4)];
+        base64url += chars[((bytes[i + 1] & 15) << 2) | (bytes[i + 2] >> 6)];
+        base64url += chars[bytes[i + 2] & 63];
+      }
+
+      if (len % 3 === 2) {
+        base64url = base64url.substring(0, base64url.length - 1);
+      } else if (len % 3 === 1) {
+        base64url = base64url.substring(0, base64url.length - 2);
+      }
+
+      return base64url;
+    },
+    base64urlDecode: (base64string) => {
+      const chars = window.navigator.credentials.helpers.chars;
+      const lookup = new Uint8Array(256);
+
+      // Initialize lookup array
+      for (let i = 0; i < chars.length; i++) {
+        lookup[chars.charCodeAt(i)] = i;
+      }
+      const bufferLength = base64string.length * 0.75;
+      const len = base64string.length;
+      let p = 0;
+      let encoded1, encoded2, encoded3, encoded4;
+
+      const bytes = new Uint8Array(bufferLength);
+
+      for (let i = 0; i < len; i += 4) {
+        encoded1 = lookup[base64string.charCodeAt(i)];
+        encoded2 = lookup[base64string.charCodeAt(i + 1)];
+        encoded3 = lookup[base64string.charCodeAt(i + 2)];
+        encoded4 = lookup[base64string.charCodeAt(i + 3)];
+
+        bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
+        bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
+        bytes[p++] = ((encoded3 & 3) << 6) | (encoded4 & 63);
+      }
+
+      return bytes.buffer;
+    },
+  },
+
+  create: (options) => {
+    return new Promise((resolve, reject) => {
+      const challenge = window.navigator.credentials.helpers.base64urlEncode(options.publicKey.challenge);
+      const userId = window.navigator.credentials.helpers.base64urlEncode(options.publicKey.user.id);
+                
+      const callbackId = Math.random().toString(36).substring(7);
+      window.navigator.credentials.helpers.listeners.set(callbackId, { resolve: (data) => {
+        resolve({
+            ...data,
+
+        })
+      }, reject });
+      window.webkit?.messageHandlers?.FronteggNativeBridge?.postMessage(
+        JSON.stringify({
+          action: 'createPasskey',
+          callbackId,
+          payload: JSON.stringify({
+            ...options,
+            publicKey: {
+              ...options.publicKey,
+              challenge,
+              user: {
+                ...options.publicKey.user,
+                id: userId
+              }
+            },
+          }),
+        }),
+      );
+    });
+  },
+  get: (options) => {
+    return new Promise((resolve, reject) => {
+      const challenge = window.navigator.credentials.helpers.base64urlEncode(options.publicKey.challenge);
+      console.log("challenge", challenge)
+      const callbackId = Math.random().toString(36).substring(7);
+        window.navigator.credentials.helpers.listeners.set(callbackId, { resolve: (data) => {
+          const base64urlDecode = window.navigator.credentials.helpers.base64urlDecode
+          resolve({
+              ...data,
+              rawId: base64urlDecode(data.rawId),
+              response: {
+                authenticatorData: base64urlDecode(data.response.authenticatorData),
+                clientDataJSON: base64urlDecode(data.response.clientDataJSON),
+                signature: base64urlDecode(data.response.signature),
+                userHandle: base64urlDecode(data.response.userHandle),
+              }
+          })
+        }, reject });
+      window.webkit?.messageHandlers?.FronteggNativeBridge?.postMessage(
+        JSON.stringify({
+          action: 'getPasskey',
+          callbackId,
+          payload: JSON.stringify({
+            ...options,
+            publicKey: {
+              ...options.publicKey,
+              challenge,
+            },
+          }),
+        }),
+      );
+    });
+  },
+};
+
+
+"""
 }
+
+
