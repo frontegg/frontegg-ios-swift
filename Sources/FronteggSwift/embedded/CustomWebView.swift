@@ -175,7 +175,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             Task {
                 FronteggAuth.shared.handleHostedLoginCallback(code, savedCodeVerifier ) { res in
                     switch (res) {
-                    case .success(let user):
+                    case .success(_):
                         self.logger.info("Authentication succeeded")
                         
                     case .failure(let error):
