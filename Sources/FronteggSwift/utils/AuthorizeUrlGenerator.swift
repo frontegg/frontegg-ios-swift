@@ -40,7 +40,7 @@ public class AuthorizeUrlGenerator {
             .replacingOccurrences(of: "/", with: "_")
     }
     
-    func generate(loginHint: String? = nil, loginAction: String? = nil, remainCodeVerifier: Bool = false) -> (URL, String) {
+    func generate(loginHint: String? = nil, loginAction: String? = nil, remainCodeVerifier: Bool = false, withoutLogout:Bool = false) -> (URL, String) {
         
         let nonce = createRandomString()
         let codeVerifier = remainCodeVerifier ? (CredentialManager.getCodeVerifier() ?? createRandomString()) : createRandomString()
@@ -90,8 +90,13 @@ public class AuthorizeUrlGenerator {
             authorizeUrl.percentEncodedQuery=authorizeUrl.percentEncodedQuery?.replacingOccurrences(of:"+",with: "%2B")
         }
         
+        
         if let url = authorizeUrl.url{
             logger.trace("Generated url: \(url.absoluteString)")
+            
+            if(withoutLogout){
+                return (url, codeVerifier)
+            }
 
             var loginUrl = URLComponents(string: baseUrl)!
 

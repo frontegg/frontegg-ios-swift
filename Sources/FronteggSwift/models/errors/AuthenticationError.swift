@@ -18,6 +18,9 @@ extension FronteggError {
         case failedToSwitchTenant
         case codeVerifierNotFound
         case couldNotFindRootViewController
+        case invalidPasskeysRequest
+        case operationCanceled
+        case mfaRequired(_ json: [String:Any])
         case unknown
         case other(Error)
     }
@@ -35,8 +38,28 @@ extension FronteggError.Authentication {
         case .failedToSwitchTenant: "Failed to switch tenant"
         case .codeVerifierNotFound: "Code verifier not found"
         case .couldNotFindRootViewController: "Unable to find root viewController"
+        case .invalidPasskeysRequest: "Invalid passkeys request"
+        case .operationCanceled: "Operation canceled by user"
+        case .mfaRequired: "MFA is required for authentication"
         case .unknown: "Unknown error occurred"
         case let .other(error): error.localizedDescription
+        }
+    }
+    
+    public var failureReason: String? {
+        switch self {
+        case .couldNotExchangeToken: "couldNotExchangeToken"
+        case .failedToAuthenticate: "failedToAuthenticate"
+        case .failedToLoadUserData: "failedToLoadUserData"
+        case .failedToExtractCode: "failedToExtractCode"
+        case .failedToSwitchTenant: "failedToSwitchTenant"
+        case .codeVerifierNotFound: "codeVerifierNotFound"
+        case .couldNotFindRootViewController: "couldNotFindRootViewController"
+        case .invalidPasskeysRequest: "invalidPasskeysRequest"
+        case .operationCanceled: "operationCanceled"
+        case .mfaRequired: "mfaRequired"
+        case .unknown: "unknown"
+        case .other: "other"
         }
     }
 }

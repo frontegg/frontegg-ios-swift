@@ -14,12 +14,13 @@ import AuthenticationServices
 public struct FronteggWebView: UIViewRepresentable {
     public typealias UIViewType = WKWebView
     private var fronteggAuth: FronteggAuth
-
+    private var logger = getLogger("FronteggWebView")
     public init() {
         self.fronteggAuth = FronteggApp.shared.auth;
     }
 
     public func makeUIView(context: Context) -> WKWebView {
+        
         let controller: FronteggWKContentController = FronteggWKContentController()
         let userContentController: WKUserContentController = WKUserContentController()
         userContentController.add(controller, name: "FronteggNativeBridge")
@@ -36,6 +37,19 @@ public struct FronteggWebView: UIViewRepresentable {
         userContentController.addUserScript(jsScript)
         
         
+        if #available(iOS 16, *) {
+            // Passkeys avaialble in webview
+        } else {
+            if #available(iOS 15.0, *) {
+                logger.debug("Adding javascript hook to support passkeys in iOS 15")
+                userContentController.addUserScript(
+                    WKUserScript(source: PasskeysAuthenticator.ios15PasskeysHook, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+                )
+            } else {
+                logger.debug("Passkeys not supported below ios 15")
+            }
+        }
+        
         let conf = WKWebViewConfiguration()
         conf.userContentController = userContentController
         conf.websiteDataStore = WKWebsiteDataStore.default()
@@ -44,12 +58,12 @@ public struct FronteggWebView: UIViewRepresentable {
         webView.navigationDelegate = webView;
         controller.webView = webView
 
-        
-//        if #available(iOS 16.4, *) {
-//            webView.isInspectable = true
-//        } else {
-//            // Fallback on earlier versions
-//        }
+#if compiler(>=5.8) && os(iOS) && DEBUG
+if #available(iOS 16.4, *) {
+    webView.isInspectable = true
+}
+#endif
+
         
         let url: URL
         let codeVerifier: String;

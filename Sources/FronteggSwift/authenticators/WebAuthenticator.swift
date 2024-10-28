@@ -8,23 +8,29 @@ import AuthenticationServices
 import UIKit
  
 
-class WebAuthentication: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
+class WebAuthenticator: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
+    
+    static let shared = WebAuthenticator()
     
     weak var window: UIWindow? = nil
-    var ephemeralSession: Bool = false
+    var session: ASWebAuthenticationSession? = nil
     
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-
-        return  FronteggAuth.shared.getRootVC()?.view.window ?? ASPresentationAnchor()
+        return window ?? FronteggAuth.shared.getRootVC()?.view.window ?? ASPresentationAnchor()
     }
+    
     override func responds(to aSelector: Selector!) -> Bool {
         return true
     }
     
+    
     var webAuthSession: ASWebAuthenticationSession?
     
-    
-    func start(_ websiteURL:URL, completionHandler: @escaping ASWebAuthenticationSession.CompletionHandler) {
+    func start(_ websiteURL:URL, ephemeralSession: Bool = false, window:UIWindow? = nil, completionHandler: @escaping ASWebAuthenticationSession.CompletionHandler) {
+        if let lastSession = session {
+            lastSession.cancel()
+            session = nil
+        }
         
         let bundleIdentifier = FronteggApp.shared.bundleIdentifier
         let webAuthSession = ASWebAuthenticationSession.init(
@@ -33,11 +39,13 @@ class WebAuthentication: NSObject, ObservableObject, ASWebAuthenticationPresenta
             completionHandler: completionHandler)
         // Run the session
         webAuthSession.presentationContextProvider = self
-        webAuthSession.prefersEphemeralWebBrowserSession = self.ephemeralSession
+        webAuthSession.prefersEphemeralWebBrowserSession = ephemeralSession
         
 
-        self.webAuthSession = webAuthSession
+        self.window = window
+        self.session = webAuthSession
         webAuthSession.start()
 
     }
+    
 }

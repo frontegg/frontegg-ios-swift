@@ -34,12 +34,29 @@ struct MyApp: View {
                             fronteggAuth.login()
                         } label: {
                             Text("Login")
-                        }.padding(.vertical, 20)
+                        }.padding(.vertical, 30)
                         
                         Button {
-                            fronteggAuth.directLoginAction(window: nil, type: "custom-social-login", data: "e9a221f3-3d2a-413d-8183-dc9904fc70af", ephemeralSession: false)
+                            fronteggAuth.directLoginAction(window: nil, type: "social-login", data: "apple", ephemeralSession: true)
                         } label: {
                             Text("Login with popup")
+                        }.padding(.vertical, 30)
+                        
+                        Button {
+                            fronteggAuth.directLoginAction(window: nil, type: "direct", data: "https://appleid.apple.com/auth/authorize?response_type=code&response_mode=form_post&redirect_uri=https%3A%2F%2Fauth.davidantoon.me%2Fidentity%2Fresources%2Fauth%2Fv2%2Fuser%2Fsso%2Fapple%2Fpostlogin&scope=openid+name+email&state=%7B%22oauthState%22%3A%22eyJGUk9OVEVHR19PQVVUSF9SRURJUkVDVF9BRlRFUl9MT0dJTiI6ImNvbS5mcm9udGVnZy5kZW1vOi8vYXV0aC5kYXZpZGFudG9vbi5tZS9pb3Mvb2F1dGgvY2FsbGJhY2siLCJGUk9OVEVHR19PQVVUSF9TVEFURV9BRlRFUl9MT0dJTiI6IjQ1MDVkMzljLTg0ZTctNDhiZi1hMzY3LTVmMjhmMmZlMWU1YiJ9%22%2C%22provider%22%3A%22apple%22%2C%22appId%22%3A%22%22%2C%22action%22%3A%22login%22%7D&client_id=com.frontegg.demo.client", ephemeralSession: true)
+                        } label: {
+                            Text("Direct apple login")
+                        }.padding(.vertical, 30)
+                        
+                        
+                        
+                        
+                        Button {
+                            fronteggAuth.loginWithPasskeys()
+                            
+                            
+                        }  label: {
+                            Text("Login with passkeys")
                         }
                     }
                     

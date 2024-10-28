@@ -21,11 +21,8 @@ struct ProfileTab: View {
                 
                 ProfileInfo()
                 
-                Button("register-passkeys") {
-                    
-//                    fronteggAuth.registerPasskeys()
-//                    
-//                    
+                Button("Register Passkeys") {
+                    fronteggAuth.registerPasskeys()
                 }
                 Spacer()
                 Button("Logout") {

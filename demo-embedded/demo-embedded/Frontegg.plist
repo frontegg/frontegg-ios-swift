@@ -2,12 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>useAsWebAuthenticationForAppleLogin</key>
+	<true/>
 	<key>embeddedMode</key>
 	<true/>
 	<key>baseUrl</key>
 	<string>https://auth.davidantoon.me</string>
 	<key>clientId</key>
-	<string>b6adfe4c-d695-4c04-b95f-3ec9fd0c6cca</string>
+	<string>04ae2174-d8d9-4a90-8bab-2548e210a508</string>
 	<key>logLevel</key>
 	<string>trace</string>
 </dict>

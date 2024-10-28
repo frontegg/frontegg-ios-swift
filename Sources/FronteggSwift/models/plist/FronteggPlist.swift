@@ -20,6 +20,7 @@ struct FronteggPlist: Decodable, Equatable {
     let logLevel: LogLevel
     let payload: Payload
     let keepUserLoggedInAfterReinstall: Bool
+    let useAsWebAuthenticationForAppleLogin: Bool
 
     enum CodingKeys: CodingKey {
         case keychainService
@@ -29,6 +30,7 @@ struct FronteggPlist: Decodable, Equatable {
         case lateInit
         case logLevel
         case keepUserLoggedInAfterReinstall
+        case useAsWebAuthenticationForAppleLogin
     }
 
     init(
@@ -39,7 +41,8 @@ struct FronteggPlist: Decodable, Equatable {
         lateInit: Bool = false,
         logLevel: LogLevel = .warn,
         payload: Payload,
-        keepUserLoggedInAfterReinstall: Bool
+        keepUserLoggedInAfterReinstall: Bool,
+        useAsWebAuthenticationForAppleLogin: Bool = false
     ) {
         self.keychainService = keychainService
         self.embeddedMode = embeddedMode
@@ -49,6 +52,7 @@ struct FronteggPlist: Decodable, Equatable {
         self.logLevel = logLevel
         self.payload = payload
         self.keepUserLoggedInAfterReinstall = keepUserLoggedInAfterReinstall
+        self.useAsWebAuthenticationForAppleLogin = useAsWebAuthenticationForAppleLogin
     }
 
     init(from decoder: any Decoder) throws {
@@ -74,6 +78,9 @@ struct FronteggPlist: Decodable, Equatable {
         
         let keepUserLoggedInAfterReinstall = try container.decodeIfPresent(Bool.self, forKey: .keepUserLoggedInAfterReinstall)
         self.keepUserLoggedInAfterReinstall = keepUserLoggedInAfterReinstall ?? true
+        
+        let useAsWebAuthenticationForAppleLogin = try container.decodeIfPresent(Bool.self, forKey: .useAsWebAuthenticationForAppleLogin)
+        self.useAsWebAuthenticationForAppleLogin = useAsWebAuthenticationForAppleLogin ?? false
         
         do {
             self.payload = try Payload(from: decoder)
