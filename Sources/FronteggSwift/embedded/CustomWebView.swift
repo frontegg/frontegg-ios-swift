@@ -176,7 +176,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                 FronteggAuth.shared.handleHostedLoginCallback(code, savedCodeVerifier ) { res in
                     switch (res) {
                     case .success(let user):
-                        print("User \(user.id)")
+                        self.logger.info("Authentication succeeded")
                         
                     case .failure(let error):
                         print("Error \(error)")
@@ -245,12 +245,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     private func startExternalBrowser(_ _webView:WKWebView?, _ url:URL, _ ephemeralSession:Bool = false) -> Void {
         
         weak var webView = _webView
-        fronteggAuth.webAuthentication.webAuthSession?.cancel()
-        fronteggAuth.webAuthentication = WebAuthentication()
-        fronteggAuth.webAuthentication.ephemeralSession = ephemeralSession
         
-        fronteggAuth.webAuthentication.window = self.window
-        fronteggAuth.webAuthentication.start(url) { callbackUrl, error  in
+        WebAuthenticator.shared.start(url, ephemeralSession: ephemeralSession, window: self.window) { callbackUrl, error  in
             print("Social login authentication canceled")
             if(error != nil){
                 if(CustomWebView.isCancelledAsAuthenticationLoginError(error!)){
