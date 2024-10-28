@@ -347,6 +347,7 @@ public class Api {
         
         urlComponents.queryItems = [
             URLQueryItem(name: "code", value: code),
+            URLQueryItem(name: "clientId", value: Bundle.main.bundleIdentifier),
             URLQueryItem(name: "redirectUri", value: "\(self.baseUrl)/oauth/account/social/success"),
             URLQueryItem(name: "state", value: "{\"provider\":\"apple\",\"appId\":\"\",\"action\":\"login\"}")
         ]
