@@ -19,6 +19,7 @@ extension FronteggError {
         case codeVerifierNotFound
         case couldNotFindRootViewController
         case invalidPasskeysRequest
+        case failedToAuthenticateWithPasskeys(_ message: String)
         case operationCanceled
         case mfaRequired(_ json: [String:Any])
         case unknown
@@ -39,6 +40,7 @@ extension FronteggError.Authentication {
         case .codeVerifierNotFound: "Code verifier not found"
         case .couldNotFindRootViewController: "Unable to find root viewController"
         case .invalidPasskeysRequest: "Invalid passkeys request"
+        case let .failedToAuthenticateWithPasskeys(message): "Failed to authenticate with Passkeys, \(message)"
         case .operationCanceled: "Operation canceled by user"
         case .mfaRequired: "MFA is required for authentication"
         case .unknown: "Unknown error occurred"
@@ -56,6 +58,7 @@ extension FronteggError.Authentication {
         case .codeVerifierNotFound: "codeVerifierNotFound"
         case .couldNotFindRootViewController: "couldNotFindRootViewController"
         case .invalidPasskeysRequest: "invalidPasskeysRequest"
+        case .failedToAuthenticateWithPasskeys: "failedToAuthenticateWithPasskeys"
         case .operationCanceled: "operationCanceled"
         case .mfaRequired: "mfaRequired"
         case .unknown: "unknown"

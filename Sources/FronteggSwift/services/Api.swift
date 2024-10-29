@@ -319,7 +319,11 @@ public class Api {
         // Extract cookies for further authorization
         guard let cookies = FronteggAuth.shared.api.getCookiesFromHeaders(response: postloginHTTPResponse),
               let refreshToken = cookies.0, let deviceToken = cookies.1 else {
-            throw FronteggError.authError(.invalidPasskeysRequest)
+            if let httpError = String(data: postloginResponseData, encoding: .utf8) {
+                throw FronteggError.authError(.failedToAuthenticateWithPasskeys(httpError))
+            }else {
+                throw FronteggError.authError(.failedToAuthenticateWithPasskeys("No cookies returns from postLogin request"))
+            }
         }
         
         // Silent authorize with the extracted tokens

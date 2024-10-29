@@ -845,9 +845,14 @@ public class FronteggAuth: ObservableObject {
     internal func handleMfaRequired(_ _completion: FronteggAuth.CompletionHandler? = nil) -> FronteggAuth.CompletionHandler {
         let completion: FronteggAuth.CompletionHandler =  { (result) in
             
+            
+               
             switch (result) {
             case .success(_):
-                _completion?(result)
+                DispatchQueue.main.sync {
+                    FronteggAuth.shared.isLoading = false
+                    _completion?(result)
+                }
             
             case .failure(let fronteggError):
                 
@@ -857,12 +862,16 @@ public class FronteggAuth: ObservableObject {
                         // Handle the MFA-required logic here with the jsonResponse
                         self.logger.info("MFA required with JSON response: \(jsonResponse)")
                         self.startMultiFactorAuthenticator(jsonResponse, _completion)
-                        
                         return
                     } else {
-                        _completion?(result)
+                        self.logger.info("authentication error: \(authError.localizedDescription)")
                     }
-                case .configError(_):
+                case .configError(let configError):
+                    self.logger.info("config error: \(configError.localizedDescription)")
+                }
+                
+                DispatchQueue.main.sync {
+                    FronteggAuth.shared.isLoading = false
                     _completion?(result)
                 }
             }
@@ -880,19 +889,26 @@ public class FronteggAuth: ObservableObject {
 
         // Encode the JSON string as Base64
         let base64EncodedState = Data(jsonString.utf8).base64EncodedString()
-
         
+        let directLogin = [
+            "type": "direct",
+            "data": "\(self.baseUrl)/oauth/account/mfa-mobile-authenticator?state=\(base64EncodedState)",
+        ] as [String : Any]
+        
+        var generatedUrl: (URL, String)
+        if let jsonData = try? JSONSerialization.data(withJSONObject: directLogin, options: []) {
+            let jsonString = jsonData.base64EncodedString()
+            generatedUrl = AuthorizeUrlGenerator.shared.generate(loginAction: jsonString)
+        } else {
+            generatedUrl = AuthorizeUrlGenerator.shared.generate()
+        }
+        
+        let (authorizeUrl, codeVerifier) = generatedUrl
+        
+        CredentialManager.saveCodeVerifier(codeVerifier)
         DispatchQueue.main.async {
             
-            // Build the URL with the Base64 encoded state parameter
-            let urlString = "http://localhost:3000/account/mfa-mobile-authenticator?state=\(base64EncodedState)"
-            if let url = URL(string: urlString) {
-                self.pendingAppLink = url
-                print("Pending App Link URL: \(url)")
-            } else {
-                print("Failed to create URL from encoded string.")
-            }
-            
+            self.pendingAppLink = authorizeUrl
             self.webLoading = true
             self.login(_completion)
             self.isLoading = false
