@@ -378,7 +378,6 @@ public class FronteggAuth: ObservableObject {
         }
         
         self.logger.info("refreshing token")
-        let accessToken = self.accessToken ?? ""
         
         if(self.refreshingToken){
             self.logger.info("Skip refreshing token - already in progress")
