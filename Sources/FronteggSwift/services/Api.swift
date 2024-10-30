@@ -180,7 +180,7 @@ public class Api {
         return try await URLSession.shared.data(for: request)
     }
     
-    internal func refreshToken(accessToken: String, refreshToken: String) async -> AuthResponse? {
+    internal func refreshToken(refreshToken: String) async -> AuthResponse? {
         do {
             let (data, _) = try await postRequest(path: "oauth/token", body: [
                 "grant_type": "refresh_token",
@@ -197,7 +197,7 @@ public class Api {
     
     internal func refreshTokenForMfa(refreshTokenCookie: String) async -> [String:Any]? {
         do {
-            let (refeshTokenForMfaData, httpResponse) = try await postRequest(path: "frontegg/identity/resources/auth/v1/user/token/refresh",  body: [
+            let (refeshTokenForMfaData, _) = try await postRequest(path: "frontegg/identity/resources/auth/v1/user/token/refresh",  body: [
                 "tenantId": nil
             ], additionalHeaders: [
                 "Cookie": refreshTokenCookie

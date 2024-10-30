@@ -395,7 +395,7 @@ public class FronteggAuth: ObservableObject {
             }
         }
         
-        if let data = await self.api.refreshToken(accessToken: accessToken, refreshToken: refreshToken) {
+        if let data = await self.api.refreshToken(refreshToken: refreshToken) {
             await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
             self.logger.info("token refreshed successfully")
             return true
