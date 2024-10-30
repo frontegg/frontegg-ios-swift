@@ -21,7 +21,7 @@ extension FronteggError {
         case invalidPasskeysRequest
         case failedToAuthenticateWithPasskeys(_ message: String)
         case operationCanceled
-        case mfaRequired(_ json: [String:Any])
+        case mfaRequired(_ json: [String:Any], refreshToken: String? = nil)
         case unknown
         case other(Error)
     }

@@ -844,9 +844,7 @@ public class FronteggAuth: ObservableObject {
     
     internal func handleMfaRequired(_ _completion: FronteggAuth.CompletionHandler? = nil) -> FronteggAuth.CompletionHandler {
         let completion: FronteggAuth.CompletionHandler =  { (result) in
-            
-            
-               
+
             switch (result) {
             case .success(_):
                 DispatchQueue.main.sync {
@@ -858,10 +856,12 @@ public class FronteggAuth: ObservableObject {
                 
                 switch fronteggError {
                 case .authError(let authError):
-                    if case let .mfaRequired(jsonResponse) = authError {
+                    if case let .mfaRequired(jsonResponse, refreshToken) = authError {
                         // Handle the MFA-required logic here with the jsonResponse
                         self.logger.info("MFA required with JSON response: \(jsonResponse)")
-                        self.startMultiFactorAuthenticator(jsonResponse, _completion)
+                        Task{
+                            await self.startMultiFactorAuthenticator(jsonResponse, refreshToken:refreshToken, completion: _completion)
+                        }
                         return
                     } else {
                         self.logger.info("authentication error: \(authError.localizedDescription)")
@@ -878,12 +878,31 @@ public class FronteggAuth: ObservableObject {
         }
         return completion
     }
-    internal func startMultiFactorAuthenticator(_ jsonResponse: [String: Any],_ _completion: FronteggAuth.CompletionHandler? = nil){
+    internal func startMultiFactorAuthenticator(_ errorResponse: [String: Any], refreshToken:String? = nil, completion: FronteggAuth.CompletionHandler? = nil) async {
         
+        
+        var jsonResponse = errorResponse;
+        
+        if let refreshTokenCookie = refreshToken {
+            guard let requestMfaDict = await self.api.refreshTokenForMfa(refreshTokenCookie: refreshTokenCookie) else {
+                print("Failed get mfaRequired data after refreshToken")
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                }
+                completion?(.failure(.authError(.failedToAuthenticate)))
+                return
+            }
+            jsonResponse = requestMfaDict
+                    
+        }
         // Convert the JSON dictionary to Data
         guard let jsonData = try? JSONSerialization.data(withJSONObject: jsonResponse, options: []),
               let jsonString = String(data: jsonData, encoding: .utf8) else {
             print("Failed to serialize JSON response.")
+            DispatchQueue.main.async {
+                self.isLoading = false
+            }
+            completion?(.failure(.authError(.failedToAuthenticate)))
             return
         }
 
@@ -907,10 +926,9 @@ public class FronteggAuth: ObservableObject {
         
         CredentialManager.saveCodeVerifier(codeVerifier)
         DispatchQueue.main.async {
-            
             self.pendingAppLink = authorizeUrl
             self.webLoading = true
-            self.login(_completion)
+            self.login(completion)
             self.isLoading = false
         }
     }

@@ -194,6 +194,25 @@ public class Api {
         }
     }
     
+    
+    internal func refreshTokenForMfa(refreshTokenCookie: String) async -> [String:Any]? {
+        do {
+            let (refeshTokenForMfaData, httpResponse) = try await postRequest(path: "frontegg/identity/resources/auth/v1/user/token/refresh",  body: [
+                "tenantId": nil
+            ], additionalHeaders: [
+                "Cookie": refreshTokenCookie
+            ])
+            
+            if let jsonResponse = try? JSONSerialization.jsonObject(with: refeshTokenForMfaData, options: []) as? [String: Any] {
+                return jsonResponse
+            }
+            return nil
+        } catch {
+            print(error)
+            return nil
+        }
+    }
+    
     internal func exchangeToken(code: String,
                                 redirectUrl: String,
                                 codeVerifier: String) async -> (AuthResponse?, FronteggError?) {
@@ -369,6 +388,11 @@ public class Api {
         // Decode the response data to check if MFA is required
         if let jsonResponse = try? JSONSerialization.jsonObject(with: postloginResponseData, options: []) as? [String: Any],
            let mfaRequired = jsonResponse["mfaRequired"] as? Bool, mfaRequired == true {
+            
+            if let cookies = FronteggAuth.shared.api.getCookiesFromHeaders(response: postloginHTTPResponse),
+                  let refreshToken = cookies.0 {
+                throw FronteggError.authError(.mfaRequired(jsonResponse, refreshToken: refreshToken))
+            }
             // Throw an exception if MFA is required
             throw FronteggError.authError(.mfaRequired(jsonResponse))
         }
