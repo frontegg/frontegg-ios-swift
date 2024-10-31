@@ -340,7 +340,7 @@ public class Api {
               let refreshToken = cookies.0, let deviceToken = cookies.1 else {
             if let httpError = String(data: postloginResponseData, encoding: .utf8) {
                 throw FronteggError.authError(.failedToAuthenticateWithPasskeys(httpError))
-            }else {
+            } else {
                 throw FronteggError.authError(.failedToAuthenticateWithPasskeys("No cookies returns from postLogin request"))
             }
         }
