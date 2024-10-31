@@ -41,7 +41,7 @@ public class FronteggAuth: ObservableObject {
     public var applicationId: String? = nil
     public var pendingAppLink: URL? = nil
     public var loginHint: String? = nil
-
+    
     
     public static var shared: FronteggAuth {
         return FronteggApp.shared.auth
@@ -367,35 +367,35 @@ public class FronteggAuth: ObservableObject {
         
         guard await NetworkStatusMonitor.isActive else {
             self.logger.info("Refresh rescheduled due to inactive internet")
-
+            
             scheduleTokenRefresh(offset: 10)
             return false
         }
-
+        
         guard let refreshToken = self.refreshToken else {
             self.logger.info("no refresh token found")
             return false
         }
         
         self.logger.info("refreshing token")
-        let accessToken = self.accessToken ?? ""
         
         if(self.refreshingToken){
             self.logger.info("Skip refreshing token - already in progress")
             return false
         }
+        
         DispatchQueue.main.sync {
             self.refreshingToken=true
         }
+        
         defer {
-            
             // cleanup scope
             DispatchQueue.main.sync {
                 self.refreshingToken = false
             }
         }
         
-        if let data = await self.api.refreshToken(accessToken: accessToken, refreshToken: refreshToken) {
+        if let data = await self.api.refreshToken(refreshToken: refreshToken) {
             await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
             self.logger.info("token refreshed successfully")
             return true
@@ -542,7 +542,7 @@ public class FronteggAuth: ObservableObject {
             self.loginWithApple(completion)
             return
         }
- 
+        
         let directLogin = [
             "type": type,
             "data": data,
@@ -601,7 +601,7 @@ public class FronteggAuth: ObservableObject {
         }
         
         let oauthCallback = createOauthCallbackHandler(completion)
-
+        
         let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: email, remainCodeVerifier: true)
         CredentialManager.saveCodeVerifier(codeVerifier)
         
@@ -625,7 +625,7 @@ public class FronteggAuth: ObservableObject {
                             let oauthCallback = self.createOauthCallbackHandler(completion)
                             let url = try await self.generateAppleAuthorizeUrl(config: appleConfig)
                             WebAuthenticator.shared.start(url, ephemeralSession: true, completionHandler: oauthCallback)
-                        
+                            
                         }
                     } else {
                         self.logger.error("No active apple configuration, for more info please visit https://docs.frontegg.com/docs/apple-login")
@@ -652,10 +652,10 @@ public class FronteggAuth: ObservableObject {
         let (_, authorizeResponse) = try await FronteggAuth.shared.api.getRequest(path: url.absoluteString, accessToken: nil, additionalHeaders: ["Accept":"text/html"])
         
         guard let authorizeResponseUrl = authorizeResponse.url,
-           let authorizeComponent = URLComponents(string: authorizeResponseUrl.absoluteString),
+              let authorizeComponent = URLComponents(string: authorizeResponseUrl.absoluteString),
               let sessionState = authorizeComponent.queryItems?.first(where: { q in
-            q.name == "state"
-        })?.value else {
+                  q.name == "state"
+              })?.value else {
             self.logger.error("Failed to generate oauth2 session response: \(authorizeResponse)")
             throw FronteggError.authError(.failedToAuthenticate)
         }
@@ -675,7 +675,7 @@ public class FronteggAuth: ObservableObject {
         return oauthStateJson
     }
     func generateAppleAuthorizeUrl(config: SocialLoginOption) async throws -> URL {
-    
+        
         let sessionState = try await createOauth2SessionState()
         
         let scope = ["openid", "name", "email"] + config.additionalScopes
@@ -847,54 +847,88 @@ public class FronteggAuth: ObservableObject {
             
             switch (result) {
             case .success(_):
-                _completion?(result)
-            
+                DispatchQueue.main.sync {
+                    FronteggAuth.shared.isLoading = false
+                    _completion?(result)
+                }
+                
             case .failure(let fronteggError):
                 
                 switch fronteggError {
                 case .authError(let authError):
-                    if case let .mfaRequired(jsonResponse) = authError {
+                    if case let .mfaRequired(jsonResponse, refreshToken) = authError {
                         // Handle the MFA-required logic here with the jsonResponse
                         self.logger.info("MFA required with JSON response: \(jsonResponse)")
-                        self.startMultiFactorAuthenticator(jsonResponse, _completion)
-                        
+                        Task {
+                            await self.startMultiFactorAuthenticator(jsonResponse, refreshToken:refreshToken, completion: _completion)
+                        }
                         return
                     } else {
-                        _completion?(result)
+                        self.logger.info("authentication error: \(authError.localizedDescription)")
                     }
-                case .configError(_):
+                case .configError(let configError):
+                    self.logger.info("config error: \(configError.localizedDescription)")
+                }
+                
+                DispatchQueue.main.sync {
+                    FronteggAuth.shared.isLoading = false
                     _completion?(result)
                 }
             }
         }
         return completion
     }
-    internal func startMultiFactorAuthenticator(_ jsonResponse: [String: Any],_ _completion: FronteggAuth.CompletionHandler? = nil){
+    internal func startMultiFactorAuthenticator(_ errorResponse: [String: Any], refreshToken:String? = nil, completion: FronteggAuth.CompletionHandler? = nil) async {
         
+        
+        var jsonResponse = errorResponse;
+        
+        if let refreshTokenCookie = refreshToken {
+            guard let requestMfaDict = await self.api.refreshTokenForMfa(refreshTokenCookie: refreshTokenCookie) else {
+                print("Failed get mfaRequired data after refreshToken")
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                }
+                completion?(.failure(.authError(.failedToAuthenticate)))
+                return
+            }
+            jsonResponse = requestMfaDict
+            
+        }
         // Convert the JSON dictionary to Data
         guard let jsonData = try? JSONSerialization.data(withJSONObject: jsonResponse, options: []),
               let jsonString = String(data: jsonData, encoding: .utf8) else {
             print("Failed to serialize JSON response.")
+            DispatchQueue.main.async {
+                self.isLoading = false
+            }
+            completion?(.failure(.authError(.failedToAuthenticate)))
             return
         }
-
+        
         // Encode the JSON string as Base64
         let base64EncodedState = Data(jsonString.utf8).base64EncodedString()
-
         
+        let directLogin = [
+            "type": "direct",
+            "data": "\(self.baseUrl)/oauth/account/mfa-mobile-authenticator?state=\(base64EncodedState)",
+        ] as [String : Any]
+        
+        var generatedUrl: (URL, String)
+        if let jsonData = try? JSONSerialization.data(withJSONObject: directLogin, options: []) {
+            let jsonString = jsonData.base64EncodedString()
+            generatedUrl = AuthorizeUrlGenerator.shared.generate(loginAction: jsonString)
+        } else {
+            generatedUrl = AuthorizeUrlGenerator.shared.generate()
+        }
+        
+        let (authorizeUrl, codeVerifier) = generatedUrl
+        
+        CredentialManager.saveCodeVerifier(codeVerifier)
         DispatchQueue.main.async {
-            
-            // Build the URL with the Base64 encoded state parameter
-            let urlString = "http://localhost:3000/account/mfa-mobile-authenticator?state=\(base64EncodedState)"
-            if let url = URL(string: urlString) {
-                self.pendingAppLink = url
-                print("Pending App Link URL: \(url)")
-            } else {
-                print("Failed to create URL from encoded string.")
-            }
-            
+            self.pendingAppLink = authorizeUrl
             self.webLoading = true
-            self.login(_completion)
+            self.login(completion)
             self.isLoading = false
         }
     }

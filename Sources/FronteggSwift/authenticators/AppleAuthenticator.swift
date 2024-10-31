@@ -30,7 +30,7 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
             
             
             self.sendApplePostLogin(code)
-        }else {
+        } else {
             logger.error("Failed to authenticate with AppleId provider")
             completionHandler?(.failure(FronteggError.authError(.unknown)))
         }
@@ -52,6 +52,10 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
     func sendApplePostLogin(_ code:String) {
         logger.info("Send apple post login request to obtain session")
         
+        DispatchQueue.main.async {
+            FronteggAuth.shared.isLoading = true
+        }
+        
         DispatchQueue.global(qos: .background).async {
             Task {
                 do {
@@ -59,9 +63,14 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
                     
                     await FronteggAuth.shared.setCredentials(accessToken: authResponse.access_token, refreshToken: authResponse.refresh_token)
                     
-                }catch {
-                    self.logger.error("Failed to authenticate with apple \(error.localizedDescription)")
-                    self.completionHandler?(.failure(.authError(.failedToAuthenticate)))
+                } catch {
+                    if error is FronteggError {
+                        self.completionHandler?(.failure(error as! FronteggError))
+                    }else {
+                        self.logger.error("Failed to authenticate with apple \(error.localizedDescription)")
+                        self.completionHandler?(.failure(.authError(.failedToAuthenticate)))
+                    }
+                    
                 }
             }
         }

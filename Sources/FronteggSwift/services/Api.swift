@@ -180,7 +180,7 @@ public class Api {
         return try await URLSession.shared.data(for: request)
     }
     
-    internal func refreshToken(accessToken: String, refreshToken: String) async -> AuthResponse? {
+    internal func refreshToken(refreshToken: String) async -> AuthResponse? {
         do {
             let (data, _) = try await postRequest(path: "oauth/token", body: [
                 "grant_type": "refresh_token",
@@ -188,6 +188,25 @@ public class Api {
             ])
             
             return try JSONDecoder().decode(AuthResponse.self, from: data)
+        } catch {
+            print(error)
+            return nil
+        }
+    }
+    
+    
+    internal func refreshTokenForMfa(refreshTokenCookie: String) async -> [String:Any]? {
+        do {
+            let (refeshTokenForMfaData, _) = try await postRequest(path: "frontegg/identity/resources/auth/v1/user/token/refresh",  body: [
+                "tenantId": nil
+            ], additionalHeaders: [
+                "Cookie": refreshTokenCookie
+            ])
+            
+            if let jsonResponse = try? JSONSerialization.jsonObject(with: refeshTokenForMfaData, options: []) as? [String: Any] {
+                return jsonResponse
+            }
+            return nil
         } catch {
             print(error)
             return nil
@@ -319,7 +338,11 @@ public class Api {
         // Extract cookies for further authorization
         guard let cookies = FronteggAuth.shared.api.getCookiesFromHeaders(response: postloginHTTPResponse),
               let refreshToken = cookies.0, let deviceToken = cookies.1 else {
-            throw FronteggError.authError(.invalidPasskeysRequest)
+            if let httpError = String(data: postloginResponseData, encoding: .utf8) {
+                throw FronteggError.authError(.failedToAuthenticateWithPasskeys(httpError))
+            } else {
+                throw FronteggError.authError(.failedToAuthenticateWithPasskeys("No cookies returns from postLogin request"))
+            }
         }
         
         // Silent authorize with the extracted tokens
@@ -347,6 +370,7 @@ public class Api {
         
         urlComponents.queryItems = [
             URLQueryItem(name: "code", value: code),
+            URLQueryItem(name: "clientId", value: Bundle.main.bundleIdentifier),
             URLQueryItem(name: "redirectUri", value: "\(self.baseUrl)/oauth/account/social/success"),
             URLQueryItem(name: "state", value: "{\"provider\":\"apple\",\"appId\":\"\",\"action\":\"login\"}")
         ]
@@ -364,6 +388,11 @@ public class Api {
         // Decode the response data to check if MFA is required
         if let jsonResponse = try? JSONSerialization.jsonObject(with: postloginResponseData, options: []) as? [String: Any],
            let mfaRequired = jsonResponse["mfaRequired"] as? Bool, mfaRequired == true {
+            
+            if let cookies = FronteggAuth.shared.api.getCookiesFromHeaders(response: postloginHTTPResponse),
+                  let refreshToken = cookies.0 {
+                throw FronteggError.authError(.mfaRequired(jsonResponse, refreshToken: refreshToken))
+            }
             // Throw an exception if MFA is required
             throw FronteggError.authError(.mfaRequired(jsonResponse))
         }
