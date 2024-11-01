@@ -847,7 +847,7 @@ public class FronteggAuth: ObservableObject {
             
             switch (result) {
             case .success(_):
-                DispatchQueue.main.sync {
+                DispatchQueue.main.async {
                     FronteggAuth.shared.isLoading = false
                     _completion?(result)
                 }
