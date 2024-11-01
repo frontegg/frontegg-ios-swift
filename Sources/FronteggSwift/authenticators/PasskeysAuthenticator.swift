@@ -159,7 +159,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
     func loginWithPasskeys(_ completion: FronteggAuth.CompletionHandler? = nil, _ retries: Int = 3) async {
         do {
     
-            DispatchQueue.main.sync {
+            DispatchQueue.main.async {
                 FronteggAuth.shared.isLoading = true
             }
             
@@ -191,7 +191,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
                 }else {
                     logger.error("Error during loginWithPasskeys: \(error.localizedDescription)")
                     
-                    DispatchQueue.main.sync {
+                    DispatchQueue.main.async {
                         FronteggAuth.shared.isLoading = false
                     }
                     completion?(.failure(.authError(.failedToAuthenticate)))
