@@ -42,7 +42,7 @@ struct FronteggPlist: Decodable, Equatable {
         logLevel: LogLevel = .warn,
         payload: Payload,
         keepUserLoggedInAfterReinstall: Bool,
-        useAsWebAuthenticationForAppleLogin: Bool = false
+        useAsWebAuthenticationForAppleLogin: Bool = true
     ) {
         self.keychainService = keychainService
         self.embeddedMode = embeddedMode
