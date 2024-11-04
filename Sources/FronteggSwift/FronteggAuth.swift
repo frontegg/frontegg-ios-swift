@@ -52,7 +52,7 @@ public class FronteggAuth: ObservableObject {
     public var api: Api
     private var subscribers = Set<AnyCancellable>()
     private var refreshTokenDispatch: DispatchWorkItem?
-    
+    var loginCompletion: CompletionHandler? = nil
     
     init (baseUrl:String,
           clientId: String,
@@ -596,7 +596,7 @@ public class FronteggAuth: ObservableObject {
     
     
     public func loginWithSSO(email: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
-        let completion = _completion ?? { res in
+        let completion = _completion ?? self.loginCompletion ?? { res in
             
         }
         
@@ -711,7 +711,7 @@ public class FronteggAuth: ObservableObject {
     }
     
     func loginWithSocialLogin(socialLoginUrl: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
-        let completion = _completion ?? { res in
+        let completion = _completion ?? self.loginCompletion ?? { res in
             
         }
         
@@ -740,6 +740,10 @@ public class FronteggAuth: ObservableObject {
         
         if let rootVC = self.getRootVC() {
             self.loginHint = loginHint
+            self.loginCompletion = { result in
+                _completion?(result)
+                self.loginCompletion = nil
+            }
             let loginModal = EmbeddedLoginModal(parentVC: rootVC)
             let hostingController = UIHostingController(rootView: loginModal)
             hostingController.modalPresentationStyle = .fullScreen

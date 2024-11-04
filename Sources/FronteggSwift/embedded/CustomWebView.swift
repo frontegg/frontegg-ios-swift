@@ -181,6 +181,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                         CredentialManager.saveCodeVerifier(codeVerifier)
                         _ = webView?.load(URLRequest(url: url))
                     }
+                    FronteggAuth.shared.loginCompletion?(res)
                 }
             }
         }
