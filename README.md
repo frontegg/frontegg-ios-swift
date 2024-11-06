@@ -24,6 +24,7 @@ Welcome to the @frontegg/ios Swift SDK! This SDK provides a seamless way to inte
   - [Multi-apps Support](#multi-apps-support)
   - [Multi-Region support](#multi-region-support)
   - [Login with ASWebAuthenticationSession](#login-with-aswebauthenticationsession)
+  - [Passkeys Authentication](#passkeys-authentication)
 
 ## Project Requirements
 
@@ -522,6 +523,91 @@ struct ContentView: View {
                 }
             }
         }
+    }
+}
+```
+
+## Passkeys Authentication
+
+Passkeys provide a seamless, passwordless authentication experience, leveraging platform-level biometric authentication and WebAuthn. Follow the steps below to integrate passkeys functionality into your iOS app.
+
+### Prerequisites
+
+1. **iOS Version**: Ensure your project targets **iOS 15 or later** to support the necessary WebAuthn APIs.
+2. **Associated Domain**: Configure your app's associated domains to enable passkeys functionality.
+3. **Frontegg SDK Version**: Use Frontegg iOS SDK version **1.2.24 or later**.
+
+### Configuring Associated Domains
+
+Passkeys require the associated domains to be correctly configured in your app. Follow these steps:
+
+1. **Set up the Associated Domains Capability**:
+   - Open your project in Xcode.
+   - Go to the **Signing & Capabilities** tab.
+   - Add **Associated Domains** under the **+ Capability** section.
+   - Enter the domain for your app in the format:
+     ```
+     webcredentials:[YOUR_DOMAIN]
+     ```
+     Example:
+     ```
+     webcredentials:example.com
+     ```
+
+2. **Host the WebAuthn Configuration File**:
+   - Add a `.well-known/webauthn` JSON file to your domain server with the following structure:
+     ```json
+     {
+       "origins": [
+         "https://example.com",
+         "https://subdomain.example.com"
+       ]
+     }
+     ```
+   - Ensure this file is publicly accessible at `https://example.com/.well-known/webauthn`.
+
+3. **Test Associated Domains**:
+   - Verify that your associated domain configuration works using Apple's [Associated Domains Validator](https://developer.apple.com/contact/request/associated-domains).
+
+---
+
+### Registering Passkeys
+
+The Frontegg SDK provides a simple method to register passkeys in your application.
+
+#### Example Code for Passkeys Registration:
+```swift
+import FronteggSwift
+
+func registerPasskeys() {
+    if #available(iOS 15.0, *) {
+        FronteggAuth.shared.registerPasskeys()
+    } else {
+        print("Passkeys are only supported on iOS 15 or later.")
+    }
+}
+```
+
+### Logging in with Passkeys
+
+To authenticate users with passkeys, use the following method provided by the SDK:
+
+#### Example Code for Passkeys Login:
+```swift
+import FronteggSwift
+
+func loginWithPasskeys() {
+    if #available(iOS 15.0, *) {
+        FronteggAuth.shared.loginWithPasskeys { result in
+            switch result {
+            case .success(let user):
+                print("User logged in: \(user)")
+            case .failure(let error):
+                print("Error logging in: \(error)")
+            }
+        }
+    } else {
+        print("Passkeys are only supported on iOS 15 or later.")
     }
 }
 ```
