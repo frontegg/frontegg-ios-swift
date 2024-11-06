@@ -249,12 +249,21 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
                 }
                 
                 do {
-                    if let jsonResponse = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                        self.logger.debug("Response from verify endpoint: \(jsonResponse)")
-                        self.callbackAction?(jsonResponse, nil)
-                    } else {
-                        self.logger.error("Invalid JSON structure in response")
-                        self.callbackAction?(nil, FronteggError.authError(.invalidPasskeysRequest))
+                    
+                    if let dataStr = String(data:data, encoding: .utf8),
+                       let httpResponse = response as? HTTPURLResponse,
+                       dataStr.isEmpty, httpResponse.statusCode < 300 {
+                        self.logger.debug("Response from verify succeeded with empty body")
+                        self.callbackAction?(nil, nil)
+                    }else {
+                        
+                        if let jsonResponse = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                            self.logger.debug("Response from verify endpoint: \(jsonResponse)")
+                            self.callbackAction?(jsonResponse, nil)
+                        } else {
+                            self.logger.error("Invalid JSON structure in response")
+                            self.callbackAction?(nil, FronteggError.authError(.invalidPasskeysRequest))
+                        }
                     }
                 } catch {
                     self.logger.error("Error parsing JSON: \(error.localizedDescription)")
