@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>useAsWebAuthenticationForAppleLogin</key>
-	<false/>
+	<true/>
 	<key>embeddedMode</key>
 	<true/>
 	<key>baseUrl</key>
