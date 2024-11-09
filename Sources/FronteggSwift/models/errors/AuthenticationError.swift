@@ -22,6 +22,7 @@ extension FronteggError {
         case failedToAuthenticateWithPasskeys(_ message: String)
         case operationCanceled
         case mfaRequired(_ json: [String:Any], refreshToken: String? = nil)
+        case notAuthenticated
         case unknown
         case other(Error)
     }
@@ -43,6 +44,7 @@ extension FronteggError.Authentication {
         case let .failedToAuthenticateWithPasskeys(message): "Failed to authenticate with Passkeys, \(message)"
         case .operationCanceled: "Operation canceled by user"
         case .mfaRequired: "MFA is required for authentication"
+        case .notAuthenticated: "Not authenticated exception"
         case .unknown: "Unknown error occurred"
         case let .other(error): error.localizedDescription
         }
@@ -61,6 +63,7 @@ extension FronteggError.Authentication {
         case .failedToAuthenticateWithPasskeys: "failedToAuthenticateWithPasskeys"
         case .operationCanceled: "operationCanceled"
         case .mfaRequired: "mfaRequired"
+        case .notAuthenticated: "notAuthenticated"
         case .unknown: "unknown"
         case .other: "other"
         }

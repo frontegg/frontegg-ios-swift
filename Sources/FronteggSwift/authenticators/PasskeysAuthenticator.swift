@@ -14,14 +14,21 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
     
     // MARK: - WebAuthn Registration
     
-    func startWebAuthn() {
+    func startWebAuthn(_ completion: FronteggAuth.ConditionCompletionHandler? = nil) {
         let baseUrl = FronteggAuth.shared.baseUrl
         
+        if let completion = completion  {
+            self.callbackAction = { (data, error) in
+                completion(error == nil)
+            }
+        }
         guard let url = URL(string: "\(baseUrl)/frontegg/identity/resources/users/webauthn/v1/devices"),
               let accessToken = FronteggAuth.shared.accessToken else {
             logger.error("Invalid base URL or missing access token")
+            self.callbackAction?(nil, FronteggError.authError(.notAuthenticated))
             return
         }
+        
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"

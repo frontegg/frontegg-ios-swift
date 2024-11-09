@@ -498,6 +498,8 @@ public class FronteggAuth: ObservableObject {
     }
     public typealias CompletionHandler = (Result<User, FronteggError>) -> Void
     
+    public typealias ConditionCompletionHandler = (_ success: Bool) -> Void
+    
     public func login(_ _completion: FronteggAuth.CompletionHandler? = nil, loginHint: String? = nil) {
         
         if(self.embeddedMode){
@@ -836,10 +838,10 @@ public class FronteggAuth: ObservableObject {
             // Fallback on earlier versions
         }
     }
-    public func registerPasskeys() {
+    public func registerPasskeys(_ completion: FronteggAuth.ConditionCompletionHandler? = nil) {
         
         if #available(iOS 15.0, *) {
-            PasskeysAuthenticator.shared.startWebAuthn()
+            PasskeysAuthenticator.shared.startWebAuthn(completion)
         } else {
             // Fallback on earlier versions
         }
