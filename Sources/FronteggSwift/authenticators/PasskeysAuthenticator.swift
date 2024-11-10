@@ -19,7 +19,17 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
         
         if let completion = completion  {
             self.callbackAction = { (data, error) in
-                completion(error == nil)
+                if let regsitration = data as? WebauthnRegistration {
+                    self.verifyNewDeviceSession(publicKey: regsitration)
+                } else {
+                    if error == nil {
+                        completion(nil)
+                    }else if let frotneggError = error as? FronteggError {
+                        completion(frotneggError)
+                    } else {
+                        completion(FronteggError.authError(.unknown))
+                    }
+                }
             }
         }
         guard let url = URL(string: "\(baseUrl)/frontegg/identity/resources/users/webauthn/v1/devices"),

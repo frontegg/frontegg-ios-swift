@@ -498,7 +498,7 @@ public class FronteggAuth: ObservableObject {
     }
     public typealias CompletionHandler = (Result<User, FronteggError>) -> Void
     
-    public typealias ConditionCompletionHandler = (_ success: Bool) -> Void
+    public typealias ConditionCompletionHandler = (_ error: FronteggError?) -> Void
     
     public func login(_ _completion: FronteggAuth.CompletionHandler? = nil, loginHint: String? = nil) {
         
