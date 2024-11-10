@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>useAsWebAuthenticationForAppleLogin</key>
-	<false/>
+	<true/>
 	<key>embeddedMode</key>
 	<true/>
 	<key>baseUrl</key>
-	<string>https://auth.davidantoon.me</string>
+	<string>https://autheu.davidantoon.me</string>
 	<key>clientId</key>
-	<string>04ae2174-d8d9-4a90-8bab-2548e210a508</string>
+	<string>b6adfe4c-d695-4c04-b95f-3ec9fd0c6cca</string>
 	<key>logLevel</key>
 	<string>trace</string>
 </dict>
