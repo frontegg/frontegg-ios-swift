@@ -180,18 +180,17 @@ public class Api {
         return try await URLSession.shared.data(for: request)
     }
     
-    internal func refreshToken(refreshToken: String) async -> AuthResponse? {
-        do {
-            let (data, _) = try await postRequest(path: "oauth/token", body: [
-                "grant_type": "refresh_token",
-                "refresh_token": refreshToken,
-            ])
-            
-            return try JSONDecoder().decode(AuthResponse.self, from: data)
-        } catch {
-            print(error)
-            return nil
+    internal func refreshToken(refreshToken: String) async throws -> AuthResponse? {
+        let (data, response) = try await postRequest(path: "oauth/token", body: [
+            "grant_type": "refresh_token",
+            "refresh_token": refreshToken,
+        ])
+        
+        if let res = response as? HTTPURLResponse, res.statusCode == 401 {
+            self.logger.error("failed to refresh token, error: \(String(data: data, encoding: .utf8) ?? "unknown error")")
+            throw FronteggError.authError(.failedToRefreshToken)
         }
+        return try JSONDecoder().decode(AuthResponse.self, from: data)
     }
     
     

@@ -32,7 +32,7 @@ struct MyApp: View {
                     VStack {
                         
                         Button {
-                            fronteggAuth.login(loginHint: "david+2@frontegg.com")
+                            fronteggAuth.login()
                         } label: {
                             Text("Login")
                         }.padding(.vertical, 30)
