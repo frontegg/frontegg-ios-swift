@@ -208,8 +208,8 @@ public class FronteggAuth: ObservableObject {
             
             let decode = try JWTHelper.decode(jwtToken: accessToken)
             let user = try await self.api.me(accessToken: accessToken)
-            
-            
+
+
             DispatchQueue.main.sync {
                 self.refreshToken = refreshToken
                 self.accessToken = accessToken
@@ -218,18 +218,24 @@ public class FronteggAuth: ObservableObject {
                 self.appLink = false
                 self.initializing = false
                 self.appLink = false
-                
+
+                if let email = user?.email {
+                    saveCredentialsToKeychain(email: email, password: "")
+                } else {
+                    print("❌ Email is nil; cannot save to Keychain")
+                }
+
                 // isLoading must be at the bottom
                 self.isLoading = false
-                
-                
+
+
                 let offset = calculateOffset(expirationTime: decode["exp"] as! Int)
                 
                 scheduleTokenRefresh(offset: offset)
-                
+
             }
         } catch {
-            logger.error("Failed to load user data, \(error)")
+            logger.error("Failed to load user data: \(error)")
             DispatchQueue.main.sync {
                 self.refreshToken = nil
                 self.accessToken = nil
@@ -237,7 +243,7 @@ public class FronteggAuth: ObservableObject {
                 self.isAuthenticated = false
                 self.initializing = false
                 self.appLink = false
-                
+
                 // isLoading must be at the last bottom
                 self.isLoading = false
             }
@@ -499,7 +505,7 @@ public class FronteggAuth: ObservableObject {
     public typealias CompletionHandler = (Result<User, FronteggError>) -> Void
     
     public func login(_ _completion: FronteggAuth.CompletionHandler? = nil, loginHint: String? = nil) {
-        
+       
         if(self.embeddedMode){
             self.embeddedLogin(_completion, loginHint: loginHint)
             return
@@ -510,12 +516,37 @@ public class FronteggAuth: ObservableObject {
         }
         
         let oauthCallback = createOauthCallbackHandler(completion)
-        let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: loginHint)
+        let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: loginHint)  
         CredentialManager.saveCodeVerifier(codeVerifier)
-        
-        
+
+           
         WebAuthenticator.shared.start(authorizeUrl, completionHandler: oauthCallback)
+    }
+
+    
+    private func saveCredentialsToKeychain(email: String, password: String) {
+        let account = email
+        let service = "com.frontegg.demo" // Unique service identifier for your app
+
+        // Prepare Keychain query
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: account,
+            kSecAttrService as String: service,
+            kSecValueData as String: password.data(using: .utf8)!
+        ]
+
+        // Delete any existing entry for the account to avoid duplicates
+        SecItemDelete(query as CFDictionary)
+
+        // Add the new item to the Keychain
+        let status = SecItemAdd(query as CFDictionary, nil)
         
+        if status == errSecSuccess {
+            logger.info("✅ Saved to Keychain successfully for \(email)")
+        } else {
+            logger.error("❌ Keychain save error: \(status)")
+        }
     }
     
     
@@ -620,11 +651,11 @@ public class FronteggAuth: ObservableObject {
                     
                     if let appleConfig = socialConfig.apple, appleConfig.active {
                         if #available(iOS 15.0, *), appleConfig.customised, !config.useAsWebAuthenticationForAppleLogin {
-                            AppleAuthenticator.shared.start(completionHandler: completion)
+                            await AppleAuthenticator.shared.start(completionHandler: completion)
                         }else {
                             let oauthCallback = self.createOauthCallbackHandler(completion)
                             let url = try await self.generateAppleAuthorizeUrl(config: appleConfig)
-                            WebAuthenticator.shared.start(url, ephemeralSession: true, completionHandler: oauthCallback)
+                            await WebAuthenticator.shared.start(url, ephemeralSession: true, completionHandler: oauthCallback)
                             
                         }
                     } else {
@@ -710,7 +741,7 @@ public class FronteggAuth: ObservableObject {
         return urlComponent.url!
     }
     
-    func loginWithSocialLogin(socialLoginUrl: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
+func loginWithSocialLogin(socialLoginUrl: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
         let completion = _completion ?? { res in
             
         }
