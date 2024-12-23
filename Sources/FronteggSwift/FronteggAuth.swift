@@ -373,11 +373,11 @@ public class FronteggAuth: ObservableObject {
         }
         
         guard let refreshToken = self.refreshToken else {
-            self.logger.info("no refresh token found")
+            self.logger.info("No refresh token found")
             return false
         }
         
-        self.logger.info("refreshing token")
+        self.logger.info("Refreshing token")
         
         if(self.refreshingToken){
             self.logger.info("Skip refreshing token - already in progress")
@@ -399,7 +399,7 @@ public class FronteggAuth: ObservableObject {
         do {
             if let data = try await self.api.refreshToken(refreshToken: refreshToken) {
                 await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
-                self.logger.info("token refreshed successfully")
+                self.logger.info("Token refreshed successfully")
                 return true
             } else {
                 self.logger.info("Refresh rescheduled due to unknown error")
@@ -425,14 +425,7 @@ public class FronteggAuth: ObservableObject {
         
     }
     
-    public func getAccessToken() async -> String? {
-        // check current access token
-        // if valid, return it
-        // else, try to refresh the token and retrun if succeeded
-        
-        return self.accessToken;
-    }
-    
+
     func handleHostedLoginCallback(_ code: String, _ codeVerifier: String, _ completion: @escaping FronteggAuth.CompletionHandler) {
         
         let redirectUri = generateRedirectUri()
@@ -537,7 +530,7 @@ public class FronteggAuth: ObservableObject {
         WebAuthenticator.shared.start(authorizeUrl, completionHandler: oauthCallback)
         
     }
-    
+        
     
     public func loginWithPopup(window: UIWindow?, ephemeralSession: Bool? = true, loginHint: String? = nil, loginAction: String? = nil, _completion: FronteggAuth.CompletionHandler? = nil) {
         
