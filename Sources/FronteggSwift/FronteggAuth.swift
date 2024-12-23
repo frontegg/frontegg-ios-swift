@@ -219,6 +219,7 @@ public class FronteggAuth: ObservableObject {
                 self.initializing = false
                 self.appLink = false
 
+                // isLoading must be at the bottom
                 self.isLoading = false
 
 
@@ -512,7 +513,7 @@ public class FronteggAuth: ObservableObject {
         let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: loginHint)  
         CredentialManager.saveCodeVerifier(codeVerifier)
 
-           
+
         WebAuthenticator.shared.start(authorizeUrl, completionHandler: oauthCallback)
     }
 
