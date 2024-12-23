@@ -219,13 +219,6 @@ public class FronteggAuth: ObservableObject {
                 self.initializing = false
                 self.appLink = false
 
-                if let email = user?.email {
-                    saveCredentialsToKeychain(email: email, password: "")
-                } else {
-                    print("❌ Email is nil; cannot save to Keychain")
-                }
-
-                // isLoading must be at the bottom
                 self.isLoading = false
 
 
@@ -524,30 +517,21 @@ public class FronteggAuth: ObservableObject {
     }
 
     
-    private func saveCredentialsToKeychain(email: String, password: String) {
+    func saveWebCredentials(domain: String, email: String, password: String, completion: @escaping (Bool, Error?) -> Void) {
+        let domainString = domain
         let account = email
-        let service = "com.frontegg.demo" // Unique service identifier for your app
-
-        // Prepare Keychain query
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: account,
-            kSecAttrService as String: service,
-            kSecValueData as String: password.data(using: .utf8)!
-        ]
-
-        // Delete any existing entry for the account to avoid duplicates
-        SecItemDelete(query as CFDictionary)
-
-        // Add the new item to the Keychain
-        let status = SecItemAdd(query as CFDictionary, nil)
-        
-        if status == errSecSuccess {
-            logger.info("✅ Saved to Keychain successfully for \(email)")
-        } else {
-            logger.error("❌ Keychain save error: \(status)")
+    
+        SecAddSharedWebCredential(domainString as CFString, account as CFString, password as CFString) { error in
+            if let error = error {
+                print("❌ Failed to save shared web credentials: \(error.localizedDescription)")
+                completion(false, error)
+            } else {
+                print("✅ Shared web credentials saved successfully!")
+                completion(true, nil)
+            }
         }
     }
+
     
     
     public func loginWithPopup(window: UIWindow?, ephemeralSession: Bool? = true, loginHint: String? = nil, loginAction: String? = nil, _completion: FronteggAuth.CompletionHandler? = nil) {

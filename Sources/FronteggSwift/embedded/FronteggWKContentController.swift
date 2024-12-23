@@ -72,6 +72,22 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
             FronteggAuth.shared.loginWithSSO(email: message.payload)
         case "loginWithSocialLogin":
             FronteggAuth.shared.loginWithSocialLogin(socialLoginUrl: message.payload)
+        case "loginWithPassword":
+            guard let data = try? JSONSerialization.jsonObject(with: Data(payload.utf8), options: []) as? [String: String],
+                let email = data["email"],
+                let password = data["password"] else {
+                    print("Invalid payload for loginWithPassword")
+            
+                    return
+                }
+
+            FronteggAuth.shared.saveWebCredentials(domain: "autheu.davidantoon.me", email: email, password: password) { success, error in
+                if success {
+                    print("Credentials saved successfully for \(email)")
+                } else {
+                    print("Failed to save credentials: \(error?.localizedDescription ?? "Unknown error")")
+                }
+            }
         case "showLoader":
             FronteggAuth.shared.webLoading = true
         case "hideLoader":
