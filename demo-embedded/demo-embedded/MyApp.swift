@@ -13,6 +13,7 @@ struct MyApp: View {
     
     var body: some View {
         ZStack {
+            
             if fronteggAuth.isAuthenticated {
                 TabView {
                     ProfileTab()
@@ -27,9 +28,9 @@ struct MyApp: View {
                         }
                 }
             } else {
-                
                 if(!fronteggAuth.isAuthenticated){
                     VStack {
+                        
                         Button {
                             fronteggAuth.login()
                         } label: {

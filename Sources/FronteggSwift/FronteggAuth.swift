@@ -52,7 +52,7 @@ public class FronteggAuth: ObservableObject {
     public var api: Api
     private var subscribers = Set<AnyCancellable>()
     private var refreshTokenDispatch: DispatchWorkItem?
-    
+    var loginCompletion: CompletionHandler? = nil
     
     init (baseUrl:String,
           clientId: String,
@@ -498,6 +498,8 @@ public class FronteggAuth: ObservableObject {
     }
     public typealias CompletionHandler = (Result<User, FronteggError>) -> Void
     
+    public typealias ConditionCompletionHandler = (_ error: FronteggError?) -> Void
+    
     public func login(_ _completion: FronteggAuth.CompletionHandler? = nil, loginHint: String? = nil) {
        
         if(self.embeddedMode){
@@ -612,7 +614,7 @@ public class FronteggAuth: ObservableObject {
     
     
     public func loginWithSSO(email: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
-        let completion = _completion ?? { res in
+        let completion = _completion ?? self.loginCompletion ?? { res in
             
         }
         
@@ -726,8 +728,9 @@ public class FronteggAuth: ObservableObject {
         return urlComponent.url!
     }
     
-func loginWithSocialLogin(socialLoginUrl: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
-        let completion = _completion ?? { res in
+    func loginWithSocialLogin(socialLoginUrl: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
+        let completion = _completion ?? self.loginCompletion ?? { res in
+
             
         }
         
@@ -756,6 +759,10 @@ func loginWithSocialLogin(socialLoginUrl: String, _ _completion: FronteggAuth.Co
         
         if let rootVC = self.getRootVC() {
             self.loginHint = loginHint
+            self.loginCompletion = { result in
+                _completion?(result)
+                self.loginCompletion = nil
+            }
             let loginModal = EmbeddedLoginModal(parentVC: rootVC)
             let hostingController = UIHostingController(rootView: loginModal)
             hostingController.modalPresentationStyle = .fullScreen
@@ -848,10 +855,10 @@ func loginWithSocialLogin(socialLoginUrl: String, _ _completion: FronteggAuth.Co
             // Fallback on earlier versions
         }
     }
-    public func registerPasskeys() {
+    public func registerPasskeys(_ completion: FronteggAuth.ConditionCompletionHandler? = nil) {
         
         if #available(iOS 15.0, *) {
-            PasskeysAuthenticator.shared.startWebAuthn()
+            PasskeysAuthenticator.shared.startWebAuthn(completion)
         } else {
             // Fallback on earlier versions
         }

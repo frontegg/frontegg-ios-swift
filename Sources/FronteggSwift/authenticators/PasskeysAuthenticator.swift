@@ -14,14 +14,31 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
     
     // MARK: - WebAuthn Registration
     
-    func startWebAuthn() {
+    func startWebAuthn(_ completion: FronteggAuth.ConditionCompletionHandler? = nil) {
         let baseUrl = FronteggAuth.shared.baseUrl
         
+        if let completion = completion  {
+            self.callbackAction = { (data, error) in
+                if let regsitration = data as? WebauthnRegistration {
+                    self.verifyNewDeviceSession(publicKey: regsitration)
+                } else {
+                    if error == nil {
+                        completion(nil)
+                    }else if let frotneggError = error as? FronteggError {
+                        completion(frotneggError)
+                    } else {
+                        completion(FronteggError.authError(.unknown))
+                    }
+                }
+            }
+        }
         guard let url = URL(string: "\(baseUrl)/frontegg/identity/resources/users/webauthn/v1/devices"),
               let accessToken = FronteggAuth.shared.accessToken else {
             logger.error("Invalid base URL or missing access token")
+            self.callbackAction?(nil, FronteggError.authError(.notAuthenticated))
             return
         }
+        
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -249,12 +266,21 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
                 }
                 
                 do {
-                    if let jsonResponse = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                        self.logger.debug("Response from verify endpoint: \(jsonResponse)")
-                        self.callbackAction?(jsonResponse, nil)
-                    } else {
-                        self.logger.error("Invalid JSON structure in response")
-                        self.callbackAction?(nil, FronteggError.authError(.invalidPasskeysRequest))
+                    
+                    if let dataStr = String(data:data, encoding: .utf8),
+                       let httpResponse = response as? HTTPURLResponse,
+                       dataStr.isEmpty, httpResponse.statusCode < 300 {
+                        self.logger.debug("Response from verify succeeded with empty body")
+                        self.callbackAction?(nil, nil)
+                    }else {
+                        
+                        if let jsonResponse = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                            self.logger.debug("Response from verify endpoint: \(jsonResponse)")
+                            self.callbackAction?(jsonResponse, nil)
+                        } else {
+                            self.logger.error("Invalid JSON structure in response")
+                            self.callbackAction?(nil, FronteggError.authError(.invalidPasskeysRequest))
+                        }
                     }
                 } catch {
                     self.logger.error("Error parsing JSON: \(error.localizedDescription)")
