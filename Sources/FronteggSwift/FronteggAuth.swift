@@ -638,11 +638,11 @@ public class FronteggAuth: ObservableObject {
                     
                     if let appleConfig = socialConfig.apple, appleConfig.active {
                         if #available(iOS 15.0, *), appleConfig.customised, !config.useAsWebAuthenticationForAppleLogin {
-                            await AppleAuthenticator.shared.start(completionHandler: completion)
+                            AppleAuthenticator.shared.start(completionHandler: completion)
                         }else {
                             let oauthCallback = self.createOauthCallbackHandler(completion)
                             let url = try await self.generateAppleAuthorizeUrl(config: appleConfig)
-                            await WebAuthenticator.shared.start(url, ephemeralSession: true, completionHandler: oauthCallback)
+                            WebAuthenticator.shared.start(url, ephemeralSession: true, completionHandler: oauthCallback)
                             
                         }
                     } else {
