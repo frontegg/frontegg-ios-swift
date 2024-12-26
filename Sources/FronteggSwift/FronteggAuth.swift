@@ -208,8 +208,8 @@ public class FronteggAuth: ObservableObject {
             
             let decode = try JWTHelper.decode(jwtToken: accessToken)
             let user = try await self.api.me(accessToken: accessToken)
-            
-            
+
+
             DispatchQueue.main.sync {
                 self.refreshToken = refreshToken
                 self.accessToken = accessToken
@@ -218,18 +218,18 @@ public class FronteggAuth: ObservableObject {
                 self.appLink = false
                 self.initializing = false
                 self.appLink = false
-                
+
                 // isLoading must be at the bottom
                 self.isLoading = false
-                
-                
+
+
                 let offset = calculateOffset(expirationTime: decode["exp"] as! Int)
                 
                 scheduleTokenRefresh(offset: offset)
-                
+
             }
         } catch {
-            logger.error("Failed to load user data, \(error)")
+            logger.error("Failed to load user data: \(error)")
             DispatchQueue.main.sync {
                 self.refreshToken = nil
                 self.accessToken = nil
@@ -237,7 +237,7 @@ public class FronteggAuth: ObservableObject {
                 self.isAuthenticated = false
                 self.initializing = false
                 self.appLink = false
-                
+
                 // isLoading must be at the last bottom
                 self.isLoading = false
             }
@@ -501,7 +501,7 @@ public class FronteggAuth: ObservableObject {
     public typealias ConditionCompletionHandler = (_ error: FronteggError?) -> Void
     
     public func login(_ _completion: FronteggAuth.CompletionHandler? = nil, loginHint: String? = nil) {
-        
+       
         if(self.embeddedMode){
             self.embeddedLogin(_completion, loginHint: loginHint)
             return
@@ -512,13 +512,29 @@ public class FronteggAuth: ObservableObject {
         }
         
         let oauthCallback = createOauthCallbackHandler(completion)
-        let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: loginHint)
+        let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: loginHint)  
         CredentialManager.saveCodeVerifier(codeVerifier)
-        
-        
+
+
         WebAuthenticator.shared.start(authorizeUrl, completionHandler: oauthCallback)
-        
     }
+
+    
+    func saveWebCredentials(domain: String, email: String, password: String, completion: @escaping (Bool, Error?) -> Void) {
+        let domainString = domain
+        let account = email
+    
+        SecAddSharedWebCredential(domainString as CFString, account as CFString, password as CFString) { error in
+            if let error = error {
+                print("❌ Failed to save shared web credentials: \(error.localizedDescription)")
+                completion(false, error)
+            } else {
+                print("✅ Shared web credentials saved successfully!")
+                completion(true, nil)
+            }
+        }
+    }
+
     
     
     public func loginWithPopup(window: UIWindow?, ephemeralSession: Bool? = true, loginHint: String? = nil, loginAction: String? = nil, _completion: FronteggAuth.CompletionHandler? = nil) {
@@ -714,6 +730,7 @@ public class FronteggAuth: ObservableObject {
     
     func loginWithSocialLogin(socialLoginUrl: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
         let completion = _completion ?? self.loginCompletion ?? { res in
+
             
         }
         

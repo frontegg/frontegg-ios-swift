@@ -24,6 +24,8 @@ public class FronteggApp {
     /* force consent when authenticate with social login */
     public var shouldPromptSocialLoginConsent:Bool = true
     
+    public var shouldSuggestSavePassword:Bool = false
+    
     
     public var regionData: [RegionConfig] = []
     let credentialManager: CredentialManager
@@ -46,6 +48,7 @@ public class FronteggApp {
         self.bundleIdentifier = bundleIdentifier
         self.handleLoginWithSocialLogin = config.loginWithSocialLogin
         self.handleLoginWithSSO = config.loginWithSSO
+        self.shouldSuggestSavePassword = config.shouldSuggestSavePassword
         
         if FronteggApp.clearKeychain(config: config) {
             self.credentialManager.clear()
