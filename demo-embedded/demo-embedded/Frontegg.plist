@@ -6,6 +6,8 @@
 	<true/>
 	<key>embeddedMode</key>
 	<true/>
+	<key>shouldSuggestSavePassword</key>
+	<true/>
 	<key>baseUrl</key>
 	<string>https://autheu.davidantoon.me</string>
 	<key>clientId</key>
