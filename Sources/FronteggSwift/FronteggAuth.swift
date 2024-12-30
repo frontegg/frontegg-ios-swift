@@ -373,11 +373,11 @@ public class FronteggAuth: ObservableObject {
         }
         
         guard let refreshToken = self.refreshToken else {
-            self.logger.info("no refresh token found")
+            self.logger.info("No refresh token found")
             return false
         }
         
-        self.logger.info("refreshing token")
+        self.logger.info("Refreshing token")
         
         if(self.refreshingToken){
             self.logger.info("Skip refreshing token - already in progress")
@@ -395,26 +395,37 @@ public class FronteggAuth: ObservableObject {
             }
         }
         
-        if let data = await self.api.refreshToken(refreshToken: refreshToken) {
-            await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
-            self.logger.info("token refreshed successfully")
-            return true
-        } else {
-            self.logger.info("refresh token failed, isAuthenticated = false")
-            DispatchQueue.main.sync {
-                self.initializing = false
-                self.isAuthenticated = false
-                self.accessToken = nil
-                self.refreshToken = nil
-                self.credentialManager.clear()
-                // isLoading must be at the last bottom
-                self.isLoading = false
+        
+        do {
+            if let data = try await self.api.refreshToken(refreshToken: refreshToken) {
+                await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
+                self.logger.info("Token refreshed successfully")
+                return true
+            } else {
+                self.logger.info("Refresh rescheduled due to unknown error")
+                scheduleTokenRefresh(offset: 10)
+            }
+        }catch {
+            if let err = error as? FronteggError, err.failureReason == "failedToRefreshToken" {
+                DispatchQueue.main.sync {
+                    self.initializing = false
+                    self.isAuthenticated = false
+                    self.accessToken = nil
+                    self.refreshToken = nil
+                    self.credentialManager.clear()
+                    // isLoading must be at the last bottom
+                    self.isLoading = false
+                }
+            }else {
+                self.logger.info("Refresh rescheduled due to unknown error")
+                scheduleTokenRefresh(offset: 10)
             }
         }
         return false
         
     }
     
+
     func handleHostedLoginCallback(_ code: String, _ codeVerifier: String, _ completion: @escaping FronteggAuth.CompletionHandler) {
         
         let redirectUri = generateRedirectUri()
@@ -901,6 +912,8 @@ public class FronteggAuth: ObservableObject {
         }
         return completion
     }
+    
+    
     internal func startMultiFactorAuthenticator(_ errorResponse: [String: Any], refreshToken:String? = nil, completion: FronteggAuth.CompletionHandler? = nil) async {
         
         
