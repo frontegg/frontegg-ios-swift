@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		417E63F22D2EF6C000108847 /* MainNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417E63F12D2EF6C000108847 /* MainNavController.swift */; };
+		417E63F42D2EF75D00108847 /* LoginViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417E63F32D2EF75D00108847 /* LoginViewController.swift */; };
+		417E63F62D2EF78600108847 /* BaseViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417E63F52D2EF78600108847 /* BaseViewController.swift */; };
+		417E63F82D2EF7FB00108847 /* StreamViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417E63F72D2EF7FB00108847 /* StreamViewController.swift */; };
+		417E63FA2D2EF8C100108847 /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417E63F92D2EF8C100108847 /* Extensions.swift */; };
+		417E63FC2D2EF8ED00108847 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417E63FB2D2EF8ED00108847 /* MainViewController.swift */; };
+		417E63FE2D2EF94000108847 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417E63FD2D2EF94000108847 /* Constants.swift */; };
 		41AEA8722B67F4760045C0B3 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41AEA8712B67F4760045C0B3 /* AppDelegate.swift */; };
 		41AEA8742B67F4760045C0B3 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41AEA8732B67F4760045C0B3 /* SceneDelegate.swift */; };
 		41AEA8762B67F4760045C0B3 /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41AEA8752B67F4760045C0B3 /* ViewController.swift */; };
@@ -19,6 +26,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		417E63F12D2EF6C000108847 /* MainNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainNavController.swift; sourceTree = "<group>"; };
+		417E63F32D2EF75D00108847 /* LoginViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewController.swift; sourceTree = "<group>"; };
+		417E63F52D2EF78600108847 /* BaseViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaseViewController.swift; sourceTree = "<group>"; };
+		417E63F72D2EF7FB00108847 /* StreamViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamViewController.swift; sourceTree = "<group>"; };
+		417E63F92D2EF8C100108847 /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
+		417E63FB2D2EF8ED00108847 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
+		417E63FD2D2EF94000108847 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		41AEA86E2B67F4760045C0B3 /* demo-uikit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "demo-uikit.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		41AEA8712B67F4760045C0B3 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		41AEA8732B67F4760045C0B3 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
@@ -68,12 +82,19 @@
 				41AEA8712B67F4760045C0B3 /* AppDelegate.swift */,
 				41AEA8732B67F4760045C0B3 /* SceneDelegate.swift */,
 				41AEA8752B67F4760045C0B3 /* ViewController.swift */,
+				417E63F12D2EF6C000108847 /* MainNavController.swift */,
 				41AEA8772B67F4760045C0B3 /* Main.storyboard */,
 				41AEA87A2B67F4770045C0B3 /* Assets.xcassets */,
 				41AEA87C2B67F4770045C0B3 /* LaunchScreen.storyboard */,
 				41AEA87F2B67F4770045C0B3 /* Info.plist */,
 				41AEA8902B67FC970045C0B3 /* AuthenticationController.swift */,
 				41AEA8922B67FD2A0045C0B3 /* Frontegg.plist */,
+				417E63F32D2EF75D00108847 /* LoginViewController.swift */,
+				417E63F52D2EF78600108847 /* BaseViewController.swift */,
+				417E63F72D2EF7FB00108847 /* StreamViewController.swift */,
+				417E63F92D2EF8C100108847 /* Extensions.swift */,
+				417E63FB2D2EF8ED00108847 /* MainViewController.swift */,
+				417E63FD2D2EF94000108847 /* Constants.swift */,
 			);
 			path = "demo-uikit";
 			sourceTree = "<group>";
@@ -168,10 +189,17 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				417E63F82D2EF7FB00108847 /* StreamViewController.swift in Sources */,
+				417E63FE2D2EF94000108847 /* Constants.swift in Sources */,
+				417E63FA2D2EF8C100108847 /* Extensions.swift in Sources */,
+				417E63F42D2EF75D00108847 /* LoginViewController.swift in Sources */,
+				417E63F22D2EF6C000108847 /* MainNavController.swift in Sources */,
 				41AEA8762B67F4760045C0B3 /* ViewController.swift in Sources */,
 				41AEA8722B67F4760045C0B3 /* AppDelegate.swift in Sources */,
 				41AEA8742B67F4760045C0B3 /* SceneDelegate.swift in Sources */,
+				417E63F62D2EF78600108847 /* BaseViewController.swift in Sources */,
 				41AEA8912B67FC970045C0B3 /* AuthenticationController.swift in Sources */,
+				417E63FC2D2EF8ED00108847 /* MainViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -317,7 +345,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 110;
 				DEVELOPMENT_TEAM = 3R2X6557U2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "demo-uikit/Info.plist";
@@ -330,7 +358,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.10;
 				PRODUCT_BUNDLE_IDENTIFIER = com.frontegg.demo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -345,7 +373,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 110;
 				DEVELOPMENT_TEAM = 3R2X6557U2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "demo-uikit/Info.plist";
@@ -358,7 +386,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.10;
 				PRODUCT_BUNDLE_IDENTIFIER = com.frontegg.demo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

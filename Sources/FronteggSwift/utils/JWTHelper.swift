@@ -7,7 +7,7 @@
 import Foundation
 
 
-class JWTHelper {
+public class JWTHelper {
     
     static public func decode(jwtToken jwt: String) throws -> [String: Any] {
         

@@ -11,7 +11,15 @@ import FronteggSwift
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
+    var window: UIWindow?
+    let fronteggAuth = FronteggAuth.shared
 
+    
+    private var _currentVC: UIViewController?
+    var currentVC: UIViewController {
+        get { return _currentVC! }
+        set(newVC) { _currentVC = newVC }
+    }
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.
