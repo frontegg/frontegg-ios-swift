@@ -119,10 +119,12 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
                     self.testLabel.text = "Access Token Valid \n\n\(accessToken)"
                 } else {
                     self.testLabel.text = "No Access"
+                    logoutButton()
                 }
             }
         }else {
             self.testLabel.text = "No Access"
+            logoutButton()
         }
         
         

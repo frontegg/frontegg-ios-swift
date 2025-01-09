@@ -407,21 +407,19 @@ public class FronteggAuth: ObservableObject {
             }
         } catch let error as FronteggError {
             switch error {
-            case .authError(FronteggError.Authentication.failedToRefreshToken):
-                DispatchQueue.main.sync {
-                    self.initializing = false
-                    self.isAuthenticated = false
-                    self.accessToken = nil
-                    self.refreshToken = nil
-                    self.credentialManager.clear()
-                    // isLoading must be at the last bottom
-                    self.isLoading = false
-                }
-                
-            
-            default:
-                self.logger.info("Refresh rescheduled due to unknown error \(error.localizedDescription)")
-                scheduleTokenRefresh(offset: 10)
+                case .authError(FronteggError.Authentication.failedToRefreshToken):
+                    DispatchQueue.main.sync {
+                        self.initializing = false
+                        self.isAuthenticated = false
+                        self.accessToken = nil
+                        self.refreshToken = nil
+                        self.credentialManager.clear()
+                        // isLoading must be at the last bottom
+                        self.isLoading = false
+                    }
+                default:
+                    self.logger.info("Refresh rescheduled due to unknown error \(error.localizedDescription)")
+                    scheduleTokenRefresh(offset: 10)
             }
         } catch {
             self.logger.info("Refresh rescheduled due to unknown error \(error.localizedDescription)")

@@ -74,16 +74,11 @@ class LoginViewController: BaseViewController {
     /// Refreshes the token if it is close to expiration.
     private func refreshTokenIfNeeded() {
         Task {
-            do {
-                let refreshed = try await FronteggApp.shared.auth.refreshTokenIfNeeded()
-                if refreshed {
-                    print("Token refreshed successfully.")
-                } else {
-                    print("Token not refreshed, possibly still valid.")
-                }
-            } catch {
-                print("Failed to refresh token: \(error.localizedDescription)")
-                // Optional: Redirect to login or show an error
+            let refreshed = await FronteggApp.shared.auth.refreshTokenIfNeeded()
+            if refreshed {
+                print("Token refreshed successfully.")
+            } else {
+                print("Token not refreshed, possibly still valid.")
             }
         }
     }
