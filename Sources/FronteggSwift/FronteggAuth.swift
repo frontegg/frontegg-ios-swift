@@ -308,15 +308,15 @@ public class FronteggAuth: ObservableObject {
     
     
     
-    func scheduleTokenRefresh(offset: TimeInterval) {
+    func scheduleTokenRefresh(offset: TimeInterval, attempts: Int = 0) {
         cancelScheduledTokenRefresh()
-        logger.info("Schedule token refresh after, (\(offset) s)")
+        logger.info("Schedule token refresh after, (\(offset) s) (attempt: \(attempts))")
         
         var workItem: DispatchWorkItem? = nil
         workItem = DispatchWorkItem {
             if !(workItem!.isCancelled) {
                 Task {
-                    await self.refreshTokenIfNeeded()
+                    await self.refreshTokenIfNeeded(attempts: attempts)
                 }
             }
         }
@@ -363,29 +363,46 @@ public class FronteggAuth: ObservableObject {
         }
     }
     
-    public func refreshTokenIfNeeded() async -> Bool {
-        
-        guard await NetworkStatusMonitor.isActive else {
-            self.logger.info("Refresh rescheduled due to inactive internet")
-            
-            scheduleTokenRefresh(offset: 10)
-            return false
-        }
+    public func refreshTokenIfNeeded(attempts: Int = 0) async -> Bool {
         
         guard let refreshToken = self.refreshToken else {
             self.logger.info("No refresh token found")
             return false
         }
         
-        self.logger.info("Refreshing token")
+        if (attempts > 10) {
+            self.logger.info("refresh token attemps exeeceded, logging out")
+            self.credentialManager.clear()
+            DispatchQueue.main.sync {
+                self.initializing = false
+                self.isAuthenticated = false
+                self.accessToken = nil
+                self.refreshToken = nil
+                self.credentialManager.clear()
+                // isLoading must be at the last bottom
+                self.isLoading = false
+            }
+            return false
+        }
+        guard await NetworkStatusMonitor.isActive else {
+            self.logger.info("Refresh rescheduled due to inactive internet")
+            
+            // attempt = 0 to prevent abandon refresh token due to network errors
+            scheduleTokenRefresh(offset: 2, attempts: 0)
+            return false
+        }
+        
         
         if(self.refreshingToken){
             self.logger.info("Skip refreshing token - already in progress")
             return false
         }
         
+        self.logger.info("Refreshing token")
+        
+        
         DispatchQueue.main.sync {
-            self.refreshingToken=true
+            self.refreshingToken = true
         }
         
         defer {
@@ -403,7 +420,7 @@ public class FronteggAuth: ObservableObject {
                 return true
             } else {
                 self.logger.info("Refresh rescheduled due to unknown error")
-                scheduleTokenRefresh(offset: 10)
+                scheduleTokenRefresh(offset: 2, attempts: attempts + 1)
             }
         } catch let error as FronteggError {
             switch error {
@@ -419,11 +436,11 @@ public class FronteggAuth: ObservableObject {
                     }
                 default:
                     self.logger.info("Refresh rescheduled due to unknown error \(error.localizedDescription)")
-                    scheduleTokenRefresh(offset: 10)
+                    scheduleTokenRefresh(offset: 2, attempts: attempts + 1)
             }
         } catch {
             self.logger.info("Refresh rescheduled due to unknown error \(error.localizedDescription)")
-            scheduleTokenRefresh(offset: 10)
+            scheduleTokenRefresh(offset: 2, attempts: attempts + 1)
         }
         return false
         
