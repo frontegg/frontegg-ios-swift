@@ -87,7 +87,7 @@
         <!--Main Nav Controller-->
         <scene sceneID="bMd-z0-wcu">
             <objects>
-                <navigationController storyboardIdentifier="mainNavController" navigationBarHidden="YES" id="Up9-lW-jjr" customClass="MainNavController" sceneMemberID="viewController">
+                <navigationController storyboardIdentifier="MainNavController" navigationBarHidden="YES" id="Up9-lW-jjr" customClass="MainNavController" sceneMemberID="viewController">
                     <simulatedStatusBarMetrics key="simulatedStatusBarMetrics" statusBarStyle="blackOpaque"/>
                     <navigationBar key="navigationBar" contentMode="scaleToFill" misplaced="YES" id="nrB-Lr-M7m">
                         <autoresizingMask key="autoresizingMask"/>
@@ -111,7 +111,7 @@
                                 <nil key="textColor"/>
                                 <nil key="highlightedColor"/>
                             </label>
-                            <activityIndicatorView opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" fixedFrame="YES" style="medium" translatesAutoresizingMaskIntoConstraints="NO" id="TDp-E8-y6X">
+                            <activityIndicatorView opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" fixedFrame="YES" animating="YES" style="medium" translatesAutoresizingMaskIntoConstraints="NO" id="TDp-E8-y6X">
                                 <rect key="frame" x="186" y="416" width="20" height="20"/>
                                 <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
                             </activityIndicatorView>
