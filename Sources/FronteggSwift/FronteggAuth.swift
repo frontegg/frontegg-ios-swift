@@ -786,6 +786,31 @@ public class FronteggAuth: ObservableObject {
         
         WebAuthenticator.shared.start(authorizeUrl, completionHandler: oauthCallback)
     }
+
+    public func loginWithCookie(cookie: String, _ completion: @escaping CompletionHandler) {
+        self.setIsLoading(true)
+
+        Task {
+            do {
+                let authResponse: AuthResponse = try await self.api.requestAuthorize(cookie: cookie)
+
+                await self.setCredentials(
+                    accessToken: authResponse.access_token,
+                    refreshToken: authResponse.refresh_token
+                )
+
+                completion(.success(self.user!)) 
+            } catch {
+                logger.error("Error during cookie-based authorization: \(error.localizedDescription)")
+                completion(.failure(FronteggError.authError(.failedToAuthenticate)))
+            }
+
+            DispatchQueue.main.async {
+                self.setIsLoading(false)
+            }
+        }
+    }
+
     
     public func embeddedLogin(_ _completion: FronteggAuth.CompletionHandler? = nil, loginHint: String?) {
         

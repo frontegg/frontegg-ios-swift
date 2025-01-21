@@ -132,6 +132,26 @@ public class Api {
         
         return try await URLSession.shared.data(for: request)
     }
+
+    internal func requestAuthorize(cookie: String) async throws -> AuthResponse {
+        let headers: [String: String] = [
+            "Content-Type": "application/json",
+            "Cookie": cookie
+        ]
+
+        let (data, response) = try await postRequest(
+            path: "/oauth/token",
+            body: [:],
+            additionalHeaders: headers
+        )
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw FronteggError.authError(.failedToAuthenticate("Invalid cookie"))
+        }
+
+        return try JSONDecoder().decode(AuthResponse.self, from: data)
+    }
+
     
     internal func getRequest(path:String, accessToken:String?, refreshToken: String? = nil, additionalHeaders: [String: String] = [:], followRedirect:Bool = true) async throws -> (Data, URLResponse) {
         
