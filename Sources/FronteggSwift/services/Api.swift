@@ -180,7 +180,7 @@ public class Api {
         return try await URLSession.shared.data(for: request)
     }
     
-    internal func refreshToken(refreshToken: String) async throws -> AuthResponse? {
+    internal func refreshToken(refreshToken: String) async throws -> AuthResponse {
         let (data, response) = try await postRequest(path: "oauth/token", body: [
             "grant_type": "refresh_token",
             "refresh_token": refreshToken,

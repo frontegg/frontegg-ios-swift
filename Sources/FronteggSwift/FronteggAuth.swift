@@ -208,8 +208,8 @@ public class FronteggAuth: ObservableObject {
             
             let decode = try JWTHelper.decode(jwtToken: accessToken)
             let user = try await self.api.me(accessToken: accessToken)
-
-
+            
+            
             DispatchQueue.main.sync {
                 self.refreshToken = refreshToken
                 self.accessToken = accessToken
@@ -218,15 +218,15 @@ public class FronteggAuth: ObservableObject {
                 self.appLink = false
                 self.initializing = false
                 self.appLink = false
-
+                
                 // isLoading must be at the bottom
                 self.isLoading = false
-
-
+                
+                
                 let offset = calculateOffset(expirationTime: decode["exp"] as! Int)
                 
                 scheduleTokenRefresh(offset: offset)
-
+                
             }
         } catch {
             logger.error("Failed to load user data: \(error)")
@@ -237,7 +237,7 @@ public class FronteggAuth: ObservableObject {
                 self.isAuthenticated = false
                 self.initializing = false
                 self.appLink = false
-
+                
                 // isLoading must be at the last bottom
                 self.isLoading = false
             }
@@ -414,29 +414,26 @@ public class FronteggAuth: ObservableObject {
         
         
         do {
-            if let data = try await self.api.refreshToken(refreshToken: refreshToken) {
-                await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
-                self.logger.info("Token refreshed successfully")
-                return true
-            } else {
-                self.logger.info("Refresh rescheduled due to unknown error")
-                scheduleTokenRefresh(offset: 2, attempts: attempts + 1)
-            }
+            let data = try await self.api.refreshToken(refreshToken: refreshToken)
+            await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
+            self.logger.info("Token refreshed successfully")
+            return true
+            
         } catch let error as FronteggError {
             switch error {
-                case .authError(FronteggError.Authentication.failedToRefreshToken):
-                    DispatchQueue.main.sync {
-                        self.initializing = false
-                        self.isAuthenticated = false
-                        self.accessToken = nil
-                        self.refreshToken = nil
-                        self.credentialManager.clear()
-                        // isLoading must be at the last bottom
-                        self.isLoading = false
-                    }
-                default:
-                    self.logger.info("Refresh rescheduled due to unknown error \(error.localizedDescription)")
-                    scheduleTokenRefresh(offset: 2, attempts: attempts + 1)
+            case .authError(FronteggError.Authentication.failedToRefreshToken):
+                DispatchQueue.main.sync {
+                    self.initializing = false
+                    self.isAuthenticated = false
+                    self.accessToken = nil
+                    self.refreshToken = nil
+                    self.credentialManager.clear()
+                    // isLoading must be at the last bottom
+                    self.isLoading = false
+                }
+            default:
+                self.logger.info("Refresh rescheduled due to unknown error \(error.localizedDescription)")
+                scheduleTokenRefresh(offset: 2, attempts: attempts + 1)
             }
         } catch {
             self.logger.info("Refresh rescheduled due to unknown error \(error.localizedDescription)")
@@ -446,7 +443,7 @@ public class FronteggAuth: ObservableObject {
         
     }
     
-
+    
     func handleHostedLoginCallback(_ code: String, _ codeVerifier: String, _ completion: @escaping FronteggAuth.CompletionHandler) {
         
         let redirectUri = generateRedirectUri()
@@ -490,6 +487,92 @@ public class FronteggAuth: ObservableObject {
         
     }
     
+    
+    public func getOrRefreshAccessToken(_ completion: @escaping FronteggAuth.AccessTokenHandler) {
+        // Ensure that token refresh is not already in progress
+        DispatchQueue.global(qos: .userInitiated).async {
+            
+            while self.isLoading || self.initializing || self.refreshingToken {
+                usleep(200_000) // Sleep for 100ms before checking isLoading again
+            }
+            
+            // Check if the refresh token exists
+            guard let refreshToken = self.refreshToken else {
+                DispatchQueue.main.sync {
+                    completion(.success(nil))
+                }
+                return
+            }
+            
+            // Check if the access token exists and is still valid
+            if let accessToken = self.accessToken {
+                do {
+                    let decodedToken = try JWTHelper.decode(jwtToken: accessToken)
+                    if let exp = decodedToken["exp"] as? Int {
+                        let currentTime = Int(Date().timeIntervalSince1970)
+                        if exp - currentTime > 15 { // Ensure token has more than 15 seconds validity
+                            DispatchQueue.main.sync {
+                                completion(.success(accessToken))
+                            }
+                            return
+                        }
+                    }
+                } catch {
+                    self.logger.error("Failed to decode JWT: \(error.localizedDescription)")
+                }
+            }
+            
+            // Refresh the token if access token is expired or not available
+            Task {
+                
+                DispatchQueue.main.sync {
+                    self.refreshingToken = true
+                }
+                
+                defer {
+                    // cleanup scope
+                    DispatchQueue.main.sync {
+                        self.refreshingToken = false
+                    }
+                }
+                
+                var attempts = 0
+                while true {
+                    do {
+                        let data = try await self.api.refreshToken(refreshToken: refreshToken)
+                        await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
+                        self.logger.info("Token refreshed successfully")
+                        DispatchQueue.main.sync {
+                            completion(.success(self.accessToken))
+                        }
+                        return
+                    } catch let error as FronteggError {
+                        switch error {
+                        case .authError(FronteggError.Authentication.failedToRefreshToken):
+                            DispatchQueue.main.sync {
+                                completion(.success(nil))
+                            }
+                            return
+                        default:
+                            if attempts > 5 {
+                                DispatchQueue.main.sync {
+                                    completion(.failure(error))
+                                }
+                                return
+                            } else {
+                                self.logger.info("Failed to refresh token, \(error.localizedDescription), trying again... (\(attempts) attempts)")
+                                attempts += 1
+                                usleep(1_000_000) // Sleep for 500ms before retrying
+                            }
+                            
+                        }
+                        
+                    }
+                }
+            }
+        }
+    }
+    
     internal func setIsLoading(_ isLoading: Bool){
         DispatchQueue.main.async {
             self.isLoading = isLoading
@@ -530,10 +613,12 @@ public class FronteggAuth: ObservableObject {
     }
     public typealias CompletionHandler = (Result<User, FronteggError>) -> Void
     
+    public typealias AccessTokenHandler = (Result<String?, FronteggError>) -> Void
+    
     public typealias ConditionCompletionHandler = (_ error: FronteggError?) -> Void
     
     public func login(_ _completion: FronteggAuth.CompletionHandler? = nil, loginHint: String? = nil) {
-       
+        
         if(self.embeddedMode){
             self.embeddedLogin(_completion, loginHint: loginHint)
             return
@@ -544,18 +629,18 @@ public class FronteggAuth: ObservableObject {
         }
         
         let oauthCallback = createOauthCallbackHandler(completion)
-        let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: loginHint)  
+        let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: loginHint)
         CredentialManager.saveCodeVerifier(codeVerifier)
-
-
+        
+        
         WebAuthenticator.shared.start(authorizeUrl, completionHandler: oauthCallback)
     }
-
+    
     
     func saveWebCredentials(domain: String, email: String, password: String, completion: @escaping (Bool, Error?) -> Void) {
         let domainString = domain
         let account = email
-    
+        
         SecAddSharedWebCredential(domainString as CFString, account as CFString, password as CFString) { error in
             if let error = error {
                 print("❌ Failed to save shared web credentials: \(error.localizedDescription)")
@@ -566,7 +651,7 @@ public class FronteggAuth: ObservableObject {
             }
         }
     }
-
+    
     
     
     public func loginWithPopup(window: UIWindow?, ephemeralSession: Bool? = true, loginHint: String? = nil, loginAction: String? = nil, _completion: FronteggAuth.CompletionHandler? = nil) {
@@ -762,7 +847,7 @@ public class FronteggAuth: ObservableObject {
     
     func loginWithSocialLogin(socialLoginUrl: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
         let completion = _completion ?? self.loginCompletion ?? { res in
-
+            
             
         }
         

@@ -56,42 +56,9 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        
-        //let menuSize = LayUtil.getRealSize(100)
-        self.setVideoPlayerHeight()
         self.setupAppFlow()
         
-        if (appDelegate.fronteggAuth.isLoading) { ///Checking if frontegg token is loading. If its true then wait for change its value false.
-            
-            testLabel.text = "Loading..."
-            cancellable = appDelegate.fronteggAuth.$isLoading
-                .sink { [weak self] newValue in
-                    guard let self = self else { return }
-                    print("Viewdidload loading status: ******** \(newValue)")
-                    if !(newValue) {
-                        self.cancellable?.cancel()
-                        
-                        ///This is API call for get user profile
-                        self.getUserProfile { success in
-                            if(success){
-                                self.setupUI()
-                            }else {
-                                self.testLabel.text = "No Access Token"
-                            }
-                        }
-                    }
-                }
-        } else { /// if frontegg token is not loading then simply call API
-            
-            ///This is API call for get user profile
-            self.getUserProfile { success in
-                if(success){
-                    self.setupUI()
-                }else {
-                    self.testLabel.text = "No Access Token"
-                }
-            }
-        }
+        
     }
     
     
@@ -99,32 +66,22 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
     
     func setupUI(){
         
-        if appDelegate.fronteggAuth.isLoading {
-            self.loadingLabel.text = "Loading..."
-        } else {
-            self.loadingLabel.text = "App Ready"
-        }
         
-        if appDelegate.fronteggAuth.refreshingToken {
-            self.refreshingTokenLabel.text = "Refreshing Token..."
-        } else {
-            self.refreshingTokenLabel.text = "Token Ready"
-        }
-        
-        
-        if appDelegate.fronteggAuth.isAuthenticated {
-            getUserProfile { success in
-                if success {
-                    let accessToken = String(appDelegate.fronteggAuth.accessToken!.suffix(40))
-                    self.testLabel.text = "Access Token Valid \n\n\(accessToken)"
-                } else {
-                    self.testLabel.text = "No Access"
-                    logoutButton()
+        if(!appDelegate.fronteggAuth.refreshingToken && !appDelegate.fronteggAuth.isLoading) {
+            if appDelegate.fronteggAuth.isAuthenticated {
+                getUserProfile { success in
+                    if success {
+                        let accessToken = String(appDelegate.fronteggAuth.accessToken!.suffix(40))
+                        self.testLabel.text = "Access Token Valid \n\n\(accessToken)"
+                    } else {
+                        self.testLabel.text = "No Access"
+                        logoutButton()
+                    }
                 }
+            }else {
+                self.testLabel.text = "No Access"
+                logoutButton()
             }
-        }else {
-            self.testLabel.text = "No Access"
-            logoutButton()
         }
         
         
@@ -257,7 +214,9 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
         super.viewWillAppear(animated)
          
         isShowing = true
-        // Do any additional setup after loading the view.
+        
+        
+        
     }
     
    
@@ -276,42 +235,24 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         
-        
-        
-        subscriptions.insert(appDelegate.fronteggAuth.$accessToken
-            .sink { accessToken in
-                if let token = accessToken {
-                    self.testLabel.text = "Valid token \n\n\(String(token.suffix(40)))"
-                } else {
-                    if(self.appDelegate.fronteggAuth.showLoader) {
-                        self.testLabel.text = "Loading..."
-                    }else {
-                        self.testLabel.text = "No token"
-                    }
+        let auth = FronteggApp.shared.auth
+        self.loadingLabel.text = "Loading..."
+        auth.getOrRefreshAccessToken() { result in
+            self.loadingLabel.text = "App Ready"
+            switch(result){
+            case .success(let accessToken):
+                if(accessToken == nil){
+                    print("Not authenticated")
+                    self.logoutButton()
+                }else {
+                    self.setupUI()
                 }
-            })
-        
-        
-        subscriptions.insert(appDelegate.fronteggAuth.$isLoading
-            .sink { isLoading in
-                if isLoading {
-                    self.loadingLabel.text = "Loading..."
-                } else {
-                    self.loadingLabel.text = "App Ready"
-                }
-            })
-        
-        subscriptions.insert(appDelegate.fronteggAuth.$refreshingToken
-            .sink { refreshingToken in
-                if refreshingToken {
-                    self.refreshingTokenLabel.text = "Refreshing Token..."
-                } else {
-                    self.refreshingTokenLabel.text = "Token Ready"
-                }
-            })
-        
-        
-        self.setupUI()
+            case .failure(let error):
+                self.loadingLabel.text = "Failed to refresh"
+                print("Failed to refresh error \(error.localizedDescription)")
+                
+            }
+        }
         
         
     }

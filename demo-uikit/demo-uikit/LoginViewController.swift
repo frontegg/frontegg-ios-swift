@@ -13,60 +13,36 @@ class LoginViewController: BaseViewController {
         return true
     }
     
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        
-    }
-    
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
         return .portrait
     }
     
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-    }
     override func viewDidAppear(_ animated: Bool) {
-        displayFronteggLogin()
-    }
-    
-    override func didReceiveMemoryWarning() {
-        super.didReceiveMemoryWarning()
+        self.checkSession()
     }
     
     /// Displays the Frontegg login modal or navigates to the main page based on authentication state.
-    private func displayFronteggLogin() {
+    private func checkSession() {
         
         let auth = FronteggApp.shared.auth
         
         
-        if(!auth.isLoading && !auth.refreshingToken && !auth.initializing){
-            self.onStateChange(auth.isLoading, auth.refreshingToken, auth.initializing)
-        }else {
-            cancelables.insert(auth.$isLoading.combineLatest(auth.$refreshingToken, auth.$initializing).sink(receiveValue: self.onStateChange))
-        }
-        
-    }
-    
-    private func onStateChange(_ isLoading: Bool, _ refreshingToken: Bool, _ initializing: Bool){
-        if(!isLoading && !refreshingToken && !initializing){
-            removeObservables()
-            if !FronteggAuth.shared.isAuthenticated {
-                FronteggAuth.shared.login()
-            } else {
+        auth.getOrRefreshAccessToken() { result in
+            switch(result){
+            case .success(let accessToken):
+                if(accessToken == nil){
+                    print("Not authenticated")
+                    FronteggAuth.shared.login()
+                } else {
+                    self.handlePostLoginFlow()
+                }
+            case .failure(let error):
+                print("Failed to refresh error \(error.localizedDescription)")
                 self.handlePostLoginFlow()
+                // maybe displaying error with retry button
             }
         }
-    }
-    
-    
-    func removeObservables(){
-        cancelables.forEach { cancelable in
-            cancelable.cancel()
-        }
-        cancelables.removeAll()
-    }
-    override func viewWillDisappear(_ animated: Bool) {
-        removeObservables()
+        
     }
     
     /// Handles the post-login navigation flow.
