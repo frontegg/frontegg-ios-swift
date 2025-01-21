@@ -72,6 +72,10 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
             FronteggAuth.shared.loginWithSSO(email: message.payload)
         case "loginWithSocialLogin":
             FronteggAuth.shared.loginWithSocialLogin(socialLoginUrl: message.payload)
+        case "loginWithCustomSocialLoginProvider":
+            FronteggAuth.shared.directLoginAction(window: nil, type: "custom-social-login", data: message.payload)
+        case "loginWithSocialProvider":
+            FronteggAuth.shared.directLoginAction(window: nil, type: "social-login", data: message.payload)
         case "suggestSavePassword":
             guard let data = try? JSONSerialization.jsonObject(with: Data(message.payload.utf8), options: []) as? [String: String],
                 let email = data["email"],

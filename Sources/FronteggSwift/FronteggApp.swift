@@ -20,6 +20,9 @@ public class FronteggApp {
     public var embeddedMode: Bool = true
     public var handleLoginWithSocialLogin:Bool = true
     public var handleLoginWithSSO:Bool = false
+    public var handleLoginWithCustomSocialLoginProvider:Bool = true
+    public var handleLoginWithSocialProvider:Bool = true
+
     
     /* force consent when authenticate with social login */
     public var shouldPromptSocialLoginConsent:Bool = true
@@ -49,6 +52,8 @@ public class FronteggApp {
         self.handleLoginWithSocialLogin = config.loginWithSocialLogin
         self.handleLoginWithSSO = config.loginWithSSO
         self.shouldSuggestSavePassword = config.shouldSuggestSavePassword
+        self.handleLoginWithSocialProvider = true
+        self.handleLoginWithCustomSocialLoginProvider = true
         
         if FronteggApp.clearKeychain(config: config) {
             self.credentialManager.clear()
@@ -130,7 +135,10 @@ public class FronteggApp {
             cliendId: String,
             applicationId: String? = nil,
             handleLoginWithSocialLogin: Bool = true,
-            handleLoginWithSSO:Bool = false
+            handleLoginWithSSO:Bool = false,
+            handleLoginWithCustomSocialLoginProvider:Bool = true,
+            handleLoginWithSocialProvider:Bool = true
+
     ) {
         self.baseUrl = baseUrl
         self.clientId = cliendId
@@ -138,6 +146,8 @@ public class FronteggApp {
         
         self.handleLoginWithSocialLogin = handleLoginWithSocialLogin
         self.handleLoginWithSSO = handleLoginWithSSO
+        self.handleLoginWithCustomSocialLoginProvider = handleLoginWithCustomSocialLoginProvider
+        self.handleLoginWithSocialProvider = handleLoginWithSocialProvider
         
         self.auth.manualInit(baseUrl: baseUrl, clientId: cliendId, applicationId: applicationId)
     }
