@@ -110,7 +110,7 @@ public class Api {
         return try await URLSession.shared.data(for: request)
     }
     
-    internal func silentAuthorize(refreshToken:String, deviceToken:String) async throws -> (Data, URLResponse) {
+    internal func silentAuthorize(refreshTokenCookie:String, deviceTokenCookie: String?) async throws -> (Data, URLResponse) {
         let urlStr = "\(self.baseUrl)/oauth/authorize/silent"
         guard let url = URL(string: urlStr) else {
             throw ApiError.invalidUrl("invalid url: \(urlStr)")
@@ -125,12 +125,24 @@ public class Api {
             request.setValue(self.applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
         }
         
-        request.setValue("\(refreshToken);\(deviceToken)", forHTTPHeaderField: "Cookie")
+        request.setValue("\(refreshTokenCookie);\(deviceTokenCookie ?? "")", forHTTPHeaderField: "Cookie")
         
         request.httpMethod = "POST"
         request.httpBody = try JSONSerialization.data(withJSONObject: [:])
         
         return try await URLSession.shared.data(for: request)
+    }
+    
+    
+    internal func authroizeWithTokens(refreshToken:String, deviceTokenCookie:String? = nil) async throws -> AuthResponse {
+        
+        
+        let refreshTokenCookie = "\(self.cookieName)=\(refreshToken)"
+        // Silent authorize with the extracted tokens
+        let (data, _) = try await FronteggAuth.shared.api.silentAuthorize(refreshTokenCookie: refreshTokenCookie, deviceTokenCookie: deviceTokenCookie)
+        
+        // Decode and return the AuthResponse
+        return try JSONDecoder().decode(AuthResponse.self, from: data)
     }
     
     internal func getRequest(path:String, accessToken:String?, refreshToken: String? = nil, additionalHeaders: [String: String] = [:], followRedirect:Bool = true) async throws -> (Data, URLResponse) {
@@ -345,7 +357,7 @@ public class Api {
         }
         
         // Silent authorize with the extracted tokens
-        let (data, _) = try await FronteggAuth.shared.api.silentAuthorize(refreshToken: refreshToken, deviceToken: deviceToken)
+        let (data, _) = try await FronteggAuth.shared.api.silentAuthorize(refreshTokenCookie: refreshToken, deviceTokenCookie: deviceToken)
         
         // Decode and return the AuthResponse
         return try JSONDecoder().decode(AuthResponse.self, from: data)
@@ -403,7 +415,7 @@ public class Api {
         }
         
         // Silent authorize with the extracted tokens
-        let (data, _) = try await FronteggAuth.shared.api.silentAuthorize(refreshToken: refreshToken, deviceToken: deviceToken)
+        let (data, _) = try await FronteggAuth.shared.api.silentAuthorize(refreshTokenCookie: refreshToken, deviceTokenCookie: deviceToken)
         
         // Decode and return the AuthResponse
         return try JSONDecoder().decode(AuthResponse.self, from: data)

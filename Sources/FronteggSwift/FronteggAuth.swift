@@ -1004,6 +1004,55 @@ public class FronteggAuth: ObservableObject {
     }
     
     
+    
+    public func requestAuthorizeAsync(refreshToken: String, deviceTokenCookie: String? = nil) async throws -> User {
+        DispatchQueue.main.async {
+            FronteggAuth.shared.isLoading = true
+        }
+
+        self.logger.info("Requesting authorize with refresh and device tokens")
+        
+        do {
+            let authResponse = try await self.api.authroizeWithTokens(refreshToken: refreshToken, deviceTokenCookie: deviceTokenCookie)
+            await FronteggAuth.shared.setCredentials(accessToken: authResponse.access_token, refreshToken: authResponse.refresh_token)
+            
+            if let user = self.user {
+                return user
+            }
+            
+            throw FronteggError.authError(.failedToAuthenticate)
+        } catch {
+            self.logger.error("Authorization request failed: \(error.localizedDescription)")
+            DispatchQueue.main.async {
+                FronteggAuth.shared.isLoading = false
+            }
+            throw error
+        }
+    }
+
+    public func requestAuthorize(refreshToken: String, deviceTokenCookie: String? = nil, _ completion: @escaping FronteggAuth.CompletionHandler) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            Task {
+                do {
+                    let user = try await self.requestAuthorizeAsync(refreshToken: refreshToken, deviceTokenCookie: deviceTokenCookie)
+                    DispatchQueue.main.async {
+                        completion(.success(user)) // Assuming success is represented by empty parentheses
+                    }
+                } catch let error as FronteggError {
+                    DispatchQueue.main.async {
+                        completion(.failure(error))
+                    }
+                } catch {
+                    self.logger.error("Failed to authenticate: \(error.localizedDescription)")
+                    DispatchQueue.main.async {
+                        completion(.failure(.authError(.failedToAuthenticate)))
+                    }
+                }
+            }
+        }
+    }
+    
+    
     internal func handleMfaRequired(_ _completion: FronteggAuth.CompletionHandler? = nil) -> FronteggAuth.CompletionHandler {
         let completion: FronteggAuth.CompletionHandler =  { (result) in
             

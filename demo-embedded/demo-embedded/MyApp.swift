@@ -57,6 +57,31 @@ struct MyApp: View {
                         }.padding(.vertical, 30)
                         
                         
+                        Button {
+                            
+                            Task {
+                                do {
+                                    let user = try await fronteggAuth.requestAuthorizeAsync(refreshToken: "e3994bf8-e3f5-44d7-a3ba-d467d5b9a4f2")
+                                    print("Logged in user, \(user.email)")
+                                }catch {
+                                    print("failed to authenticate, \(error.localizedDescription)")
+                                }
+                                
+                            }
+//                            fronteggAuth.requestAuthorize(refreshToken: "f3291a85-7cfd-4319-9e24-fab68d3eba1f", deviceTokenCookie: nil) { result in
+//                                switch (result){
+//                                case .success(let user):
+//                                    print("Logged in user, \(user.email)")
+//                                    
+//                                case .failure(let error):
+//                                    print("failed to authenticate, \(error.localizedDescription)")
+//                                }
+//                            }
+                        } label: {
+                            Text("Request Authroize With tokens")
+                        }.padding(.vertical, 30)
+                        
+                        
                         
                         
                         Button {
