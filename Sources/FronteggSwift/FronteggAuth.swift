@@ -499,101 +499,97 @@ public class FronteggAuth: ObservableObject {
     }
     
     
-    public func getOrRefreshAccessToken(_ completion: @escaping FronteggAuth.AccessTokenHandler) {
-        // Ensure that token refresh is not already in progress
-        DispatchQueue.global(qos: .userInitiated).async {
-            
-            self.logger.info("Waiting for isLoading | initializing | refreshingToken indicators")
-            while self.isLoading || self.initializing || self.refreshingToken {
-                usleep(200_000) // Sleep for 100ms before checking isLoading again
-            }
-            
-            self.logger.info("checking if refresh token exist")
-            // Check if the refresh token exists
-            guard let refreshToken = self.refreshToken else {
-                DispatchQueue.main.sync {
-                    completion(.success(nil))
+    public func getOrRefreshAccessTokenAsync() async throws -> String? {
+        self.logger.info("Waiting for isLoading | initializing | refreshingToken indicators")
+        
+        let maxAttempts = 100 // Max waiting attempts to avoid infinite loops (20 seconds total)
+        var attempt = 0
+        while (self.isLoading || self.initializing || self.refreshingToken) && attempt < maxAttempts {
+            try await Task.sleep(nanoseconds: 200_000_000) // Sleep for 200ms
+            attempt += 1
+        }
+        
+        if attempt == maxAttempts {
+            self.logger.error("Timeout while waiting for isLoading to complete (20 seconds)")
+            throw FronteggError.authError(.failedToAuthenticate)
+        }
+        
+        self.logger.info("Checking if refresh token exists")
+        
+        guard let refreshToken = self.refreshToken else {
+            return nil
+        }
+        
+        self.logger.info("Check if the access token exists and is still valid")
+        
+        if let accessToken = self.accessToken {
+            do {
+                let decodedToken = try JWTHelper.decode(jwtToken: accessToken)
+                if let exp = decodedToken["exp"] as? Int {
+                    let offset = self.calculateOffset(expirationTime: exp)
+                    self.logger.warning("Access token offset: \(offset)")
+                    if offset > 15 { // Ensure token has more than 15 seconds validity
+                        return accessToken
+                    }
                 }
-                return
+            } catch {
+                self.logger.error("Failed to decode JWT: \(error.localizedDescription)")
             }
-            
-            self.logger.info("Check if the access token exists and is still valid")
-
-            if let accessToken = self.accessToken {
+        }
+        
+        self.logger.info("Refreshing access token")
+        
+        self.refreshingToken = true
+        defer {
+            self.refreshingToken = false
+        }
+        
+        var attempts = 0
+        while attempts < 5 {
+            do {
+                let data = try await self.api.refreshToken(refreshToken: refreshToken)
+                await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
+                self.logger.info("Token refreshed successfully")
+                return self.accessToken
+            } catch let error as FronteggError {
+                if case .authError(FronteggError.Authentication.failedToRefreshToken) = error {
+                    return nil
+                }
+                self.logger.error("Failed to refresh token: \(error.localizedDescription), retrying... (\(attempts + 1) attempts)")
+                attempts += 1
+                try await Task.sleep(nanoseconds: 1_000_000_000) // Sleep for 1 second before retrying
+            } catch {
+                self.logger.error("Unknown error while refreshing token: \(error.localizedDescription), retrying... (\(attempts + 1) attempts)")
+                attempts += 1
+                try await Task.sleep(nanoseconds: 1_000_000_000) // Sleep for 1 second before retrying
+            }
+        }
+        
+        throw FronteggError.authError(.failedToAuthenticate)
+    }
+    
+    public func getOrRefreshAccessToken(_ completion: @escaping FronteggAuth.AccessTokenHandler) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            Task {
                 do {
-                    let decodedToken = try JWTHelper.decode(jwtToken: accessToken)
-                    if let exp = decodedToken["exp"] as? Int {
-                        let offset = self.calculateOffset(expirationTime: exp)
-                        self.logger.warning("access token \(offset)")
-                        if offset > 15 { // Ensure token has more than 15 seconds validity
-                            DispatchQueue.main.sync {
-                                completion(.success(accessToken))
-                            }
-                            return
-                        }
+                    let token = try await self.getOrRefreshAccessTokenAsync()
+                    DispatchQueue.main.async {
+                        completion(.success(token))
+                    }
+                } catch let error as FronteggError {
+                    DispatchQueue.main.async {
+                        completion(.failure(error))
                     }
                 } catch {
-                    self.logger.error("Failed to decode JWT: \(error.localizedDescription)")
-                }
-            }
-            
-            // Refresh the token if access token is expired or not available
-            Task {
-                
-                DispatchQueue.main.sync {
-                    self.refreshingToken = true
-                }
-                
-                defer {
-                    // cleanup scope
-                    DispatchQueue.main.sync {
-                        self.refreshingToken = false
-                    }
-                }
-                
-                var attempts = 0
-                while true {
-                    do {
-                        let data = try await self.api.refreshToken(refreshToken: refreshToken)
-                        await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
-                        self.logger.info("Token refreshed successfully")
-                        DispatchQueue.main.sync {
-                            completion(.success(self.accessToken))
-                        }
-                        return
-                    } catch {
-                        if let fronteggError = error as? FronteggError {
-                            
-                            switch fronteggError {
-                            case .authError(FronteggError.Authentication.failedToRefreshToken):
-                                DispatchQueue.main.sync {
-                                    completion(.success(nil))
-                                }
-                                return
-                            default:
-                                self.logger.info("Failed to refresh token with Frontegg error, \(fronteggError.localizedDescription), trying again... (\(attempts) attempts)")
-                                attempts += 1
-                                usleep(1_000_000) // Sleep for 500ms before retrying
-                            }
-                        } 
-                        else {
-                            self.logger.info("Failed to refresh token with unknown error, \(error.localizedDescription), trying again... (\(attempts) attempts)")
-                            attempts += 1
-                            usleep(1_000_000) // Sleep for 500ms before retrying
-                        }
-                        if attempts > 5 {
-                            DispatchQueue.main.sync {
-                                completion(.failure(error))
-                            }
-                            return
-                        } else {
-                            
-                        }
+                    self.logger.error("Failed to get or refresh token: \(error.localizedDescription)")
+                    DispatchQueue.main.async {
+                        completion(.failure(error))
                     }
                 }
             }
         }
     }
+    
     
     internal func setIsLoading(_ isLoading: Bool){
         DispatchQueue.main.async {
@@ -979,8 +975,6 @@ public class FronteggAuth: ObservableObject {
                 
             }
         }
-        
-        
     }
     
     public func loginWithPasskeys (_ _completion: FronteggAuth.CompletionHandler? = nil){
@@ -1009,7 +1003,7 @@ public class FronteggAuth: ObservableObject {
         DispatchQueue.main.async {
             FronteggAuth.shared.isLoading = true
         }
-
+        
         self.logger.info("Requesting authorize with refresh and device tokens")
         
         do {
@@ -1029,7 +1023,7 @@ public class FronteggAuth: ObservableObject {
             throw error
         }
     }
-
+    
     public func requestAuthorize(refreshToken: String, deviceTokenCookie: String? = nil, _ completion: @escaping FronteggAuth.CompletionHandler) {
         DispatchQueue.global(qos: .userInitiated).async {
             Task {
