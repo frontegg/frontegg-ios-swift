@@ -112,8 +112,8 @@
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Login" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="HVg-gS-1vC">
-                                <rect key="frame" x="170.66666666666666" y="159" width="52" height="24"/>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Login Screen" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="HVg-gS-1vC">
+                                <rect key="frame" x="135" y="159" width="123" height="24"/>
                                 <fontDescription key="fontDescription" type="boldSystem" pointSize="20"/>
                                 <nil key="textColor"/>
                                 <nil key="highlightedColor"/>
@@ -121,6 +121,20 @@
                             <activityIndicatorView opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" animating="YES" style="medium" translatesAutoresizingMaskIntoConstraints="NO" id="TDp-E8-y6X">
                                 <rect key="frame" x="186.66666666666666" y="416" width="20" height="20"/>
                             </activityIndicatorView>
+                            <label hidden="YES" opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Error" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="NFr-dF-Wf5">
+                                <rect key="frame" x="172.66666666666666" y="214" width="48" height="24"/>
+                                <fontDescription key="fontDescription" type="boldSystem" pointSize="20"/>
+                                <nil key="textColor"/>
+                                <nil key="highlightedColor"/>
+                            </label>
+                            <button hidden="YES" opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="P6I-Cs-9Ui">
+                                <rect key="frame" x="136.66666666666666" y="270" width="119.99999999999997" height="39"/>
+                                <state key="normal" title="Button"/>
+                                <buttonConfiguration key="configuration" style="plain" title="Retry Button"/>
+                                <connections>
+                                    <action selector="retryButtonPressed:" destination="wKc-Gg-URU" eventType="touchUpInside" id="HPX-zs-FrD"/>
+                                </connections>
+                            </button>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="m4q-uc-oNy"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
@@ -128,10 +142,19 @@
                             <constraint firstItem="TDp-E8-y6X" firstAttribute="centerX" secondItem="Gtk-Cs-B7T" secondAttribute="centerX" id="4mN-nL-Avo"/>
                             <constraint firstItem="HVg-gS-1vC" firstAttribute="top" secondItem="m4q-uc-oNy" secondAttribute="top" constant="100" id="EpE-dO-BHb"/>
                             <constraint firstItem="HVg-gS-1vC" firstAttribute="centerX" secondItem="m4q-uc-oNy" secondAttribute="centerX" id="Uhm-EH-oRq"/>
+                            <constraint firstItem="NFr-dF-Wf5" firstAttribute="centerX" secondItem="m4q-uc-oNy" secondAttribute="centerX" id="V4z-Kt-qDf"/>
+                            <constraint firstItem="P6I-Cs-9Ui" firstAttribute="centerX" secondItem="m4q-uc-oNy" secondAttribute="centerX" id="c7Z-Y4-iMf"/>
                             <constraint firstItem="TDp-E8-y6X" firstAttribute="centerY" secondItem="Gtk-Cs-B7T" secondAttribute="centerY" id="rLz-Sp-krM"/>
+                            <constraint firstItem="NFr-dF-Wf5" firstAttribute="top" secondItem="HVg-gS-1vC" secondAttribute="bottom" constant="31" id="ste-0g-8v3"/>
+                            <constraint firstItem="P6I-Cs-9Ui" firstAttribute="top" secondItem="NFr-dF-Wf5" secondAttribute="bottom" constant="32" id="trd-dE-Fmw"/>
                         </constraints>
                     </view>
                     <navigationItem key="navigationItem" id="ASp-06-NOh"/>
+                    <connections>
+                        <outlet property="errorLabel" destination="NFr-dF-Wf5" id="G0T-oH-Clh"/>
+                        <outlet property="loader" destination="TDp-E8-y6X" id="Ujd-uP-xiF"/>
+                        <outlet property="retryButton" destination="P6I-Cs-9Ui" id="sjP-eo-EZo"/>
+                    </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="Qf1-pg-xq3" sceneMemberID="firstResponder"/>
             </objects>

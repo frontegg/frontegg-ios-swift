@@ -338,22 +338,18 @@ public class FronteggAuth: ObservableObject {
             Task {
                 await self.api.logout(accessToken: self.accessToken, refreshToken: self.refreshToken)
             }
-            DispatchQueue.main.async {
-                
+            DispatchQueue.main.sync {
                 self.credentialManager.clear()
+                self.isAuthenticated = false
+                self.user = nil
+                self.accessToken = nil
+                self.refreshToken = nil
+                self.initializing = false
+                self.appLink = false
                 
-                DispatchQueue.main.async {
-                    self.isAuthenticated = false
-                    self.user = nil
-                    self.accessToken = nil
-                    self.refreshToken = nil
-                    self.initializing = false
-                    self.appLink = false
-                    
-                    // isLoading must be at the last bottom
-                    self.isLoading = false
-                    completion(.success(true));
-                }
+                // isLoading must be at the last bottom
+                self.isLoading = false
+                completion(.success(true));
             }
         }
     }
@@ -370,27 +366,42 @@ public class FronteggAuth: ObservableObject {
             return false
         }
         
+        
+        guard await NetworkStatusMonitor.isActive else {
+            self.logger.info("Refresh rescheduled due to inactive internet")
+            
+            
+            if(attempts > 5){
+                DispatchQueue.main.sync {
+                    self.initializing = false
+                    self.isAuthenticated = false
+                    self.refreshingToken = false
+                    // isLoading must be at the last bottom
+                    self.isLoading = false
+                }
+                scheduleTokenRefresh(offset: 10, attempts: attempts + 1)
+            }else {
+                // attempt = 0 to prevent abandon refresh token due to network errors
+                scheduleTokenRefresh(offset: 2, attempts: attempts + 1)
+            }
+            return false
+        }
+        
         if (attempts > 10) {
-            self.logger.info("refresh token attemps exeeceded, logging out")
+            self.logger.info("refresh token attemps exceeded, logging out")
             self.credentialManager.clear()
             DispatchQueue.main.sync {
                 self.initializing = false
                 self.isAuthenticated = false
                 self.accessToken = nil
                 self.refreshToken = nil
-                self.credentialManager.clear()
+                self.refreshingToken = false
                 // isLoading must be at the last bottom
                 self.isLoading = false
             }
             return false
         }
-        guard await NetworkStatusMonitor.isActive else {
-            self.logger.info("Refresh rescheduled due to inactive internet")
-            
-            // attempt = 0 to prevent abandon refresh token due to network errors
-            scheduleTokenRefresh(offset: 2, attempts: 0)
-            return false
-        }
+        
         
         
         if(self.refreshingToken){
@@ -433,11 +444,11 @@ public class FronteggAuth: ObservableObject {
                 }
             default:
                 self.logger.info("Refresh rescheduled due to unknown error \(error.localizedDescription)")
-                scheduleTokenRefresh(offset: 2, attempts: attempts + 1)
+                scheduleTokenRefresh(offset: 1, attempts: attempts + 1)
             }
         } catch {
             self.logger.info("Refresh rescheduled due to unknown error \(error.localizedDescription)")
-            scheduleTokenRefresh(offset: 2, attempts: attempts + 1)
+            scheduleTokenRefresh(offset: 1, attempts: attempts + 1)
         }
         return false
         
@@ -492,10 +503,12 @@ public class FronteggAuth: ObservableObject {
         // Ensure that token refresh is not already in progress
         DispatchQueue.global(qos: .userInitiated).async {
             
+            self.logger.info("Waiting for isLoading | initializing | refreshingToken indicators")
             while self.isLoading || self.initializing || self.refreshingToken {
                 usleep(200_000) // Sleep for 100ms before checking isLoading again
             }
             
+            self.logger.info("checking if refresh token exist")
             // Check if the refresh token exists
             guard let refreshToken = self.refreshToken else {
                 DispatchQueue.main.sync {
@@ -504,13 +517,15 @@ public class FronteggAuth: ObservableObject {
                 return
             }
             
-            // Check if the access token exists and is still valid
+            self.logger.info("Check if the access token exists and is still valid")
+
             if let accessToken = self.accessToken {
                 do {
                     let decodedToken = try JWTHelper.decode(jwtToken: accessToken)
                     if let exp = decodedToken["exp"] as? Int {
-                        let currentTime = Int(Date().timeIntervalSince1970)
-                        if exp - currentTime > 15 { // Ensure token has more than 15 seconds validity
+                        let offset = self.calculateOffset(expirationTime: exp)
+                        self.logger.warning("access token \(offset)")
+                        if offset > 15 { // Ensure token has more than 15 seconds validity
                             DispatchQueue.main.sync {
                                 completion(.success(accessToken))
                             }
@@ -546,27 +561,34 @@ public class FronteggAuth: ObservableObject {
                             completion(.success(self.accessToken))
                         }
                         return
-                    } catch let error as FronteggError {
-                        switch error {
-                        case .authError(FronteggError.Authentication.failedToRefreshToken):
-                            DispatchQueue.main.sync {
-                                completion(.success(nil))
-                            }
-                            return
-                        default:
-                            if attempts > 5 {
+                    } catch {
+                        if let fronteggError = error as? FronteggError {
+                            
+                            switch fronteggError {
+                            case .authError(FronteggError.Authentication.failedToRefreshToken):
                                 DispatchQueue.main.sync {
-                                    completion(.failure(error))
+                                    completion(.success(nil))
                                 }
                                 return
-                            } else {
-                                self.logger.info("Failed to refresh token, \(error.localizedDescription), trying again... (\(attempts) attempts)")
+                            default:
+                                self.logger.info("Failed to refresh token with Frontegg error, \(fronteggError.localizedDescription), trying again... (\(attempts) attempts)")
                                 attempts += 1
                                 usleep(1_000_000) // Sleep for 500ms before retrying
                             }
+                        } 
+                        else {
+                            self.logger.info("Failed to refresh token with unknown error, \(error.localizedDescription), trying again... (\(attempts) attempts)")
+                            attempts += 1
+                            usleep(1_000_000) // Sleep for 500ms before retrying
+                        }
+                        if attempts > 5 {
+                            DispatchQueue.main.sync {
+                                completion(.failure(error))
+                            }
+                            return
+                        } else {
                             
                         }
-                        
                     }
                 }
             }
@@ -613,7 +635,7 @@ public class FronteggAuth: ObservableObject {
     }
     public typealias CompletionHandler = (Result<User, FronteggError>) -> Void
     
-    public typealias AccessTokenHandler = (Result<String?, FronteggError>) -> Void
+    public typealias AccessTokenHandler = (Result<String?, Error>) -> Void
     
     public typealias ConditionCompletionHandler = (_ error: FronteggError?) -> Void
     
