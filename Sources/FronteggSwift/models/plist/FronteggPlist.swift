@@ -15,6 +15,8 @@ struct FronteggPlist: Decodable, Equatable {
     let keychainService: String
     let embeddedMode: Bool
     let loginWithSocialLogin: Bool
+    let handleLoginWithCustomSocialLoginProvider: Bool
+    let handleLoginWithSocialProvider: Bool
     let loginWithSSO: Bool
     let lateInit: Bool
     let logLevel: LogLevel
@@ -27,6 +29,8 @@ struct FronteggPlist: Decodable, Equatable {
         case keychainService
         case embeddedMode
         case loginWithSocialLogin
+        case handleLoginWithCustomSocialLoginProvider
+        case handleLoginWithSocialProvider
         case loginWithSSO
         case lateInit
         case logLevel
@@ -39,6 +43,8 @@ struct FronteggPlist: Decodable, Equatable {
         keychainService: String = "frontegg",
         embeddedMode: Bool = true,
         loginWithSocialLogin: Bool = true,
+        handleLoginWithCustomSocialLoginProvider: Bool = true,
+        handleLoginWithSocialProvider: Bool = true,
         loginWithSSO: Bool = false,
         lateInit: Bool = false,
         logLevel: LogLevel = .warn,
@@ -50,6 +56,8 @@ struct FronteggPlist: Decodable, Equatable {
         self.keychainService = keychainService
         self.embeddedMode = embeddedMode
         self.loginWithSocialLogin = loginWithSocialLogin
+        self.handleLoginWithCustomSocialLoginProvider = handleLoginWithCustomSocialLoginProvider
+        self.handleLoginWithSocialProvider = handleLoginWithSocialProvider
         self.loginWithSSO = loginWithSSO
         self.lateInit = lateInit
         self.logLevel = logLevel
@@ -70,6 +78,12 @@ struct FronteggPlist: Decodable, Equatable {
 
         let socialLogin = try container.decodeIfPresent(Bool.self, forKey: .loginWithSocialLogin)
         self.loginWithSocialLogin = socialLogin ?? true
+
+        let customSocialProviderLogin = try container.decodeIfPresent(Bool.self, forKey: .handleLoginWithCustomSocialLoginProvider)
+        self.handleLoginWithCustomSocialLoginProvider = customSocialProviderLogin ?? true
+
+        let socialProviderLogin = try container.decodeIfPresent(Bool.self, forKey: .handleLoginWithSocialProvider)
+        self.handleLoginWithSocialProvider = socialProviderLogin ?? true
 
         let ssoLogin = try container.decodeIfPresent(Bool.self, forKey: .loginWithSSO)
         self.loginWithSSO = ssoLogin ?? false

@@ -29,6 +29,8 @@ public struct FronteggWebView: UIViewRepresentable {
         let fronteggApp = FronteggApp.shared
         let jsObject = String(data: try! JSONSerialization.data(withJSONObject: [
             "loginWithSocialLogin": fronteggApp.handleLoginWithSocialLogin,
+            "loginWithCustomSocialLoginProvider": fronteggApp.handleLoginWithCustomSocialLoginProvider,
+            "loginWithSocialLoginProvider": fronteggApp.handleLoginWithSocialProvider,
             "loginWithSSO": fronteggApp.handleLoginWithSSO,
             "shouldPromptSocialLoginConsent": fronteggApp.shouldPromptSocialLoginConsent,
             "suggestSavePassword": fronteggApp.shouldSuggestSavePassword
