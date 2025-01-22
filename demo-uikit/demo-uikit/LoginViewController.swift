@@ -8,65 +8,62 @@ import FronteggSwift
 
 class LoginViewController: BaseViewController {
     
+    @IBOutlet weak var errorLabel: UILabel!
+    @IBOutlet weak var retryButton: UIButton!
+    @IBOutlet weak var loader: UIActivityIndicatorView!
+    
     private var cancelables =  Set<AnyCancellable>()
     override var prefersStatusBarHidden: Bool {
         return true
-    }
-    
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        
     }
     
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
         return .portrait
     }
     
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-    }
     override func viewDidAppear(_ animated: Bool) {
-        displayFronteggLogin()
-    }
-    
-    override func didReceiveMemoryWarning() {
-        super.didReceiveMemoryWarning()
+        self.checkSession()
     }
     
     /// Displays the Frontegg login modal or navigates to the main page based on authentication state.
-    private func displayFronteggLogin() {
-        
+    private func checkSession() {
+        self.hideError()
         let auth = FronteggApp.shared.auth
         
         
-        if(!auth.isLoading && !auth.refreshingToken && !auth.initializing){
-            self.onStateChange(auth.isLoading, auth.refreshingToken, auth.initializing)
-        }else {
-            cancelables.insert(auth.$isLoading.combineLatest(auth.$refreshingToken, auth.$initializing).sink(receiveValue: self.onStateChange))
-        }
-        
-    }
-    
-    private func onStateChange(_ isLoading: Bool, _ refreshingToken: Bool, _ initializing: Bool){
-        if(!isLoading && !refreshingToken && !initializing){
-            removeObservables()
-            if !FronteggAuth.shared.isAuthenticated {
-                FronteggAuth.shared.login()
-            } else {
-                self.handlePostLoginFlow()
+        auth.getOrRefreshAccessToken() { result in
+            switch(result){
+            case .success(let accessToken):
+                if(accessToken == nil){
+                    print("Not authenticated")
+                    FronteggAuth.shared.login()
+                } else {
+                    print("Authenticated with valid access token")
+                    self.handlePostLoginFlow()
+                }
+            case .failure(let error):
+                print("Failed to refresh error \(error.localizedDescription)")
+                self.showError(error: error.localizedDescription)
             }
         }
     }
     
-    
-    func removeObservables(){
-        cancelables.forEach { cancelable in
-            cancelable.cancel()
-        }
-        cancelables.removeAll()
+    private func hideError() {
+        self.errorLabel.isHidden = true
+        self.retryButton.isHidden = true
+        self.loader.isHidden = false
     }
-    override func viewWillDisappear(_ animated: Bool) {
-        removeObservables()
+    private func showError(error: String) {
+        self.errorLabel.isHidden = false
+        self.retryButton.isHidden = false
+        self.loader.isHidden = true
+        self.errorLabel.text = error
+    }
+    
+    
+    
+    @IBAction func retryButtonPressed(_ sender: Any) {
+        self.checkSession()
     }
     
     /// Handles the post-login navigation flow.

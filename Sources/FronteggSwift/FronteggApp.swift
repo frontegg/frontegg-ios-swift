@@ -52,8 +52,8 @@ public class FronteggApp {
         self.handleLoginWithSocialLogin = config.loginWithSocialLogin
         self.handleLoginWithSSO = config.loginWithSSO
         self.shouldSuggestSavePassword = config.shouldSuggestSavePassword
-        self.handleLoginWithSocialProvider = true
-        self.handleLoginWithCustomSocialLoginProvider = true
+        self.handleLoginWithSocialProvider = config.handleLoginWithCustomSocialLoginProvider
+        self.handleLoginWithCustomSocialLoginProvider = config.handleLoginWithSocialProvider
         
         if FronteggApp.clearKeychain(config: config) {
             self.credentialManager.clear()

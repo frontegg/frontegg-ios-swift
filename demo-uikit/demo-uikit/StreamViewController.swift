@@ -36,7 +36,7 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
     @IBOutlet weak var verticalForStreamConstraint: NSLayoutConstraint!
     @IBOutlet weak var streamTopConstraint: NSLayoutConstraint!
     @IBOutlet weak var streamBottomConstraint: NSLayoutConstraint!
-
+    
     
     private var cancellable :AnyCancellable? = nil
     private var _isStarting: Bool = false
@@ -55,80 +55,25 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
     // MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
-
         
-        //let menuSize = LayUtil.getRealSize(100)
-        self.setVideoPlayerHeight()
         self.setupAppFlow()
         
-        if (appDelegate.fronteggAuth.isLoading) { ///Checking if frontegg token is loading. If its true then wait for change its value false.
-            
-            testLabel.text = "Loading..."
-            cancellable = appDelegate.fronteggAuth.$isLoading
-                .sink { [weak self] newValue in
-                    guard let self = self else { return }
-                    print("Viewdidload loading status: ******** \(newValue)")
-                    if !(newValue) {
-                        self.cancellable?.cancel()
-                        
-                        ///This is API call for get user profile
-                        self.getUserProfile { success in
-                            if(success){
-                                self.setupUI()
-                            }else {
-                                self.testLabel.text = "No Access Token"
-                            }
-                        }
-                    }
-                }
-        } else { /// if frontegg token is not loading then simply call API
-            
-            ///This is API call for get user profile
-            self.getUserProfile { success in
-                if(success){
-                    self.setupUI()
-                }else {
-                    self.testLabel.text = "No Access Token"
-                }
-            }
-        }
+        self.addObservers()
     }
-    
     
     
     
     func setupUI(){
         
-        if appDelegate.fronteggAuth.isLoading {
-            self.loadingLabel.text = "Loading..."
-        } else {
-            self.loadingLabel.text = "App Ready"
-        }
-        
-        if appDelegate.fronteggAuth.refreshingToken {
-            self.refreshingTokenLabel.text = "Refreshing Token..."
-        } else {
-            self.refreshingTokenLabel.text = "Token Ready"
-        }
-        
-        
-        if appDelegate.fronteggAuth.isAuthenticated {
-            getUserProfile { success in
-                if success {
-                    let accessToken = String(appDelegate.fronteggAuth.accessToken!.suffix(40))
-                    self.testLabel.text = "Access Token Valid \n\n\(accessToken)"
-                } else {
-                    self.testLabel.text = "No Access"
-                    logoutButton()
-                }
+        getUserProfile { success in
+            if success {
+                let accessToken = String(appDelegate.fronteggAuth.accessToken!.suffix(40))
+                self.testLabel.text = "Access Token Valid \n\n\(accessToken)"
+            } else {
+                self.testLabel.text = "No Access"
+                logoutButton()
             }
-        }else {
-            self.testLabel.text = "No Access"
-            logoutButton()
         }
-        
-        
-        
         
     }
     
@@ -149,7 +94,7 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
     func getUserProfile(completion: (Bool) -> Void) {
         
         do{
-            guard let accessToken = self.appDelegate.fronteggAuth.accessToken else { 
+            guard let accessToken = self.appDelegate.fronteggAuth.accessToken else {
                 
                 print("No access token")
                 completion(false)
@@ -176,11 +121,11 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
     }
     
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
-      return .all
+        return .all
     }
-
+    
     private var windowInterface : UIInterfaceOrientation? {
-            return self.view.window?.windowScene?.interfaceOrientation
+        return self.view.window?.windowScene?.interfaceOrientation
     }
     
     func setVideoPlayerHeight(){
@@ -199,13 +144,13 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
         } else if windowInterface.isPortrait  == false && isPortrait == true{
             self.setLandscapeView()
         }
-    
+        
     }
     override func willTransition(to newCollection: UITraitCollection, with coordinator: UIViewControllerTransitionCoordinator) {
         super.willTransition(to: newCollection, with: coordinator)
-       // if UIDevice.current.userInterfaceIdiom == .phone{
-            self.orientationDidChange()
-//        }
+        // if UIDevice.current.userInterfaceIdiom == .phone{
+        self.orientationDidChange()
+        //        }
     }
     
     func setPortraitView(){
@@ -220,7 +165,7 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
         self.optionView.isHidden = false
         self.lblChannelName.isHidden = false
         self.zoominLogoImg.isHidden = false
-    
+        
         self.btnScreenToggle.setImage(UIImage(named:"full_screen"), for: .normal)
         self.setPlayerFrame(islandscape : false)
         isPortrait = true
@@ -243,75 +188,60 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
         self.setPlayerFrame(islandscape : true)
         isPortrait = false
     }
-
+    
     func setPlayerFrame(islandscape: Bool){
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: {
             self.verticalForStreamConstraint.constant = islandscape ? 0 : 10
-        
+            
             self.view.bringSubviewToFront(self.mainView)
-           
+            
         })
     }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-         
+        
         isShowing = true
-        // Do any additional setup after loading the view.
+        
+        self.checkSession()
+        
     }
     
-   
+    
     func addObservers(){
-         NotificationCenter.default.addObserver(self,
-                                             selector: #selector(orientationDidChange),
-                           name: UIDevice.orientationDidChangeNotification, object: nil)
-
-       
+        NotificationCenter.default.addObserver(self, selector: #selector(orientationDidChange), name: UIDevice.orientationDidChangeNotification, object: nil)
+        
+        NotificationCenter.default.addObserver(self, selector: #selector(self.onActiveApp), name: UIApplication.didBecomeActiveNotification, object: nil)
+        
+        
     }
     
     
     private var subscriptions =  Set<AnyCancellable>()
     
     
+    func checkSession() {
+        let auth = FronteggApp.shared.auth
+        self.loadingLabel.text = "Loading..."
+        auth.getOrRefreshAccessToken() { result in
+            self.loadingLabel.text = "App Ready"
+            switch(result){
+            case .success(let accessToken):
+                if(accessToken == nil){
+                    print("Not authenticated")
+                    self.logoutButton()
+                }else {
+                    self.setupUI()
+                }
+            case .failure(let error):
+                self.loadingLabel.text = "Failed to refresh"
+                print("Failed to refresh error \(error.localizedDescription)")
+                
+            }
+        }
+    }
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        
-        
-        
-        subscriptions.insert(appDelegate.fronteggAuth.$accessToken
-            .sink { accessToken in
-                if let token = accessToken {
-                    self.testLabel.text = "Valid token \n\n\(String(token.suffix(40)))"
-                } else {
-                    if(self.appDelegate.fronteggAuth.showLoader) {
-                        self.testLabel.text = "Loading..."
-                    }else {
-                        self.testLabel.text = "No token"
-                    }
-                }
-            })
-        
-        
-        subscriptions.insert(appDelegate.fronteggAuth.$isLoading
-            .sink { isLoading in
-                if isLoading {
-                    self.loadingLabel.text = "Loading..."
-                } else {
-                    self.loadingLabel.text = "App Ready"
-                }
-            })
-        
-        subscriptions.insert(appDelegate.fronteggAuth.$refreshingToken
-            .sink { refreshingToken in
-                if refreshingToken {
-                    self.refreshingTokenLabel.text = "Refreshing Token..."
-                } else {
-                    self.refreshingTokenLabel.text = "Token Ready"
-                }
-            })
-        
-        
-        self.setupUI()
         
         
     }
@@ -334,7 +264,7 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
     }
     
     @IBAction func didTapFullScreenButton(_ sender: Any) {
-      
+        
         guard let windowInterface = self.windowInterface else { return }
         
         if windowInterface.isLandscape ==  true  &&  UIDevice.current.userInterfaceIdiom == .pad{
@@ -346,37 +276,37 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
             }
         }
         else if #available(iOS 16.0, *) {
-                guard let windowSceen = self.view.window?.windowScene else { return }
-                if windowSceen.interfaceOrientation == .portrait {
-                    windowSceen.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape)) { error in
-                        print(error.localizedDescription)
-                   }
-                    if UIDevice.current.userInterfaceIdiom == .pad{
-                        self.setLandscapeView()
-                    }
-                } else {
-                    windowSceen.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) { error in
-                        print(error.localizedDescription)
-                    }
-                    if UIDevice.current.userInterfaceIdiom == .pad{
-                        self.setPortraitView()
-                    }
+            guard let windowSceen = self.view.window?.windowScene else { return }
+            if windowSceen.interfaceOrientation == .portrait {
+                windowSceen.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape)) { error in
+                    print(error.localizedDescription)
+                }
+                if UIDevice.current.userInterfaceIdiom == .pad{
+                    self.setLandscapeView()
                 }
             } else {
-                if UIDevice.current.orientation == .portrait {
-                    let orientation = UIInterfaceOrientation.landscapeRight.rawValue
-                    UIDevice.current.setValue(orientation, forKey: "orientation")
-                    if UIDevice.current.userInterfaceIdiom == .pad{
-                        self.setLandscapeView()
-                    }
-                } else {
-                    let orientation = UIInterfaceOrientation.portrait.rawValue
-                    UIDevice.current.setValue(orientation, forKey: "orientation")
-                    if UIDevice.current.userInterfaceIdiom == .pad{
-                        self.setPortraitView()
-                    }
+                windowSceen.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) { error in
+                    print(error.localizedDescription)
+                }
+                if UIDevice.current.userInterfaceIdiom == .pad{
+                    self.setPortraitView()
                 }
             }
+        } else {
+            if UIDevice.current.orientation == .portrait {
+                let orientation = UIInterfaceOrientation.landscapeRight.rawValue
+                UIDevice.current.setValue(orientation, forKey: "orientation")
+                if UIDevice.current.userInterfaceIdiom == .pad{
+                    self.setLandscapeView()
+                }
+            } else {
+                let orientation = UIInterfaceOrientation.portrait.rawValue
+                UIDevice.current.setValue(orientation, forKey: "orientation")
+                if UIDevice.current.userInterfaceIdiom == .pad{
+                    self.setPortraitView()
+                }
+            }
+        }
         //}
         
     }
@@ -391,64 +321,43 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
         self.isSplitView = reset ? false : true
         self.videoPlayerTrailingConstraint.constant = reset ? 0 : self.view.frame.width * 0.3
         self.centerStreamViewInLandscapeMode()
-      
+        
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: {
-          
+            
             //self.streamViewTopConstraints.constant = (self.videoPlayerHeight.constant/2 - (self.scrollView.frame.height))+23
             self.optionViewTopConstraint.constant = reset ? 0 : -self.streamBgView.frame.height
             self.optionViewLeadingConstraint.constant = reset ? 0 : self.streamBgView.frame.width
             self.optionView.isHidden = reset ?  true : false
             self.setPlayerFrame(islandscape:  true)
         })
-       
+        
     }
     
     
     @IBAction func logoutButton (){
         appDelegate.fronteggAuth.logout() { _ in
-
+            
             Constants.resetToLogin()
         }
-  }
+    }
     
     
     @objc func onActiveApp() {
         if(isLiveStreamOn == false){
             isShowing = true
-            addObservers()
             print("**** App on Active called *****")
             
-            if (appDelegate.fronteggAuth.isLoading) { ///Checking if frontegg token is loading. If its true then wait for change its value false.
-                cancellable = appDelegate.fronteggAuth.$isLoading
-                    .sink { [weak self] newValue in
-                        guard let self = self else { return }
-                        print("on active loading status: ******** \(newValue)")
-                        if !(newValue) {
-                            self.cancellable?.cancel()
-                            DispatchQueue.main.asyncAfter(deadline: .now()+0.1, execute: {
-                                ///API call for load streams on dashboard
-//                                self.loadOnlineStreams()
-                            })
-                        }
-                    }
-            } else { /// if frontegg token is not loading then call the load stream API
-                DispatchQueue.main.asyncAfter(deadline: .now()+0.1, execute: { [weak self] in
-                    guard let self = self else { return }
-                    ///API call for load streams on dashboard
-                    //self.loadOnlineStreams()
-                })
-            }
-            
+            self.checkSession()
         }
     }
     @objc func onDeactiveApp() {
-      //  print("App is in Backround")
+        //  print("App is in Backround")
         if(isLiveStreamOn == false){
             NotificationCenter.default.removeObserver(self, name: UIDevice.orientationDidChangeNotification, object: nil)
             isShowing = false
         }
     }
-
+    
     
     @IBAction func didTapGoliveSelectionBackground(_ sender: Any) {
         self.view.endEditing(true)
@@ -467,14 +376,14 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
     @IBAction func didTapRoomDropDown(_ sender: Any) {
         self.fillRoomDropDownForLiveStream()
     }
-   
-   @objc func checkForLiveStreamToLoad(){
+    
+    @objc func checkForLiveStreamToLoad(){
     }
     
     
     private func keepScreen(on: Bool) {
         print("keepScreenOn: \(on)")
-//        streamingPlayer.playerVC.player?.preventsDisplaySleepDuringVideoPlayback = !on
+        //        streamingPlayer.playerVC.player?.preventsDisplaySleepDuringVideoPlayback = !on
         UIApplication.shared.isIdleTimerDisabled = on
     }
     
@@ -500,4 +409,4 @@ extension StreamViewController{
         }
     }
 }
-    
+
