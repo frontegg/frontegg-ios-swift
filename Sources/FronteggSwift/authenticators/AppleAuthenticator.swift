@@ -8,76 +8,67 @@
 import Foundation
 import AuthenticationServices
 
+public typealias AppleSignInAuthenticationDelegate = (Result<String, FronteggError>) -> Void
+
+public protocol AppleIDCredential {
+    var authorizationCode: Data? { get }
+}
+
+extension ASAuthorizationAppleIDCredential: AppleIDCredential {}
 
 
 @available(iOS 15.0, *)
 class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContextProviding, ASAuthorizationControllerDelegate {
+    private var logger = getLogger("AppleAuthenticator")
     
-    static let shared = AppleAuthenticator()
+    public typealias ControllerFactory = (_ requests: [ASAuthorizationRequest]) -> ASAuthorizationController
     
-    var logger = getLogger("AppleAuthenticator")
-    var completionHandler: FronteggAuth.CompletionHandler? = nil
+    private let delegate: AppleSignInAuthenticationDelegate
+    private let factory: ControllerFactory
+    
+    init(
+        delegate: @escaping AppleSignInAuthenticationDelegate,
+        factory: @escaping ControllerFactory = ASAuthorizationController.init,
+        completionHandler: FronteggAuth.CompletionHandler? = nil
+    ) {
+        self.delegate = delegate
+        self.factory = factory
+    }
     
     func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-        return  FronteggAuth.shared.getRootVC()?.view.window ?? ASPresentationAnchor()
+        return FronteggAuth.shared.getRootVC()?.view.window ?? ASPresentationAnchor()
     }
     
     func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
-        
-        if let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential,
-           let authorizationCode = appleIDCredential.authorizationCode,
-            let code  = String(data: authorizationCode, encoding: .utf8) {
-            
-            
-            self.sendApplePostLogin(code)
-        } else {
+        guard let credentials = authorization.credential as? AppleIDCredential else {
             logger.error("Failed to authenticate with AppleId provider")
-            completionHandler?(.failure(FronteggError.authError(.unknown)))
+            delegate(.failure (FronteggError.authError(.unknown)))
+            return
         }
+        completeWith(credential: credentials)
     }
     
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: any Error) {
-        
         if let err = error as? ASAuthorizationError, err.code == ASAuthorizationError.canceled{
             logger.info("Sign in with Apple canceled by user")
-            completionHandler?(.failure(FronteggError.authError(.operationCanceled)))
-        }else {
+            delegate(.failure (FronteggError.authError(.operationCanceled)))
+        } else {
             logger.error("Failed to authenticate with apple \(error.localizedDescription)")
-            completionHandler?(.failure(FronteggError.authError(.other(error))))
+            delegate(.failure (FronteggError.authError(.other(error))))
         }
-        completionHandler = nil
     }
     
-    
-    func sendApplePostLogin(_ code:String) {
-        logger.info("Send apple post login request to obtain session")
-        
-        DispatchQueue.main.async {
-            FronteggAuth.shared.isLoading = true
+    func completeWith(credential: AppleIDCredential) {
+        if let authorizationCode = credential.authorizationCode,
+           let code = String(data: authorizationCode, encoding: .utf8) {
+            delegate(.success(code))
+        } else {
+            logger.error("Failed to authenticate with AppleId provider")
+            delegate(.failure (FronteggError.authError(.unknown)))
         }
-        
-        DispatchQueue.global(qos: .background).async {
-            Task {
-                do {
-                    let authResponse = try await FronteggAuth.shared.api.postloginAppleNative(code)
-                    
-                    await FronteggAuth.shared.setCredentials(accessToken: authResponse.access_token, refreshToken: authResponse.refresh_token)
-                    
-                } catch {
-                    if error is FronteggError {
-                        self.completionHandler?(.failure(error as! FronteggError))
-                    }else {
-                        self.logger.error("Failed to authenticate with apple \(error.localizedDescription)")
-                        self.completionHandler?(.failure(.authError(.failedToAuthenticate)))
-                    }
-                    
-                }
-            }
-        }
-        
     }
     
-    func start(completionHandler: @escaping FronteggAuth.CompletionHandler) {
+    func start() {
         let appleIDProvider = ASAuthorizationAppleIDProvider()
         let request = appleIDProvider.createRequest()
         
@@ -85,12 +76,10 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
         request.requestedOperation = .operationLogin
         
         
-        self.completionHandler = completionHandler
-        let authorizationController = ASAuthorizationController(authorizationRequests: [request])
+        let authorizationController = factory([request])
         authorizationController.delegate = self
         authorizationController.presentationContextProvider = self
         authorizationController.performRequests()
     }
     
 }
-
