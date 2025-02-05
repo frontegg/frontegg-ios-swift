@@ -60,7 +60,7 @@ class AppleAuthenticatorTests: XCTestCase {
         waitForExpectations(timeout: 2)
     }
     
-    func test_completeWithCredential_withInvalidToken_firesDelegateMethodWithInvalidCredentialsError() {
+    func test_completeWithCredential_withInvalidCode_firesDelegateMethodWithInvalidCredentialsError() {
         let expectation = self.expectation(description: "Completion handler should be called on failure")
         
         let delegate: AppleAuthenticator.Delegate = {result in
@@ -79,7 +79,7 @@ class AppleAuthenticatorTests: XCTestCase {
         waitForExpectations(timeout: 2)
     }
     
-    func test_completeWithCredential_withValidToken_firesDelegateMethodWithToken() {
+    func test_completeWithCredential_withValidCode_firesDelegateMethodWithCode() {
         let expectation = self.expectation(description: "Completion handler should be called on success")
         
         let delegate: AppleAuthenticator.Delegate = {result in
