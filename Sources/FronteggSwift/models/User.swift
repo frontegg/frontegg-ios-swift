@@ -6,7 +6,7 @@
 
 import Foundation
 
-public struct User: Codable {
+public struct User: Codable, Equatable {
     
     enum DecodeError: Error {
         case invalidJsonData
@@ -30,7 +30,26 @@ public struct User: Codable {
     public var verified: Bool
     public var superUser: Bool
 
-    
+    public static func == (lhs: User, rhs: User) -> Bool {
+        return lhs.id == rhs.id &&
+               lhs.email == rhs.email &&
+               lhs.mfaEnrolled == rhs.mfaEnrolled &&
+               lhs.name == rhs.name &&
+               lhs.profilePictureUrl == rhs.profilePictureUrl &&
+               lhs.phoneNumber == rhs.phoneNumber &&
+               lhs.profileImage == rhs.profileImage &&
+               lhs.roles == rhs.roles &&
+               lhs.permissions == rhs.permissions &&
+               lhs.tenantId == rhs.tenantId &&
+               lhs.tenantIds == rhs.tenantIds &&
+               lhs.tenants == rhs.tenants &&
+               lhs.activeTenant == rhs.activeTenant &&
+               lhs.activatedForTenant == rhs.activatedForTenant &&
+               lhs.metadata == rhs.metadata &&
+               lhs.verified == rhs.verified &&
+               lhs.superUser == rhs.superUser
+    }
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
