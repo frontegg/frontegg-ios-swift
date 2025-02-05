@@ -26,7 +26,7 @@ extension PlistHelperTests {
                 baseUrl: "https://test.com",
                 clientId: "d37ad699-e466-451a-a9d1-d590869dba1a",
                 applicationId: "f87f8fea-8cb3-4a46-bab8-0169726a5704"
-            ))
+            )), keepUserLoggedInAfterReinstall: true
         )
         let decodedPlist = try PlistHelper.decode(
             FronteggPlist.self,
@@ -59,7 +59,7 @@ extension PlistHelperTests {
                     clientId: "d37ad699-e466-451a-a9d1-d590869dba1a",
                     applicationId: "199d93c3-0d82-4eac-ab95-4b9e3d617053"
                 )
-            ]))
+            ])), keepUserLoggedInAfterReinstall: true
         )
         let decodedPlist = try PlistHelper.decode(
             FronteggPlist.self,
@@ -83,7 +83,7 @@ extension PlistHelperTests {
                 baseUrl: "https://test.com",
                 clientId: "d37ad699-e466-451a-a9d1-d590869dba1a",
                 applicationId: nil
-            ))
+            )), keepUserLoggedInAfterReinstall: true
         )
         let decodedPlist = try PlistHelper.decode(
             FronteggPlist.self,
@@ -116,7 +116,7 @@ extension PlistHelperTests {
                     clientId: "d37ad699-e466-451a-a9d1-d590869dba1a",
                     applicationId: nil
                 )
-            ]))
+            ])), keepUserLoggedInAfterReinstall: true
         )
         let decodedPlist = try PlistHelper.decode(
             FronteggPlist.self,
