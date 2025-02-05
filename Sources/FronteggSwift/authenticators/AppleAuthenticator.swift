@@ -8,7 +8,7 @@
 import Foundation
 import AuthenticationServices
 
-public typealias AppleSignInAuthenticationDelegate = (Result<String, FronteggError>) -> Void
+
 
 public protocol AppleIDCredential {
     var authorizationCode: Data? { get }
@@ -22,12 +22,13 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
     private var logger = getLogger("AppleAuthenticator")
     
     public typealias ControllerFactory = (_ requests: [ASAuthorizationRequest]) -> ASAuthorizationController
+    public typealias Delegate = (Result<String, FronteggError>) -> Void
     
-    private let delegate: AppleSignInAuthenticationDelegate
+    private let delegate: Delegate
     private let factory: ControllerFactory
     
     init(
-        delegate: @escaping AppleSignInAuthenticationDelegate,
+        delegate: @escaping Delegate,
         factory: @escaping ControllerFactory = ASAuthorizationController.init,
         completionHandler: FronteggAuth.CompletionHandler? = nil
     ) {

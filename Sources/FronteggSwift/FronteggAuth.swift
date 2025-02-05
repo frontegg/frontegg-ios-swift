@@ -772,7 +772,7 @@ public class FronteggAuth: ObservableObject {
                     
                     if let appleConfig = socialConfig.apple, appleConfig.active {
                         if #available(iOS 15.0, *), appleConfig.customised, !config.useAsWebAuthenticationForAppleLogin {
-                            let delegate: AppleSignInAuthenticationDelegate  = {result in
+                            let delegate: AppleAuthenticator.Delegate  = {result in
                                 switch result {
                                 case .success(let code):
                                     self.sendApplePostLogin(code, completion: completion)
