@@ -25,6 +25,7 @@ Welcome to the @frontegg/ios Swift SDK! This SDK provides a seamless way to inte
   - [Multi-Region support](#multi-region-support)
   - [Login with ASWebAuthenticationSession](#login-with-aswebauthenticationsession)
   - [Passkeys Authentication](#passkeys-authentication)
+  - [FronteggAuth methods](#fronteggauth-methods)
 
 ## Project Requirements
 
@@ -611,3 +612,89 @@ func loginWithPasskeys() {
     }
 }
 ```
+
+### FronteggAuth methods
+
+## Overview
+The `FronteggAuth` interface provides authentication functionalities for iOS applications using Frontegg.
+It includes methods for user authentication, token management, tenant switching, and more.
+
+## Installation
+Ensure that the Frontegg SDK is added to your Swift project. Refer to the official documentation for installation steps.
+
+## Properties
+### Authentication State
+- `accessToken: ReadOnlyObservableValue<String?>` - The access token; `null` if the user is unauthorized.
+- `refreshToken: ReadOnlyObservableValue<String?>` - The refresh token; `null` if the user is unauthorized.
+- `user: ReadOnlyObservableValue<User?>` - The user data; `null` if the user is unauthorized.
+- `isAuthenticated: ReadOnlyObservableValue<Boolean>` - `true` if the user is authenticated.
+- `isLoading: ReadOnlyObservableValue<Boolean>` - `true` if a process is running.
+- `initializing: ReadOnlyObservableValue<Boolean>` - `true` while the SDK is initializing.
+- `showLoader: ReadOnlyObservableValue<Boolean>` - `true` if loading UI should be shown.
+- `refreshingToken: ReadOnlyObservableValue<Boolean>` - `true` if a token refresh is in progress.
+
+### Configuration
+- `baseUrl: String` - The Frontegg base URL.
+- `clientId: String` - The Frontegg Client ID.
+- `applicationId: String?` - The Frontegg application ID.
+- `isMultiRegion: Boolean` - `true` if multi-region mode is enabled.
+- `regions: List<RegionConfig>` - List of available regions.
+- `selectedRegion: RegionConfig?` - The currently selected region.
+- `isEmbeddedMode: Boolean` - `true` if embedded mode is enabled.
+- `useAssetsLinks: Boolean` - Whether asset links are used.
+- `useChromeCustomTabs: Boolean` - Whether Chrome Custom Tabs are used.
+- `mainActivityClass: Class<*>?` - The main activity class reference.
+
+## Methods
+### User Authentication
+#### `login(_ _completion: FronteggAuth.CompletionHandler? = nil, loginHint: String? = nil)`
+Launches the login process, displaying the Frontegg Login Box.
+- **Parameters:**
+  - `completion` (optional) - Called when login completes.
+  - `loginHint` (optional) - Pre-fills the login field.
+
+#### `logout(_ completion: @escaping (Result<Bool, FronteggError>) -> Void)`
+Logs out the user, clearing authentication data.
+- **Parameters:**
+  - `completion` (optional) - Called after logout completes.
+
+### Tenant Management
+#### `switchTenant(tenantId:String, _ completion: FronteggAuth.CompletionHandler? = nil)`
+Switches the current user tenant.
+- **Parameters:**
+  - `tenantId` - The ID of the new tenant.
+  - `completion` (optional) - Called after the switch completes.
+
+### Token Management
+#### `refreshTokenIfNeeded(attempts: Int = 0) -> Bool `
+Refreshes the authentication token if necessary.
+- **Parameters:**
+  - `attempts` - Count of Token Refreshing attempts.
+- **Returns:** `true` if the token was successfully refreshed, `false` otherwise.
+
+### Passkeys Authentication
+#### `loginWithPasskeys(_ _completion: FronteggAuth.CompletionHandler? = nil)`
+Logs in using passkeys.
+- **Parameters:**
+  - `completion` (optional) - Called when login completes or fails.
+
+#### `registerPasskeys(_ completion: FronteggAuth.ConditionCompletionHandler? = nil)`
+Registers passkeys for authentication.
+- **Parameters:**
+  - `completion` (optional) - Called when registration completes or fails.
+
+### Authorization Requests
+#### `suspend fun requestAuthorizeAsync(refreshToken: String, deviceTokenCookie: String? = nil)-> User`
+Requests silent authorization asynchronously.
+- **Parameters:**
+  - `refreshToken` - The refresh token.
+  - `deviceTokenCookie` (optional) - Device token for additional authentication.
+- **Returns:** A `User` object upon successful authentication.
+- **Throws:** `FronteggError` on failure.
+
+#### `fun requestAuthorize(refreshToken: String, deviceTokenCookie: String? = nil, _ completion: @escaping FronteggAuth.CompletionHandler)`
+Requests authorization with a callback.
+- **Parameters:**
+  - `refreshToken` - The refresh token.
+  - `deviceTokenCookie` (optional) - Device token.
+  - `completion` - Receives the authentication result (`User` or `FronteggError`).
