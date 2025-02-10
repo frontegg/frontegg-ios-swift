@@ -684,16 +684,102 @@ public class FronteggAuth: ObservableObject {
         WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: ephemeralSession ?? true, window:window,  completionHandler: oauthCallback)
     }
     
-    public func directLoginAction(window: UIWindow?, type: String, data: String, ephemeralSession: Bool? = true, _completion: FronteggAuth.CompletionHandler? = nil, additionalQueryParams: [String: Any]? = nil) {
-        
-        
+    @available(*, deprecated, message: "Use directLogin(url), socialLogin(provider), or customSocialLogin(id) instead.")
+    public func directLoginAction(
+        window: UIWindow?,
+        type: String, data: String,
+        ephemeralSession: Bool? = true,
+        _completion: FronteggAuth.CompletionHandler? = nil,
+        additionalQueryParams: [String: Any]? = nil
+    ) {
         let completion = _completion ?? { res in
             
         }
         
-        if(type == "social-login" && data == "apple") {
+        if (type == "social-login" && data == "apple") {
             self.loginWithApple(completion)
             return
+        }
+        
+        self._directLoginAction(
+            window: window,
+            type: "social-login",
+            data: data,
+            ephemeralSession: ephemeralSession,
+            completion: completion,
+            additionalQueryParams: additionalQueryParams
+        )
+    }
+    
+    public func socialLogin(
+        window: UIWindow?,
+        provider: SocialProvider,
+        ephemeralSession: Bool? = true,
+        _completion: FronteggAuth.CompletionHandler? = nil,
+        additionalQueryParams: [String: Any]? = nil
+    )  {
+        if(provider == .apple) {
+            let completion = _completion ?? { res in
+            }
+            
+            self.loginWithApple(completion)
+            return
+        }
+        
+        self._directLoginAction(
+            window: window,
+            type: "social-login",
+            data: provider.rawValue,
+            ephemeralSession: ephemeralSession,
+            completion: _completion,
+            additionalQueryParams: additionalQueryParams
+        )
+    }
+    
+    public func customSocialLogin(
+        window: UIWindow?,
+        id: String,
+        ephemeralSession: Bool? = true,
+        _completion: FronteggAuth.CompletionHandler? = nil,
+        additionalQueryParams: [String: Any]? = nil
+    ) {
+        self._directLoginAction(
+            window: window,
+            type: "custom-social-login",
+            data: id,
+            ephemeralSession: ephemeralSession,
+            completion: _completion,
+            additionalQueryParams: additionalQueryParams
+        )
+    }
+    
+    public func directLogin(
+        window: UIWindow?,
+        url: String,
+        ephemeralSession: Bool? = true,
+        _completion: FronteggAuth.CompletionHandler? = nil,
+        additionalQueryParams: [String: Any]? = nil
+    ) {
+        self._directLoginAction(
+            window: window,
+            type: "direct",
+            data: url,
+            ephemeralSession: ephemeralSession,
+            completion: _completion,
+            additionalQueryParams: additionalQueryParams
+        )
+    }
+    
+    internal func _directLoginAction(
+        window: UIWindow?,
+        type: String,
+        data: String,
+        ephemeralSession: Bool? = true,
+        completion: FronteggAuth.CompletionHandler? = nil,
+        additionalQueryParams: [String: Any]? = nil
+    ) {
+        let completion = completion ?? { res in
+            
         }
         
         var directLogin = [
