@@ -25,6 +25,9 @@ public struct RegionConfig: Decodable, Equatable, Identifiable, Sendable, Hashab
     init(key: String, baseUrl: String, clientId: String, applicationId: String?) {
         self.key = key
         self.baseUrl = baseUrl
+        if !self.baseUrl.hasPrefix("https://") {
+            fatalError(FronteggError.configError(.wrongBaseUrl(self.baseUrl, "'baseUrl' must start with 'https://'")).localizedDescription)
+        }
         self.clientId = clientId
         self.applicationId = applicationId
     }
