@@ -1,6 +1,6 @@
 //
 //  FronteggWKContentController.swift
-//  
+//
 //
 //  Created by David Frontegg on 15/09/2023.
 //
@@ -30,7 +30,7 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
     
     private func handleJsonMessage(jsonString: String) {
         guard let jsonData = jsonString.data(using: .utf8) else { return }
-
+        
         do {
             let message = try JSONDecoder().decode(HostedLoginMessage.self, from: jsonData)
             handleAction(message)
@@ -45,7 +45,7 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
     
     private func handleAction(_ message: HostedLoginMessage) {
         switch (message.action) {
-        
+            
         case "getPasskey" , "createPasskey":
             guard let callbackId = message.callbackId else {
                 return
@@ -73,35 +73,41 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
         case "loginWithSocialLogin":
             FronteggAuth.shared.loginWithSocialLogin(socialLoginUrl: message.payload)
         case "loginWithSocialLoginProvider":
-            FronteggAuth.shared.directLoginAction(window: nil, 
+            FronteggAuth.shared.directLoginAction(window: nil,
                                                   type: "social-login",
                                                   data: message.payload,
-                                                  ephemeralSession: false)
+                                                  ephemeralSession: false,
+                                                  additionalQueryParams: [
+                                                    "prompt":"consent"
+                                                  ])
         case "loginWithCustomSocialLoginProvider":
-            FronteggAuth.shared.directLoginAction(window: nil, 
-                                                  type: "custom-social-login", 
+            FronteggAuth.shared.directLoginAction(window: nil,
+                                                  type: "custom-social-login",
                                                   data: message.payload,
-                                                  ephemeralSession: false)
+                                                  ephemeralSession: false,
+                                                  additionalQueryParams: [
+                                                    "prompt":"consent"
+                                                  ])
         case "suggestSavePassword":
             guard let data = try? JSONSerialization.jsonObject(with: Data(message.payload.utf8), options: []) as? [String: String],
-                let email = data["email"],
-                let password = data["password"] else {
-                    print("Invalid payload for loginWithPassword")
+                  let email = data["email"],
+                  let password = data["password"] else {
+                print("Invalid payload for loginWithPassword")
+                
+                return
+            }
             
-                    return
-                }
-
-                if let url = URL(string: FronteggAuth.shared.baseUrl), let domain = url.host {
-                    FronteggAuth.shared.saveWebCredentials(domain: domain, email: email, password: password) { success, error in
-                        if success {
-                            print("✅ Credentials saved successfully for \(email)")
-                        } else {
-                            print("❌ Failed to save credentials: \(error?.localizedDescription ?? "Unknown error")")
-                        }
+            if let url = URL(string: FronteggAuth.shared.baseUrl), let domain = url.host {
+                FronteggAuth.shared.saveWebCredentials(domain: domain, email: email, password: password) { success, error in
+                    if success {
+                        print("✅ Credentials saved successfully for \(email)")
+                    } else {
+                        print("❌ Failed to save credentials: \(error?.localizedDescription ?? "Unknown error")")
                     }
-                } else {
-                    print("❌ Invalid base URL: \(FronteggAuth.shared.baseUrl)")
                 }
+            } else {
+                print("❌ Invalid base URL: \(FronteggAuth.shared.baseUrl)")
+            }
         case "showLoader":
             FronteggAuth.shared.webLoading = true
         case "hideLoader":

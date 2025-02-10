@@ -684,7 +684,7 @@ public class FronteggAuth: ObservableObject {
         WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: ephemeralSession ?? true, window:window,  completionHandler: oauthCallback)
     }
     
-    public func directLoginAction(window: UIWindow?, type: String, data: String, ephemeralSession: Bool? = true, _completion: FronteggAuth.CompletionHandler? = nil) {
+    public func directLoginAction(window: UIWindow?, type: String, data: String, ephemeralSession: Bool? = true, _completion: FronteggAuth.CompletionHandler? = nil, additionalQueryParams: [String: Any]? = nil) {
         
         
         let completion = _completion ?? { res in
@@ -696,10 +696,15 @@ public class FronteggAuth: ObservableObject {
             return
         }
         
-        let directLogin = [
+        var directLogin = [
             "type": type,
             "data": data,
+            
         ] as [String : Any]
+        
+        if let queryParams = additionalQueryParams {
+            directLogin["additionalQueryParams"] = queryParams
+        }
         
         var generatedUrl: (URL, String)
         if let jsonData = try? JSONSerialization.data(withJSONObject: directLogin, options: []) {
@@ -894,6 +899,10 @@ public class FronteggAuth: ObservableObject {
         
         if let rootVC = self.getRootVC() {
             self.loginHint = loginHint
+            if self.loginCompletion != nil {
+                logger.info("Login request ignored, Embedded login already in progress.")
+                return
+            }
             self.loginCompletion = { result in
                 _completion?(result)
                 self.loginCompletion = nil
