@@ -20,6 +20,7 @@ extension FronteggError {
         case invalidRegionKey(_ regionKey: String, _ availableKeys: String)
         case failedToGenerateAuthorizeURL
         case socialLoginMissing(_ socialType:String)
+        case wrongBaseUrl(_ baseUrl: String, _ errorDescription: String)
     }
 }
 
@@ -37,6 +38,7 @@ extension FronteggError.Configuration {
         case let .invalidRegionKey(regionKey, availableKeys): "invalid region key \(regionKey). available regions: \(availableKeys)"
         case .failedToGenerateAuthorizeURL: "Failed to generate authorize url"
         case let .socialLoginMissing(socialType): "Missing social login config for \(socialType)"
+        case let .wrongBaseUrl(baseUrl, errorDescription): "Wrong 'baseUrl' format (\(baseUrl), reason:` \(errorDescription)"
         }
     }
 }

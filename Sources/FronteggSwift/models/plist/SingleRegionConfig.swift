@@ -26,6 +26,9 @@ struct SingleRegionConfig: Decodable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
         self.baseUrl = try container.decode(String.self, forKey: .baseUrl)
+        if !self.baseUrl.hasPrefix("https://") {
+            fatalError(FronteggError.configError(.wrongBaseUrl(self.baseUrl, "'baseUrl' must start with 'https://'")).localizedDescription)
+        }
         self.clientId = try container.decode(String.self, forKey: .clientId)
         self.applicationId = try container.decodeIfPresent(String.self, forKey: .applicationId)
 
