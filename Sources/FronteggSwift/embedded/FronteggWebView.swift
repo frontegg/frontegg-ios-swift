@@ -27,16 +27,23 @@ public struct FronteggWebView: UIViewRepresentable {
 
 
         let fronteggApp = FronteggApp.shared
-        let jsObject = String(data: try! JSONSerialization.data(withJSONObject: [
-            "loginWithSocialLogin": fronteggApp.handleLoginWithSocialLogin,
-            "loginWithCustomSocialLoginProvider": fronteggApp.handleLoginWithCustomSocialLoginProvider,
-            "loginWithSocialLoginProvider": fronteggApp.handleLoginWithSocialProvider,
-            "loginWithSSO": fronteggApp.handleLoginWithSSO,
-            "shouldPromptSocialLoginConsent": fronteggApp.shouldPromptSocialLoginConsent,
-            "suggestSavePassword": fronteggApp.shouldSuggestSavePassword
-        ]), encoding: .utf8)
+        let jsObject: String
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: [
+                "loginWithSocialLogin": fronteggApp.handleLoginWithSocialLogin,
+                "loginWithCustomSocialLoginProvider": fronteggApp.handleLoginWithCustomSocialLoginProvider,
+                "loginWithSocialLoginProvider": fronteggApp.handleLoginWithSocialProvider,
+                "loginWithSSO": fronteggApp.handleLoginWithSSO,
+                "shouldPromptSocialLoginConsent": fronteggApp.shouldPromptSocialLoginConsent,
+                "suggestSavePassword": fronteggApp.shouldSuggestSavePassword
+            ])
+            jsObject = String(data: jsonData, encoding: .utf8) ?? "{}"
+        } catch {
+            logger.error("Failed to serialize JSON: \(error)")
+            jsObject = "{}"
+        }
         
-        let jsScript = WKUserScript(source: "window.FronteggNativeBridgeFunctions = \(jsObject ?? "{}");", injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+        let jsScript = WKUserScript(source: "window.FronteggNativeBridgeFunctions = \(jsObject);", injectionTime: .atDocumentEnd, forMainFrameOnly: false)
         userContentController.addUserScript(jsScript)
         
         
