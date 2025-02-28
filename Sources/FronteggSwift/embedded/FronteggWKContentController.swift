@@ -73,17 +73,15 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
         case "loginWithSocialLogin":
             FronteggAuth.shared.loginWithSocialLogin(socialLoginUrl: message.payload)
         case "loginWithSocialLoginProvider":
-            FronteggAuth.shared.directLoginAction(window: nil,
-                                                  type: "social-login",
-                                                  data: message.payload,
-                                                  ephemeralSession: false,
-                                                  additionalQueryParams: [
-                                                    "prompt":"consent"
-                                                  ])
+            FronteggAuth.shared.socialLogin(window: nil,
+                                            provider: SocialProvider(rawValue: message.payload)!,
+                                            ephemeralSession: false,
+                                            additionalQueryParams: [
+                                                "prompt":"consent"
+                                            ])
         case "loginWithCustomSocialLoginProvider":
-            FronteggAuth.shared.directLoginAction(window: nil,
-                                                  type: "custom-social-login",
-                                                  data: message.payload,
+            FronteggAuth.shared.customSocialLogin(window: nil,
+                                                  id: message.payload,
                                                   ephemeralSession: false,
                                                   additionalQueryParams: [
                                                     "prompt":"consent"
