@@ -33,6 +33,7 @@ public class FronteggApp {
     public var regionData: [RegionConfig] = []
     let credentialManager: CredentialManager
     let logger = getLogger("FronteggApp")
+    let debugConfigurationChecker = DebugConfigurationChecker()
 
     init() {
         let config: FronteggPlist
@@ -41,6 +42,8 @@ public class FronteggApp {
         } catch {
             fatalError(FronteggError.configError(.couldNotLoadPlist(error.localizedDescription)).localizedDescription)
         }
+
+        debugConfigurationChecker.runChecks()
 
         guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
             fatalError(FronteggError.configError(.couldNotGetBundleID(Bundle.main.bundlePath)).localizedDescription)
