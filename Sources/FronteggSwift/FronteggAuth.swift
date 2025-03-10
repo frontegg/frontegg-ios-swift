@@ -684,7 +684,14 @@ public class FronteggAuth: ObservableObject {
         WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: ephemeralSession ?? true, window:window,  completionHandler: oauthCallback)
     }
     
-    public func directLoginAction(window: UIWindow?, type: String, data: String, ephemeralSession: Bool? = true, _completion: FronteggAuth.CompletionHandler? = nil, additionalQueryParams: [String: Any]? = nil) {
+    public func directLoginAction(
+        window: UIWindow?, 
+        type: String, 
+        data: String, 
+        ephemeralSession: Bool? = true, 
+        _completion: FronteggAuth.CompletionHandler? = nil, 
+        additionalQueryParams: [String: Any]? = nil, 
+        remainCodeVerifier: Bool = false) {
         
         
         let completion = _completion ?? { res in
@@ -709,7 +716,7 @@ public class FronteggAuth: ObservableObject {
         var generatedUrl: (URL, String)
         if let jsonData = try? JSONSerialization.data(withJSONObject: directLogin, options: []) {
             let jsonString = jsonData.base64EncodedString()
-            generatedUrl = AuthorizeUrlGenerator.shared.generate(loginAction: jsonString)
+            generatedUrl = AuthorizeUrlGenerator.shared.generate(loginAction: jsonString, remainCodeVerifier: remainCodeVerifier)
         } else {
             generatedUrl = AuthorizeUrlGenerator.shared.generate()
         }

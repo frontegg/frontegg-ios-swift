@@ -234,9 +234,14 @@ public class Api {
                 "redirect_uri": redirectUrl,
                 "code_verifier": codeVerifier,
             ])
-            
+
+            if let responseString = String(data: data, encoding: .utf8),
+               responseString.contains("\"errors\"") || responseString.contains("\"error\"") {
+                return (nil, FronteggError.authError(.other(NSError(domain: "FronteggAuth", code: 400, userInfo: [NSLocalizedDescriptionKey: responseString]))))
+            }
+
             return (try JSONDecoder().decode(AuthResponse.self, from: data), nil)
-        }catch {
+        } catch {
             return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
         }
     }
