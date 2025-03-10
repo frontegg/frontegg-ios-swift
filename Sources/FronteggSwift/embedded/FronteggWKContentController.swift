@@ -79,7 +79,8 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
                                                   ephemeralSession: false,
                                                   additionalQueryParams: [
                                                     "prompt":"consent"
-                                                  ])
+                                                  ],
+                                                  remainCodeVerifier: true)
         case "loginWithCustomSocialLoginProvider":
             FronteggAuth.shared.directLoginAction(window: nil,
                                                   type: "custom-social-login",
@@ -87,7 +88,8 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
                                                   ephemeralSession: false,
                                                   additionalQueryParams: [
                                                     "prompt":"consent"
-                                                  ])
+                                                  ],
+                                                  remainCodeVerifier: true)
         case "suggestSavePassword":
             guard let data = try? JSONSerialization.jsonObject(with: Data(message.payload.utf8), options: []) as? [String: String],
                   let email = data["email"],
