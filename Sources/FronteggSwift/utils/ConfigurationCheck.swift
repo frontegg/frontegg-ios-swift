@@ -42,7 +42,6 @@ class DebugConfigurationChecker {
         
         #else
         print("ℹ️ Skipping debug checks in production.")
-        completion()
         #endif
     }
 
