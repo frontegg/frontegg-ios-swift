@@ -23,6 +23,8 @@ public class FronteggAuth: ObservableObject {
     @Published public var refreshToken: String?
     @Published public var user: User?
     @Published public var isAuthenticated = false
+    @Published public var isStepUpAuthorization = false
+    @Published public var isReAuthorization = false
     @Published public var isLoading = true
     @Published public var webLoading = true
     @Published public var initializing = true
@@ -41,6 +43,7 @@ public class FronteggAuth: ObservableObject {
     public var applicationId: String? = nil
     public var pendingAppLink: URL? = nil
     public var loginHint: String? = nil
+
     
     
     public static var shared: FronteggAuth {
@@ -49,19 +52,23 @@ public class FronteggAuth: ObservableObject {
     
     private let logger = getLogger("FronteggAuth")
     private let credentialManager: CredentialManager
+    private var multiFactorAuthenticator: MultiFactorAuthenticator
+    private var stepUpAuthenticator: StepUpAuthenticator
     public var api: Api
     private var subscribers = Set<AnyCancellable>()
     private var refreshTokenDispatch: DispatchWorkItem?
     var loginCompletion: CompletionHandler? = nil
     
-    init (baseUrl:String,
-          clientId: String,
-          applicationId: String?,
-          credentialManager: CredentialManager,
-          isRegional: Bool,
-          regionData: [RegionConfig],
-          embeddedMode: Bool,
-          isLateInit: Bool? = false) {
+    init (
+        baseUrl:String,
+        clientId: String,
+        applicationId: String?,
+        credentialManager: CredentialManager,
+        isRegional: Bool,
+        regionData: [RegionConfig],
+        embeddedMode: Bool,
+        isLateInit: Bool? = false
+    ) {
         self.isRegional = isRegional
         self.regionData = regionData
         self.lateInit = isLateInit ?? false
@@ -72,8 +79,11 @@ public class FronteggAuth: ObservableObject {
         self.clientId = clientId
         self.applicationId = applicationId
         self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
-        self.selectedRegion = self.getSelectedRegion()
+        self.multiFactorAuthenticator = MultiFactorAuthenticator(api: api, baseUrl: baseUrl)
+        self.stepUpAuthenticator = StepUpAuthenticator(credentialManager: credentialManager)
         
+        self.selectedRegion = self.getSelectedRegion()
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(applicationDidBecomeActive),
@@ -218,6 +228,8 @@ public class FronteggAuth: ObservableObject {
                 self.appLink = false
                 self.initializing = false
                 self.appLink = false
+                self.isStepUpAuthorization = false
+                self.isReAuthorization = false
                 
                 // isLoading must be at the bottom
                 self.isLoading = false
@@ -1062,6 +1074,71 @@ public class FronteggAuth: ObservableObject {
         }
     }
     
+    public func isSteppedUp(maxAge: TimeInterval? = nil) -> Bool {
+        return self.stepUpAuthenticator.isSteppedUp(maxAge: maxAge)
+    }
+    
+    public func stepUp(
+        maxAge: TimeInterval? = nil,
+        _ _completion: FronteggAuth.CompletionHandler? = nil
+    ) async {
+        return await stepUpAction(maxAge: maxAge, completion: _completion)
+    }
+    
+    private func stepUpAction(
+        maxAge: TimeInterval? = nil,
+        completion: FronteggAuth.CompletionHandler? = nil,
+        isAttempt: Bool = false
+    ) async {
+        
+        let updatedCompletion: FronteggAuth.CompletionHandler = { (result) in
+            self.isReAuthorization = false
+            self.isStepUpAuthorization = false
+            
+            completion?(result)
+        }
+        
+        do {
+            self.isLoading = true
+            self.isStepUpAuthorization = true
+            if let mfaRequestData = try await self.api.generateStepUp(maxAge: maxAge) {
+                self.startMultiFactorAuthenticator(
+                    mfaRequestData: mfaRequestData,
+                    refreshToken: nil,
+                    completion: updatedCompletion
+                )
+                return
+            }
+        } catch FronteggError.authError(.notAuthenticated) {
+            if isAttempt {
+                completion?(.failure(FronteggError.authError(.notAuthenticated)))
+                return
+            }
+            
+            let loginCompletion: FronteggAuth.CompletionHandler = { result in
+                switch result {
+                case .success:
+                    if (self.stepUpAuthenticator.isSteppedUp()) {
+                        return
+                    }
+                    
+                    Task {
+                        await self.stepUpAction(maxAge: maxAge, completion: completion, isAttempt: true)
+                    }
+                case .failure(let fronteggError):
+                    completion?(.failure(fronteggError))
+                }
+            }
+            
+            DispatchQueue.main.async {
+                self.isReAuthorization = true
+                self.login(loginCompletion)
+            }
+            return
+        } catch {
+            completion?(.failure(FronteggError.authError(.failedToMFA)))
+        }
+    }
     
     internal func handleMfaRequired(_ _completion: FronteggAuth.CompletionHandler? = nil) -> FronteggAuth.CompletionHandler {
         let completion: FronteggAuth.CompletionHandler =  { (result) in
@@ -1080,9 +1157,12 @@ public class FronteggAuth: ObservableObject {
                     if case let .mfaRequired(jsonResponse, refreshToken) = authError {
                         // Handle the MFA-required logic here with the jsonResponse
                         self.logger.info("MFA required with JSON response: \(jsonResponse)")
-                        Task {
-                            await self.startMultiFactorAuthenticator(jsonResponse, refreshToken:refreshToken, completion: _completion)
-                        }
+                        self.startMultiFactorAuthenticator(
+                            mfaRequestData: jsonResponse,
+                            refreshToken:refreshToken,
+                            completion: _completion
+                        )
+                        
                         return
                     } else {
                         self.logger.info("authentication error: \(authError.localizedDescription)")
@@ -1101,58 +1181,27 @@ public class FronteggAuth: ObservableObject {
     }
     
     
-    internal func startMultiFactorAuthenticator(_ errorResponse: [String: Any], refreshToken:String? = nil, completion: FronteggAuth.CompletionHandler? = nil) async {
-        
-        
-        var jsonResponse = errorResponse;
-        
-        if let refreshTokenCookie = refreshToken {
-            guard let requestMfaDict = await self.api.refreshTokenForMfa(refreshTokenCookie: refreshTokenCookie) else {
-                print("Failed get mfaRequired data after refreshToken")
+    internal func startMultiFactorAuthenticator(
+        mfaRequestData: [String: Any],
+        refreshToken:String? = nil,
+        completion: FronteggAuth.CompletionHandler? = nil
+    ) {
+        Task {
+            do {
+                let (authorizeUrl, codeVerifier) = try await multiFactorAuthenticator.start(mfaRequestData: mfaRequestData, refreshToken: refreshToken)
+                CredentialManager.saveCodeVerifier(codeVerifier)
+                DispatchQueue.main.async {
+                    self.pendingAppLink = authorizeUrl
+                    self.webLoading = true
+                    self.login(completion)
+                    self.isLoading = false
+                }
+            } catch let error as FronteggError {
                 DispatchQueue.main.async {
                     self.isLoading = false
                 }
-                completion?(.failure(.authError(.failedToAuthenticate)))
-                return
+                completion?(.failure(error))
             }
-            jsonResponse = requestMfaDict
-            
-        }
-        // Convert the JSON dictionary to Data
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: jsonResponse, options: []),
-              let jsonString = String(data: jsonData, encoding: .utf8) else {
-            print("Failed to serialize JSON response.")
-            DispatchQueue.main.async {
-                self.isLoading = false
-            }
-            completion?(.failure(.authError(.failedToAuthenticate)))
-            return
-        }
-        
-        // Encode the JSON string as Base64
-        let base64EncodedState = Data(jsonString.utf8).base64EncodedString()
-        
-        let directLogin = [
-            "type": "direct",
-            "data": "\(self.baseUrl)/oauth/account/mfa-mobile-authenticator?state=\(base64EncodedState)",
-        ] as [String : Any]
-        
-        var generatedUrl: (URL, String)
-        if let jsonData = try? JSONSerialization.data(withJSONObject: directLogin, options: []) {
-            let jsonString = jsonData.base64EncodedString()
-            generatedUrl = AuthorizeUrlGenerator.shared.generate(loginAction: jsonString)
-        } else {
-            generatedUrl = AuthorizeUrlGenerator.shared.generate()
-        }
-        
-        let (authorizeUrl, codeVerifier) = generatedUrl
-        
-        CredentialManager.saveCodeVerifier(codeVerifier)
-        DispatchQueue.main.async {
-            self.pendingAppLink = authorizeUrl
-            self.webLoading = true
-            self.login(completion)
-            self.isLoading = false
         }
     }
     

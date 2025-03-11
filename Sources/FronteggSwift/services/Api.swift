@@ -66,7 +66,12 @@ public class Api {
         return try await URLSession.shared.data(for: request)
     }
     
-    internal func postRequest(path:String, body: [String: Any?], additionalHeaders: [String: String] = [:], followRedirect:Bool = true) async throws -> (Data, URLResponse) {
+    internal func postRequest(
+        path:String,
+        body: [String: Any?],
+        additionalHeaders: [String: String] = [:],
+        followRedirect:Bool = true
+    ) async throws -> (Data, URLResponse) {
         let urlStr = if(path.starts(with: self.baseUrl)) {
             path
         }else{
@@ -244,6 +249,31 @@ public class Api {
         } catch {
             return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
         }
+    }
+    
+    internal func generateStepUp(maxAge: TimeInterval?) async throws -> [String: Any]? {
+        let (stepUpData, response) = try await postRequest(
+            path: "identity/resources/auth/v1/user/step-up/generate",
+            body: [
+                StepUpConstants.STEP_UP_MAX_AGE_PARAM_NAME: maxAge
+            ]
+        )
+        
+        let res = response as? HTTPURLResponse
+        
+        if res?.statusCode == 401 {
+            throw FronteggError.authError(.notAuthenticated)
+        } else if res?.statusCode == 201 {
+            do {
+                if let map = try JSONSerialization.jsonObject(with: stepUpData, options: []) as? [String: Any] {
+                    return map
+                }
+            } catch {
+                self.logger.error("Failed to encode stepUpData to Dict, return empty Dict")
+            }
+        }
+        
+        return nil
     }
     
     internal func me(accessToken: String) async throws -> User? {
