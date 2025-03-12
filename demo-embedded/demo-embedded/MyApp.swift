@@ -32,7 +32,10 @@ struct MyApp: View {
                     VStack {
                         
                         Button {
-                            fronteggAuth.login()
+                            let completionHandler: FronteggAuth.CompletionHandler = { res in
+                                print("login was Successful")
+                            }
+                            fronteggAuth.login(completionHandler)
                         } label: {
                             Text("Login")
                         }.padding(.vertical, 30)

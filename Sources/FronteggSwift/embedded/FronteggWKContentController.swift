@@ -43,6 +43,19 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
         webView?.evaluateJavaScript("window.navigator.credentials.helpers.listeners[\"\(callbackId)\"].resolve(\(message)\")")
     }
     
+    private var socialLoginHandler: FronteggAuth.CompletionHandler {
+        get {
+            return { res in
+                do {
+                    let _ = try res.get()
+                    FronteggAuth.shared.loginCompletion?(res)
+                } catch(_) {
+                    // ignore
+                }
+            }
+        }
+    }
+    
     private func handleAction(_ message: HostedLoginMessage) {
         switch (message.action) {
             
@@ -69,14 +82,15 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
             }
             
         case "loginWithSSO":
-            FronteggAuth.shared.loginWithSSO(email: message.payload)
+            FronteggAuth.shared.loginWithSSO(email: message.payload, self.socialLoginHandler)
         case "loginWithSocialLogin":
-            FronteggAuth.shared.loginWithSocialLogin(socialLoginUrl: message.payload)
+            FronteggAuth.shared.loginWithSocialLogin(socialLoginUrl: message.payload, self.socialLoginHandler)
         case "loginWithSocialLoginProvider":
             FronteggAuth.shared.directLoginAction(window: nil,
                                                   type: "social-login",
                                                   data: message.payload,
                                                   ephemeralSession: false,
+                                                  _completion: self.socialLoginHandler,
                                                   additionalQueryParams: [
                                                     "prompt":"consent"
                                                   ],
@@ -86,6 +100,7 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
                                                   type: "custom-social-login",
                                                   data: message.payload,
                                                   ephemeralSession: false,
+                                                  _completion: self.socialLoginHandler,
                                                   additionalQueryParams: [
                                                     "prompt":"consent"
                                                   ],
