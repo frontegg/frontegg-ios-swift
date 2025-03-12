@@ -1074,10 +1074,21 @@ public class FronteggAuth: ObservableObject {
         }
     }
     
+    /// Checks if the user has been stepped up (re-authenticated with stronger authentication).
+    ///
+    /// - Parameter maxAge: Optional parameter to specify the maximum age of the authentication.
+    /// - Returns: `true` if the user has been stepped up, otherwise `false`.
     public func isSteppedUp(maxAge: TimeInterval? = nil) -> Bool {
         return self.stepUpAuthenticator.isSteppedUp(maxAge: maxAge)
     }
     
+    /// Initiates a step-up authentication process.
+    ///
+    /// This function triggers a step-up authentication process, which requires the user to re-authenticate with stronger authentication mechanisms.
+    ///
+    /// - Parameters:
+    ///   - maxAge: Optional parameter to specify the maximum age of the authentication.
+    ///   - _completion: Optional completion handler that is executed once the step-up process is complete.
     public func stepUp(
         maxAge: TimeInterval? = nil,
         _ _completion: FronteggAuth.CompletionHandler? = nil
@@ -1098,21 +1109,6 @@ public class FronteggAuth: ObservableObject {
             }
         }
         
-        let loginCompletion: FronteggAuth.CompletionHandler = { result in
-            switch result {
-            case .success:
-                if (self.stepUpAuthenticator.isSteppedUp()) {
-                    return
-                }
-                
-                Task {
-                    await self.stepUpAction(maxAge: maxAge, completion: completion, isAttempt: true)
-                }
-            case .failure(let fronteggError):
-                completion?(.failure(fronteggError))
-            }
-        }
-        
         do {
             DispatchQueue.main.async {
                 self.isLoading = true
@@ -1122,26 +1118,15 @@ public class FronteggAuth: ObservableObject {
                 try await Task.sleep(nanoseconds: 500_000_000)
             }
             
-            if let mfaRequestJson = try await self.api.generateStepUp(maxAge: maxAge) {
-                DispatchQueue.main.async {
-                    self.isStepUpAuthorization = true
-                }
-                self.startMultiFactorAuthenticator(
-                    mfaRequestJson: mfaRequestJson,
-                    refreshToken: nil,
-                    completion: updatedCompletion
-                )
-            } else {
-                if isAttempt {
-                    completion?(.failure(FronteggError.authError(.notAuthenticated)))
-                    return
-                }
-                
-                DispatchQueue.main.async {
-                    self.isReAuthorization = true
-                    self.login(loginCompletion)
-                }
+            let mfaRequestJson = try await self.api.generateStepUp(maxAge: maxAge)
+            DispatchQueue.main.async {
+                self.isStepUpAuthorization = true
             }
+            self.startMultiFactorAuthenticator(
+                mfaRequestJson: mfaRequestJson,
+                refreshToken: nil,
+                completion: updatedCompletion
+            )
         } catch FronteggError.authError(.notAuthenticated) {
             if isAttempt {
                 completion?(.failure(FronteggError.authError(.notAuthenticated)))
@@ -1149,6 +1134,21 @@ public class FronteggAuth: ObservableObject {
             }
             
             DispatchQueue.main.async {
+                let loginCompletion: FronteggAuth.CompletionHandler = { result in
+                    switch result {
+                    case .success:
+                        if (self.stepUpAuthenticator.isSteppedUp()) {
+                            return
+                        }
+                        
+                        Task {
+                            await self.stepUpAction(maxAge: maxAge, completion: completion, isAttempt: true)
+                        }
+                    case .failure(let fronteggError):
+                        completion?(.failure(fronteggError))
+                    }
+                }
+                
                 self.isReAuthorization = true
                 self.login(loginCompletion)
             }
