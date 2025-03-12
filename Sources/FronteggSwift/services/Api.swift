@@ -251,26 +251,32 @@ public class Api {
         }
     }
     
-    internal func generateStepUp(maxAge: TimeInterval?) async throws -> [String: Any]? {
+    internal func generateStepUp(maxAge: TimeInterval?) async throws -> String? {
+        let body: [String: Any] = {
+            if let maxAge = maxAge {
+                return [StepUpConstants.STEP_UP_MAX_AGE_PARAM_NAME: maxAge]
+            } else {
+                return [:]
+            }
+        }()
+
         let (stepUpData, response) = try await postRequest(
             path: "identity/resources/auth/v1/user/step-up/generate",
-            body: [
-                StepUpConstants.STEP_UP_MAX_AGE_PARAM_NAME: maxAge
-            ]
+            body: body
         )
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw FronteggError.networkError(.invalidResponse)
+        }
         
-        let res = response as? HTTPURLResponse
-        
-        if res?.statusCode == 401 {
-            throw FronteggError.authError(.notAuthenticated)
-        } else if res?.statusCode == 201 {
-            do {
-                if let map = try JSONSerialization.jsonObject(with: stepUpData, options: []) as? [String: Any] {
-                    return map
-                }
-            } catch {
-                self.logger.error("Failed to encode stepUpData to Dict, return empty Dict")
+        if httpResponse.isSuccess {
+            guard let stepUpJson = String(data: stepUpData, encoding: .utf8) else {
+                self.logger.error("Failed to convert stepUpData to String")
+                return nil
             }
+            return stepUpJson
+        } else if httpResponse.statusCode == 401 {
+            throw FronteggError.authError(.notAuthenticated)
         }
         
         return nil
@@ -454,5 +460,11 @@ public class Api {
         
         // Decode and return the AuthResponse
         return try JSONDecoder().decode(AuthResponse.self, from: data)
+    }
+}
+
+extension HTTPURLResponse {
+    var isSuccess: Bool {
+        return (200...299).contains(self.statusCode)
     }
 }

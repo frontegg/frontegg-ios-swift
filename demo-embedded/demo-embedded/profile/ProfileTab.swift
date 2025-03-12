@@ -14,63 +14,64 @@ struct ProfileTab: View {
     
     var body: some View {
         NavigationView {
-            VStack{
-                ProfilePicture()
-                    .padding(.top, 60)
-                    .padding(.bottom, 40)
-                
-                ProfileInfo()
-                
-                Button("Register Passkeys") {
-                    fronteggAuth.registerPasskeys()
-                }
-                Spacer()
-                
-                Button {
-                    let maxAge = TimeInterval(60)
-                    let isSteppedUp = fronteggAuth.isSteppedUp(maxAge: maxAge)
-                    if isSteppedUp {
-                        showToast(message: "No need step up right now!")
-                        return
+            ZStack {
+                VStack {
+                    ProfilePicture()
+                        .padding(.top, 60)
+                        .padding(.bottom, 40)
+                    
+                    ProfileInfo()
+                    
+                    Button("Register Passkeys") {
+                        fronteggAuth.registerPasskeys()
+                    }
+                    Spacer()
+                    
+                    Button {
+                        let maxAge = TimeInterval(60)
+                        let isSteppedUp = fronteggAuth.isSteppedUp(maxAge: maxAge)
+                        if isSteppedUp {
+                            showToast(message: "No need to step up right now!")
+                            return
+                        }
+                        
+                        Task {
+                            await fronteggAuth.stepUp(maxAge: maxAge) { result in
+                                switch result {
+                                case .success(let user):
+                                    showToast(message: "Finished \(user)")
+                                case .failure(let error):
+                                    showToast(message: "ERROR: \(error.localizedDescription)")
+                                }
+                            }
+                        }
+                    } label: {
+                        Text("Step Up")
                     }
                     
-                    Task {
-                        await fronteggAuth.stepUp(maxAge: maxAge) { result in
-                            switch result {
-                            case .success(let user):
-                                showToast(message: "Finished \(user)")
-                            case .failure(let error):
-                                showToast(message: "ERROR: \(error.localizedDescription)")
+                    Button("Logout") {
+                        fronteggAuth.logout()
+                    }
+                    .foregroundColor(.red)
+                    .font(.title2)
+                    .padding(.bottom, 40)
+                }
+                .navigationTitle("Profile")
+                
+                // ToastView Layered Above Content
+                if let message = toastMessage {
+                    ToastView(message: message)
+                        .transition(.opacity)
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                withAnimation {
+                                    toastMessage = nil
+                                }
                             }
                         }
-                    }
-                } label: {
-                    Text("Step Up")
+                        .padding(.bottom, 50)
                 }
-                Button("Logout") {
-                    fronteggAuth.logout()
-                }
-                .foregroundColor(.red)
-                .font(.title2)
-                .padding(.bottom, 40)
             }
-            
-            .navigationTitle("Profile")
-        }
-        if let message = toastMessage {
-            VStack {
-                Spacer()
-                ToastView(message: message)
-                    .transition(.opacity)
-                    .onAppear {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                            withAnimation {
-                                toastMessage = nil
-                            }
-                        }
-                    }
-            }
-            .animation(.easeInOut, value: toastMessage)
         }
     }
     
@@ -89,10 +90,11 @@ struct ToastView: View {
     var body: some View {
         Text(message)
             .padding()
-            .background(Color.black.opacity(0.7))
+            .background(Color.black.opacity(0.8))
             .foregroundColor(.white)
             .cornerRadius(10)
-            .padding(.bottom, 50)
+            .padding()
+            .transition(.opacity)
     }
 }
 
@@ -101,3 +103,4 @@ struct ProfileTab_Previews: PreviewProvider {
         ProfileTab()
     }
 }
+

@@ -25,6 +25,7 @@ extension FronteggError {
         case operationCanceled
         case mfaRequired(_ json: [String:Any], refreshToken: String? = nil)
         case notAuthenticated
+        case invalidResponse
         case unknown
         case other(Error)
     }
@@ -51,6 +52,7 @@ extension FronteggError.Authentication {
             case .unknown: "Unknown error occurred"
             case let .other(error): error.localizedDescription
             case .failedToMFA: "Failed MFA"
+            case .invalidResponse: "Invalid Response"
         }
     }
     
@@ -72,6 +74,7 @@ extension FronteggError.Authentication {
             case .unknown: "unknown"
             case .other: "other"
             case .failedToMFA:"failedToMFA"
+            case .invalidResponse:"invalidResponse"
         }
     }
 }
