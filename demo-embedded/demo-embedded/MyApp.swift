@@ -33,19 +33,19 @@ struct MyApp: View {
                     } label: {
                         Text("Login")
                     }.padding(.vertical, 30)
-                    
+
                     Button {
                         fronteggAuth.directLoginAction(window: nil, type: "social-login", data: "apple", ephemeralSession: true)
                     } label: {
                         Text("Login with popup")
                     }.padding(.vertical, 30)
-                    
+
                     Button {
                         fronteggAuth.directLoginAction(window: nil, type: "social-login", data: "apple")
                     } label: {
                         Text("Direct Apple login (provider)")
                     }.padding(.vertical, 30)
-                    
+
                     Button {
                         fronteggAuth.directLoginAction(
                             window: nil,
@@ -56,7 +56,7 @@ struct MyApp: View {
                     } label: {
                         Text("Direct apple login")
                     }.padding(.vertical, 30)
-                    
+
                     Button {
                         Task {
                             do {
@@ -69,7 +69,7 @@ struct MyApp: View {
                     } label: {
                         Text("Request Authorize With Tokens")
                     }.padding(.vertical, 30)
-                    
+
                     Button {
                         fronteggAuth.loginWithPasskeys()
                     } label: {
@@ -81,10 +81,8 @@ struct MyApp: View {
     }
 }
 
-// Preview
 struct MyApp_Previews: PreviewProvider {
     static var previews: some View {
         MyApp()
     }
 }
-
