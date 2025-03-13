@@ -11,6 +11,9 @@ jobs:
     if: "!contains(join(github.event.pull_request.labels.*.name, ','), 'Release') && github.event.pull_request.merged == true"
     name: 'Create Release Pull Request'
     runs-on: 'macos-14-xlarge'
+    env:
+      CHANGELOG_FILE: ./CHANGELOG.md
+      CHANGELOG_OLD_FILE: ./CHANGELOG.old.md
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -37,10 +40,81 @@ jobs:
             content = content.replace(/s\.version[ ]+=[ ]+'([^']+)'/g, `s.version          = '${newVersion}'`);
             fs.writeFileSync('./FronteggSwift.podspec', content);
             return newVersion;
+            
+
+      - name: Pull Request Description
+        id: get_description
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          DESCRIPTION=""
+          TARGET_LABEL="Type: Release"
+
+          # Fetch open PRs with the target label
+          PRS=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls?state=open" | \
+            jq -r 'map(select(any(.labels[].name == "'"$TARGET_LABEL"'"; .))) | .[].number')
+
+          if [[ -n "$PRS" ]]; then
+            TARGET_PR_NUMBER=$(echo "$PRS" | head -n 1)
+
+            # Get PR metadata only once
+            PR_METADATA=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository }}/pulls/$TARGET_PR_NUMBER")
+
+            # Extract the description, handling null values
+            PR_BODY=$(echo "$PR_METADATA" | jq -r '.body // ""')
+            DESCRIPTION="$PR_BODY"
+          else
+            echo "No PR found with label '$TARGET_LABEL'"
+            DESCRIPTION="## v${{ steps.incremented-version.outputs.result }}"
+          fi
+
+          # Append current PR description if available
+          if [[ -n "${{ github.event.pull_request.number }}" ]]; then
+            PR_METADATA=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}")
+
+            CURRENT_PR_BODY=$(echo "$PR_METADATA" | jq -r '.body // ""')
+            DESCRIPTION="$DESCRIPTION"$'\n'"$CURRENT_PR_BODY"
+          fi
+
+          # Store in GitHub Actions output
+          {
+            echo 'DESCRIPTION<<EOF'
+            echo "$DESCRIPTION"
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
+
+      - name: Update CHANGELOG file
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          if [[ -f "${{ env.CHANGELOG_FILE }}" ]]; then
+            cp "${{ env.CHANGELOG_FILE }}" "${{ env.CHANGELOG_OLD_FILE }}"
+          else
+            echo "WARNING: CHANGELOG_FILE does not exist!"
+          fi
+          
+          
+          # Append PR description to CHANGELOG_FILE safely
+          if [[ -f "${{ env.CHANGELOG_FILE }}" ]]; then
+            CHANGELOG_FILE_CONTENT="$(cat ${{ env.CHANGELOG_FILE }})"
+            echo -e '${{ steps.get_description.outputs.DESCRIPTION }}' > ${{ env.CHANGELOG_FILE }}
+            echo -e "\n$CHANGELOG_FILE_CONTENT" >> ${{ env.CHANGELOG_FILE }}
+          else
+            echo -e '${{ steps.get_description.outputs.DESCRIPTION }}' > ${{ env.CHANGELOG_FILE }}
+          fi
+
       - name: Commit changes
         shell: bash -ex {0}
         run: |
           git add . && git commit -m "chore(release): publish ${{ steps.incremented-version.outputs.result }}"
+
       - name: Create Release Pull Request
         id: cpr
         uses: peter-evans/create-pull-request@v3.5.1
@@ -51,9 +125,7 @@ jobs:
           committer: GitHub <noreply@github.com>
           author: "${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>"
           title: 'v${{ steps.incremented-version.outputs.result }}'
-          body: |
-            # v${{ steps.incremented-version.outputs.result }}
-
+          body: '${{ steps.get_description.outputs.DESCRIPTION }}'
           labels: "Type: Release"
           branch: "release/next"
 
