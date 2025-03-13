@@ -66,7 +66,12 @@ public class Api {
         return try await URLSession.shared.data(for: request)
     }
     
-    internal func postRequest(path:String, body: [String: Any?], additionalHeaders: [String: String] = [:], followRedirect:Bool = true) async throws -> (Data, URLResponse) {
+    internal func postRequest(
+        path:String,
+        body: [String: Any?],
+        additionalHeaders: [String: String] = [:],
+        followRedirect:Bool = true
+    ) async throws -> (Data, URLResponse) {
         let urlStr = if(path.starts(with: self.baseUrl)) {
             path
         }else{
@@ -244,6 +249,32 @@ public class Api {
         } catch {
             return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
         }
+    }
+    
+    internal func generateStepUp(maxAge: TimeInterval?) async throws -> String {
+        let body: [String: Any] = maxAge.map { [StepUpConstants.STEP_UP_MAX_AGE_PARAM_NAME: $0] } ?? [:]
+
+        let (stepUpData, response) = try await postRequest(
+            path: "identity/resources/auth/v1/user/step-up/generate",
+            body: body
+        )
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            self.logger.error("Invalid HTTP response received")
+            throw FronteggError.networkError(.invalidResponse)
+        }
+
+        guard httpResponse.isSuccess else {
+            self.logger.error("Step-up request failed with status code: \(httpResponse.statusCode)")
+            throw FronteggError.authError(.notAuthenticated)
+        }
+
+        guard let stepUpJson = String(data: stepUpData, encoding: .utf8) else {
+            self.logger.error("Failed to decode stepUpData to String")
+            throw FronteggError.authError(.notAuthenticated)
+        }
+
+        return stepUpJson
     }
     
     internal func me(accessToken: String) async throws -> User? {
@@ -424,5 +455,11 @@ public class Api {
         
         // Decode and return the AuthResponse
         return try JSONDecoder().decode(AuthResponse.self, from: data)
+    }
+}
+
+extension HTTPURLResponse {
+    var isSuccess: Bool {
+        return (200...299).contains(self.statusCode)
     }
 }

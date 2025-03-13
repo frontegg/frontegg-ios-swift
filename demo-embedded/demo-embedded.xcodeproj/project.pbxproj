@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -17,8 +17,8 @@
 		412401D12AB20BF800AAC758 /* ProfileTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 412401CC2AB20BF800AAC758 /* ProfileTab.swift */; };
 		412401D32AB20C1000AAC758 /* MyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 412401D22AB20C1000AAC758 /* MyApp.swift */; };
 		412401D52AB20C5600AAC758 /* LoaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 412401D42AB20C5600AAC758 /* LoaderView.swift */; };
-		412401DC2AB20D6F00AAC758 /* FronteggSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 412401DB2AB20D6F00AAC758 /* FronteggSwift */; };
 		412401DE2AB2117700AAC758 /* Frontegg.plist in Resources */ = {isa = PBXBuildFile; fileRef = 412401DD2AB2117700AAC758 /* Frontegg.plist */; };
+		45565B9C2D660E8A0091C2DB /* FronteggSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 45565B9B2D660E8A0091C2DB /* FronteggSwift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,7 +44,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				412401DC2AB20D6F00AAC758 /* FronteggSwift in Frameworks */,
+				45565B9C2D660E8A0091C2DB /* FronteggSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -145,7 +145,7 @@
 			);
 			name = "demo-embedded";
 			packageProductDependencies = (
-				412401DB2AB20D6F00AAC758 /* FronteggSwift */,
+				45565B9B2D660E8A0091C2DB /* FronteggSwift */,
 			);
 			productName = "demo-embedded";
 			productReference = 412401B32AB20B0900AAC758 /* demo-embedded.app */;
@@ -175,6 +175,9 @@
 				Base,
 			);
 			mainGroup = 412401AA2AB20B0900AAC758;
+			packageReferences = (
+				45565B9A2D660E8A0091C2DB /* XCLocalSwiftPackageReference "../../frontegg-ios-swift" */,
+			);
 			productRefGroup = 412401B42AB20B0900AAC758 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -423,8 +426,15 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		45565B9A2D660E8A0091C2DB /* XCLocalSwiftPackageReference "../../frontegg-ios-swift" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../../frontegg-ios-swift";
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
-		412401DB2AB20D6F00AAC758 /* FronteggSwift */ = {
+		45565B9B2D660E8A0091C2DB /* FronteggSwift */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = FronteggSwift;
 		};
