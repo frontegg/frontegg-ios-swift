@@ -1,0 +1,59 @@
+name: "onReleasePullRequestUpdated"
+
+on:
+  pull_request:
+    types:
+      - edited
+    branches:
+      - master
+
+jobs:
+  updateChangelog:
+    runs-on: 'ubuntu-latest'
+    if: startsWith(github.head_ref, 'release/next')
+    env:
+      CHANGELOG_FILE: ./CHANGELOG.md
+      CHANGELOG_OLD_FILE: ./CHANGELOG.old.md
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Git Identity
+        run: |
+          git config --global user.name 'frontegg'
+          git config --global user.email 'frontegg@users.noreply.github.com'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update CHANGELOG file
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          pr_metadata=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+           -H "Accept: application/vnd.github+json" \
+           "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}")
+          
+          # Extract the description (body field)
+          DESCRIPTION=$(echo "$pr_metadata" | jq -r '.body // ""')
+          
+          # Check if DESCRIPTION is valid
+          if [[ -n "$DESCRIPTION" && "$DESCRIPTION" != "null" ]]; then
+            if [[ -f "${{ env.CHANGELOG_OLD_FILE }}" ]]; then
+              echo -e "$DESCRIPTION\n\n$(cat ${{ env.CHANGELOG_OLD_FILE }})" > ${{ env.CHANGELOG_FILE }}
+            else
+              echo '${{ steps.get_description.outputs.DESCRIPTION }}' > ${{ env.CHANGELOG_FILE }}
+            fi
+          else
+            echo "No description provided in the pull request. The 'release/next' branch must provide a description for correct CHANGELOG.md generation."
+            exit 1
+          fi
+
+      - uses: EndBug/add-and-commit@v9
+        with:
+          author: "${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>"
+          committer_name: GitHub <noreply@github.com>
+          message: "chore(release): Updated CHANGELOG.md"
+          add: "CHANGELOG.md"
