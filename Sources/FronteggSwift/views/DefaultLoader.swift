@@ -9,7 +9,7 @@ import SwiftUI
 
 public struct DefaultLoader: View {
     
-    static var customLoaderView: AnyView? = nil
+    public static var customLoaderView: AnyView? = nil
     
     public init(){}
     public var body: some View {
