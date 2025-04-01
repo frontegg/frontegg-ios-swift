@@ -40,18 +40,25 @@ public class AuthorizeUrlGenerator {
             .replacingOccurrences(of: "/", with: "_")
     }
     
-    func generate(loginHint: String? = nil, loginAction: String? = nil, remainCodeVerifier: Bool = false, withoutLogout:Bool = false) -> (URL, String) {
+    func generate(
+        loginHint: String? = nil,
+        loginAction: String? = nil,
+        remainCodeVerifier: Bool = false,
+        withoutLogout:Bool = false,
+        stepUp:Bool = false,
+        maxAge: TimeInterval? = nil
+    ) -> (URL, String) {
         
         let nonce = createRandomString()
         let codeVerifier = remainCodeVerifier ? (CredentialManager.getCodeVerifier() ?? createRandomString()) : createRandomString()
         let codeChallenge = generateCodeChallenge(codeVerifier)
-
+        
         let baseUrl = FronteggApp.shared.baseUrl
         let redirectUri = generateRedirectUri();
-
-
+        
+        
         var authorizeUrl = URLComponents(string: baseUrl)!
-
+        
         authorizeUrl.path = "/oauth/authorize"
         
         var queryParams = [
@@ -64,13 +71,21 @@ public class AuthorizeUrlGenerator {
             URLQueryItem(name: "nonce", value: nonce),
             URLQueryItem(name: "prompt", value: "login"),
         ]
-        if(loginHint != nil){
+        if stepUp {
+            queryParams.append(URLQueryItem(name: "acr_values", value: StepUpConstants.ACR_VALUE))
+            
+            if let maxAge = maxAge {
+                queryParams.append(URLQueryItem(name: "max_age", value: String(maxAge)))
+            }
+        }
+        
+        if (loginHint != nil) {
             queryParams.append(URLQueryItem(name: "login_hint", value: loginHint))
         }
         
-        if(loginAction != nil){
+        if (loginAction != nil) {
             queryParams.append(URLQueryItem(name: "login_direct_action", value: loginAction))
-        
+            
             authorizeUrl.queryItems = queryParams
             
             if let url = authorizeUrl.url{
@@ -83,7 +98,7 @@ public class AuthorizeUrlGenerator {
         
         
         authorizeUrl.queryItems = queryParams
-
+        
         // https://stackoverflow.com/a/37314144
         if (loginHint?.contains("+") ?? false){
             logger.error(authorizeUrl.percentEncodedQuery!)
@@ -91,15 +106,15 @@ public class AuthorizeUrlGenerator {
         }
         
         
-        if let url = authorizeUrl.url{
+        if let url = authorizeUrl.url {
             logger.trace("Generated url: \(url.absoluteString)")
             
-            if(withoutLogout){
+            if withoutLogout || stepUp {
                 return (url, codeVerifier)
             }
-
+            
             var loginUrl = URLComponents(string: baseUrl)!
-
+            
             loginUrl.path = "/oauth/logout"
             loginUrl.queryItems = [
                 URLQueryItem(name: "post_logout_redirect_uri", value: url.absoluteString),
@@ -109,7 +124,6 @@ public class AuthorizeUrlGenerator {
             logger.error("Unkonwn error occured while generating authorize url, baseUrl: \(baseUrl)")
             fatalError(FronteggError.configError(.failedToGenerateAuthorizeURL).localizedDescription)
         }
-
+        
     }
-    
 }

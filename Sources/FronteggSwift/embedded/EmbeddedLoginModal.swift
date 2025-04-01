@@ -32,7 +32,6 @@ public struct EmbeddedLoginModal: View {
                 && !fronteggAuth.showLoader
                 && fronteggAuth.isAuthenticated
                 && !fronteggAuth.isStepUpAuthorization
-                && !fronteggAuth.isReAuthorization
             {
 
                 DefaultLoader().onAppear() {

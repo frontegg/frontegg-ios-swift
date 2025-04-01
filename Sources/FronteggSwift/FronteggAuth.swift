@@ -24,7 +24,6 @@ public class FronteggAuth: ObservableObject {
     @Published public var user: User?
     @Published public var isAuthenticated = false
     @Published public var isStepUpAuthorization = false
-    @Published public var isReAuthorization = false
     @Published public var isLoading = true
     @Published public var webLoading = true
     @Published public var initializing = true
@@ -229,7 +228,6 @@ public class FronteggAuth: ObservableObject {
                 self.initializing = false
                 self.appLink = false
                 self.isStepUpAuthorization = false
-                self.isReAuthorization = false
                 
                 // isLoading must be at the bottom
                 self.isLoading = false
@@ -1093,68 +1091,7 @@ public class FronteggAuth: ObservableObject {
         maxAge: TimeInterval? = nil,
         _ _completion: FronteggAuth.CompletionHandler? = nil
     ) async {
-        return await stepUpAction(maxAge: maxAge, completion: _completion)
-    }
-    
-    private func stepUpAction(
-        maxAge: TimeInterval? = nil,
-        completion: FronteggAuth.CompletionHandler? = nil,
-        isAttempt: Bool = false
-    ) async {
-        let updatedCompletion: FronteggAuth.CompletionHandler = { (result) in
-            DispatchQueue.main.async {
-                self.isReAuthorization = false
-                self.isStepUpAuthorization = false
-                completion?(result)
-            }
-        }
-        
-        do {
-            DispatchQueue.main.async {
-                self.isLoading = true
-            }
-            
-            if isAttempt {
-                try await Task.sleep(nanoseconds: 500_000_000)
-            }
-            
-            let mfaRequestJson = try await self.api.generateStepUp(maxAge: maxAge)
-            DispatchQueue.main.async {
-                self.isStepUpAuthorization = true
-            }
-            self.startMultiFactorAuthenticator(
-                mfaRequestJson: mfaRequestJson,
-                refreshToken: nil,
-                completion: updatedCompletion
-            )
-        } catch FronteggError.authError(.notAuthenticated) {
-            if isAttempt {
-                completion?(.failure(FronteggError.authError(.notAuthenticated)))
-                return
-            }
-            
-            DispatchQueue.main.async {
-                let loginCompletion: FronteggAuth.CompletionHandler = { result in
-                    switch result {
-                    case .success:
-                        if (self.stepUpAuthenticator.isSteppedUp()) {
-                            return
-                        }
-                        
-                        Task {
-                            await self.stepUpAction(maxAge: maxAge, completion: completion, isAttempt: true)
-                        }
-                    case .failure(let fronteggError):
-                        completion?(.failure(fronteggError))
-                    }
-                }
-                
-                self.isReAuthorization = true
-                self.login(loginCompletion)
-            }
-        } catch {
-            completion?(.failure(FronteggError.authError(.failedToMFA)))
-        }
+        return self.stepUpAuthenticator.stepUp(maxAge: maxAge, completion: _completion)
     }
     
     internal func handleMfaRequired(_ _completion: FronteggAuth.CompletionHandler? = nil) -> FronteggAuth.CompletionHandler {
