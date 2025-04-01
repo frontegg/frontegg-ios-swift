@@ -251,32 +251,6 @@ public class Api {
         }
     }
     
-    internal func generateStepUp(maxAge: TimeInterval?) async throws -> String {
-        let body: [String: Any] = maxAge.map { [StepUpConstants.STEP_UP_MAX_AGE_PARAM_NAME: $0] } ?? [:]
-
-        let (stepUpData, response) = try await postRequest(
-            path: "identity/resources/auth/v1/user/step-up/generate",
-            body: body
-        )
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            self.logger.error("Invalid HTTP response received")
-            throw FronteggError.networkError(.invalidResponse)
-        }
-
-        guard httpResponse.isSuccess else {
-            self.logger.error("Step-up request failed with status code: \(httpResponse.statusCode)")
-            throw FronteggError.authError(.notAuthenticated)
-        }
-
-        guard let stepUpJson = String(data: stepUpData, encoding: .utf8) else {
-            self.logger.error("Failed to decode stepUpData to String")
-            throw FronteggError.authError(.notAuthenticated)
-        }
-
-        return stepUpJson
-    }
-    
     internal func me(accessToken: String) async throws -> User? {
         let (meData, _) = try await getRequest(path: "identity/resources/users/v2/me", accessToken: accessToken)
         

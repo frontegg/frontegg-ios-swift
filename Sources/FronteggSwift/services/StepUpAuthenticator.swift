@@ -43,4 +43,29 @@ class StepUpAuthenticator {
 
         return isACRValid && isAMRIncludesMFA && isAMRIncludesMethod
     }
+    
+    public func stepUp(
+        maxAge: TimeInterval? = nil,
+        completion: FronteggAuth.CompletionHandler? = nil
+    ) {
+        let updatedCompletion: FronteggAuth.CompletionHandler = { (result) in
+            DispatchQueue.main.async {
+                FronteggAuth.shared.isStepUpAuthorization = false
+                completion?(result)
+            }
+        }
+
+        let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(
+            stepUp: true,
+            maxAge: maxAge
+        )
+        
+        CredentialManager.saveCodeVerifier(codeVerifier)
+        DispatchQueue.main.async {
+            FronteggAuth.shared.isLoading = true
+            FronteggAuth.shared.isStepUpAuthorization = true
+            let oauthCallback = FronteggAuth.shared.createOauthCallbackHandler(updatedCompletion)
+            WebAuthenticator.shared.start(authorizeUrl, completionHandler: oauthCallback)
+        }
+    }
 }
