@@ -7,13 +7,17 @@
 import SwiftUI
 import FronteggSwift
 
+/// A view that displays the user's profile picture.
+/// This component shows the user's profile picture using an asynchronous image.
 struct ProfilePicture: View {
+    /// The Frontegg authentication state object
     @EnvironmentObject var fronteggAuth: FronteggAuth
     
     
     var body: some View {
         if #available(iOS 15.0, *) {
             AsyncImage(
+                /// The URL of the user's profile picture
                 url: URL(string: self.fronteggAuth.user?.profilePictureUrl ?? ""),
                 content: { image in
                     image
@@ -36,6 +40,7 @@ struct ProfilePicture: View {
     }
 }
 
+// Preview provider for SwiftUI previews
 struct ProfilePicture_Previews: PreviewProvider {
     static var previews: some View {
         ProfilePicture()

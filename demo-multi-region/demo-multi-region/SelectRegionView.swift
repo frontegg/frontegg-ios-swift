@@ -9,7 +9,10 @@
 import SwiftUI
 import FronteggSwift
 
+/// A view that allows the user to select their region.
+/// This component shows a list of regions and allows the user to select one.
 struct SelectRegionView: View {
+    /// The Frontegg authentication state object
     @EnvironmentObject var fronteggAuth: FronteggAuth
     
     var body: some View {
@@ -22,8 +25,9 @@ struct SelectRegionView: View {
                 .padding(.bottom, 20)
                 .font(.title2)
             
-            
+            /// A list of regions available to the user
             ForEach(fronteggAuth.regionData, id: \.key.self) { item in
+                /// A button that allows the user to select a region
                 Button(action: {
                     FronteggApp.shared.initWithRegion(regionKey: item.key)
                 }) {
@@ -49,6 +53,7 @@ struct SelectRegionView: View {
     }
 }
 
+// Preview provider for SwiftUI previews
 struct SelectRegionView_Previews: PreviewProvider {
     static var previews: some View {
         SelectRegionView()

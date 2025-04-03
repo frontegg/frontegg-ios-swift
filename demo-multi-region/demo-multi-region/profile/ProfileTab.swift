@@ -7,11 +7,12 @@
 import SwiftUI
 import FronteggSwift
 
+/// A view that displays the user's profile information and picture.
+/// This component shows the user's profile picture and information in a vertical stack.
 struct ProfileTab: View {
-    
+    /// The Frontegg authentication state object
     @EnvironmentObject var fronteggAuth: FronteggAuth
 
-    
     var body: some View {
         NavigationView {
             VStack{
@@ -22,6 +23,7 @@ struct ProfileTab: View {
                 ProfileInfo()
                 
                 Spacer()
+                /// A button that logs out the user when pressed
                 Button("Logout") {
                     fronteggAuth.logout()
                 }
@@ -35,6 +37,7 @@ struct ProfileTab: View {
     }
 }
 
+// Preview provider for SwiftUI previews
 struct ProfileTab_Previews: PreviewProvider {
     static var previews: some View {
         ProfileTab()

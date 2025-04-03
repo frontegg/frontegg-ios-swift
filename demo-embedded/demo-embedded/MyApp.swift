@@ -8,18 +8,24 @@
 import SwiftUI
 import FronteggSwift
 
+/// The main view of the demo application.
+/// This component displays the user's profile and tenants tabs.
 struct MyApp: View {
+    /// The Frontegg authentication state object
     @EnvironmentObject var fronteggAuth: FronteggAuth
     
     var body: some View {
         ZStack {
             if fronteggAuth.isAuthenticated {
+                /// A tab view that displays the user's profile and tenants tabs
                 TabView {
+                    /// A tab that displays the user's profile information
                     ProfileTab()
                         .tabItem {
                             Image(systemName: "person.circle")
                             Text("Profile")
                         }
+                    /// A tab that displays the user's tenants
                     TenantsTab()
                         .tabItem {
                             Image(systemName: "checklist")
@@ -28,24 +34,28 @@ struct MyApp: View {
                 }
             } else {
                 VStack {
+                    /// A button that logs in the user when pressed
                     Button {
                         fronteggAuth.login()
                     } label: {
                         Text("Login")
                     }.padding(.vertical, 30)
 
+                    /// A button that logs in the user when pressed
                     Button {
                         fronteggAuth.directLoginAction(window: nil, type: "social-login", data: "apple", ephemeralSession: true)
                     } label: {
                         Text("Login with popup")
                     }.padding(.vertical, 30)
 
+                    /// A button that direct apple logs in the user when pressed
                     Button {
                         fronteggAuth.directLoginAction(window: nil, type: "social-login", data: "apple")
                     } label: {
                         Text("Direct Apple login (provider)")
                     }.padding(.vertical, 30)
 
+                    /// A button that direct apple logs in the user when pressed
                     Button {
                         fronteggAuth.directLoginAction(
                             window: nil,
@@ -57,6 +67,7 @@ struct MyApp: View {
                         Text("Direct apple login")
                     }.padding(.vertical, 30)
 
+                    /// A button that requests authorize with tokens logs in the user when pressed
                     Button {
                         Task {
                             do {
@@ -70,6 +81,7 @@ struct MyApp: View {
                         Text("Request Authorize With Tokens")
                     }.padding(.vertical, 30)
 
+                    /// A button that logs in with passkeys the user when pressed
                     Button {
                         fronteggAuth.loginWithPasskeys()
                     } label: {
@@ -81,6 +93,7 @@ struct MyApp: View {
     }
 }
 
+// Preview provider for SwiftUI previews
 struct MyApp_Previews: PreviewProvider {
     static var previews: some View {
         MyApp()

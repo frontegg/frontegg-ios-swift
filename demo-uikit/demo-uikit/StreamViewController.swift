@@ -10,7 +10,8 @@ import UIKit
 import Combine
 import FronteggSwift
 
-
+/// A view controller that displays the stream content of the demo application.
+/// This component handles the stream functionality and user interactions.
 class StreamViewController: BaseViewController, UITextFieldDelegate {
     var isSplitView: Bool = false
     var isPortrait : Bool = true
@@ -61,15 +62,16 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
         self.addObservers()
     }
     
-    
-    
+    /// Sets up the UI for the stream view.
     func setupUI(){
-        
+        /// Gets the user profile and displays the access token.
         getUserProfile { success in
             if success {
+                /// Displays the access token.
                 let accessToken = String(appDelegate.fronteggAuth.accessToken!.suffix(40))
                 self.testLabel.text = "Access Token Valid \n\n\(accessToken)"
             } else {
+                /// Displays a message if the access token is not valid.
                 self.testLabel.text = "No Access"
                 logoutButton()
             }
@@ -91,6 +93,7 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
         return remainingTime > minRefreshWindow ? adaptiveRefreshTime / 1000 : max((remainingTime - minRefreshWindow) / 1000, 0)
     }
     
+    /// Gets the user profile and displays the access token.
     func getUserProfile(completion: (Bool) -> Void) {
         
         do{

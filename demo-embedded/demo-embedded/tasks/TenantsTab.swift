@@ -7,6 +7,8 @@
 
 import SwiftUI
 
+/// A view that displays a list of tenants available to the current user.
+/// Allows users to switch between different tenants they have access to.
 struct TenantsTab: View {
     
     var body: some View {
@@ -21,6 +23,7 @@ struct TenantsTab: View {
     }
 }
 
+// Preview provider for SwiftUI previews
 struct TasksTab_Previews: PreviewProvider {
     static var previews: some View {
         TenantsTab()

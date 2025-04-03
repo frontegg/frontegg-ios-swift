@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -20,9 +20,9 @@
 		41AEA8792B67F4760045C0B3 /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 41AEA8772B67F4760045C0B3 /* Main.storyboard */; };
 		41AEA87B2B67F4770045C0B3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 41AEA87A2B67F4770045C0B3 /* Assets.xcassets */; };
 		41AEA87E2B67F4770045C0B3 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 41AEA87C2B67F4770045C0B3 /* LaunchScreen.storyboard */; };
-		41AEA88B2B67F4D60045C0B3 /* FronteggSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 41AEA88A2B67F4D60045C0B3 /* FronteggSwift */; };
 		41AEA8912B67FC970045C0B3 /* AuthenticationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41AEA8902B67FC970045C0B3 /* AuthenticationController.swift */; };
 		41AEA8932B67FD2A0045C0B3 /* Frontegg.plist in Resources */ = {isa = PBXBuildFile; fileRef = 41AEA8922B67FD2A0045C0B3 /* Frontegg.plist */; };
+		4564D6E82D9EC1D400801B2D /* FronteggSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 4564D6E72D9EC1D400801B2D /* FronteggSwift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -42,7 +42,6 @@
 		41AEA87A2B67F4770045C0B3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		41AEA87D2B67F4770045C0B3 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		41AEA87F2B67F4770045C0B3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		41AEA8892B67F4BE0045C0B3 /* frontegg-swift */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = "frontegg-swift"; path = ..; sourceTree = "<group>"; };
 		41AEA8902B67FC970045C0B3 /* AuthenticationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationController.swift; sourceTree = "<group>"; };
 		41AEA8922B67FD2A0045C0B3 /* Frontegg.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Frontegg.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -52,7 +51,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				41AEA88B2B67F4D60045C0B3 /* FronteggSwift in Frameworks */,
+				4564D6E82D9EC1D400801B2D /* FronteggSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -111,7 +110,6 @@
 		41AEA8882B67F4BE0045C0B3 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
-				41AEA8892B67F4BE0045C0B3 /* frontegg-swift */,
 			);
 			name = Packages;
 			sourceTree = "<group>";
@@ -133,7 +131,7 @@
 			);
 			name = "demo-uikit";
 			packageProductDependencies = (
-				41AEA88A2B67F4D60045C0B3 /* FronteggSwift */,
+				4564D6E72D9EC1D400801B2D /* FronteggSwift */,
 			);
 			productName = "demo-uikit";
 			productReference = 41AEA86E2B67F4760045C0B3 /* demo-uikit.app */;
@@ -163,6 +161,9 @@
 				Base,
 			);
 			mainGroup = 41AEA8652B67F4760045C0B3;
+			packageReferences = (
+				4564D6E62D9EC1D400801B2D /* XCLocalSwiftPackageReference "../../frontegg-ios-swift" */,
+			);
 			productRefGroup = 41AEA86F2B67F4760045C0B3 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -422,8 +423,15 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		4564D6E62D9EC1D400801B2D /* XCLocalSwiftPackageReference "../../frontegg-ios-swift" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../../frontegg-ios-swift";
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
-		41AEA88A2B67F4D60045C0B3 /* FronteggSwift */ = {
+		4564D6E72D9EC1D400801B2D /* FronteggSwift */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = FronteggSwift;
 		};
