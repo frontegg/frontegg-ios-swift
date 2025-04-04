@@ -5,8 +5,11 @@ import UIKit
 import Foundation
 import FronteggSwift
 
+/// A base view controller for the demo application.    
+/// This component provides common functionality for all view controllers in the demo application.
 class BaseViewController: UIViewController {
     
+    /// The app delegate for the demo application
     var appDelegate: AppDelegate {
         get { UIApplication.shared.delegate as! AppDelegate }
     }

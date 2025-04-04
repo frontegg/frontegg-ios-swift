@@ -8,6 +8,7 @@
 import SwiftUI
 import FronteggSwift
 
+/// The main entry point for the demo application.
 @main
 struct MultiRegionApp: App {
     var body: some Scene {

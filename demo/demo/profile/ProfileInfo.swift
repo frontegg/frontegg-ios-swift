@@ -7,7 +7,10 @@
 import SwiftUI
 import FronteggSwift
 
+/// A view that displays the user's profile information.
+/// This component shows the user's name, email, and the currently active tenant.
 struct ProfileInfo: View {
+    /// The Frontegg authentication state object
     @EnvironmentObject var fronteggAuth: FronteggAuth
     
     var body: some View {
@@ -30,6 +33,7 @@ struct ProfileInfo: View {
     }
 }
 
+// Preview provider for SwiftUI previews
 struct ProfileInfo_Previews: PreviewProvider {
     static var previews: some View {
         ProfileInfo()

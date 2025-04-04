@@ -8,6 +8,7 @@
 import SwiftUI
 import FronteggSwift
 
+/// The main entry point for the demo application.
 @main
 struct demo_embeddedApp: App {
     var body: some Scene {

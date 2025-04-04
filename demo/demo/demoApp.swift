@@ -8,8 +8,9 @@
 import SwiftUI
 import FronteggSwift
 
+/// The main entry point for the demo application.
 @main
-struct demoApp: App {
+struct demoApp: App {   
     var body: some Scene {
         WindowGroup {
             FronteggWrapper() {

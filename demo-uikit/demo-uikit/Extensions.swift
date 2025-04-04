@@ -14,41 +14,43 @@ extension UIColor{
     static var themeTextGrayColor : UIColor = UIColor(red: 153/255, green: 142/255, blue: 142/255, alpha: 1)
 }
 
-
+/// An extension that provides common functionality for UIView.
 extension UIView {
-    // OUTPUT 1
-      func dropShadow(scale: Bool = true) {
+    /// Adds a shadow to the view.
+    func dropShadow(scale: Bool = true) {
         layer.masksToBounds = false
         layer.shadowColor = UIColor.black.cgColor
         layer.shadowOpacity = 0.5
         layer.shadowOffset = CGSize(width: -1, height: 1)
         layer.shadowRadius = 1
-
+        
         layer.shadowPath = UIBezierPath(rect: bounds).cgPath
         layer.shouldRasterize = true
         layer.rasterizationScale = scale ? UIScreen.main.scale : 1
-      }
-
-      // OUTPUT 2
-      func dropShadow(color: UIColor, opacity: Float = 0.5, offSet: CGSize, radius: CGFloat = 1, scale: Bool = true) {
+    }
+    
+    /// Adds a shadow to the view with a specific color, opacity, offset, and radius.
+    func dropShadow(color: UIColor, opacity: Float = 0.5, offSet: CGSize, radius: CGFloat = 1, scale: Bool = true) {
         layer.masksToBounds = false
         layer.shadowColor = color.cgColor
         layer.shadowOpacity = opacity
         layer.shadowOffset = offSet
         layer.shadowRadius = radius
-
+        
         layer.shadowPath = UIBezierPath(rect: self.bounds).cgPath
         layer.shouldRasterize = true
         layer.rasterizationScale = scale ? UIScreen.main.scale : 1
-      }
+    }
 }
 extension UIImage {
+    /// Converts the image to a base64 string.
     var base64: String? {
         self.jpegData(compressionQuality: 1)?.base64EncodedString()
     }
 }
 
 extension String {
+    /// Decodes the string from a base64 string to a regular string.
     var decodeEmoji: String{
         let data = self.data(using: String.Encoding.utf8);
         let decodedStr = NSString(data: data!, encoding: String.Encoding.nonLossyASCII.rawValue)
@@ -57,21 +59,27 @@ extension String {
         }
         return self
     }
-    var encodeEmoji: String{
-            if let encodeStr = NSString(cString: self.cString(using: .nonLossyASCII)!, encoding: String.Encoding.utf8.rawValue){
-                return encodeStr as String
-            }
-            return self
-        }
-}
     
-
-var sceneDelegate: SceneDelegate? {
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-            let delegate = windowScene.delegate as? SceneDelegate else { return nil }
-         return delegate
+    /// Encodes the string to a base64 string.
+    var encodeEmoji: String{
+        if let encodeStr = NSString(cString: self.cString(using: .nonLossyASCII)!, encoding: String.Encoding.utf8.rawValue){
+            return encodeStr as String
+        }
+        return self
     }
+}
+
+
+/// A variable that returns the scene delegate for the current application.
+var sceneDelegate: SceneDelegate? {
+    guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+          let delegate = windowScene.delegate as? SceneDelegate else { return nil }
+    return delegate
+}
+
+/// An extension that provides common functionality for UIViewController.
 extension UIViewController {
+    /// A variable that returns the window for the current application.
     var window: UIWindow? {
         if #available(iOS 13, *) {
             guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
@@ -84,7 +92,9 @@ extension UIViewController {
     }
 }
 
+/// An extension that provides common functionality for URL.
 extension URL {
+    /// A variable that returns the components for the current URL.
     var components: URLComponents? {
         return URLComponents(url: self, resolvingAgainstBaseURL: false)
     }

@@ -6,21 +6,26 @@ import UIKit
 import Combine
 import FronteggSwift
 
+/// A view controller that handles the login process.
+/// This component displays a login form and handles the authentication process.
 class LoginViewController: BaseViewController {
     
+    /// The error label for the login view
     @IBOutlet weak var errorLabel: UILabel!
+    /// The retry button for the login view
     @IBOutlet weak var retryButton: UIButton!
+    /// The loader for the login view
     @IBOutlet weak var loader: UIActivityIndicatorView!
     
     private var cancelables =  Set<AnyCancellable>()
     override var prefersStatusBarHidden: Bool {
         return true
     }
-    
+    /// The supported interface orientations for the login view
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
         return .portrait
     }
-    
+    /// The view did appear for the login view      
     override func viewDidAppear(_ animated: Bool) {
         self.checkSession()
     }
@@ -48,11 +53,14 @@ class LoginViewController: BaseViewController {
         }
     }
     
+    /// Hides the error label, retry button, and loader.
     private func hideError() {
         self.errorLabel.isHidden = true
         self.retryButton.isHidden = true
         self.loader.isHidden = false
     }
+    
+    /// Shows the error label, retry button, and loader.
     private func showError(error: String) {
         self.errorLabel.isHidden = false
         self.retryButton.isHidden = false
