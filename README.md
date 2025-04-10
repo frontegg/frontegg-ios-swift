@@ -26,6 +26,7 @@ Welcome to the @frontegg/ios Swift SDK! This SDK provides a seamless way to inte
   - [Login with ASWebAuthenticationSession](#login-with-aswebauthenticationsession)
   - [Passkeys Authentication](#passkeys-authentication)
   - [FronteggAuth methods](#fronteggauth-methods)
+  - [Step-Up](#step-up)
 
 ## Project Requirements
 
@@ -612,6 +613,82 @@ func loginWithPasskeys() {
     }
 }
 ```
+
+### Step-Up
+
+Step-Up Authentication allows you to temporarily elevate a user's authentication level to perform
+sensitive actions. This is useful for operations like updating credentials, accessing confidential
+data, or performing secure transactions.
+
+## isSteppedUp
+
+Checks if the user has recently completed a step-up authentication and whether it is still valid.
+
+```swift
+let isSteppedUp = FronteggAuth.shared.isSteppedUp(maxAge: 300) // 300 seconds = 5 minutes
+
+if isSteppedUp {
+    // Proceed with secure operation
+} else {
+    // Trigger step-up flow
+}
+```
+
+`maxAge` (optional): Specifies how long ago the step-up must have occurred to be considered valid.
+Time is in seconds.
+
+## stepUp
+
+Starts the step-up authentication flow. This will usually trigger a stronger authentication method (
+e.g. biometric, MFA, etc).
+
+```swift
+Task {
+    await FronteggAuth.shared.stepUp(maxAge: 300) { error in
+        if let error = error {
+            print("Step-up failed: \(error.localizedDescription)")
+            return
+        }
+
+        // Authentication successful, continue with the secure action
+        self.performSensitiveAction()
+    }
+}
+```
+
+`maxAge` (optional): How long the elevated session is considered valid, in seconds.
+
+`completion`: A closure called after authentication finishes. If step-up fails, it receives an error.
+
+Example Use Case:
+
+```swift
+func performSensitiveFlow() {
+    let isElevated = FronteggAuth.shared.isSteppedUp(maxAge: 300)
+
+    if isElevated {
+        performSensitiveAction()
+    } else {
+        Task {
+            await FronteggAuth.shared.stepUp(maxAge: 300) { error in
+                if let error = error {
+                    showAlert("Authentication Failed", message: error.localizedDescription)
+                    return
+                }
+                performSensitiveAction()
+            }
+        }
+    }
+}
+
+func performSensitiveAction() {
+    // Proceed with a high-security task
+    print("Secure action performed.")
+}
+```
+
+With these methods, your app can provide a seamless and secure step-up experience to protect sensitive user actions.
+
 
 ### FronteggAuth methods
 
