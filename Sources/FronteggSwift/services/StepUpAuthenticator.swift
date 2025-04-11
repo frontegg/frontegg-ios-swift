@@ -51,6 +51,7 @@ class StepUpAuthenticator {
         let updatedCompletion: FronteggAuth.CompletionHandler = { (result) in
             DispatchQueue.main.async {
                 FronteggAuth.shared.isStepUpAuthorization = false
+                FronteggAuth.shared.isLoading = false
                 completion?(result)
             }
         }
