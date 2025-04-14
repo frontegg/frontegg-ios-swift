@@ -1,3 +1,7 @@
+## v1.2.37
+-Added `step-up` instruction.
+- Fixed `step-up` callback
+
 ## v1.2.36
 - Fixed step-up
 - updated demo projects
