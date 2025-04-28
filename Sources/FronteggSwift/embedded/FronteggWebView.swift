@@ -66,6 +66,7 @@ public struct FronteggWebView: UIViewRepresentable {
 
         let webView = CustomWebView(frame: .zero, configuration: conf)
         webView.navigationDelegate = webView;
+        webView.uiDelegate = webView
         controller.webView = webView
 
 #if compiler(>=5.8) && os(iOS) && DEBUG
