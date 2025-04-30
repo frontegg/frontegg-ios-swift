@@ -24,22 +24,45 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     private static func isCancelledAsAuthenticationLoginError(_ error: Error) -> Bool {
         (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue
     }
+    
     func webView(_ _webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-        
         weak var webView = _webView
-        logger.trace("navigationAction check for \(navigationAction.request.url?.absoluteString ?? "no Url")")
-        if let url = navigationAction.request.url {
+        let url = navigationAction.request.url
+        let urlString = url?.absoluteString ?? "no url"
+
+        logger.trace("navigationAction check for \(urlString)")
+
+        if let url = url {
+            if let scheme = url.scheme, getAppURLSchemes().contains(scheme) {
+                logger.info("Detected deep link (\(scheme)), opening externally: \(url.absoluteString)")
+
+                DispatchQueue.main.async {
+                    UIApplication.shared.open(url, options: [:]) { success in
+                        if success {
+                            self.logger.info("✅ Deep link opened, dismissing login modal via VCHolder")
+                            if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
+                                presentingVC.dismiss(animated: true)
+                                VCHolder.shared.vc = nil
+                            } else {
+                                self.logger.warning("⚠️ No VC to dismiss in VCHolder.")
+                            }
+                        } else {
+                            self.logger.error("❌ Failed to open deep link: \(url.absoluteString)")
+                        }
+                    }
+                }
+
+                return .cancel
+            }
+
             let urlType = getOverrideUrlType(url: url)
-            
             logger.info("urlType: \(urlType)")
-            switch(urlType){
-                
-            case .HostedLoginCallback: do {
+
+            switch urlType {
+            case .HostedLoginCallback:
                 return self.handleHostedLoginCallback(webView, url)
-            }
-            case .SocialOauthPreLogin: do {
+            case .SocialOauthPreLogin:
                 return self.setSocialLoginRedirectUri(webView, url)
-            }
             default:
                 return .allow
             }
@@ -49,6 +72,19 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             return .allow
         }
     }
+    
+    private func getAppURLSchemes() -> [String] {
+        guard
+            let urlTypes = Bundle.main.infoDictionary?["CFBundleURLTypes"] as? [[String: Any]]
+        else {
+            return []
+        }
+
+        return urlTypes
+            .compactMap { $0["CFBundleURLSchemes"] as? [String] }
+            .flatMap { $0 }
+    }
+
     
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         logger.trace("didStartProvisionalNavigation")
