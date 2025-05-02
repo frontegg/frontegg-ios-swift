@@ -9,7 +9,7 @@ import SwiftUI
 import AuthenticationServices
 
 
-class CustomWebView: WKWebView, WKNavigationDelegate {
+class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     var accessoryView: UIView?
     private let fronteggAuth: FronteggAuth = FronteggAuth.shared
     private let logger = getLogger("CustomWebView")
@@ -23,6 +23,28 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     
     private static func isCancelledAsAuthenticationLoginError(_ error: Error) -> Bool {
         (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue
+    }
+    
+    func webView(
+        _ webView: WKWebView,
+        createWebViewWith configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures
+    ) -> WKWebView? {
+        if navigationAction.targetFrame == nil {
+            if let url = navigationAction.request.url {
+                if url.scheme == "http" || url.scheme == "https" {
+                    if UIApplication.shared.canOpenURL(url) {
+                        UIApplication.shared.open(url)
+                        return nil
+                    }
+                }
+                
+                webView.load(navigationAction.request)
+            }
+        }
+        
+        return nil
     }
     
     func webView(_ _webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
