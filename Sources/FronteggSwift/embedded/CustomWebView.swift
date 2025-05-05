@@ -65,6 +65,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                             if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
                                 presentingVC.dismiss(animated: true)
                                 VCHolder.shared.vc = nil
+                                FronteggAuth.shared.loginCompletion?(.failure(FronteggError.authError(.unknown)))
                             } else {
                                 self.logger.warning("⚠️ No VC to dismiss in VCHolder.")
                             }
