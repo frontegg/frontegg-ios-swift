@@ -1,3 +1,8 @@
+## v1.2.38
+- Updated docs.
+- Fixed opening external urls
+- Support deep linking for redirect in Embedded Login WebView
+
 ## v1.2.37
 -Added `step-up` instruction.
 - Fixed `step-up` callback
