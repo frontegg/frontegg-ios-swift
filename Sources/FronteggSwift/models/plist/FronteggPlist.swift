@@ -156,7 +156,7 @@ extension FronteggPlist {
     }
 }
 
-extension Logger.Level {
+extension FeLogger.Level {
 
     init(with logLevel: FronteggPlist.LogLevel) {
         switch logLevel {

@@ -6,8 +6,9 @@
 //
 
 import Foundation
+import os
 
-public class Logger {
+public class FeLogger {
     public enum Level: Int, Codable, CaseIterable {
         /// Appropriate for messages that contain information normally of use only when
         /// tracing the execution of a program.
@@ -36,49 +37,50 @@ public class Logger {
         case critical = 5
     }
     
-    public var logLevel: Logger.Level  = Level.error
+    public var logLevel: FeLogger.Level  = Level.error
     public var label: String
+    private let logger = Logger()
     
     init(label: String) {
         self.label = label
     }
     
     public func trace(_ message: String) {
-        if logLevel.rawValue < Logger.Level.trace.rawValue {
-            print("TRACE  | \(label): \(message)")
+        if logLevel.rawValue <= FeLogger.Level.trace.rawValue {
+            self.logger.trace("TRACE  | \(self.label): \(message)")
         }
     }
     public func debug(_ message: String) {
-        if logLevel.rawValue < Logger.Level.debug.rawValue {
-            print("DEBUG  | \(label): \(message)")
+        if logLevel.rawValue <= FeLogger.Level.debug.rawValue {
+            self.logger.debug("DEBUG  | \(self.label): \(message)")
         }
     }
     public func info(_ message: String) {
-        if logLevel.rawValue < Logger.Level.info.rawValue {
-            print("INFO   | \(label): \(message)")
+        if logLevel.rawValue <= FeLogger.Level.info.rawValue {
+            self.logger.info("INFO   | \(self.label): \(message)")
         }
     }
     public func warning(_ message: String) {
-        if logLevel.rawValue < Logger.Level.warning.rawValue {
-            print("WARNING | \(label): \(message)")
+        if logLevel.rawValue <= FeLogger.Level.warning.rawValue {
+            self.logger.warning("WARNING | \(self.label): \(message)")
         }
     }
     public func error(_ message: String) {
-        if logLevel.rawValue < Logger.Level.error.rawValue {
-            print("ERROR   | \(label): \(message)")
+        if logLevel.rawValue <= FeLogger.Level.error.rawValue {
+            self.logger.error("ERROR   | \(self.label): \(message)")
         }
     }
     public func critical(_ message: String) {
-        if logLevel.rawValue < Logger.Level.critical.rawValue {
-            print("CRITICAL| \(label): \(message)")
+        if logLevel.rawValue <= FeLogger.Level.critical.rawValue {
+            self.logger.critical("CRITICAL| \(self.label): \(message)")
         }
     }
     
 }
 
 
-public func getLogger(_ className: String) -> Logger {
-    let logger = Logger(label: className)
+public func getLogger(_ className: String) -> FeLogger {
+    let logger = FeLogger(label: className)
     logger.logLevel = PlistHelper.getLogLevel()
     return logger
 }

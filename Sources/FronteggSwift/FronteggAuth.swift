@@ -26,6 +26,7 @@ public class FronteggAuth: ObservableObject {
     @Published public var isStepUpAuthorization = false
     @Published public var isLoading = true
     @Published public var webLoading = true
+    @Published public var loginBoxLoading = false
     @Published public var initializing = true
     @Published public var lateInit = false
     @Published public var showLoader = true
@@ -185,7 +186,21 @@ public class FronteggAuth: ObservableObject {
         
     }
     
+    private func warmingWebView() {
+        print("warmingWebView")
+      let cfg = WKWebViewConfiguration()
+      // use your shared processPool below
+      cfg.processPool = WebViewShared.processPool
+      // you can even use nonPersistent() if you don't need cookies
+      cfg.websiteDataStore = .default()
+      let wv = WKWebView(frame: .zero, configuration: cfg)
+      // load a trivial blank page & eval a no-op JS
+        wv.load(URLRequest(url: URL(string: "\(self.baseUrl)/oauth/account/login")!))
+      wv.evaluateJavaScript("void(0)", completionHandler: nil)
+    }
+    
     public func initializeSubscriptions() {
+        self.warmingWebView()
         self.$initializing.combineLatest(self.$isAuthenticated, self.$isLoading).sink(){ (initializingValue, isAuthenticatedValue, isLoadingValue) in
             self.showLoader = initializingValue || (!isAuthenticatedValue && isLoadingValue)
         }.store(in: &subscribers)
@@ -626,12 +641,21 @@ public class FronteggAuth: ObservableObject {
             guard let queryItems = getQueryItems(url.absoluteString), let code = queryItems["code"] else {
                 let error = FronteggError.authError(.failedToExtractCode)
                 completion(.failure(error))
+                self.logger.error("Failed to extract code, \(error)")
                 return
             }
             
             guard let codeVerifier = CredentialManager.getCodeVerifier() else {
                 let error = FronteggError.authError(.codeVerifierNotFound)
                 completion(.failure(error))
+                self.logger.error("No code verifier found, \(error)")
+                return
+            }
+            
+            if let errorMessage = queryItems["error"] {
+                let error = FronteggError.authError(.oauthError(errorMessage))
+                completion(.failure(error))
+                self.logger.error("Oauth error, \(error)")
                 return
             }
             

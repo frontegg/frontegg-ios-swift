@@ -28,6 +28,7 @@ extension FronteggError {
         case invalidResponse
         case unknown
         case other(Error)
+        case oauthError(_ error: String)
     }
 }
 
@@ -53,6 +54,7 @@ extension FronteggError.Authentication {
             case let .other(error): error.localizedDescription
             case .failedToMFA: "Failed MFA"
             case .invalidResponse: "Invalid Response"
+            case let .oauthError(message): message
         }
     }
     
@@ -75,6 +77,7 @@ extension FronteggError.Authentication {
             case .other: "other"
             case .failedToMFA:"failedToMFA"
             case .invalidResponse:"invalidResponse"
+            case .oauthError: "oauthError"
         }
     }
 }
