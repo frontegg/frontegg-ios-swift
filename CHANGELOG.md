@@ -1,3 +1,6 @@
+## v1.2.40
+- Updated README.md
+
 ## v1.2.39
 FR-20294 - Reset login completion when deep link triggered
 
