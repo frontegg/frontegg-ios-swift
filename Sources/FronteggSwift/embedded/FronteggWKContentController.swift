@@ -17,6 +17,7 @@ struct HostedLoginMessage: Codable {
 class FronteggWKContentController: NSObject, WKScriptMessageHandler {
     
     weak var webView: CustomWebView? = nil
+    private var logger = getLogger("FronteggWKContentController")
     
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         
@@ -35,7 +36,7 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
             let message = try JSONDecoder().decode(HostedLoginMessage.self, from: jsonData)
             handleAction(message)
         } catch {
-            print("Error decoding JSON: \(error)")
+            self.logger.error("Error decoding JSON: \(error)")
         }
     }
     
@@ -109,7 +110,7 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
             guard let data = try? JSONSerialization.jsonObject(with: Data(message.payload.utf8), options: []) as? [String: String],
                   let email = data["email"],
                   let password = data["password"] else {
-                print("Invalid payload for loginWithPassword")
+                self.logger.error("Invalid payload for loginWithPassword")
                 
                 return
             }
@@ -117,18 +118,21 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
             if let url = URL(string: FronteggAuth.shared.baseUrl), let domain = url.host {
                 FronteggAuth.shared.saveWebCredentials(domain: domain, email: email, password: password) { success, error in
                     if success {
-                        print("✅ Credentials saved successfully for \(email)")
+                        self.logger.debug("✅ Credentials saved successfully for \(email)")
                     } else {
-                        print("❌ Failed to save credentials: \(error?.localizedDescription ?? "Unknown error")")
+                        self.logger.error("❌ Failed to save credentials: \(error?.localizedDescription ?? "Unknown error")")
                     }
                 }
             } else {
-                print("❌ Invalid base URL: \(FronteggAuth.shared.baseUrl)")
+                self.logger.error("❌ Invalid base URL: \(FronteggAuth.shared.baseUrl)")
             }
-        case "showLoader":
-            FronteggAuth.shared.webLoading = true
-        case "hideLoader":
-            FronteggAuth.shared.webLoading = false
+        case "setLoading":
+            let loading = message.payload == "true"
+            self.logger.trace("LoginBox.setLoading, \(loading)")
+            
+            if FronteggAuth.shared.loginBoxLoading != loading {
+                FronteggAuth.shared.loginBoxLoading = loading
+            }
         default:
             return
         }

@@ -9,7 +9,7 @@ import Foundation
 
 struct PlistHelper {
     
-    private static var logLevelCache: Logger.Level? = nil
+    private static var logLevelCache: FeLogger.Level? = nil
     private static var logger = getLogger("PlistHelper")
     private static let decoder = PropertyListDecoder()
 
@@ -43,7 +43,7 @@ struct PlistHelper {
 
     /// Gets the required log level from cache if it exists, or attempts to read it from the Frontegg configuration plist if it wasn't previously loaded
     /// - Returns: the required logger level (``Logger/Level``)
-    static func getLogLevel() -> Logger.Level {
+    static func getLogLevel() -> FeLogger.Level {
 
         if let logLevel = PlistHelper.logLevelCache {
             return logLevel
@@ -51,8 +51,10 @@ struct PlistHelper {
 
         do {
             let plist = try plist()
-            return .init(with: plist.logLevel)
+            PlistHelper.logLevelCache = .init(with: plist.logLevel)
+            return PlistHelper.logLevelCache!
         } catch {
+            PlistHelper.logLevelCache = .warning
             return .warning
         }
     }

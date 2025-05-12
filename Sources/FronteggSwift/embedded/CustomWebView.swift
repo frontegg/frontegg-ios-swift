@@ -14,6 +14,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     private let fronteggAuth: FronteggAuth = FronteggAuth.shared
     private let logger = getLogger("CustomWebView")
     private var lastResponseStatusCode: Int? = nil
+    private var cachedUrlSchemes: [String]? = nil
     
     
     override var inputAccessoryView: UIView? {
@@ -65,7 +66,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                             if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
                                 presentingVC.dismiss(animated: true)
                                 VCHolder.shared.vc = nil
-                                FronteggAuth.shared.loginCompletion?(.failure(FronteggError.authError(.unknown)))
+                                FronteggAuth.shared.loginCompletion?(.failure(.authError(.operationCanceled)))
                             } else {
                                 self.logger.warning("⚠️ No VC to dismiss in VCHolder.")
                             }
@@ -97,15 +98,22 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     }
     
     private func getAppURLSchemes() -> [String] {
+        
+        if let schemes = cachedUrlSchemes {
+            return schemes
+        }
+        
         guard
             let urlTypes = Bundle.main.infoDictionary?["CFBundleURLTypes"] as? [[String: Any]]
         else {
+            cachedUrlSchemes = []
             return []
         }
 
-        return urlTypes
+        cachedUrlSchemes = urlTypes
             .compactMap { $0["CFBundleURLSchemes"] as? [String] }
             .flatMap { $0 }
+        return cachedUrlSchemes ?? []
     }
 
     
