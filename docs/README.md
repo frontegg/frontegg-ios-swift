@@ -16,7 +16,7 @@ This repository includes:
 - An [API Reference](/docs/api.md) for detailed SDK functionality
 - [Usage Examples](/docs/usage.md) with common implementation patterns
 - [Advanced Topics](/docs/advanced.md) for complex integration scenarios
-- A [Hosted](./demo), [Embedded](./demo-embedded), [Application-Id](./demo-application-id), and [Multi-Region](./demo-multi-region) example projects to help you get started quickly
+- A [Hosted](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo), [Embedded](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-embedded), [Application-Id](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-application-id), and [Multi-Region](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-multi-region) example projects to help you get started quickly
 
 For full documentation, visit the Frontegg Developer Portal:  
 🔗 [https://developers.frontegg.com](https://developers.frontegg.com)
