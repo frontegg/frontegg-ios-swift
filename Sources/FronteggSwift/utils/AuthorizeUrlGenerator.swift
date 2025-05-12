@@ -115,7 +115,7 @@ public class AuthorizeUrlGenerator {
                 URLQueryItem(name: "post_logout_redirect_uri", value: url.absoluteString),
             ]
             
-            logger.trace("Final url: \(loginUrl.url?.absoluteString)")
+            logger.trace("Final url: \(loginUrl.url?.absoluteString ?? "")")
             
             return (loginUrl.url!, codeVerifier)
         } else {
