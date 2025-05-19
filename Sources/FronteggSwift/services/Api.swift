@@ -275,6 +275,9 @@ public class Api {
     }
     
     internal func logout(accessToken: String?, refreshToken: String?) async {
+        if refreshToken == nil {
+           return
+        }
         
         do {
             let (_, response) = try await postRequest(path: "identity/resources/auth/v1/logout", body: ["refreshToken":refreshToken])
