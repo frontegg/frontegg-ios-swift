@@ -378,7 +378,7 @@ private func clearCookie() {
     let cookieStore = WKWebsiteDataStore.default().httpCookieStore
     cookieStore.getAllCookies { cookies in
         for cookie in cookies {
-            if cookie.name == "fe_refresh" && cookie.domain.contains(host) {
+            if cookie.name.hasPrefix("fe_refresh") && cookie.domain.contains(host) {
                 cookieStore.delete(cookie)
                 self.logger.info("Deleted cookie: \(cookie.name) from \(cookie.domain)")
             }
