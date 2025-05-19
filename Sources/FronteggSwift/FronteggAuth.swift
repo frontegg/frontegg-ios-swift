@@ -342,48 +342,51 @@ public class FronteggAuth: ObservableObject {
     }
     
     public func logout(clearCookie: Bool = true, _ _completion: FronteggAuth.LogoutHandler? = nil) {
-        self.isLoading = true
-        
+    self.isLoading = true
+
         let completion = _completion ?? { res in
             
         }
-        
-        DispatchQueue.global(qos: .userInitiated).async {
-            Task {
-                await self.api.logout(accessToken: self.accessToken, refreshToken: self.refreshToken)
-            }
-            DispatchQueue.main.sync {
-                self.credentialManager.clear()
-                if clearCookie {
-                    self.clearCookie()
-                }
-                self.isAuthenticated = false
-                self.user = nil
-                self.accessToken = nil
-                self.refreshToken = nil
-                self.initializing = false
-                self.appLink = false
-                
-                // isLoading must be at the last bottom
-                self.isLoading = false
-                completion(.success(true));
-            }
-        }
-    }
-    
-    private func clearCookie() {
-        let dataStore = WKWebsiteDataStore.default()
 
-        dataStore.fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) { records in
-            records.forEach { record in
-                if "frontegg.com" == record.displayName {
-                    dataStore.removeData(ofTypes: record.dataTypes, for: [record]) {
-                        self.logger.info("Removed cookie data for \(record.displayName)")
-                    }
-                }
+    DispatchQueue.global(qos: .userInitiated).async {
+        Task {
+            await self.api.logout(accessToken: self.accessToken, refreshToken: self.refreshToken)
+        }
+        DispatchQueue.main.sync {
+            self.credentialManager.clear()
+            if clearCookie {
+                self.clearCookie()
+            }
+            self.isAuthenticated = false
+            self.user = nil
+            self.accessToken = nil
+            self.refreshToken = nil
+            self.initializing = false
+            self.appLink = false
+
+            // isLoading must be at the last bottom
+            self.isLoading = false
+            completion(.success(true));
+        }
+    }
+}
+
+private func clearCookie() {
+    guard let host = URL(string: baseUrl)?.host else {
+        logger.warning("Invalid baseUrl: cannot extract host")
+        return
+    }
+
+    let cookieStore = WKWebsiteDataStore.default().httpCookieStore
+    cookieStore.getAllCookies { cookies in
+        for cookie in cookies {
+            if cookie.name == "fe_refresh" && cookie.domain.contains(host) {
+                cookieStore.delete(cookie)
+                self.logger.info("Deleted cookie: \(cookie.name) from \(cookie.domain)")
             }
         }
     }
+}
     
     public func logout() {
         logout { res in
