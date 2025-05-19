@@ -342,33 +342,33 @@ public class FronteggAuth: ObservableObject {
     }
     
     public func logout(clearCookie: Bool = true, _ _completion: FronteggAuth.LogoutHandler? = nil) {
-    self.isLoading = true
+        self.isLoading = true
 
-        let completion = _completion ?? { res in
-            
-        }
-
-    DispatchQueue.global(qos: .userInitiated).async {
-        Task {
-            await self.api.logout(accessToken: self.accessToken, refreshToken: self.refreshToken)
-        }
-        DispatchQueue.main.sync {
-            self.credentialManager.clear()
-            if clearCookie {
-                self.clearCookie()
+            let completion = _completion ?? { res in
+                
             }
-            self.isAuthenticated = false
-            self.user = nil
-            self.accessToken = nil
-            self.refreshToken = nil
-            self.initializing = false
-            self.appLink = false
 
-            // isLoading must be at the last bottom
-            self.isLoading = false
-            completion(.success(true));
+        DispatchQueue.global(qos: .userInitiated).async {
+            Task {
+                await self.api.logout(accessToken: self.accessToken, refreshToken: self.refreshToken)
+            }
+            DispatchQueue.main.sync {
+                self.credentialManager.clear()
+                if clearCookie {
+                    self.clearCookie()
+                }
+                self.isAuthenticated = false
+                self.user = nil
+                self.accessToken = nil
+                self.refreshToken = nil
+                self.initializing = false
+                self.appLink = false
+
+                // isLoading must be at the last bottom
+                self.isLoading = false
+                completion(.success(true));
+            }
         }
-    }
 }
 
 private func clearCookie() {
