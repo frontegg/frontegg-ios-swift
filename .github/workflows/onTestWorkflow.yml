@@ -69,25 +69,25 @@ jobs:
       - name: Build for simulator
         run: |
           xcodebuild clean build-for-testing \
+          -project demo-embedded/demo-embedded.xcodeproj \
+          -scheme demo-embedded \
+          -configuration Debug \
+          -sdk iphonesimulator \
+          -destination "platform=iOS Simulator,name=iPhone 16 Pro" \
+          -derivedDataPath ./.build/simulator/
+
+      - name: Build .app for iOS Device
+        run: |
+          xcodebuild clean build \
             -project demo-embedded/demo-embedded.xcodeproj \
             -scheme demo-embedded \
             -configuration Debug \
-            -sdk iphonesimulator \
-            -destination "platform=iOS Simulator,name=iPhone 16 Pro" \
-            -derivedDataPath ./.build/simulator/
-
-      #      - name: Build .app for iOS Device
-      #        run: |
-      #          xcodebuild clean build \
-      #            -project demo-embedded/demo-embedded.xcodeproj \
-      #            -scheme demo-embedded \
-      #            -configuration Debug \
-      #            -sdk iphoneos \
-      #            -destination 'generic/platform=iOS' \
-      #            -derivedDataPath ./.build/real-device/ \
-      #            CODE_SIGN_IDENTITY="Apple Development" \
-      #            CODE_SIGN_STYLE="Manual" \
-      #            PROVISIONING_PROFILE_SPECIFIER="github-actions-e2e"
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath ./.build/real-device/ \
+            CODE_SIGN_IDENTITY="Apple Development" \
+            CODE_SIGN_STYLE="Manual" \
+            PROVISIONING_PROFILE_SPECIFIER="github-actions-e2e"
 
       - name: Upload a Simulator App Artifact
         uses: actions/upload-artifact@v4.4.0
@@ -95,11 +95,11 @@ jobs:
           name: test-debug.ipa
           path: .build/simulator/Build/Products/Debug-iphonesimulator/demo-embedded.app
 
-      #      - name: Upload a Real Device App Artifact
-      #        uses: actions/upload-artifact@v4.4.0
-      #        with:
-      #          name: test-release.ipa
-      #          path: .build/real-device/Build/Products/Debug-iphoneos/demo-embedded.app
+      - name: Upload a Real Device App Artifact
+        uses: actions/upload-artifact@v4.4.0
+        with:
+          name: test-release.ipa
+          path: .build/real-device/Build/Products/Debug-iphoneos/demo-embedded.app
 
       - name: Fetch artifact details
         run: |
