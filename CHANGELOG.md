@@ -1,3 +1,9 @@
+## v1.2.40
+- Updated README.md
+- Clear `frontegg.com` while logout;
+- Do not post identity/resources/auth/v1/logout if refreshToken is null
+- Updated README.md
+
 ## v1.2.39
 FR-20294 - Reset login completion when deep link triggered
 

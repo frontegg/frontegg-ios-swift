@@ -1,3 +1,6 @@
+## v1.2.39
+FR-20294 - Reset login completion when deep link triggered
+
 ## v1.2.38
 - Updated docs.
 - Fixed opening external urls
