@@ -68,7 +68,7 @@ jobs:
 
       - name: Build for simulator
         run: |
-          xcodebuild clean build \
+          xcodebuild clean build-for-testing \
             -project demo-embedded/demo-embedded.xcodeproj \
             -scheme demo-embedded \
             -configuration Debug \
