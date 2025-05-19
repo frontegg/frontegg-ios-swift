@@ -344,9 +344,7 @@ public class FronteggAuth: ObservableObject {
     public func logout(clearCookie: Bool = true, _ _completion: FronteggAuth.LogoutHandler? = nil) {
         self.isLoading = true
 
-            let completion = _completion ?? { res in
-                
-            }
+        let completion = _completion ?? { res in }
 
         DispatchQueue.global(qos: .userInitiated).async {
             Task {
