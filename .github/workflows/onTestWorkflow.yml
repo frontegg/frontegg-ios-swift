@@ -110,5 +110,4 @@ jobs:
           echo "$response" | jq -r '.artifacts[] | "Artifact Name: \(.name), Artifact ID: \(.id)"'
 
           echo "Constructing download URLs..."
-          echo "$response" | jq -r \
-            '.artifacts[] | "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/\(.id)"'
+          echo "$response" 
