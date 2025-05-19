@@ -23,7 +23,7 @@ public struct EmbeddedLoginPage: View {
                 VStack(alignment: .center) {
                     ZStack{
                         FronteggWebView()
-                        if fronteggAuth.webLoading {
+                        if fronteggAuth.webLoading || fronteggAuth.loginBoxLoading {
                            DefaultLoader()
                        }
                     }

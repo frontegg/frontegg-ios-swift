@@ -16,11 +16,6 @@ public class AuthorizeUrlGenerator {
     
     private let logger = getLogger("AuthorizeUrlGenerator")
     
-    private func createRandomString(_ length: Int = 16) -> String {
-        let letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-        return String((0 ..< length).map{ _ in letters.randomElement()! })
-    }
-    
     private func digest(_ input : NSData) -> NSData {
         
         let digestLength = Int(CC_SHA256_DIGEST_LENGTH)
@@ -119,6 +114,9 @@ public class AuthorizeUrlGenerator {
             loginUrl.queryItems = [
                 URLQueryItem(name: "post_logout_redirect_uri", value: url.absoluteString),
             ]
+            
+            logger.trace("Final url: \(loginUrl.url?.absoluteString ?? "")")
+            
             return (loginUrl.url!, codeVerifier)
         } else {
             logger.error("Unkonwn error occured while generating authorize url, baseUrl: \(baseUrl)")
