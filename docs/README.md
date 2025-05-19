@@ -11,11 +11,11 @@ single SDK.
 
 This repository includes:
 
-- A [Get Started](/docs/getting-started.md) guide for quick integration
-- A [Setup Guide](/docs/setup.md) with detailed setup instructions
-- An [API Reference](/docs/api.md) for detailed SDK functionality
-- [Usage Examples](/docs/usage.md) with common implementation patterns
-- [Advanced Topics](/docs/advanced.md) for complex integration scenarios
+- A [Get Started](https://ios-swift-guide.frontegg.com/#/getting-started) guide for quick integration
+- A [Setup Guide](https://ios-swift-guide.frontegg.com/#/setup) with detailed setup instructions
+- An [API Reference](https://ios-swift-guide.frontegg.com/#/api) for detailed SDK functionality
+- [Usage Examples](https://ios-swift-guide.frontegg.com/#/usage) with common implementation patterns
+- [Advanced Topics](https://ios-swift-guide.frontegg.com/#/advanced) for complex integration scenarios
 - A [Hosted](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo), [Embedded](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-embedded), [Application-Id](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-application-id), and [Multi-Region](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-multi-region) example projects to help you get started quickly
 
 For full documentation, visit the Frontegg Developer Portal:  
