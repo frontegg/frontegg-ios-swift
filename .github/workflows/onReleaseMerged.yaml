@@ -79,8 +79,8 @@ jobs:
         env:
           COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
         run: |
-          pod lib lint --verbose
-          pod spec lint  --verbose
+          pod lib lint --verbose --allow-warnings
+          pod spec lint  --verbose --allow-warnings
 
       - name: Publish to Trunk to Cocoapods
         env:

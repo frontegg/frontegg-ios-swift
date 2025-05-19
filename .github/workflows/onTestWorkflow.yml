@@ -92,7 +92,7 @@ jobs:
         uses: actions/upload-artifact@v4.4.0
         with:
           name: test-debug.ipa
-          path: .build/simulator/Build/Products/Debug-iphonesimulator/demo-embedded.app
+          path: .build/testing/Build/Products/Debug-iphonesimulator/demo-embedded.app
 
 #      - name: Upload a Real Device App Artifact
 #        uses: actions/upload-artifact@v4.4.0

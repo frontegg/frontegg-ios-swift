@@ -240,7 +240,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 FronteggAuth.shared.handleHostedLoginCallback(code, savedCodeVerifier ) { res in
                     switch (res) {
                     case .success(_):
-                        self.logger.info("Authentication succeeded")
+                        let logger = getLogger("CustomWebView")
+                        logger.info("Authentication succeeded")
                         
                     case .failure(let error):
                         print("Error \(error)")
