@@ -73,6 +73,7 @@ jobs:
             -scheme demo-embedded \
             -configuration Debug \
             -sdk iphonesimulator
+            -destination "platform=iOS Simulator,name=iPhone 16 Pro"
 
 #      - name: Build .app for iOS Device
 #        run: |
