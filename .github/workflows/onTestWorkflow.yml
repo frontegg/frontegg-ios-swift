@@ -83,7 +83,8 @@ jobs:
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath ./.build/real-device/ \
-            CODE_SIGN_IDENTITY="iPhone Developer" \
+            CODE_SIGN_IDENTITY="Apple Development" \
+            CODE_SIGN_STYLE="Manual" \
             PROVISIONING_PROFILE_SPECIFIER="github-actions-e2e"
 
       - name: Upload a Simulator App Artifact
