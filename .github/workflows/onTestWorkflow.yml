@@ -74,31 +74,32 @@ jobs:
             -configuration Debug \
             -sdk iphonesimulator \
             -destination "platform=iOS Simulator,name=iPhone 16 Pro"
+            -derivedDataPath ./.build/simulator/
 
-#      - name: Build .app for iOS Device
-#        run: |
-#          xcodebuild clean build \
-#            -project demo-embedded/demo-embedded.xcodeproj \
-#            -scheme demo-embedded \
-#            -configuration Debug \
-#            -sdk iphoneos \
-#            -destination 'generic/platform=iOS' \
-#            -derivedDataPath ./.build/real-device/ \
-#            CODE_SIGN_IDENTITY="Apple Development" \
-#            CODE_SIGN_STYLE="Manual" \
-#            PROVISIONING_PROFILE_SPECIFIER="github-actions-e2e"
+      #      - name: Build .app for iOS Device
+      #        run: |
+      #          xcodebuild clean build \
+      #            -project demo-embedded/demo-embedded.xcodeproj \
+      #            -scheme demo-embedded \
+      #            -configuration Debug \
+      #            -sdk iphoneos \
+      #            -destination 'generic/platform=iOS' \
+      #            -derivedDataPath ./.build/real-device/ \
+      #            CODE_SIGN_IDENTITY="Apple Development" \
+      #            CODE_SIGN_STYLE="Manual" \
+      #            PROVISIONING_PROFILE_SPECIFIER="github-actions-e2e"
 
       - name: Upload a Simulator App Artifact
         uses: actions/upload-artifact@v4.4.0
         with:
           name: test-debug.ipa
-          path: .build/testing/Build/Products/Debug-iphonesimulator/demo-embedded.app
+          path: .build/simulator/Build/Products/Debug-iphonesimulator/demo-embedded.app
 
-#      - name: Upload a Real Device App Artifact
-#        uses: actions/upload-artifact@v4.4.0
-#        with:
-#          name: test-release.ipa
-#          path: .build/real-device/Build/Products/Debug-iphoneos/demo-embedded.app
+      #      - name: Upload a Real Device App Artifact
+      #        uses: actions/upload-artifact@v4.4.0
+      #        with:
+      #          name: test-release.ipa
+      #          path: .build/real-device/Build/Products/Debug-iphoneos/demo-embedded.app
 
       - name: Fetch artifact details
         run: |
@@ -106,8 +107,21 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)
 
-          echo "Artifact details:"
-          echo "$response" | jq -r '.artifacts[] | "Artifact Name: \(.name), Artifact ID: \(.id)"'
+          # Grab the repo and run ID from the runner’s environment
+          repo="${GITHUB_REPOSITORY}"
+          run_id="${GITHUB_RUN_ID}"
 
-          echo "Constructing download URLs..."
-          echo "$response" 
+          # Build the list of artifact URLs
+          artifact_urls=$(echo "$response" | jq -r \
+            --arg repo "$repo" \
+            --arg run_id "$run_id" \
+            '.artifacts[] | "https://github.com/\($repo)/actions/runs/\($run_id)/artifacts/\(.id)"'
+          )
+
+          # Now you can loop over them, or just echo them
+          echo "Found artifact URLs:"
+          echo "$artifact_urls"
+          
+            
+          
+          
