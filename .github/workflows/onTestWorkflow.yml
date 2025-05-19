@@ -73,7 +73,7 @@ jobs:
             -scheme demo-embedded \
             -configuration Debug \
             -sdk iphonesimulator \
-            -destination "platform=iOS Simulator,name=iPhone 16 Pro"
+            -destination "platform=iOS Simulator,name=iPhone 16 Pro" \
             -derivedDataPath ./.build/simulator/
 
       #      - name: Build .app for iOS Device
