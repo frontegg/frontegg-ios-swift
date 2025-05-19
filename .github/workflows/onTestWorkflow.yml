@@ -72,7 +72,7 @@ jobs:
             -project demo-embedded/demo-embedded.xcodeproj \
             -scheme demo-embedded \
             -configuration Debug \
-            -sdk iphonesimulator
+            -sdk iphonesimulator \
             -destination "platform=iOS Simulator,name=iPhone 16 Pro"
 
 #      - name: Build .app for iOS Device
