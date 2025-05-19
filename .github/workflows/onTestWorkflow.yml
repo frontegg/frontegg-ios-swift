@@ -14,7 +14,7 @@ concurrency:
 jobs:
   uploadIpa:
     name: 'Upload IPA'
-    runs-on: macos-14-xlarge
+    runs-on: macos-15-xlarge
     steps:
       - name: Checkout
         uses: actions/checkout@v4.2.0
