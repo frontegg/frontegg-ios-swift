@@ -341,8 +341,12 @@ public class FronteggAuth: ObservableObject {
         refreshTokenDispatch = nil
     }
     
-    public func logout(_ completion: @escaping (Result<Bool, FronteggError>) -> Void) {
+    public func logout(clearCookie: Bool = true, _ _completion: FronteggAuth.LogoutHandler? = nil) {
         self.isLoading = true
+        
+        let completion = _completion ?? { res in
+            
+        }
         
         DispatchQueue.global(qos: .userInitiated).async {
             Task {
@@ -350,6 +354,9 @@ public class FronteggAuth: ObservableObject {
             }
             DispatchQueue.main.sync {
                 self.credentialManager.clear()
+                if clearCookie {
+                    self.clearCookie()
+                }
                 self.isAuthenticated = false
                 self.user = nil
                 self.accessToken = nil
@@ -363,6 +370,21 @@ public class FronteggAuth: ObservableObject {
             }
         }
     }
+    
+    private func clearCookie() {
+        let dataStore = WKWebsiteDataStore.default()
+
+        dataStore.fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) { records in
+            records.forEach { record in
+                if "frontegg.com" == record.displayName {
+                    dataStore.removeData(ofTypes: record.dataTypes, for: [record]) {
+                        self.logger.info("Removed cookie data for \(record.displayName)")
+                    }
+                }
+            }
+        }
+    }
+    
     public func logout() {
         logout { res in
             print("logged out")
@@ -642,6 +664,8 @@ public class FronteggAuth: ObservableObject {
     public typealias CompletionHandler = (Result<User, FronteggError>) -> Void
     
     public typealias AccessTokenHandler = (Result<String?, Error>) -> Void
+    
+    public typealias LogoutHandler = (Result<Bool, FronteggError>) -> Void
     
     public typealias ConditionCompletionHandler = (_ error: FronteggError?) -> Void
     
