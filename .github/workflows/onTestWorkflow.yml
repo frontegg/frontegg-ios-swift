@@ -89,6 +89,7 @@ jobs:
             CODE_SIGN_STYLE="Manual" \
             PROVISIONING_PROFILE_SPECIFIER="github-actions-e2e"
 
+
       - name: Upload a Simulator App Artifact
         uses: actions/upload-artifact@v4.4.0
         with:

@@ -43,6 +43,8 @@ public struct FronteggWebView: UIViewRepresentable {
             jsObject = "{}"
         }
         
+        
+    
         let jsScript = WKUserScript(source: "window.FronteggNativeBridgeFunctions = \(jsObject);", injectionTime: .atDocumentStart, forMainFrameOnly: false)
         userContentController.addUserScript(jsScript)
         

@@ -144,6 +144,17 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             logger.info("urlType: \(urlType), for: \(url.absoluteString)")
             
             
+            if(urlType == .internalRoutes ) {
+                logger.trace("hiding Loader screen after 300ms")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    // usually internal routes are redirects
+                    // this 300ms will prevent loader blinking
+                    if(self.fronteggAuth.webLoading) {
+                        self.fronteggAuth.webLoading = false
+                    }
+                }
+
+            }
             if urlType == .loginRoutes || urlType == .Unknown {
                 logger.info("hiding Loader screen")
                 if(fronteggAuth.webLoading) {
@@ -155,7 +166,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 
                 if(url.absoluteString.starts(with: "\(fronteggAuth.baseUrl)/oauth/authorize")){
                     self.fronteggAuth.webLoading = false
-                    
                     let encodedUrl = url.absoluteString.replacingOccurrences(of: "\"", with: "\\\"")
                     let reloadScript = "setTimeout(()=>window.location.href=\"\(encodedUrl)\", 4000)"
                     let jsCode = "(function(){\n" +
@@ -165,7 +175,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                             "            })()"
                     webView.evaluateJavaScript(jsCode)
                     logger.error("Failed to load page \(encodedUrl), status: \(statusCode)")
-                    self.fronteggAuth.webLoading = false
+                    
                     return
                 }
                 

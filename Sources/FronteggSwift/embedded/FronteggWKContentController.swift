@@ -17,10 +17,10 @@ struct HostedLoginMessage: Codable {
 class FronteggWKContentController: NSObject, WKScriptMessageHandler {
     
     weak var webView: CustomWebView? = nil
+    private weak var hideLoaderWorkItem: DispatchWorkItem?
     private var logger = getLogger("FronteggWKContentController")
     
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        
         
         if message.name == "FronteggNativeBridge" {
             if let jsonString = message.body as? String {
@@ -56,6 +56,7 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
             }
         }
     }
+    
     
     private func handleAction(_ message: HostedLoginMessage) {
         switch (message.action) {
@@ -127,12 +128,23 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
                 self.logger.error("❌ Invalid base URL: \(FronteggAuth.shared.baseUrl)")
             }
         case "setLoading":
-            let loading = message.payload == "true"
-            self.logger.trace("LoginBox.setLoading, \(loading)")
-            
-            if FronteggAuth.shared.loginBoxLoading != loading {
-                FronteggAuth.shared.loginBoxLoading = loading
-            }
+            let isLoading = message.payload == "true"
+                logger.trace("LoginBox.setLoading, \(isLoading)")
+
+                // Cancel any pending hide
+                hideLoaderWorkItem?.cancel()
+
+                if isLoading {
+                    // show immediately
+                    FronteggAuth.shared.loginBoxLoading = true
+                } else {
+                    // schedule hide after 200ms, to avoid flicker
+                    let workItem = DispatchWorkItem {
+                        FronteggAuth.shared.loginBoxLoading = false
+                    }
+                    hideLoaderWorkItem = workItem
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: workItem)
+                }
         default:
             return
         }
