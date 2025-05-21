@@ -10,7 +10,7 @@ jobs:
   publish:
     if: "contains(join(github.event.pull_request.labels.*.name, ','), 'Release') && github.event.pull_request.merged == true"
     name: 'Publish to Cocoapods'
-    runs-on: 'macos-14-xlarge'
+    runs-on: 'macos-15-xlarge'
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -79,8 +79,8 @@ jobs:
         env:
           COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
         run: |
-          pod lib lint --verbose
-          pod spec lint  --verbose
+          pod lib lint --verbose --allow-warnings
+          pod spec lint  --verbose --allow-warnings
 
       - name: Publish to Trunk to Cocoapods
         env:

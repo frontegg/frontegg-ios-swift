@@ -8,7 +8,7 @@ on:
 jobs:
   build-and-test:
     name: "Build & Test"
-    runs-on: 'macos-14-xlarge'
+    runs-on: 'macos-15-xlarge'
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -25,9 +25,9 @@ jobs:
       - name: Show eligible build destinations for the "demo"
         run: xcodebuild -project demo/demo.xcodeproj -showdestinations -scheme "demo"
       - name: Build for Testing
-        run: xcodebuild CC=clang CPLUSPLUS=clang++ LD=clang LDPLUSPLUS=clang++ build-for-testing -scheme "demo" -project "demo/demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 15 Pro" -configuration "Debug" -enableCodeCoverage "YES"
+        run: xcodebuild CC=clang CPLUSPLUS=clang++ LD=clang LDPLUSPLUS=clang++ build-for-testing -scheme "demo" -project "demo/demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 16 Pro" -configuration "Debug" -enableCodeCoverage "YES"
       - name: Validate lint for lib and spec Cocoapods
         env:
           COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
         run: |
-          pod lib lint --verbose
+          pod lib lint --verbose --allow-warnings

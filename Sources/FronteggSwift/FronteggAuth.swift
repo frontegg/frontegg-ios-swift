@@ -43,7 +43,7 @@ public class FronteggAuth: ObservableObject {
     public var applicationId: String? = nil
     public var pendingAppLink: URL? = nil
     public var loginHint: String? = nil
-
+    
     
     
     public static var shared: FronteggAuth {
@@ -83,7 +83,7 @@ public class FronteggAuth: ObservableObject {
         self.stepUpAuthenticator = StepUpAuthenticator(credentialManager: credentialManager)
         
         self.selectedRegion = self.getSelectedRegion()
-
+        
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(applicationDidBecomeActive),
@@ -188,19 +188,26 @@ public class FronteggAuth: ObservableObject {
     
     private func warmingWebView() {
         print("warmingWebView")
-      let cfg = WKWebViewConfiguration()
-      // use your shared processPool below
-      cfg.processPool = WebViewShared.processPool
-      // you can even use nonPersistent() if you don't need cookies
-      cfg.websiteDataStore = .default()
-      let wv = WKWebView(frame: .zero, configuration: cfg)
-      // load a trivial blank page & eval a no-op JS
-        wv.load(URLRequest(url: URL(string: "\(self.baseUrl)/oauth/account/login")!))
-      wv.evaluateJavaScript("void(0)", completionHandler: nil)
+        let cfg = WKWebViewConfiguration()
+        // use your shared processPool below
+        cfg.processPool = WebViewShared.processPool
+        // you can even use nonPersistent() if you don't need cookies
+        cfg.websiteDataStore = .default()
+        let wv = CustomWebView(frame: .zero, configuration: cfg)
+        // load a trivial blank page & eval a no-op JS
+        
+        wv.navigationDelegate = wv;
+        wv.uiDelegate = wv;
+        
+        let (url, _) = AuthorizeUrlGenerator().generate(remainCodeVerifier:true, withoutLogout: true)
+        wv.load(URLRequest(url: url))
+        wv.evaluateJavaScript("void(0)", completionHandler: nil)
     }
     
     public func initializeSubscriptions() {
-        self.warmingWebView()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.warmingWebView()
+        }
         self.$initializing.combineLatest(self.$isAuthenticated, self.$isLoading).sink(){ (initializingValue, isAuthenticatedValue, isLoadingValue) in
             self.showLoader = initializingValue || (!isAuthenticatedValue && isLoadingValue)
         }.store(in: &subscribers)
@@ -358,9 +365,9 @@ public class FronteggAuth: ObservableObject {
     
     public func logout(clearCookie: Bool = true, _ _completion: FronteggAuth.LogoutHandler? = nil) {
         self.isLoading = true
-
+        
         let completion = _completion ?? { res in }
-
+        
         DispatchQueue.global(qos: .userInitiated).async {
             Task {
                 await self.api.logout(accessToken: self.accessToken, refreshToken: self.refreshToken)
@@ -376,30 +383,30 @@ public class FronteggAuth: ObservableObject {
                 self.refreshToken = nil
                 self.initializing = false
                 self.appLink = false
-
+                
                 // isLoading must be at the last bottom
                 self.isLoading = false
                 completion(.success(true));
             }
         }
-}
-
-private func clearCookie() {
-    guard let host = URL(string: baseUrl)?.host else {
-        logger.warning("Invalid baseUrl: cannot extract host")
-        return
     }
-
-    let cookieStore = WKWebsiteDataStore.default().httpCookieStore
-    cookieStore.getAllCookies { cookies in
-        for cookie in cookies {
-            if cookie.name.hasPrefix("fe_refresh") && cookie.domain.contains(host) {
-                cookieStore.delete(cookie)
-                self.logger.info("Deleted cookie: \(cookie.name) from \(cookie.domain)")
+    
+    private func clearCookie() {
+        guard let host = URL(string: baseUrl)?.host else {
+            logger.warning("Invalid baseUrl: cannot extract host")
+            return
+        }
+        
+        let cookieStore = WKWebsiteDataStore.default().httpCookieStore
+        cookieStore.getAllCookies { cookies in
+            for cookie in cookies {
+                if cookie.name.hasPrefix("fe_refresh") && cookie.domain.contains(host) {
+                    cookieStore.delete(cookie)
+                    self.logger.info("Deleted cookie: \(cookie.name) from \(cookie.domain)")
+                }
             }
         }
     }
-}
     
     public func logout() {
         logout { res in
@@ -744,48 +751,48 @@ private func clearCookie() {
     }
     
     public func directLoginAction(
-        window: UIWindow?, 
-        type: String, 
-        data: String, 
-        ephemeralSession: Bool? = true, 
-        _completion: FronteggAuth.CompletionHandler? = nil, 
-        additionalQueryParams: [String: Any]? = nil, 
+        window: UIWindow?,
+        type: String,
+        data: String,
+        ephemeralSession: Bool? = true,
+        _completion: FronteggAuth.CompletionHandler? = nil,
+        additionalQueryParams: [String: Any]? = nil,
         remainCodeVerifier: Bool = false) {
-        
-        
-        let completion = _completion ?? { res in
             
-        }
-        
-        if(type == "social-login" && data == "apple") {
-            self.loginWithApple(completion)
-            return
-        }
-        
-        var directLogin = [
-            "type": type,
-            "data": data,
             
-        ] as [String : Any]
-        
-        if let queryParams = additionalQueryParams {
-            directLogin["additionalQueryParams"] = queryParams
+            let completion = _completion ?? { res in
+                
+            }
+            
+            if(type == "social-login" && data == "apple") {
+                self.loginWithApple(completion)
+                return
+            }
+            
+            var directLogin = [
+                "type": type,
+                "data": data,
+                
+            ] as [String : Any]
+            
+            if let queryParams = additionalQueryParams {
+                directLogin["additionalQueryParams"] = queryParams
+            }
+            
+            var generatedUrl: (URL, String)
+            if let jsonData = try? JSONSerialization.data(withJSONObject: directLogin, options: []) {
+                let jsonString = jsonData.base64EncodedString()
+                generatedUrl = AuthorizeUrlGenerator.shared.generate(loginAction: jsonString, remainCodeVerifier: remainCodeVerifier)
+            } else {
+                generatedUrl = AuthorizeUrlGenerator.shared.generate()
+            }
+            
+            let oauthCallback = createOauthCallbackHandler(completion)
+            let (authorizeUrl, codeVerifier) = generatedUrl
+            CredentialManager.saveCodeVerifier(codeVerifier)
+            
+            WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: ephemeralSession ?? true, window: window ?? getRootVC()?.view.window, completionHandler: oauthCallback)
         }
-        
-        var generatedUrl: (URL, String)
-        if let jsonData = try? JSONSerialization.data(withJSONObject: directLogin, options: []) {
-            let jsonString = jsonData.base64EncodedString()
-            generatedUrl = AuthorizeUrlGenerator.shared.generate(loginAction: jsonString, remainCodeVerifier: remainCodeVerifier)
-        } else {
-            generatedUrl = AuthorizeUrlGenerator.shared.generate()
-        }
-        
-        let oauthCallback = createOauthCallbackHandler(completion)
-        let (authorizeUrl, codeVerifier) = generatedUrl
-        CredentialManager.saveCodeVerifier(codeVerifier)
-        
-        WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: ephemeralSession ?? true, window: window ?? getRootVC()?.view.window, completionHandler: oauthCallback)
-    }
     
     
     internal func getRootVC(_ useAppRootVC: Bool = false) -> UIViewController? {
@@ -1000,7 +1007,7 @@ private func clearCookie() {
             return false;
         }
         
-        if(self.embeddedMode){
+//        if(self.embeddedMode){
             self.pendingAppLink = url
             self.webLoading = true
             
@@ -1015,22 +1022,25 @@ private func clearCookie() {
             }
             rootVC.present(hostingController, animated: false, completion: nil)
             return true;
-        }
-        
-        self.appLink = true
-        
-        
-        let oauthCallback = createOauthCallbackHandler() { res in
-            
-            switch (res) {
-            case .success(let user) :
-                self.logger.trace("User \(user.id)")
-            case .failure(let error) :
-                self.logger.trace("Error \(error)")
-            }
-        }
-        WebAuthenticator.shared.start(url, completionHandler: oauthCallback)
-        
+//        }
+//        
+//        self.appLink = true
+//        
+//        
+//        let oauthCallback = createOauthCallbackHandler() { res in
+//            
+//            switch (res) {
+//            case .success(let user) :
+//                self.logger.trace("User \(user.id)")
+//            case .failure(let error) :
+//                self.logger.trace("Error \(error)")
+//            }
+//        }
+//        
+//        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+//            self.appLink = false
+//            WebAuthenticator.shared.start(url, completionHandler: oauthCallback)
+//        }
         return true
     }
     

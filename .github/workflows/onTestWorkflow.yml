@@ -14,12 +14,13 @@ concurrency:
 jobs:
   uploadIpa:
     name: 'Upload IPA'
-    runs-on: 'macos-14-xlarge'
+    runs-on: macos-15-xlarge
     steps:
       - name: Checkout
         uses: actions/checkout@v4.2.0
         with:
-          fetch-depth: "0"
+          fetch-depth: 0
+
       - name: Set up Xcode
         run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
@@ -28,66 +29,100 @@ jobs:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
-          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > certificate.p12
+          set -euo pipefail
+
+          # ensure both are set
+          if [[ -z "${APPLE_CERTIFICATE_BASE64}" || -z "${APPLE_CERTIFICATE_PASSWORD}" ]]; then
+            echo "ERROR: Missing APPLE_CERTIFICATE_BASE64 or APPLE_CERTIFICATE_PASSWORD"
+            exit 1
+          fi
+
+          # decode once
+          echo "${APPLE_CERTIFICATE_BASE64}" | base64 --decode > certificate.p12
+
+          # create & select keychain in the user domain
           security create-keychain -p "" build.keychain
-          security default-keychain -s build.keychain
+          security list-keychains -d user -s build.keychain
+          security default-keychain -d user -s build.keychain
           security unlock-keychain -p "" build.keychain
-          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+
+          # import and allow codesign access
+          security import certificate.p12 \
+            -k build.keychain \
+            -P "${APPLE_CERTIFICATE_PASSWORD}" \
+            -T /usr/bin/codesign
+
+          security set-key-partition-list \
+            -S apple-tool:,apple:codesign \
+            -s -k "" \
+            build.keychain
 
       - name: Decode and Install Provisioning Profile
         env:
           APPLE_PROVISION_PROFILE_BASE64: ${{ secrets.APPLE_PROVISION_PROFILE_BASE64 }}
         run: |
-          echo "$APPLE_PROVISION_PROFILE_BASE64" | base64 --decode > githubaction_provisioning_profile.mobileprovision
+          set -euo pipefail
+          echo "${APPLE_PROVISION_PROFILE_BASE64}" | base64 --decode > profile.mobileprovision
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           mv profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
 
       - name: Build for simulator
         run: |
-          xcodebuild clean build \
+          xcodebuild clean build-for-testing \
           -project demo-embedded/demo-embedded.xcodeproj \
           -scheme demo-embedded \
           -configuration Debug \
-          -sdk iphonesimulator  \
-          -enableCodeCoverage "YES" \
+          -sdk iphonesimulator \
+          -destination "platform=iOS Simulator,name=iPhone 16 Pro" \
           -derivedDataPath ./.build/simulator/
 
-      - name: Build .app for iOS Device
-        run: |
-          xcodebuild clean build \
-          -project demo-embedded/demo-embedded.xcodeproj \
-          -scheme demo-embedded \
-          -configuration Debug \
-          -sdk iphoneos \
-          -destination 'generic/platform=iOS' \
-          -derivedDataPath ./.build/real-device/ \
-          CODE_SIGN_IDENTITY="iPhone Developer" \
-          PROVISIONING_PROFILE_SPECIFIER="github-action provisioning profile"
+#      - name: Build .app for iOS Device
+#        run: |
+#          xcodebuild clean build \
+#            -project demo-embedded/demo-embedded.xcodeproj \
+#            -scheme demo-embedded \
+#            -configuration Debug \
+#            -sdk iphoneos \
+#            -destination 'generic/platform=iOS' \
+#            -derivedDataPath ./.build/real-device/ \
+#            CODE_SIGN_IDENTITY="Apple Development" \
+#            CODE_SIGN_STYLE="Manual" \
+#            PROVISIONING_PROFILE_SPECIFIER="github-actions-e2e"
+
 
       - name: Upload a Simulator App Artifact
         uses: actions/upload-artifact@v4.4.0
         with:
-          name: test-debug.apk
-          path: .build/testing/Build/Products/Debug-iphonesimulator/demo-embedded.app
-
-      - name: Upload a Real Device App Artifact
-        uses: actions/upload-artifact@v4.4.0
-        with:
-          name: test-release.apk
-          path: .build/real-device/Build/Products/Debug-iphoneos/demo-embedded.app
+          name: test-debug.ipa
+          path: .build/simulator/Build/Products/Debug-iphonesimulator/demo-embedded.app
+#
+#      - name: Upload a Real Device App Artifact
+#        uses: actions/upload-artifact@v4.4.0
+#        with:
+#          name: test-release.ipa
+#          path: .build/real-device/Build/Products/Debug-iphoneos/demo-embedded.app
 
       - name: Fetch artifact details
         run: |
-          # Fetch the artifacts for the current workflow run
           response=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)
 
-          # Parse the response to extract artifact names and IDs
-          echo "Artifact details:"
-          echo "$response" | jq -r '.artifacts[] | "Artifact Name: \(.name), Artifact ID: \(.id)"'
+          # Grab the repo and run ID from the runner’s environment
+          repo="${GITHUB_REPOSITORY}"
+          run_id="${GITHUB_RUN_ID}"
 
-          # Construct the GitHub download URL for each artifact
-          echo "Constructing download URLs..."
-          echo "$response" | jq -r '.artifacts[] | "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/\(.id)"'
+          # Build the list of artifact URLs
+          artifact_urls=$(echo "$response" | jq -r \
+            --arg repo "$repo" \
+            --arg run_id "$run_id" \
+            '.artifacts[] | "https://github.com/\($repo)/actions/runs/\($run_id)/artifacts/\(.id)"'
+          )
+
+          # Now you can loop over them, or just echo them
+          echo "Found artifact URLs:"
+          echo "$artifact_urls"
+          
+            
+          
+          

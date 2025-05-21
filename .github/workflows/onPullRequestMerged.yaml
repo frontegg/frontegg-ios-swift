@@ -10,7 +10,7 @@ jobs:
   createReleasePullRequest:
     if: "!contains(join(github.event.pull_request.labels.*.name, ','), 'Release') && github.event.pull_request.merged == true"
     name: 'Create Release Pull Request'
-    runs-on: 'macos-14-xlarge'
+    runs-on: 'macos-15-xlarge'
     env:
       CHANGELOG_FILE: ./CHANGELOG.md
       CHANGELOG_OLD_FILE: ./CHANGELOG.old.md
