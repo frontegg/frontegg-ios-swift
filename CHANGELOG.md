@@ -1,3 +1,10 @@
+## v1.2.42
+Speedup WKWebView, unify loading indicators and disable refresh loginPage when canceling socialLogin popup
+- Add E2E on simulator
+- Add support for unified loader
+- Fix bugs caused crashes
+Add automatic trigger e2e before each release
+
 ## v1.2.41
 - clear `fe_refresh` cookie on logout 
 
