@@ -1,9 +1,30 @@
 ## v1.2.42
-- Speedup WKWebView, unify loading indicators and disable refresh loginPage when canceling socialLogin popup
-- Add E2E on simulator
-- Add support for unified loader
-- Fix bugs caused crashes
-- Add automatic trigger e2e before each release
+### 🔧 Enhancements
+- **Improved WKWebView Performance**  
+  Optimized the WebView initialization and loading flow for faster render and smoother UX.
+
+- **Unified Loading Indicators**  
+  Standardized the loading experience across login pages and social login flows for consistent UI behavior.
+
+- **Social Login Stability**  
+  Prevented unnecessary reloads of the login page when canceling a social login popup.
+
+- **Unified Loader Support**  
+  Integrated support for a centralized loading mechanism across the SDK.
+
+---
+
+### 🐞 Bug Fixes
+- Fixed various crash scenarios related to view lifecycle and state handling in authentication flows.
+
+---
+
+### 🧪 QA & Automation
+- **Simulator E2E Tests Added**  
+  Extended test coverage with end-to-end tests running on iOS simulators.
+
+- **Pre-Release E2E Trigger**  
+  Introduced automatic E2E test triggers before each release to catch issues
 
 ## v1.2.41
 - clear `fe_refresh` cookie on logout 
