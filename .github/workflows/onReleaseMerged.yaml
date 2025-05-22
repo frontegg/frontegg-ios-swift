@@ -86,7 +86,7 @@ jobs:
         env:
           COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
         run: |
-          pod trunk push FronteggSwift.podspec
+          pod trunk push --allow-warnings FronteggSwift.podspec 
 
       - uses: actions/github-script@0.8.0
         with:
