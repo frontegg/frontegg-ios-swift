@@ -1,3 +1,6 @@
+## v1.2.41
+- clear `fe_refresh` cookie on logout 
+
 ## v1.2.40
 - Updated README.md
 - Clear `frontegg.com` while logout;
