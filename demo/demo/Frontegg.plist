@@ -10,5 +10,7 @@
 	<string>b6adfe4c-d695-4c04-b95f-3ec9fd0c6cca</string>
 	<key>logLevel</key>
 	<string>trace</string>
+	<key>embeddedMode</key>
+    <false/>
 </dict>
 </plist>

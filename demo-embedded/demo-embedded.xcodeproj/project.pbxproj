@@ -10,11 +10,6 @@
 		412401B72AB20B0900AAC758 /* demo_embeddedApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 412401B62AB20B0900AAC758 /* demo_embeddedApp.swift */; };
 		412401BB2AB20B0A00AAC758 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 412401BA2AB20B0A00AAC758 /* Assets.xcassets */; };
 		412401BE2AB20B0A00AAC758 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 412401BD2AB20B0A00AAC758 /* Preview Assets.xcassets */; };
-		412401CD2AB20BF800AAC758 /* TenantsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 412401C72AB20BF800AAC758 /* TenantsTab.swift */; };
-		412401CE2AB20BF800AAC758 /* TenantsList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 412401C82AB20BF800AAC758 /* TenantsList.swift */; };
-		412401CF2AB20BF800AAC758 /* ProfileInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 412401CA2AB20BF800AAC758 /* ProfileInfo.swift */; };
-		412401D02AB20BF800AAC758 /* ProfilePicture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 412401CB2AB20BF800AAC758 /* ProfilePicture.swift */; };
-		412401D12AB20BF800AAC758 /* ProfileTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 412401CC2AB20BF800AAC758 /* ProfileTab.swift */; };
 		412401D32AB20C1000AAC758 /* MyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 412401D22AB20C1000AAC758 /* MyApp.swift */; };
 		412401D52AB20C5600AAC758 /* LoaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 412401D42AB20C5600AAC758 /* LoaderView.swift */; };
 		412401DE2AB2117700AAC758 /* Frontegg.plist in Resources */ = {isa = PBXBuildFile; fileRef = 412401DD2AB2117700AAC758 /* Frontegg.plist */; };
@@ -38,11 +33,6 @@
 		412401B62AB20B0900AAC758 /* demo_embeddedApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = demo_embeddedApp.swift; sourceTree = "<group>"; };
 		412401BA2AB20B0A00AAC758 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		412401BD2AB20B0A00AAC758 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
-		412401C72AB20BF800AAC758 /* TenantsTab.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = TenantsTab.swift; sourceTree = "<group>"; };
-		412401C82AB20BF800AAC758 /* TenantsList.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = TenantsList.swift; sourceTree = "<group>"; };
-		412401CA2AB20BF800AAC758 /* ProfileInfo.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ProfileInfo.swift; sourceTree = "<group>"; };
-		412401CB2AB20BF800AAC758 /* ProfilePicture.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ProfilePicture.swift; sourceTree = "<group>"; };
-		412401CC2AB20BF800AAC758 /* ProfileTab.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ProfileTab.swift; sourceTree = "<group>"; };
 		412401D22AB20C1000AAC758 /* MyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyApp.swift; sourceTree = "<group>"; };
 		412401D42AB20C5600AAC758 /* LoaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoaderView.swift; sourceTree = "<group>"; };
 		412401D92AB20D5C00AAC758 /* frontegg-swift */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = "frontegg-swift"; path = ..; sourceTree = "<group>"; };
@@ -105,8 +95,6 @@
 				41A5FCA52AB4A0500022E386 /* demo-embedded.entitlements */,
 				41AB118B2AB26F7900219FA9 /* Info.plist */,
 				412401DD2AB2117700AAC758 /* Frontegg.plist */,
-				412401C92AB20BF800AAC758 /* profile */,
-				412401C62AB20BF800AAC758 /* tasks */,
 				412401B62AB20B0900AAC758 /* demo_embeddedApp.swift */,
 				412401D22AB20C1000AAC758 /* MyApp.swift */,
 				412401D42AB20C5600AAC758 /* LoaderView.swift */,
@@ -130,25 +118,6 @@
 				412401D92AB20D5C00AAC758 /* frontegg-swift */,
 			);
 			name = Packages;
-			sourceTree = "<group>";
-		};
-		412401C62AB20BF800AAC758 /* tasks */ = {
-			isa = PBXGroup;
-			children = (
-				412401C72AB20BF800AAC758 /* TenantsTab.swift */,
-				412401C82AB20BF800AAC758 /* TenantsList.swift */,
-			);
-			path = tasks;
-			sourceTree = "<group>";
-		};
-		412401C92AB20BF800AAC758 /* profile */ = {
-			isa = PBXGroup;
-			children = (
-				412401CA2AB20BF800AAC758 /* ProfileInfo.swift */,
-				412401CB2AB20BF800AAC758 /* ProfilePicture.swift */,
-				412401CC2AB20BF800AAC758 /* ProfileTab.swift */,
-			);
-			path = profile;
 			sourceTree = "<group>";
 		};
 		412401DA2AB20D6F00AAC758 /* Frameworks */ = {
@@ -259,13 +228,8 @@
 				454AD0852DE8447D008FEA2E /* Theme.swift in Sources */,
 				459BB7A02DE869710025291B /* UserPage.swift in Sources */,
 				459BB79A2DE84C140025291B /* FronteggAppBar.swift in Sources */,
-				412401CF2AB20BF800AAC758 /* ProfileInfo.swift in Sources */,
-				412401CE2AB20BF800AAC758 /* TenantsList.swift in Sources */,
 				459BB79E2DE84EB70025291B /* LoginPage.swift in Sources */,
-				412401D12AB20BF800AAC758 /* ProfileTab.swift in Sources */,
-				412401CD2AB20BF800AAC758 /* TenantsTab.swift in Sources */,
 				412401D32AB20C1000AAC758 /* MyApp.swift in Sources */,
-				412401D02AB20BF800AAC758 /* ProfilePicture.swift in Sources */,
 				412401B72AB20B0900AAC758 /* demo_embeddedApp.swift in Sources */,
 				459BB79C2DE84CDD0025291B /* Footer.swift in Sources */,
 				412401D52AB20C5600AAC758 /* LoaderView.swift in Sources */,
