@@ -18,24 +18,9 @@ struct MyApp: View {
         ZStack {
             /// A view that displays the user's profile and tenants tabs
             if fronteggAuth.isRegional && fronteggAuth.selectedRegion == nil {
-                /// A view that allows the user to select their region
                 SelectRegionView()
             } else if fronteggAuth.isAuthenticated {
-                /// A tab view that displays the user's profile and tenants tabs
-                TabView {
-                    /// A view that displays the user's profile information
-                    ProfileTab()
-                        .tabItem {
-                            Image(systemName: "person.circle")
-                            Text("Profile")
-                        }
-                    /// A view that displays the user's tenants
-                    TenantsTab()
-                        .tabItem {
-                            Image(systemName: "checklist")
-                            Text("Tenants")
-                        }
-                }
+                UserPage()
             } else {
                 if (fronteggAuth.lateInit) {
                     /// A view that allows the user to select their region
@@ -49,14 +34,8 @@ struct MyApp: View {
                             FronteggApp.shared.manualInit(baseUrl: "https://authus.davidantoon.me", cliendId: "d7d07347-2c57-4450-8418-0ec7ee6e096b")
                         }
                     }
-                }else {
-                    /// A view that displays the user's profile and tenants tabs
-                    DefaultLoader().onAppear(){
-                        /// Auto logs in
-                        if(!fronteggAuth.isAuthenticated && !fronteggAuth.initializing){
-                            fronteggAuth.login()
-                        }
-                    }
+                } else {
+                    LoginPage()
                 }
                 
             }
