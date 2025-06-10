@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct SocialLoginOption: Codable {
+public struct SocialLoginOption: Codable, Equatable {
     let type: String
     let active: Bool
     let customised: Bool
@@ -19,16 +19,39 @@ public struct SocialLoginOption: Codable {
     let backendRedirectUrl: String?
     let options: SocialLoginOptions
     let additionalScopes: [String]
+    
+    public static func == (lhs: SocialLoginOption, rhs: SocialLoginOption) -> Bool {
+        return lhs.type == rhs.type &&
+        lhs.active == rhs.active &&
+        lhs.customised == rhs.customised &&
+        lhs.clientId == rhs.clientId &&
+        lhs.redirectUrl == rhs.redirectUrl &&
+        lhs.redirectUrlPattern == rhs.redirectUrlPattern &&
+        lhs.tenantId == rhs.tenantId &&
+        lhs.authorizationUrl == rhs.authorizationUrl &&
+        lhs.backendRedirectUrl == rhs.backendRedirectUrl &&
+        lhs.options == rhs.options &&
+        lhs.additionalScopes == rhs.additionalScopes
+    }
 }
 
-public struct SocialLoginOptions: Codable {
+
+public struct SocialLoginOptions: Codable, Equatable {
     let keyId: String?
     let teamId: String?
     let privateKey: String?
     let verifyEmail: Bool
     let verifyHostedDomain: Bool?
     
-    // Init with default values for non-optional fields
+    public static func == (lhs: SocialLoginOptions, rhs: SocialLoginOptions) -> Bool {
+        return lhs.keyId == rhs.keyId &&
+        lhs.teamId == rhs.teamId &&
+        lhs.privateKey == rhs.privateKey &&
+        lhs.verifyEmail == rhs.verifyEmail &&
+        lhs.verifyHostedDomain == rhs.verifyHostedDomain
+    }
+    
+    // Custom initializer with default values
     init(keyId: String? = nil, teamId: String? = nil, privateKey: String? = nil, verifyEmail: Bool = false, verifyHostedDomain: Bool? = nil) {
         self.keyId = keyId
         self.teamId = teamId
@@ -39,7 +62,7 @@ public struct SocialLoginOptions: Codable {
 }
 
 
-public struct SocialLoginConfig: Codable {
+public struct SocialLoginConfig: Codable, Equatable {
     var apple: SocialLoginOption?
     var google: SocialLoginOption?
     var github: SocialLoginOption?
@@ -81,4 +104,15 @@ public struct SocialLoginConfig: Codable {
         }
         return nil
     }
+    
+    public static func == (lhs: SocialLoginConfig, rhs: SocialLoginConfig) -> Bool {
+        return lhs.apple == rhs.apple &&
+        lhs.google == rhs.google &&
+        lhs.github == rhs.github &&
+        lhs.facebook == rhs.facebook &&
+        lhs.linkedin == rhs.linkedin &&
+        lhs.microsoft == rhs.microsoft &&
+        lhs.slack == rhs.slack
+    }
 }
+

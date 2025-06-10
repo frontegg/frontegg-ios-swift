@@ -839,7 +839,6 @@ public class FronteggAuth: ObservableObject {
         WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: true, window: getRootVC()?.view.window, completionHandler: oauthCallback)
     }
     
-    
     internal func loginWithApple(_ _completion: @escaping FronteggAuth.CompletionHandler)  {
         
         let completion = handleMfaRequired(_completion)
@@ -851,8 +850,18 @@ public class FronteggAuth: ObservableObject {
                     
                     if let appleConfig = socialConfig.apple, appleConfig.active {
                         if #available(iOS 15.0, *), appleConfig.customised, !config.useAsWebAuthenticationForAppleLogin {
-                            AppleAuthenticator.shared.start(completionHandler: completion)
-                        }else {
+                            let delegate: AppleAuthenticator.Delegate  = {result in
+                                switch result {
+                                case .success(let code):
+                                    self.sendApplePostLogin(code, completion: completion)
+                                case .failure (let failure):
+                                    completion(.failure(failure))
+                                }
+                            }
+                            
+                            let appleAuthenticator = AppleAuthenticator(delegate: delegate)
+                            appleAuthenticator.start()
+                        } else {
                             let oauthCallback = self.createOauthCallbackHandler(completion)
                             let url = try await self.generateAppleAuthorizeUrl(config: appleConfig)
                             WebAuthenticator.shared.start(url, ephemeralSession: true, completionHandler: oauthCallback)
@@ -866,7 +875,7 @@ public class FronteggAuth: ObservableObject {
                     
                     if error is FronteggError {
                         completion(.failure(error as! FronteggError))
-                    }else {
+                    } else {
                         self.logger.error(error.localizedDescription)
                         completion(.failure(FronteggError.authError(.unknown)))
                     }
@@ -874,6 +883,31 @@ public class FronteggAuth: ObservableObject {
                 }
             }
             
+        }
+    }
+    
+    func sendApplePostLogin(_ code:String, completion: @escaping FronteggAuth.CompletionHandler) {
+        if #available(iOS 15.0, *) {
+            logger.info("Send apple post login request to obtain session")
+            DispatchQueue.main.async {
+                FronteggAuth.shared.isLoading = true
+            }
+            
+            DispatchQueue.global(qos: .background).async {
+                Task {
+                    do {
+                        let authResponse = try await self.api.postloginAppleNative(code)
+                        await self.setCredentials(accessToken: authResponse.access_token, refreshToken: authResponse.refresh_token)
+                    } catch {
+                        if error is FronteggError {
+                            completion(.failure(error as! FronteggError))
+                        } else {
+                            self.logger.error("Failed to authenticate with apple \(error.localizedDescription)")
+                            completion(.failure(.authError(.failedToAuthenticate)))
+                        }
+                    }
+                }
+            }
         }
     }
     
@@ -1073,6 +1107,7 @@ public class FronteggAuth: ObservableObject {
             // Fallback on earlier versions
         }
     }
+    
     public func registerPasskeys(_ completion: FronteggAuth.ConditionCompletionHandler? = nil) {
         
         if #available(iOS 15.0, *) {
