@@ -12,13 +12,20 @@
 		415C00F129293438007598C8 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 415C00F029293438007598C8 /* Preview Assets.xcassets */; };
 		415C0101292935CC007598C8 /* Frontegg.plist in Resources */ = {isa = PBXBuildFile; fileRef = 415C0100292935CC007598C8 /* Frontegg.plist */; };
 		415C010729293631007598C8 /* MyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415C010429293631007598C8 /* MyApp.swift */; };
-		415C011729293730007598C8 /* ProfileInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415C011129293730007598C8 /* ProfileInfo.swift */; };
-		415C011829293730007598C8 /* ProfilePicture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415C011229293730007598C8 /* ProfilePicture.swift */; };
-		415C011929293730007598C8 /* ProfileTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415C011329293730007598C8 /* ProfileTab.swift */; };
-		415C011A29293730007598C8 /* TenantsList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415C011529293730007598C8 /* TenantsList.swift */; };
-		415C011B29293730007598C8 /* TenantsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415C011629293730007598C8 /* TenantsTab.swift */; };
 		41D0537A294920A800A54D16 /* LoaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41D05379294920A800A54D16 /* LoaderView.swift */; };
 		4564D7002D9ED20F00801B2D /* FronteggSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 4564D6FF2D9ED20F00801B2D /* FronteggSwift */; };
+		45C6D8DF2DE99B6000E681DF /* UserPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45C6D8DE2DE99B6000E681DF /* UserPage.swift */; };
+		45C6D8E02DE99B6000E681DF /* FronteggAppBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45C6D8DB2DE99B6000E681DF /* FronteggAppBar.swift */; };
+		45C6D8E12DE99B6000E681DF /* Footer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45C6D8DA2DE99B6000E681DF /* Footer.swift */; };
+		45C6D8E22DE99B6000E681DF /* LoginPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45C6D8DC2DE99B6000E681DF /* LoginPage.swift */; };
+		45C6D8E32DE99B6000E681DF /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45C6D8DD2DE99B6000E681DF /* Theme.swift */; };
+		45C6D8EE2DE99BA000E681DF /* Manrope-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 45C6D8ED2DE99BA000E681DF /* Manrope-SemiBold.ttf */; };
+		45C6D8EF2DE99BA000E681DF /* Manrope-ExtraBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 45C6D8E82DE99BA000E681DF /* Manrope-ExtraBold.ttf */; };
+		45C6D8F02DE99BA000E681DF /* Manrope-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 45C6D8EB2DE99BA000E681DF /* Manrope-Medium.ttf */; };
+		45C6D8F12DE99BA000E681DF /* Manrope-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 45C6D8EC2DE99BA000E681DF /* Manrope-Regular.ttf */; };
+		45C6D8F22DE99BA000E681DF /* Manrope-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 45C6D8E72DE99BA000E681DF /* Manrope-Bold.ttf */; };
+		45C6D8F32DE99BA000E681DF /* Manrope-Light.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 45C6D8EA2DE99BA000E681DF /* Manrope-Light.ttf */; };
+		45C6D8F42DE99BA000E681DF /* Manrope-ExtraLight.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 45C6D8E92DE99BA000E681DF /* Manrope-ExtraLight.ttf */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,14 +35,22 @@
 		415C00F029293438007598C8 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		415C0100292935CC007598C8 /* Frontegg.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Frontegg.plist; sourceTree = "<group>"; };
 		415C010429293631007598C8 /* MyApp.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MyApp.swift; sourceTree = "<group>"; };
-		415C011129293730007598C8 /* ProfileInfo.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ProfileInfo.swift; sourceTree = "<group>"; };
-		415C011229293730007598C8 /* ProfilePicture.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ProfilePicture.swift; sourceTree = "<group>"; };
-		415C011329293730007598C8 /* ProfileTab.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ProfileTab.swift; sourceTree = "<group>"; };
-		415C011529293730007598C8 /* TenantsList.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = TenantsList.swift; sourceTree = "<group>"; };
-		415C011629293730007598C8 /* TenantsTab.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = TenantsTab.swift; sourceTree = "<group>"; };
 		415C0125292A3ED1007598C8 /* frontegg-swift */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = "frontegg-swift"; path = ..; sourceTree = "<group>"; };
 		41A7329C292D9859004A22D2 /* demo-application-id.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "demo-application-id.entitlements"; sourceTree = "<group>"; };
 		41D05379294920A800A54D16 /* LoaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoaderView.swift; sourceTree = "<group>"; };
+		45C6D8DA2DE99B6000E681DF /* Footer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Footer.swift; sourceTree = "<group>"; };
+		45C6D8DB2DE99B6000E681DF /* FronteggAppBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FronteggAppBar.swift; sourceTree = "<group>"; };
+		45C6D8DC2DE99B6000E681DF /* LoginPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginPage.swift; sourceTree = "<group>"; };
+		45C6D8DD2DE99B6000E681DF /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		45C6D8DE2DE99B6000E681DF /* UserPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserPage.swift; sourceTree = "<group>"; };
+		45C6D8E42DE99B6900E681DF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		45C6D8E72DE99BA000E681DF /* Manrope-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Bold.ttf"; sourceTree = "<group>"; };
+		45C6D8E82DE99BA000E681DF /* Manrope-ExtraBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-ExtraBold.ttf"; sourceTree = "<group>"; };
+		45C6D8E92DE99BA000E681DF /* Manrope-ExtraLight.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-ExtraLight.ttf"; sourceTree = "<group>"; };
+		45C6D8EA2DE99BA000E681DF /* Manrope-Light.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Light.ttf"; sourceTree = "<group>"; };
+		45C6D8EB2DE99BA000E681DF /* Manrope-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Medium.ttf"; sourceTree = "<group>"; };
+		45C6D8EC2DE99BA000E681DF /* Manrope-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Regular.ttf"; sourceTree = "<group>"; };
+		45C6D8ED2DE99BA000E681DF /* Manrope-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-SemiBold.ttf"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -71,9 +86,14 @@
 		415C00E829293437007598C8 /* demo-application-id */ = {
 			isa = PBXGroup;
 			children = (
+				45C6D8E62DE99B8100E681DF /* Fonts */,
+				45C6D8E42DE99B6900E681DF /* Info.plist */,
+				45C6D8DA2DE99B6000E681DF /* Footer.swift */,
+				45C6D8DB2DE99B6000E681DF /* FronteggAppBar.swift */,
+				45C6D8DC2DE99B6000E681DF /* LoginPage.swift */,
+				45C6D8DD2DE99B6000E681DF /* Theme.swift */,
+				45C6D8DE2DE99B6000E681DF /* UserPage.swift */,
 				41A7329C292D9859004A22D2 /* demo-application-id.entitlements */,
-				415C011029293730007598C8 /* profile */,
-				415C011429293730007598C8 /* tasks */,
 				415C010429293631007598C8 /* MyApp.swift */,
 				415C0100292935CC007598C8 /* Frontegg.plist */,
 				415C00E929293437007598C8 /* demo_application_idApp.swift */,
@@ -92,25 +112,6 @@
 			path = "Preview Content";
 			sourceTree = "<group>";
 		};
-		415C011029293730007598C8 /* profile */ = {
-			isa = PBXGroup;
-			children = (
-				415C011129293730007598C8 /* ProfileInfo.swift */,
-				415C011229293730007598C8 /* ProfilePicture.swift */,
-				415C011329293730007598C8 /* ProfileTab.swift */,
-			);
-			path = profile;
-			sourceTree = "<group>";
-		};
-		415C011429293730007598C8 /* tasks */ = {
-			isa = PBXGroup;
-			children = (
-				415C011529293730007598C8 /* TenantsList.swift */,
-				415C011629293730007598C8 /* TenantsTab.swift */,
-			);
-			path = tasks;
-			sourceTree = "<group>";
-		};
 		415C011F29293941007598C8 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
@@ -124,6 +125,20 @@
 			children = (
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		45C6D8E62DE99B8100E681DF /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				45C6D8E72DE99BA000E681DF /* Manrope-Bold.ttf */,
+				45C6D8E82DE99BA000E681DF /* Manrope-ExtraBold.ttf */,
+				45C6D8E92DE99BA000E681DF /* Manrope-ExtraLight.ttf */,
+				45C6D8EA2DE99BA000E681DF /* Manrope-Light.ttf */,
+				45C6D8EB2DE99BA000E681DF /* Manrope-Medium.ttf */,
+				45C6D8EC2DE99BA000E681DF /* Manrope-Regular.ttf */,
+				45C6D8ED2DE99BA000E681DF /* Manrope-SemiBold.ttf */,
+			);
+			path = Fonts;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -192,6 +207,13 @@
 			files = (
 				415C0101292935CC007598C8 /* Frontegg.plist in Resources */,
 				415C00F129293438007598C8 /* Preview Assets.xcassets in Resources */,
+				45C6D8EE2DE99BA000E681DF /* Manrope-SemiBold.ttf in Resources */,
+				45C6D8EF2DE99BA000E681DF /* Manrope-ExtraBold.ttf in Resources */,
+				45C6D8F02DE99BA000E681DF /* Manrope-Medium.ttf in Resources */,
+				45C6D8F12DE99BA000E681DF /* Manrope-Regular.ttf in Resources */,
+				45C6D8F22DE99BA000E681DF /* Manrope-Bold.ttf in Resources */,
+				45C6D8F32DE99BA000E681DF /* Manrope-Light.ttf in Resources */,
+				45C6D8F42DE99BA000E681DF /* Manrope-ExtraLight.ttf in Resources */,
 				415C00EE29293438007598C8 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -203,12 +225,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				415C011A29293730007598C8 /* TenantsList.swift in Sources */,
-				415C011929293730007598C8 /* ProfileTab.swift in Sources */,
-				415C011829293730007598C8 /* ProfilePicture.swift in Sources */,
-				415C011B29293730007598C8 /* TenantsTab.swift in Sources */,
-				415C011729293730007598C8 /* ProfileInfo.swift in Sources */,
 				41D0537A294920A800A54D16 /* LoaderView.swift in Sources */,
+				45C6D8DF2DE99B6000E681DF /* UserPage.swift in Sources */,
+				45C6D8E02DE99B6000E681DF /* FronteggAppBar.swift in Sources */,
+				45C6D8E12DE99B6000E681DF /* Footer.swift in Sources */,
+				45C6D8E22DE99B6000E681DF /* LoginPage.swift in Sources */,
+				45C6D8E32DE99B6000E681DF /* Theme.swift in Sources */,
 				415C00EA29293437007598C8 /* demo_application_idApp.swift in Sources */,
 				415C010729293631007598C8 /* MyApp.swift in Sources */,
 			);
@@ -352,7 +374,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -391,7 +413,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
