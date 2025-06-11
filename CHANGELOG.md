@@ -1,3 +1,8 @@
+## v1.2.44
+- Fix ConfigurationCheck.swift
+- Updated example projects UI
+Fix e2e trigger ref
+
 ## v1.2.43
 - Fix publish workflow
 
