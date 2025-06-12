@@ -22,6 +22,7 @@ public class FronteggApp {
     public var handleLoginWithSSO:Bool = false
     public var handleLoginWithCustomSocialLoginProvider:Bool = true
     public var handleLoginWithSocialProvider:Bool = true
+    public var backgroundColor: UIColor? = nil
 
     
     /* force consent when authenticate with social login */
@@ -57,6 +58,7 @@ public class FronteggApp {
         self.shouldSuggestSavePassword = config.shouldSuggestSavePassword
         self.handleLoginWithSocialProvider = config.handleLoginWithCustomSocialLoginProvider
         self.handleLoginWithCustomSocialLoginProvider = config.handleLoginWithSocialProvider
+        self.backgroundColor = UIColor(named: config.backgroundColor ?? "#FFFFFF") ?? .white
         
         if FronteggApp.clearKeychain(config: config) {
             self.credentialManager.clear()

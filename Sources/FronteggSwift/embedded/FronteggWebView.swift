@@ -71,6 +71,7 @@ public struct FronteggWebView: UIViewRepresentable {
         webView.navigationDelegate = webView;
         webView.uiDelegate = webView
         controller.webView = webView
+        webView.backgroundColor = FronteggApp.shared.backgroundColor
 
 #if compiler(>=5.8) && os(iOS) && DEBUG
 if #available(iOS 16.4, *) {
