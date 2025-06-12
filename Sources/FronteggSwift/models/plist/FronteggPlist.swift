@@ -24,6 +24,7 @@ struct FronteggPlist: Decodable, Equatable {
     let keepUserLoggedInAfterReinstall: Bool
     let useAsWebAuthenticationForAppleLogin: Bool
     let shouldSuggestSavePassword:Bool
+    var backgroundColor: String? = nil
 
     enum CodingKeys: CodingKey {
         case keychainService
@@ -37,6 +38,7 @@ struct FronteggPlist: Decodable, Equatable {
         case keepUserLoggedInAfterReinstall
         case useAsWebAuthenticationForAppleLogin
         case shouldSuggestSavePassword
+        case backgroundColor
     }
 
     init(
@@ -51,7 +53,8 @@ struct FronteggPlist: Decodable, Equatable {
         payload: Payload,
         keepUserLoggedInAfterReinstall: Bool,
         useAsWebAuthenticationForAppleLogin: Bool = true,
-        shouldSuggestSavePassword: Bool = false
+        shouldSuggestSavePassword: Bool = false,
+        backgroundColor: String? = nil
     ) {
         self.keychainService = keychainService
         self.embeddedMode = embeddedMode
@@ -65,6 +68,7 @@ struct FronteggPlist: Decodable, Equatable {
         self.keepUserLoggedInAfterReinstall = keepUserLoggedInAfterReinstall
         self.useAsWebAuthenticationForAppleLogin = useAsWebAuthenticationForAppleLogin
         self.shouldSuggestSavePassword = shouldSuggestSavePassword
+        self.backgroundColor = backgroundColor
     }
 
     init(from decoder: any Decoder) throws {
@@ -102,6 +106,9 @@ struct FronteggPlist: Decodable, Equatable {
         
         let shouldSuggestSavePassword = try container.decodeIfPresent(Bool.self, forKey: .shouldSuggestSavePassword)
         self.shouldSuggestSavePassword = shouldSuggestSavePassword ?? false
+
+        let backgroundColor = try container.decodeIfPresent(String.self, forKey: .backgroundColor)
+        self.backgroundColor = backgroundColor
         
         
         
