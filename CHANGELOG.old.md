@@ -1,3 +1,6 @@
+## v1.2.43
+- Fix publish workflow
+
 ## v1.2.42
 ### 🔧 Enhancements
 - **Improved WKWebView Performance**  
