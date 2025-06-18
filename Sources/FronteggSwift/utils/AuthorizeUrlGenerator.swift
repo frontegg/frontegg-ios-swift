@@ -39,7 +39,6 @@ public class AuthorizeUrlGenerator {
         loginHint: String? = nil,
         loginAction: String? = nil,
         remainCodeVerifier: Bool = false,
-        withoutLogout:Bool = false,
         stepUp:Bool = false,
         maxAge: TimeInterval? = nil
     ) -> (URL, String) {
@@ -64,7 +63,6 @@ public class AuthorizeUrlGenerator {
             URLQueryItem(name: "code_challenge", value: codeChallenge),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
             URLQueryItem(name: "nonce", value: nonce),
-            URLQueryItem(name: "prompt", value: "login"),
         ]
         if stepUp {
             queryParams.append(URLQueryItem(name: "acr_values", value: StepUpConstants.ACR_VALUE))
@@ -72,6 +70,8 @@ public class AuthorizeUrlGenerator {
             if let maxAge = maxAge {
                 queryParams.append(URLQueryItem(name: "max_age", value: String(maxAge)))
             }
+        } else {
+            queryParams.append(URLQueryItem(name: "prompt", value: "login"))
         }
         
         if (loginHint != nil) {
@@ -103,21 +103,7 @@ public class AuthorizeUrlGenerator {
         
         if let url = authorizeUrl.url {
             logger.trace("Generated url: \(url.absoluteString)")
-            
-            if withoutLogout || stepUp {
-                return (url, codeVerifier)
-            }
-            
-            var loginUrl = URLComponents(string: baseUrl)!
-            
-            loginUrl.path = "/oauth/logout"
-            loginUrl.queryItems = [
-                URLQueryItem(name: "post_logout_redirect_uri", value: url.absoluteString),
-            ]
-            
-            logger.trace("Final url: \(loginUrl.url?.absoluteString ?? "")")
-            
-            return (loginUrl.url!, codeVerifier)
+            return (url, codeVerifier);
         } else {
             logger.error("Unkonwn error occured while generating authorize url, baseUrl: \(baseUrl)")
             fatalError(FronteggError.configError(.failedToGenerateAuthorizeURL).localizedDescription)

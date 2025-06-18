@@ -199,7 +199,7 @@ public class FronteggAuth: ObservableObject {
         wv.navigationDelegate = wv;
         wv.uiDelegate = wv;
         
-        let (url, _) = AuthorizeUrlGenerator().generate(remainCodeVerifier:true, withoutLogout: true)
+        let (url, _) = AuthorizeUrlGenerator().generate(remainCodeVerifier:true)
         wv.load(URLRequest(url: url))
         wv.evaluateJavaScript("void(0)", completionHandler: nil)
     }
