@@ -48,6 +48,50 @@ public struct FronteggWebView: UIViewRepresentable {
         let jsScript = WKUserScript(source: "window.FronteggNativeBridgeFunctions = \(jsObject);", injectionTime: .atDocumentStart, forMainFrameOnly: false)
         userContentController.addUserScript(jsScript)
         
+        let labelFixScript = """
+            // Inject this at document start (e.g. via WKUserScript atDocumentStart)
+            (function() {
+              // Fixes aria-labels inside a given root (light DOM or shadowRoot)
+              function fixLabels(root) {
+                root.querySelectorAll('[data-test-id]').forEach(el => {
+                  if (!el.hasAttribute('aria-label')) {
+                    el.setAttribute('aria-label', el.getAttribute('data-test-id'));
+                  }
+                });
+              }
+
+              // Attaches a MutationObserver to a shadowRoot
+              function attachShadowObserver(shadowRoot) {
+                // Run once immediately
+                fixLabels(shadowRoot);
+
+                // Then watch for changes inside the shadow DOM
+                const innerObserver = new MutationObserver(() => fixLabels(shadowRoot));
+                innerObserver.observe(shadowRoot, { childList: true, subtree: true });
+              }
+
+              // Observe the light DOM for when the host element appears
+              const outerObserver = new MutationObserver(() => {
+                const host = document.querySelector('#frontegg-login-box-container-default');
+                if (host && host.shadowRoot && !host.__shadowObserverAttached) {
+                  host.__shadowObserverAttached = true;
+                  attachShadowObserver(host.shadowRoot);
+                }
+              });
+              outerObserver.observe(document.documentElement, { childList: true, subtree: true });
+
+              // Also attempt once on initial DOMContentLoaded
+              document.addEventListener('DOMContentLoaded', () => {
+                const host = document.querySelector('#frontegg-login-box-container-default');
+                if (host && host.shadowRoot) {
+                  attachShadowObserver(host.shadowRoot);
+                }
+              });
+            })();
+        """
+        let accessabilityScript = WKUserScript(source: labelFixScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        userContentController.addUserScript(accessabilityScript)
+        
         
         if #available(iOS 16, *) {
             // Passkeys avaialble in webview
