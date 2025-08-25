@@ -53,7 +53,7 @@ public class AuthorizeUrlGenerator {
         
         var authorizeUrl = URLComponents(string: baseUrl)!
         
-        authorizeUrl.path = "/oauth/authorize"
+        authorizeUrl.path = "\(authorizeUrl.path)/oauth/authorize"
         
         var queryParams = [
             URLQueryItem(name: "redirect_uri", value: redirectUri),
