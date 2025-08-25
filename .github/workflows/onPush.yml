@@ -24,6 +24,8 @@ jobs:
         run: xcodebuild -project demo/demo.xcodeproj -list
       - name: Show eligible build destinations for the "demo"
         run: xcodebuild -project demo/demo.xcodeproj -showdestinations -scheme "demo"
+      - name: Show eligible build destinations for the "demo"
+        run: xcodebuild -project demo/demo.xcodeproj -showdestinations -scheme "demo"
       - name: Build for Testing
         run: xcodebuild CC=clang CPLUSPLUS=clang++ LD=clang LDPLUSPLUS=clang++ build-for-testing -scheme "demo" -project "demo/demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 16 Pro" -configuration "Debug" -enableCodeCoverage "YES"
       - name: Validate lint for lib and spec Cocoapods
