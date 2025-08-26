@@ -1,4 +1,5 @@
 import Foundation
+import Network
 
 class DebugConfigurationChecker {
     
@@ -13,6 +14,13 @@ class DebugConfigurationChecker {
     func runChecks() {
 #if DEBUG
         print("🔍 Running IOS debug configuration checks...")
+        
+        let isAvailable = isInternetAvailableNow()
+        
+        if !isAvailable {
+            print("❌ ERROR: No internet connection. Please connect to the internet to proceed with DEBUG checks.")
+            return
+        }
         
         let regions = getRegionsFromFronteggPlist()
         
@@ -195,16 +203,36 @@ class DebugConfigurationChecker {
         task.resume()
     }
     
+    private func isInternetAvailableNow() -> Bool {
+        let monitor = NWPathMonitor()
+        let queue = DispatchQueue(label: "NetworkCheck")
+        var status = false
+
+        let semaphore = DispatchSemaphore(value: 0)
+
+        monitor.pathUpdateHandler = { path in
+            status = (path.status == .satisfied)
+            semaphore.signal()
+        }
+
+        monitor.start(queue: queue)
+
+        semaphore.wait()
+        monitor.cancel()
+
+        return status
+    }
+    
     private func handleFatalError(_ error: DebugCheckError, regionKey: String?) {
         let regionInfo = regionKey.map { " for region \($0)" } ?? ""
         
         switch error {
         case .invalidRedirectURI(let statusCode, let response):
-            fatalError("❌ ERROR: Redirect URI is invalid\(regionInfo). Status: \(statusCode). Response: \(response)")
+            print("❌ ERROR: Redirect URI is invalid\(regionInfo). Status: \(statusCode). Response: \(response)")
         case .requestFailed(let message):
-            fatalError("❌ ERROR: Request failed\(regionInfo) - \(message)")
+            print("❌ ERROR: Request failed\(regionInfo) - \(message)")
         case .invalidOAuthURL:
-            fatalError("❌ ERROR: Failed to construct OAuth URL\(regionInfo).")
+            print("❌ ERROR: Failed to construct OAuth URL\(regionInfo).")
         }
     }
     
