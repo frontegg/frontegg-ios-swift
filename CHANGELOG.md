@@ -1,3 +1,8 @@
+## v1.2.46
+- Modified `generateRedirectUri` method. It includes `path` now.
+- Modified `AuthorizeUrlGenerator.generate` method.  It includes `path` now.
+- Check Internet connection before run DEBUG checks
+
 ## v1.2.45
 - Reduce number of full page load when loading login page
 
