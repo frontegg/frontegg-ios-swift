@@ -249,7 +249,7 @@ public class FronteggAuth: ObservableObject {
             let user = try await self.api.me(accessToken: accessToken)
             
             if let config = try? PlistHelper.fronteggConfig(), config.enableOfflineMode {
-                try self.credentialManager.saveOfflineUser(user: user)
+                self.credentialManager.saveOfflineUser(user: user)
             }
             
             DispatchQueue.main.sync {
@@ -442,6 +442,7 @@ public class FronteggAuth: ObservableObject {
     ///   - If `deleteCookieForHostOnly == true`, restricts deletion to cookies whose domain matches `baseUrl`'s host.
     ///   - If `deleteCookieForHostOnly == false`, deletes any cookie whose name matches the regex (domain-agnostic).
     /// - Awaited to guarantee that deletion completes before continuing logout flow.
+    @MainActor
     func clearCookie() async {
         
         var deleteCookieForHostOnly: Bool = true
@@ -527,7 +528,7 @@ public class FronteggAuth: ObservableObject {
         
         var enableOfflineMode: Bool = false
         if let config = try? PlistHelper.fronteggConfig() {
-            enableOfflineMode = config.enableOfflineMode ?? false
+            enableOfflineMode = config.enableOfflineMode
         }
         
         guard let refreshToken = self.refreshToken else {
@@ -541,7 +542,7 @@ public class FronteggAuth: ObservableObject {
             
             self.lastAttemptReason = .noNetwork
             if(attempts > 2){
-                let offlineUser = try? credentialManager.getOfflineUser()
+                let offlineUser = credentialManager.getOfflineUser()
                 DispatchQueue.main.sync {
                     if enableOfflineMode {
                         self.user = self.user ?? offlineUser
@@ -973,11 +974,11 @@ public class FronteggAuth: ObservableObject {
                     
                     if let appleConfig = socialConfig.apple, appleConfig.active {
                         if #available(iOS 15.0, *), appleConfig.customised, !config.useAsWebAuthenticationForAppleLogin {
-                            AppleAuthenticator.shared.start(completionHandler: completion)
+                            await AppleAuthenticator.shared.start(completionHandler: completion)
                         }else {
                             let oauthCallback = self.createOauthCallbackHandler(completion)
                             let url = try await self.generateAppleAuthorizeUrl(config: appleConfig)
-                            WebAuthenticator.shared.start(url, ephemeralSession: true, completionHandler: oauthCallback)
+                            await WebAuthenticator.shared.start(url, ephemeralSession: true, completionHandler: oauthCallback)
                             
                         }
                     } else {
