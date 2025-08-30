@@ -363,49 +363,147 @@ public class FronteggAuth: ObservableObject {
         refreshTokenDispatch = nil
     }
     
-    public func logout(clearCookie: Bool = true, _ _completion: FronteggAuth.LogoutHandler? = nil) {
-        self.isLoading = true
-        
-        let completion = _completion ?? { res in }
-        
-        DispatchQueue.global(qos: .userInitiated).async {
-            Task {
-                await self.api.logout(accessToken: self.accessToken, refreshToken: self.refreshToken)
+    public func logout(clearCookie: Bool = true, _ completion: FronteggAuth.LogoutHandler? = nil) {
+        Task { @MainActor in
+            
+            self.isLoading = true
+            defer { self.isLoading = false }
+            
+            do {
+                try await self.api.logout(accessToken: self.accessToken, refreshToken: self.refreshToken)
+            } catch {
+                self.logger.warning("API logout failed: \(error.localizedDescription). Proceeding with local cleanup.")
             }
-            DispatchQueue.main.sync {
-                self.credentialManager.clear()
-                if clearCookie {
-                    self.clearCookie()
-                }
-                self.isAuthenticated = false
-                self.user = nil
-                self.accessToken = nil
-                self.refreshToken = nil
-                self.initializing = false
-                self.appLink = false
-                
-                // isLoading must be at the last bottom
-                self.isLoading = false
-                completion(.success(true));
+
+            self.credentialManager.clear()
+            if clearCookie {
+                await self.clearCookie()
+            }
+
+            self.isAuthenticated = false
+            self.user = nil
+            self.accessToken = nil
+            self.refreshToken = nil
+            self.initializing = false
+            self.appLink = false
+
+            completion?(.success(true))
+        }
+
+    }
+    
+    /// Returns true if `domain` matches `host`, supporting leading dot and subdomains.
+    @inline(__always)
+    func cookieDomain(_ domain: String, matches host: String) -> Bool {
+        let cd = domain.hasPrefix(".") ? String(domain.dropFirst()) : domain
+        return host == cd || host.hasSuffix("." + cd)
+    }
+    /// Builds a regex-based name matcher using `self.cookieRegex`.
+    /// Falls back to `^fe_refresh` if empty or invalid.
+    func makeCookieNameMatcher() -> (String) -> Bool {
+        let fallback = "^fe_refresh"
+        
+        var cookieRegex: String?
+        if let config = try? PlistHelper.fronteggConfig() {
+            cookieRegex = config.cookieRegex
+        }
+        
+        let pattern = (cookieRegex != nil && cookieRegex?.isEmpty == false) ? cookieRegex! : fallback
+        do {
+            let re = try NSRegularExpression(pattern: pattern)
+            return { name in
+                let range = NSRange(name.startIndex..<name.endIndex, in: name)
+                return re.firstMatch(in: name, range: range) != nil
+            }
+        } catch {
+            self.logger.warning("Invalid cookie regex '\(pattern)'. Using fallback '\(fallback)'. Error: \(error.localizedDescription)")
+            let re = try! NSRegularExpression(pattern: fallback)
+            return { name in
+                let range = NSRange(name.startIndex..<name.endIndex, in: name)
+                return re.firstMatch(in: name, range: range) != nil
             }
         }
     }
     
-    private func clearCookie() {
-        guard let host = URL(string: baseUrl)?.host else {
-            logger.warning("Invalid baseUrl: cannot extract host")
-            return
+    
+    /// Deletes cookies that match the configured name regex and (optionally) the current host.
+    /// - Behavior:
+    ///   - If `deleteCookieForHostOnly == true`, restricts deletion to cookies whose domain matches `baseUrl`'s host.
+    ///   - If `deleteCookieForHostOnly == false`, deletes any cookie whose name matches the regex (domain-agnostic).
+    /// - Awaited to guarantee that deletion completes before continuing logout flow.
+    func clearCookie() async {
+        
+        var deleteCookieForHostOnly: Bool = true
+        var cookieRegex: String?
+        if let config = try? PlistHelper.fronteggConfig() {
+            deleteCookieForHostOnly = config.deleteCookieForHostOnly
+            cookieRegex = config.cookieRegex
         }
         
-        let cookieStore = WKWebsiteDataStore.default().httpCookieStore
-        cookieStore.getAllCookies { cookies in
-            for cookie in cookies {
-                if cookie.name.hasPrefix("fe_refresh") && cookie.domain.contains(host) {
-                    cookieStore.delete(cookie)
-                    self.logger.info("Deleted cookie: \(cookie.name) from \(cookie.domain)")
+        let restrictToHost = deleteCookieForHostOnly
+
+        // Resolve host only when needed
+        let host: String? = {
+            guard restrictToHost else { return nil }
+            guard let h = URL(string: baseUrl)?.host else {
+                logger.warning("Invalid baseUrl; cannot resolve host. Proceeding without domain restriction.")
+                return nil
+            }
+            return h
+        }()
+
+        let store = WKWebsiteDataStore.default().httpCookieStore
+
+        // Fetch all cookies
+        let cookies: [HTTPCookie] = await withCheckedContinuation { (cont: CheckedContinuation<[HTTPCookie], Never>) in
+            store.getAllCookies { cont.resume(returning: $0) }
+        }
+
+        // Deduplicate defensively (name+domain+path is the natural identity)
+        let uniqueCookies: [HTTPCookie] = {
+            var seen = Set<String>()
+            return cookies.filter { c in
+                let key = "\(c.name)|\(c.domain)|\(c.path)"
+                return seen.insert(key).inserted
+            }
+        }()
+
+        let nameMatches = makeCookieNameMatcher()
+
+        // Compose predicate
+        let shouldDelete: (HTTPCookie) -> Bool = { cookie in
+            guard nameMatches(cookie.name) else { return false }
+            guard let h = host else { return true } // no domain restriction
+            let match = self.cookieDomain(cookie.domain, matches: h)
+            if !match {
+                self.logger.debug("Skipping cookie due to domain mismatch: \(cookie.name) @ \(cookie.domain) (host: \(h))")
+            }
+            return match
+        }
+
+        let targets = uniqueCookies.filter(shouldDelete)
+
+        guard targets.isEmpty == false else {
+            self.logger.debug("No cookies matched for deletion. regex: \(cookieRegex ?? "^fe_refresh"), restrictToHost: \(restrictToHost), host: \(host ?? "n/a")")
+            return
+        }
+
+        // Delete sequentially (deterministic, avoids overloading store). If you prefer parallel, see comment below.
+        var deleted = 0
+        let start = Date()
+
+        for cookie in targets {
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                store.delete(cookie) {
+                    deleted += 1
+                    self.logger.info("Deleted cookie [\(deleted)/\(targets.count)]: \(cookie.name) @ \(cookie.domain)\(cookie.path)")
+                    cont.resume()
                 }
             }
         }
+
+        let elapsed = String(format: "%.2fs", Date().timeIntervalSince(start))
+        self.logger.info("Cookie cleanup completed. Deleted \(deleted)/\(targets.count) cookies in \(elapsed).")
     }
     
     public func logout() {
