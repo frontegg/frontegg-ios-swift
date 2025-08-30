@@ -11,6 +11,7 @@ public enum KeychainKeys: String {
     case refreshToken = "refreshToken"
     case codeVerifier = "fe_codeVerifier"
     case region = "fe_region"
+    case userInfo = "user_me"
 }
 
 
@@ -101,6 +102,21 @@ public class CredentialManager {
         return nil
     }
     
+    func delete(key: String) {
+        let query = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: serviceKey ?? "frontegg",
+            kSecAttrAccount: key
+        ] as [CFString : Any] as CFDictionary
+
+        let status = SecItemDelete(query)
+        if status != errSecSuccess && status != errSecItemNotFound {
+            logger.error("Failed to delete key \(key) from keychain, errSec: \(status)")
+        } else {
+            logger.info("Deleted key \(key) from keychain")
+        }
+    }
+    
     func clear() {
         logger.trace("Clearing keychain frontegg data")
         let query = [
@@ -129,5 +145,37 @@ public class CredentialManager {
     
     static func getSelectedRegion() -> String? {
         return UserDefaults.standard.string(forKey: KeychainKeys.region.rawValue)
+    }
+    
+    
+    
+    func saveOfflineUser(user: User?) {
+        let key = KeychainKeys.userInfo.rawValue
+        
+        guard let user = user else {
+            logger.trace("Removing offline user from keychain")
+            delete(key: key)
+            return
+        }
+        
+        do {
+            let data = try JSONEncoder().encode(user)
+            guard let json = String(data: data, encoding: .utf8) else {
+                logger.error("Failed to encode User to UTF-8 string")
+                return
+            }
+            try save(key: key, value: json)
+        } catch {
+            logger.error("Failed to save offline user: \(error)")
+        }
+    }
+    func getOfflineUser() -> User? {
+        
+        if let userInfo = try? self.get(key: KeychainKeys.userInfo.rawValue),
+           let data = userInfo.data(using: .utf8),
+           let user = try? JSONDecoder().decode(User.self, from: data){
+            return user
+        }
+        return nil
     }
 }

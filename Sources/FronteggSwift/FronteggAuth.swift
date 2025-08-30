@@ -18,6 +18,12 @@ extension UIWindow {
     }
 }
 
+public enum AttemptReasonType {
+    case unknown
+    case noNetwork
+}
+
+
 public class FronteggAuth: ObservableObject {
     @Published public var accessToken: String?
     @Published public var refreshToken: String?
@@ -43,6 +49,7 @@ public class FronteggAuth: ObservableObject {
     public var applicationId: String? = nil
     public var pendingAppLink: URL? = nil
     public var loginHint: String? = nil
+    public var lastAttemptReason: AttemptReasonType? = nil
     
     
     
@@ -237,9 +244,13 @@ public class FronteggAuth: ObservableObject {
             try self.credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: refreshToken)
             try self.credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: accessToken)
             
+            
             let decode = try JWTHelper.decode(jwtToken: accessToken)
             let user = try await self.api.me(accessToken: accessToken)
             
+            if let config = try? PlistHelper.fronteggConfig(), config.enableOfflineMode {
+                try self.credentialManager.saveOfflineUser(user: user)
+            }
             
             DispatchQueue.main.sync {
                 self.refreshToken = refreshToken
@@ -514,6 +525,11 @@ public class FronteggAuth: ObservableObject {
     
     public func refreshTokenIfNeeded(attempts: Int = 0) async -> Bool {
         
+        var enableOfflineMode: Bool = false
+        if let config = try? PlistHelper.fronteggConfig() {
+            enableOfflineMode = config.enableOfflineMode ?? false
+        }
+        
         guard let refreshToken = self.refreshToken else {
             self.logger.info("No refresh token found")
             return false
@@ -523,16 +539,18 @@ public class FronteggAuth: ObservableObject {
         guard await NetworkStatusMonitor.isActive else {
             self.logger.info("Refresh rescheduled due to inactive internet")
             
-            
-            if(attempts > 5){
+            self.lastAttemptReason = .noNetwork
+            if(attempts > 2){
+                let offlineUser = try? credentialManager.getOfflineUser()
                 DispatchQueue.main.sync {
+                    if enableOfflineMode {
+                        self.user = self.user ?? offlineUser
+                    }
                     self.initializing = false
                     self.isAuthenticated = false
-                    self.refreshingToken = false
-                    // isLoading must be at the last bottom
                     self.isLoading = false
                 }
-                scheduleTokenRefresh(offset: 10, attempts: attempts + 1)
+                scheduleTokenRefresh(offset: 2, attempts: attempts + 1)
             }else {
                 // attempt = 0 to prevent abandon refresh token due to network errors
                 scheduleTokenRefresh(offset: 2, attempts: attempts + 1)
@@ -540,7 +558,9 @@ public class FronteggAuth: ObservableObject {
             return false
         }
         
-        if (attempts > 10) {
+        if enableOfflineMode && self.lastAttemptReason == .noNetwork {
+            self.logger.info("refresh tokening after network reconnected, offline mode enabled")
+        } else if (attempts > 10) {
             self.logger.info("refresh token attemps exceeded, logging out")
             self.credentialManager.clear()
             DispatchQueue.main.sync {
@@ -555,6 +575,8 @@ public class FronteggAuth: ObservableObject {
             return false
         }
         
+        // clear value
+        self.lastAttemptReason = nil
         
         
         if(self.refreshingToken){
@@ -598,10 +620,12 @@ public class FronteggAuth: ObservableObject {
             default:
                 self.logger.info("Refresh rescheduled due to unknown error \(error.localizedDescription)")
                 scheduleTokenRefresh(offset: 1, attempts: attempts + 1)
+                self.lastAttemptReason = .unknown
             }
         } catch {
             self.logger.info("Refresh rescheduled due to unknown error \(error.localizedDescription)")
             scheduleTokenRefresh(offset: 1, attempts: attempts + 1)
+            self.lastAttemptReason = .unknown
         }
         return false
         
