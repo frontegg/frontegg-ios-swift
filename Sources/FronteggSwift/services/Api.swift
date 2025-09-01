@@ -287,7 +287,7 @@ public class Api {
             }else {
                 self.logger.info("Already logged out")
             }
-        }catch {
+        } catch {
             self.logger.info("Uknonwn error when try to logout: \(error)")
         }
     }

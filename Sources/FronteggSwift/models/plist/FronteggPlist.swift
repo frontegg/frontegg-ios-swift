@@ -25,6 +25,9 @@ struct FronteggPlist: Decodable, Equatable {
     let useAsWebAuthenticationForAppleLogin: Bool
     let shouldSuggestSavePassword:Bool
     var backgroundColor: String? = nil
+    var cookieRegex: String? = nil
+    let deleteCookieForHostOnly: Bool
+    let enableOfflineMode: Bool
 
     enum CodingKeys: CodingKey {
         case keychainService
@@ -39,6 +42,9 @@ struct FronteggPlist: Decodable, Equatable {
         case useAsWebAuthenticationForAppleLogin
         case shouldSuggestSavePassword
         case backgroundColor
+        case cookieRegex
+        case deleteCookieForHostOnly
+        case enableOfflineMode
     }
 
     init(
@@ -54,7 +60,10 @@ struct FronteggPlist: Decodable, Equatable {
         keepUserLoggedInAfterReinstall: Bool,
         useAsWebAuthenticationForAppleLogin: Bool = true,
         shouldSuggestSavePassword: Bool = false,
-        backgroundColor: String? = nil
+        backgroundColor: String? = nil,
+        cookieRegex: String? = nil,
+        deleteCookieForHostOnly: Bool = true,
+        enableOfflineMode:Bool = false
     ) {
         self.keychainService = keychainService
         self.embeddedMode = embeddedMode
@@ -69,6 +78,9 @@ struct FronteggPlist: Decodable, Equatable {
         self.useAsWebAuthenticationForAppleLogin = useAsWebAuthenticationForAppleLogin
         self.shouldSuggestSavePassword = shouldSuggestSavePassword
         self.backgroundColor = backgroundColor
+        self.cookieRegex = cookieRegex
+        self.deleteCookieForHostOnly = deleteCookieForHostOnly
+        self.enableOfflineMode = enableOfflineMode
     }
 
     init(from decoder: any Decoder) throws {
@@ -109,6 +121,15 @@ struct FronteggPlist: Decodable, Equatable {
 
         let backgroundColor = try container.decodeIfPresent(String.self, forKey: .backgroundColor)
         self.backgroundColor = backgroundColor
+        
+        let cookieRegex = try container.decodeIfPresent(String.self, forKey: .cookieRegex)
+        self.cookieRegex = cookieRegex
+        
+        let deleteCookieForHostOnly = try container.decodeIfPresent(Bool.self, forKey: .deleteCookieForHostOnly)
+        self.deleteCookieForHostOnly = deleteCookieForHostOnly ?? true
+        
+        let enableOfflineMode = try container.decodeIfPresent(Bool.self, forKey: .enableOfflineMode)
+        self.enableOfflineMode = enableOfflineMode ?? false
         
         
         

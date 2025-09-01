@@ -246,7 +246,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         }
         
         DispatchQueue.global(qos: .userInitiated).async {
-            Task {
+            Task { @MainActor in
                 FronteggAuth.shared.handleHostedLoginCallback(code, savedCodeVerifier ) { res in
                     switch (res) {
                     case .success(_):
