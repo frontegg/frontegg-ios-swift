@@ -58,9 +58,20 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
     }
     
     
+    private func getFromAction() -> SocialLoginAction {
+        
+        if let url = self.webView?.url,
+           url.absoluteString.contains("/oauth/account/sign-up"){
+        
+            return .signUp
+            
+        }
+        return .login
+    }
+    
     private func handleAction(_ message: HostedLoginMessage) {
         switch (message.action) {
-            
+        
         case "getPasskey" , "createPasskey":
             guard let callbackId = message.callbackId else {
                 return
@@ -88,6 +99,8 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
         case "loginWithSocialLogin":
             FronteggAuth.shared.loginWithSocialLogin(socialLoginUrl: message.payload, self.socialLoginHandler)
         case "loginWithSocialLoginProvider":
+            
+            let formAction = self.getFromAction()
             FronteggAuth.shared.directLoginAction(window: nil,
                                                   type: "social-login",
                                                   data: message.payload,
@@ -96,8 +109,11 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
                                                   additionalQueryParams: [
                                                     "prompt":"consent"
                                                   ],
-                                                  remainCodeVerifier: true)
+                                                  remainCodeVerifier: true,
+                                                  action: formAction
+            )
         case "loginWithCustomSocialLoginProvider":
+            let formAction = self.getFromAction()
             FronteggAuth.shared.directLoginAction(window: nil,
                                                   type: "custom-social-login",
                                                   data: message.payload,
@@ -106,7 +122,8 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
                                                   additionalQueryParams: [
                                                     "prompt":"consent"
                                                   ],
-                                                  remainCodeVerifier: true)
+                                                  remainCodeVerifier: true,
+                                                  action: formAction)
         case "suggestSavePassword":
             guard let data = try? JSONSerialization.jsonObject(with: Data(message.payload.utf8), options: []) as? [String: String],
                   let email = data["email"],

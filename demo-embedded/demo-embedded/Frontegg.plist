@@ -14,5 +14,7 @@
 	<string>b6adfe4c-d695-4c04-b95f-3ec9fd0c6cca</string>
 	<key>logLevel</key>
 	<string>trace</string>
+	<key>applicationId</key>
+	<string>51e9b0d6-6f07-4989-9ce1-2c0b0ad0791f</string>
 </dict>
 </plist>

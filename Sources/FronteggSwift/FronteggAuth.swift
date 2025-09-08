@@ -58,10 +58,10 @@ public class FronteggAuth: ObservableObject {
     }
     
     private let logger = getLogger("FronteggAuth")
-    private let credentialManager: CredentialManager
+    public let credentialManager: CredentialManager
+    public var api: Api
     private var multiFactorAuthenticator: MultiFactorAuthenticator
     private var stepUpAuthenticator: StepUpAuthenticator
-    public var api: Api
     private var subscribers = Set<AnyCancellable>()
     private var refreshTokenDispatch: DispatchWorkItem?
     var loginCompletion: CompletionHandler? = nil
@@ -385,22 +385,22 @@ public class FronteggAuth: ObservableObject {
             } catch {
                 self.logger.warning("API logout failed: \(error.localizedDescription). Proceeding with local cleanup.")
             }
-
+            
             self.credentialManager.clear()
             if clearCookie {
                 await self.clearCookie()
             }
-
+            
             self.isAuthenticated = false
             self.user = nil
             self.accessToken = nil
             self.refreshToken = nil
             self.initializing = false
             self.appLink = false
-
+            
             completion?(.success(true))
         }
-
+        
     }
     
     /// Returns true if `domain` matches `host`, supporting leading dot and subdomains.
@@ -453,7 +453,7 @@ public class FronteggAuth: ObservableObject {
         }
         
         let restrictToHost = deleteCookieForHostOnly
-
+        
         // Resolve host only when needed
         let host: String? = {
             guard restrictToHost else { return nil }
@@ -463,14 +463,14 @@ public class FronteggAuth: ObservableObject {
             }
             return h
         }()
-
+        
         let store = WKWebsiteDataStore.default().httpCookieStore
-
+        
         // Fetch all cookies
         let cookies: [HTTPCookie] = await withCheckedContinuation { (cont: CheckedContinuation<[HTTPCookie], Never>) in
             store.getAllCookies { cont.resume(returning: $0) }
         }
-
+        
         // Deduplicate defensively (name+domain+path is the natural identity)
         let uniqueCookies: [HTTPCookie] = {
             var seen = Set<String>()
@@ -479,9 +479,9 @@ public class FronteggAuth: ObservableObject {
                 return seen.insert(key).inserted
             }
         }()
-
+        
         let nameMatches = makeCookieNameMatcher()
-
+        
         // Compose predicate
         let shouldDelete: (HTTPCookie) -> Bool = { cookie in
             guard nameMatches(cookie.name) else { return false }
@@ -492,18 +492,18 @@ public class FronteggAuth: ObservableObject {
             }
             return match
         }
-
+        
         let targets = uniqueCookies.filter(shouldDelete)
-
+        
         guard targets.isEmpty == false else {
             self.logger.debug("No cookies matched for deletion. regex: \(cookieRegex ?? "^fe_refresh"), restrictToHost: \(restrictToHost), host: \(host ?? "n/a")")
             return
         }
-
+        
         // Delete sequentially (deterministic, avoids overloading store). If you prefer parallel, see comment below.
         var deleted = 0
         let start = Date()
-
+        
         for cookie in targets {
             await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
                 store.delete(cookie) {
@@ -513,7 +513,7 @@ public class FronteggAuth: ObservableObject {
                 }
             }
         }
-
+        
         let elapsed = String(format: "%.2fs", Date().timeIntervalSince(start))
         self.logger.info("Cookie cleanup completed. Deleted \(deleted)/\(targets.count) cookies in \(elapsed).")
     }
@@ -880,7 +880,9 @@ public class FronteggAuth: ObservableObject {
         ephemeralSession: Bool? = true,
         _completion: FronteggAuth.CompletionHandler? = nil,
         additionalQueryParams: [String: Any]? = nil,
-        remainCodeVerifier: Bool = false) {
+        remainCodeVerifier: Bool = false,
+        action: SocialLoginAction = SocialLoginAction.login,
+    ) {
             
             
             let completion = _completion ?? { res in
@@ -889,6 +891,38 @@ public class FronteggAuth: ObservableObject {
             
             if(type == "social-login" && data == "apple") {
                 self.loginWithApple(completion)
+                return
+            }
+            
+            if let provider = SocialLoginProvider(rawValue: data), type == "social-login" {
+                let oauthCallback: (URL?, Error?) -> Void = { callbackURL, error in
+                    if let error = error {
+                        print("❌ Error: \(error)")
+                    } else if let callbackURL = callbackURL {
+                        print("🔹 URL: \(callbackURL)")
+                    } else {
+                        print("ℹ️ Callback invoked with no URL and no error")
+                    }
+                }
+                
+                let task: Task<Void, Never> = Task<Void, Never> {
+                    // Make the result type explicit to help inference
+                    let url: URL? = try? await SocialLoginUrlGenerator.shared
+                        .authorizeURL(for: provider, action: action)
+                    
+                    print("url: \(String(describing: url))")
+                    
+                    guard let authURL = url else {
+                        print("❌ Failed to generate auth URL")
+                        return
+                    }
+                    
+                    WebAuthenticator.shared.start(
+                        authURL,
+                        ephemeralSession: ephemeralSession ?? true,
+                        completionHandler: oauthCallback
+                    )
+                }
                 return
             }
             
@@ -1130,40 +1164,25 @@ public class FronteggAuth: ObservableObject {
             return false;
         }
         
-//        if(self.embeddedMode){
-            self.pendingAppLink = url
-            self.webLoading = true
-            
-            
-            let loginModal = EmbeddedLoginModal(parentVC: rootVC)
-            let hostingController = UIHostingController(rootView: loginModal)
-            hostingController.modalPresentationStyle = .fullScreen
-            
-            let presented = rootVC.presentedViewController
-            if presented is UIHostingController<EmbeddedLoginModal> {
-                rootVC.presentedViewController?.dismiss(animated: false)
-            }
-            rootVC.present(hostingController, animated: false, completion: nil)
+        if(handleSocialLoginCallback(url)){
             return true;
-//        }
-//        
-//        self.appLink = true
-//        
-//        
-//        let oauthCallback = createOauthCallbackHandler() { res in
-//            
-//            switch (res) {
-//            case .success(let user) :
-//                self.logger.trace("User \(user.id)")
-//            case .failure(let error) :
-//                self.logger.trace("Error \(error)")
-//            }
-//        }
-//        
-//        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-//            self.appLink = false
-//            WebAuthenticator.shared.start(url, completionHandler: oauthCallback)
-//        }
+        }
+        
+        
+        self.pendingAppLink = url
+        self.webLoading = true
+        
+        
+        let loginModal = EmbeddedLoginModal(parentVC: rootVC)
+        let hostingController = UIHostingController(rootView: loginModal)
+        hostingController.modalPresentationStyle = .fullScreen
+        
+        let presented = rootVC.presentedViewController
+        if presented is UIHostingController<EmbeddedLoginModal> {
+            rootVC.presentedViewController?.dismiss(animated: false)
+        }
+        rootVC.present(hostingController, animated: false, completion: nil)
+        
         return true
     }
     
@@ -1205,6 +1224,56 @@ public class FronteggAuth: ObservableObject {
         }
     }
     
+    
+    public func handleSocialLoginCallback(_ url: URL) -> Bool {
+        guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return false }
+
+        // 1) Host must match Frontegg base URL host
+        guard let allowedHost = URL(string: FronteggAuth.shared.baseUrl)?.host,
+              comps.host == allowedHost else { return false }
+
+        // 2) Path: /oauth/account/redirect/ios/{bundleId}/{provider}
+        let prefix = "/oauth/account/redirect/ios/"
+        let path = comps.path
+        guard path.hasPrefix(prefix) else { return false }
+
+        let bundleId = FronteggApp.shared.bundleIdentifier
+        guard !bundleId.isEmpty else { return false }
+
+        let tail = path.dropFirst(prefix.count)                // "{bundleId}/{provider}[...optional]"
+        let segments = tail.split(separator: "/").map(String.init)
+        guard segments.count >= 2, segments[0] == bundleId else { return false }
+        let provider = segments[1].lowercased()
+
+        // Helpers
+        let items = comps.queryItems ?? []
+        func q(_ name: String) -> String? { items.first { $0.name == name }?.value }
+
+        // 4) Extract all supported params like the TS client
+        var queryParams: [String: String] = [:]
+
+        if let code = q("code"), !code.isEmpty {
+            queryParams["code"] = code
+        }
+
+        if let idToken = q("id_token"), !idToken.isEmpty {
+            queryParams["id_token"] = idToken
+        }
+
+        let redirectUri = SocialLoginUrlGenerator.shared.defaultRedirectUri(provider: provider)
+        queryParams["redirectUri"] = redirectUri
+        
+
+        // state (also used to fetch the PKCE verifier, if you store per-state)
+        if let state = q("state"), !state.isEmpty {
+            queryParams["state"] = state
+
+        }
+        
+        
+        print("\(provider): \(queryParams)")
+        return true
+    }
     
     
     public func requestAuthorizeAsync(refreshToken: String, deviceTokenCookie: String? = nil) async throws -> User {

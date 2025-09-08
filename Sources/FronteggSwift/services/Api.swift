@@ -322,10 +322,6 @@ public class Api {
     }
     
     
-    internal func webauthnDevices() {
-        
-    }
-    
     internal func preloginWebauthn() async throws -> WebauthnPreloginResponse {
         self.logger.info("Start webauthn prelogin")
         let (data, response) = try await FronteggAuth.shared.api.postRequest(path: "frontegg/identity/resources/auth/v1/webauthn/prelogin", body: [:])
