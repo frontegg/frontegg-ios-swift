@@ -52,6 +52,9 @@ public class FronteggAuth: ObservableObject {
     public var lastAttemptReason: AttemptReasonType? = nil
     
     
+    weak var webview: CustomWebView? = nil
+    
+    
     
     public static var shared: FronteggAuth {
         return FronteggApp.shared.auth
@@ -1164,12 +1167,19 @@ public class FronteggAuth: ObservableObject {
             return false;
         }
         
-        if(handleSocialLoginCallback(url)){
-            return true;
+        if let socialLoginUrl = handleSocialLoginCallback(url){
+            print("socialLoginUrl: \(socialLoginUrl.absoluteString)")
+            
+            if let webView = self.webview {
+                let request = URLRequest(url: socialLoginUrl, cachePolicy: .reloadRevalidatingCacheData)
+                webView.load(request)
+                return true
+            }else {
+                self.pendingAppLink = socialLoginUrl
+            }
+        }else {
+            self.pendingAppLink = url
         }
-        
-        
-        self.pendingAppLink = url
         self.webLoading = true
         
         
@@ -1225,25 +1235,24 @@ public class FronteggAuth: ObservableObject {
     }
     
     
-    public func handleSocialLoginCallback(_ url: URL) -> Bool {
-        guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return false }
+    public func handleSocialLoginCallback(_ url: URL) -> URL? {
+        guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
 
         // 1) Host must match Frontegg base URL host
         guard let allowedHost = URL(string: FronteggAuth.shared.baseUrl)?.host,
-              comps.host == allowedHost else { return false }
+              comps.host == allowedHost else { return nil }
 
         // 2) Path: /oauth/account/redirect/ios/{bundleId}/{provider}
         let prefix = "/oauth/account/redirect/ios/"
         let path = comps.path
-        guard path.hasPrefix(prefix) else { return false }
+        guard path.hasPrefix(prefix) else { return nil }
 
         let bundleId = FronteggApp.shared.bundleIdentifier
-        guard !bundleId.isEmpty else { return false }
+        guard !bundleId.isEmpty else { return nil }
 
         let tail = path.dropFirst(prefix.count)                // "{bundleId}/{provider}[...optional]"
         let segments = tail.split(separator: "/").map(String.init)
-        guard segments.count >= 2, segments[0] == bundleId else { return false }
-        let provider = segments[1].lowercased()
+        guard segments.count >= 1, segments[0] == bundleId else { return nil }
 
         // Helpers
         let items = comps.queryItems ?? []
@@ -1260,7 +1269,7 @@ public class FronteggAuth: ObservableObject {
             queryParams["id_token"] = idToken
         }
 
-        let redirectUri = SocialLoginUrlGenerator.shared.defaultRedirectUri(provider: provider)
+        let redirectUri = SocialLoginUrlGenerator.shared.defaultRedirectUri()
         queryParams["redirectUri"] = redirectUri
         
 
@@ -1270,9 +1279,11 @@ public class FronteggAuth: ObservableObject {
 
         }
         
+        if let s = WebAuthenticator.shared.session {
+            s.cancel()
+        }
+        return URL(string: "\(baseUrl)/oauth/account/social/success?\(comps.query ?? "")")
         
-        print("\(provider): \(queryParams)")
-        return true
     }
     
     

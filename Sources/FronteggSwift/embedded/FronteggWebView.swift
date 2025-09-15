@@ -103,6 +103,8 @@ if #available(iOS 16.4, *) {
         webView.load(request)
 
         logger.trace("FronteggWebView::makeUIView::end")
+        self.fronteggAuth.webview = webView
+        
         return webView
     }
 

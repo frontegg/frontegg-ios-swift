@@ -189,7 +189,7 @@ private extension SocialLoginUrlGenerator {
         }
 
         // 3. Redirect URI and State
-        let redirectUri = defaultRedirectUri(provider: provider.rawValue)
+        let redirectUri = defaultRedirectUri()
         let state = try Self.createState(provider: provider,
                                      appId: FronteggAuth.shared.applicationId,
                                      action: action)
@@ -265,10 +265,11 @@ private extension SocialLoginUrlGenerator {
         return verifier
     }
 
-    public func defaultRedirectUri(provider: String) -> String {
+    public func defaultRedirectUri() -> String {
         let base = FronteggAuth.shared.baseUrl
         let bundleId = FronteggApp.shared.bundleIdentifier
         let baseRedirectUri = "\(base)/oauth/account/social/success"
+//        let baseRedirectUri = "\(base)/oauth/account/redirect/ios/\(bundleId)"
         
         guard let encodedRedirectUri = baseRedirectUri
             .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)?
