@@ -99,7 +99,7 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
         case "loginWithSSO":
             FronteggAuth.shared.loginWithSSO(email: message.payload, self.socialLoginHandler)
         case "loginWithCustomSSO":
-            FronteggAuth.shared.loginWithCustomSSO(url: message.payload, self.customSSOHandler)
+            FronteggAuth.shared.loginWithCustomSSO(ssoUrl: message.payload, self.customSSOHandler)
         case "loginWithSocialLogin":
             FronteggAuth.shared.loginWithSocialLogin(socialLoginUrl: message.payload, self.socialLoginHandler)
         case "loginWithSocialLoginProvider":
