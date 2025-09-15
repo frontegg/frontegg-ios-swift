@@ -20,6 +20,7 @@ public class FronteggApp {
     public var embeddedMode: Bool = true
     public var handleLoginWithSocialLogin:Bool = true
     public var handleLoginWithSSO:Bool = false
+    public var handleLoginWithCustomSSO:Bool = false
     public var handleLoginWithCustomSocialLoginProvider:Bool = true
     public var handleLoginWithSocialProvider:Bool = true
     public var backgroundColor: UIColor? = nil
@@ -55,6 +56,7 @@ public class FronteggApp {
         self.bundleIdentifier = bundleIdentifier
         self.handleLoginWithSocialLogin = config.loginWithSocialLogin
         self.handleLoginWithSSO = config.loginWithSSO
+        self.handleLoginWithCustomSSO = config.loginWithCustomSSO
         self.shouldSuggestSavePassword = config.shouldSuggestSavePassword
         self.handleLoginWithSocialProvider = config.handleLoginWithCustomSocialLoginProvider
         self.handleLoginWithCustomSocialLoginProvider = config.handleLoginWithSocialProvider
@@ -141,6 +143,7 @@ public class FronteggApp {
             applicationId: String? = nil,
             handleLoginWithSocialLogin: Bool = true,
             handleLoginWithSSO:Bool = false,
+            handleLoginWithCustomSSO:Bool = false,
             handleLoginWithCustomSocialLoginProvider:Bool = true,
             handleLoginWithSocialProvider:Bool = true
 
@@ -151,6 +154,7 @@ public class FronteggApp {
         
         self.handleLoginWithSocialLogin = handleLoginWithSocialLogin
         self.handleLoginWithSSO = handleLoginWithSSO
+        self.handleLoginWithCustomSSO = handleLoginWithCustomSSO
         self.handleLoginWithCustomSocialLoginProvider = handleLoginWithCustomSocialLoginProvider
         self.handleLoginWithSocialProvider = handleLoginWithSocialProvider
         
@@ -159,11 +163,13 @@ public class FronteggApp {
     public func manualInitRegions(
         regions: [RegionConfig],
         handleLoginWithSocialLogin: Bool = true,
-        handleLoginWithSSO:Bool = false
+        handleLoginWithSSO:Bool = false,
+        handleLoginWithCustomSSO:Bool = false
     ) {
         self.regionData = regions
         self.handleLoginWithSocialLogin = handleLoginWithSocialLogin
         self.handleLoginWithSSO = handleLoginWithSSO
+        self.handleLoginWithCustomSSO = handleLoginWithCustomSSO
         self.auth.manualInitRegions(regions: regions)
         self.baseUrl = self.auth.baseUrl
         self.clientId = self.auth.clientId

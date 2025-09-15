@@ -949,19 +949,6 @@ public class FronteggAuth: ObservableObject {
     }
     
     
-    public func loginWithSSO(email: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
-        let completion = _completion ?? self.loginCompletion ?? { res in
-            
-        }
-        
-        let oauthCallback = createOauthCallbackHandler(completion)
-        
-        let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: email, remainCodeVerifier: true)
-        CredentialManager.saveCodeVerifier(codeVerifier)
-        
-        WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: true, window: getRootVC()?.view.window, completionHandler: oauthCallback)
-    }
-    
     
     internal func loginWithApple(_ _completion: @escaping FronteggAuth.CompletionHandler)  {
         
@@ -1089,6 +1076,45 @@ public class FronteggAuth: ObservableObject {
         CredentialManager.saveCodeVerifier(codeVerifier)
         
         WebAuthenticator.shared.start(authorizeUrl, completionHandler: oauthCallback)
+    }
+    
+    
+    public func loginWithSSO(email: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
+        let completion = _completion ?? self.loginCompletion ?? { res in
+            
+        }
+        
+        let oauthCallback = createOauthCallbackHandler(completion)
+        
+        let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: email, remainCodeVerifier: true)
+        CredentialManager.saveCodeVerifier(codeVerifier)
+        
+        WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: true, window: getRootVC()?.view.window, completionHandler: oauthCallback)
+    }
+    
+    public func loginWithCustomSSO(ssoUrl: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
+        let completion = _completion ?? self.loginCompletion ?? { res in
+            
+        }
+        
+        let oauthCallback = createOauthCallbackHandler(completion)
+        
+        let directLogin: [String: Any] = [
+            "type": "direct",
+            "data": ssoUrl,
+        ]
+        var generatedUrl: (URL, String)
+        if let jsonData = try? JSONSerialization.data(withJSONObject: directLogin, options: []) {
+            let jsonString = jsonData.base64EncodedString()
+            generatedUrl = AuthorizeUrlGenerator.shared.generate(loginAction: jsonString, remainCodeVerifier: true)
+        } else {
+            generatedUrl = AuthorizeUrlGenerator.shared.generate()
+        }
+        
+        let (authorizeUrl, codeVerifier) = generatedUrl
+        CredentialManager.saveCodeVerifier(codeVerifier)
+        
+        WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: true, completionHandler: oauthCallback)
     }
     
     public func embeddedLogin(_ _completion: FronteggAuth.CompletionHandler? = nil, loginHint: String?) {
