@@ -22,8 +22,6 @@ public struct EmbeddedLoginModal: View {
         VCHolder.shared.vc = parentVC
     }
     
-    
-    
     public var body: some View {
         ZStack {
             if(fronteggAuth.initializing || fronteggAuth.showLoader) {
@@ -35,7 +33,6 @@ public struct EmbeddedLoginModal: View {
             {
 
                 DefaultLoader().onAppear() {
-                    
                     VCHolder.shared.vc?.presentedViewController?.dismiss(animated: true)
                     VCHolder.shared.vc = nil
                 }
@@ -43,6 +40,11 @@ public struct EmbeddedLoginModal: View {
                 EmbeddedLoginPage()
             }
             
+        }.onAppear {
+            self.fronteggAuth.webLoading = true
+        }
+        .onDisappear {
+            self.fronteggAuth.webLoading = false
         }
         .environmentObject(fronteggAuth)
     }
