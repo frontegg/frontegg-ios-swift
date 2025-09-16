@@ -903,6 +903,17 @@ public class FronteggAuth: ObservableObject {
                         print("❌ Error: \(error)")
                     } else if let callbackURL = callbackURL {
                         print("🔹 URL: \(callbackURL)")
+                        
+                        DispatchQueue.main.async {
+                            if let socialLoginUrl = self.handleSocialLoginCallback(callbackURL){
+                                if let webView = self.webview {
+                                    let request = URLRequest(url: socialLoginUrl, cachePolicy: .reloadRevalidatingCacheData)
+                                    webView.load(request)
+                                    
+                                }
+                            }
+                        }
+                        
                     } else {
                         print("ℹ️ Callback invoked with no URL and no error")
                     }
@@ -1271,20 +1282,18 @@ public class FronteggAuth: ObservableObject {
         // 2) Path: /oauth/account/redirect/ios/{bundleId}/{provider}
         let prefix = "/oauth/account/redirect/ios/"
         let path = comps.path
-        guard path.hasPrefix(prefix) else { return nil }
+        guard path.hasPrefix(prefix) || path.hasPrefix("/ios/oauth/callback") else {
+            return nil
+        }
 
         let bundleId = FronteggApp.shared.bundleIdentifier
         guard !bundleId.isEmpty else { return nil }
-
-        let tail = path.dropFirst(prefix.count)                // "{bundleId}/{provider}[...optional]"
-        let segments = tail.split(separator: "/").map(String.init)
-        guard segments.count >= 1, segments[0] == bundleId else { return nil }
 
         // Helpers
         let items = comps.queryItems ?? []
         func q(_ name: String) -> String? { items.first { $0.name == name }?.value }
 
-        // 4) Extract all supported params like the TS client
+        // Extract supported params
         var queryParams: [String: String] = [:]
 
         if let code = q("code"), !code.isEmpty {
@@ -1296,21 +1305,34 @@ public class FronteggAuth: ObservableObject {
         }
 
         let redirectUri = SocialLoginUrlGenerator.shared.defaultRedirectUri()
-        queryParams["redirectUri"] = redirectUri
-        
-
-        // state (also used to fetch the PKCE verifier, if you store per-state)
+        queryParams["redirectUri"] = redirectUri.addingPercentEncoding(withAllowedCharacters: .alphanumerics)
+        // Process state
         if let state = q("state"), !state.isEmpty {
-            queryParams["state"] = state
-
+            if let data = state.data(using: .utf8),
+               var dict = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
+                dict.removeValue(forKey: "platform")
+                dict.removeValue(forKey: "bundleId")
+                if let newData = try? JSONSerialization.data(withJSONObject: dict, options: []),
+                   let newState = String(data: newData, encoding: .utf8) {
+                    queryParams["state"] = newState.addingPercentEncoding(withAllowedCharacters: .alphanumerics)
+                }
+            } else {
+                // fallback if state is not valid JSON
+                queryParams["state"] = state
+            }
         }
-        
+
         if let s = WebAuthenticator.shared.session {
             s.cancel()
         }
-        return URL(string: "\(baseUrl)/oauth/account/social/success?\(comps.query ?? "")")
-        
+
+        // Build query string safely
+        var compsOut = URLComponents()
+        compsOut.queryItems = queryParams.map { URLQueryItem(name: $0.key, value: $0.value) }
+
+        return URL(string: "\(FronteggAuth.shared.baseUrl)/oauth/account/social/success?\(compsOut.query ?? "")")
     }
+
     
     
     public func requestAuthorizeAsync(refreshToken: String, deviceTokenCookie: String? = nil) async throws -> User {

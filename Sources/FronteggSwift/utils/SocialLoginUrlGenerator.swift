@@ -209,11 +209,11 @@ private extension SocialLoginUrlGenerator {
         
         // 5. PKCE Challenge
         if details.requiresPKCE {
-            let verifier = try Self.requireCodeVerifier()
-            queryItems.append(contentsOf: [
-                URLQueryItem(name: "code_challenge", value: verifier.s256CodeChallenge()),
-                URLQueryItem(name: "code_challenge_method", value: "S256")
-            ])
+//            let verifier = try Self.requireCodeVerifier()
+//            queryItems.append(contentsOf: [
+//                URLQueryItem(name: "code_challenge", value: verifier.s256CodeChallenge()),
+//                URLQueryItem(name: "code_challenge_method", value: "S256")
+//            ])
         }
         
         // 6. Prompt for consent

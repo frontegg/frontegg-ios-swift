@@ -257,7 +257,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                         print("Error \(error)")
                         let (url, codeVerifier)  = AuthorizeUrlGenerator().generate()
                         CredentialManager.saveCodeVerifier(codeVerifier)
-                        _ = webView?.load(URLRequest(url: url))
+                        DispatchQueue.main.async {
+                            _ = webView?.load(URLRequest(url: url))
+                        }
                     }
                     FronteggAuth.shared.loginCompletion?(res)
                 }
