@@ -57,6 +57,19 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
         }
     }
     
+    private var customSSOHandler: FronteggAuth.CompletionHandler {
+        get {
+            return { res in
+                do {
+                    let _ = try res.get()
+                    FronteggAuth.shared.loginCompletion?(res)
+                } catch(_) {
+                    // ignore
+                }
+            }
+        }
+    }
+    
     
     private func getFromAction() -> SocialLoginAction {
         
@@ -96,6 +109,8 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
             
         case "loginWithSSO":
             FronteggAuth.shared.loginWithSSO(email: message.payload, self.socialLoginHandler)
+        case "loginWithCustomSSO":
+            FronteggAuth.shared.loginWithCustomSSO(ssoUrl: message.payload, self.customSSOHandler)
         case "loginWithSocialLogin":
             FronteggAuth.shared.loginWithSocialLogin(socialLoginUrl: message.payload, self.socialLoginHandler)
         case "loginWithSocialLoginProvider":

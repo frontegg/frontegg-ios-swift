@@ -33,6 +33,7 @@ public struct FronteggWebView: UIViewRepresentable {
                 "loginWithCustomSocialLoginProvider": fronteggApp.handleLoginWithCustomSocialLoginProvider,
                 "loginWithSocialLoginProvider": fronteggApp.handleLoginWithSocialProvider,
                 "loginWithSSO": fronteggApp.handleLoginWithSSO,
+                "loginWithCustomSSO": fronteggApp.handleLoginWithCustomSSO,
                 "shouldPromptSocialLoginConsent": fronteggApp.shouldPromptSocialLoginConsent,
                 "suggestSavePassword": fronteggApp.shouldSuggestSavePassword,
                 "useNativeLoader": true,

@@ -18,6 +18,7 @@ struct FronteggPlist: Decodable, Equatable {
     let handleLoginWithCustomSocialLoginProvider: Bool
     let handleLoginWithSocialProvider: Bool
     let loginWithSSO: Bool
+    let loginWithCustomSSO: Bool
     let lateInit: Bool
     let logLevel: LogLevel
     let payload: Payload
@@ -36,6 +37,7 @@ struct FronteggPlist: Decodable, Equatable {
         case handleLoginWithCustomSocialLoginProvider
         case handleLoginWithSocialProvider
         case loginWithSSO
+        case loginWithCustomSSO
         case lateInit
         case logLevel
         case keepUserLoggedInAfterReinstall
@@ -54,6 +56,7 @@ struct FronteggPlist: Decodable, Equatable {
         handleLoginWithCustomSocialLoginProvider: Bool = true,
         handleLoginWithSocialProvider: Bool = true,
         loginWithSSO: Bool = false,
+        loginWithCustomSSO: Bool = false,
         lateInit: Bool = false,
         logLevel: LogLevel = .warn,
         payload: Payload,
@@ -71,6 +74,7 @@ struct FronteggPlist: Decodable, Equatable {
         self.handleLoginWithCustomSocialLoginProvider = handleLoginWithCustomSocialLoginProvider
         self.handleLoginWithSocialProvider = handleLoginWithSocialProvider
         self.loginWithSSO = loginWithSSO
+        self.loginWithCustomSSO = loginWithCustomSSO
         self.lateInit = lateInit
         self.logLevel = logLevel
         self.payload = payload
@@ -103,6 +107,9 @@ struct FronteggPlist: Decodable, Equatable {
 
         let ssoLogin = try container.decodeIfPresent(Bool.self, forKey: .loginWithSSO)
         self.loginWithSSO = ssoLogin ?? false
+        
+        let customSsoLogin = try container.decodeIfPresent(Bool.self, forKey: .loginWithCustomSSO)
+        self.loginWithCustomSSO = customSsoLogin ?? false
 
         let lateInit = try container.decodeIfPresent(Bool.self, forKey: .lateInit)
         self.lateInit = lateInit ?? false
