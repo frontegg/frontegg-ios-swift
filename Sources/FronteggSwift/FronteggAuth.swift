@@ -1457,7 +1457,7 @@ public class FronteggAuth: FronteggState {
                     }
                 } catch {
                     self.logger.error("Failed to authenticate: \(error.localizedDescription)")
-                    DispatchQueue.main.sync {
+                    DispatchQueue.main.async {
                         completion(.failure(.authError(.failedToAuthenticate)))
                     }
                 }
