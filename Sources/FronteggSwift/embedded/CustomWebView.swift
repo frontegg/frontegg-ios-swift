@@ -146,12 +146,10 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             
             if(urlType == .internalRoutes ) {
                 logger.trace("hiding Loader screen after 300ms")
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     // usually internal routes are redirects
-                    // this 300ms will prevent loader blinking
-                    if(self.fronteggAuth.webLoading) {
-                        self.fronteggAuth.setWebLoading(false)
-                    }
+                    // this 500ms will prevent loader blinking
+                    self.fronteggAuth.setWebLoading(false)
                 }
 
             }
@@ -244,7 +242,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             _ = webView?.load(URLRequest(url: url))
             return .cancel
         }
-        
+        self.fronteggAuth.setWebLoading(true)
         DispatchQueue.global(qos: .userInitiated).async {
             Task { @MainActor in
                 FronteggAuth.shared.handleHostedLoginCallback(code, savedCodeVerifier ) { res in

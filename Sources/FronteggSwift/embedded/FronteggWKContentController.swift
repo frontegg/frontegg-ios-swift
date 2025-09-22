@@ -193,7 +193,7 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
                     FronteggAuth.shared.setLoginBoxLoading(false)
                 }
                 hideLoaderWorkItem = workItem
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: workItem)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
             }
         default:
             return
