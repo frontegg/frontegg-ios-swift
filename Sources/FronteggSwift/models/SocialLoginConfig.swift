@@ -82,3 +82,39 @@ public struct SocialLoginConfig: Codable {
         return nil
     }
 }
+
+
+public enum SocialLoginProvider: String, Codable, CaseIterable {
+    case facebook = "facebook"
+    case google = "google"
+    case microsoft = "microsoft"
+    case github = "github"
+    case slack = "slack"
+    case apple = "apple"
+    case linkedin = "linkedin"
+    
+    // Internal helper to access static, provider-specific details.
+    internal var details: ProviderDetails { ProviderDetails.for(provider: self) }
+}
+
+
+public enum SocialLoginAction:String, Codable, CaseIterable {
+    case login = "login"
+    case signUp = "signUp"
+    
+}
+
+public struct CustomSocialLoginProvidersResponse: Codable {
+    let providers: [CustomSocialLoginProviderConfig]
+}
+
+public struct CustomSocialLoginProviderConfig: Codable {
+    let id: String
+    let type: String // e.g., "custom"
+    let clientId: String
+    let authorizationUrl: String
+    let scopes: String
+    let displayName: String
+    let active: Bool
+    let redirectUrl: String
+}

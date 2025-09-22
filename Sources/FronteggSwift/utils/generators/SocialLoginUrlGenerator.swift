@@ -5,32 +5,12 @@
 //  Created by David Antoon on 08/09/2025.
 //
 //  Refactored to use the existing SocialLoginConfig data model.
+//  Updated to support custom social logins.
 //
 
 import Foundation
 import CryptoKit
 
-// MARK: - Provider Definition & Details
-
-public enum SocialLoginProvider: String, Codable, CaseIterable {
-    case facebook = "facebook"
-    case google = "google"
-    case microsoft = "microsoft"
-    case github = "github"
-    case slack = "slack"
-    case apple = "apple"
-    case linkedin = "linkedin"
-    
-    // Internal helper to access static, provider-specific details.
-    internal var details: ProviderDetails { ProviderDetails.for(provider: self) }
-}
-
-
-public enum SocialLoginAction:String, Codable, CaseIterable {
-    case login = "login"
-    case signUp = "signUp"
-    
-}
 
 /// A data structure to hold all provider-specific OAuth configurations that are not fetched from the API.
 internal struct ProviderDetails {
@@ -41,7 +21,6 @@ internal struct ProviderDetails {
     let requiresPKCE: Bool
     let promptValueForConsent: String?
 
-    /// Centralized, data-driven configuration eliminates repetitive switch statements.
     private static let providerDetails: [SocialLoginProvider: ProviderDetails] = [
         .facebook: .init(
             authorizeEndpoint: "https://www.facebook.com/v10.0/dialog/oauth",
@@ -93,6 +72,17 @@ internal struct ProviderDetails {
         }
         return details
     }
+    
+    /// Finds a standard provider configuration that matches the given authorization URL.
+    /// - Parameter authorizationUrl: The endpoint URL to search for.
+    /// - Returns: A tuple containing the matched provider and its details, or `nil` if not found.
+    static func find(by authorizationUrl: String) -> (provider: SocialLoginProvider, details: ProviderDetails)? {
+        return providerDetails.first { (_, details) in
+            return details.authorizeEndpoint == authorizationUrl
+        }.map { (key, value) in
+            return (provider: key, details: value)
+        }
+    }
 }
 
 // MARK: - Public API
@@ -100,11 +90,12 @@ internal struct ProviderDetails {
 public final class SocialLoginUrlGenerator {
     public static let shared = SocialLoginUrlGenerator()
     
-    // Use the SocialLoginConfig struct to store configurations.
     private var socialLoginConfig: SocialLoginConfig?
+    private var customSocialLoginConfigs: [CustomSocialLoginProviderConfig]?
     private let logger = getLogger("SocialLoginUrlGenerator")
     
     
+    /// Generates an authorization URL for a standard social login provider.
     public func authorizeURL(
         for provider: SocialLoginProvider,
         action: SocialLoginAction = .login
@@ -114,7 +105,6 @@ public final class SocialLoginUrlGenerator {
             return nil
         }
         
-        // Handle tenant-specific authorization URL if available.
         if let authURLString = option.authorizationUrl, let url = URL(string: authURLString) {
             guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
             if let prompt = provider.details.promptValueForConsent {
@@ -125,24 +115,50 @@ public final class SocialLoginUrlGenerator {
         
         return try await buildProviderURL(provider: provider, option: option, action: action)
     }
+
+    /// Generates an authorization URL for a custom social login provider.
+    public func authorizeURL(
+        forCustomProvider provider: String,
+        action: SocialLoginAction = .login
+    ) async throws -> URL? {
+        if self.customSocialLoginConfigs == nil {
+            await reloadConfigs()
+        }
+
+        guard let providerConfig = self.customSocialLoginConfigs?.first(where: { $0.id == provider }) else {
+            logger.warning("Custom social login provider with name '\(provider)' not found or not active.")
+            return nil
+        }
+
+        return try self.buildCustomProviderURL(provider: providerConfig, action: action)
+    }
     
-    @discardableResult
-    public func reloadConfigs() async -> Bool {
-        do {
-            // Fetch the configuration using the existing API method.
-            let config = try await FronteggAuth.shared.api.getSocialLoginConfig()
-            self.socialLoginConfig = config
-            self.logger.info("Loaded social login configs")
-            return true
-        } catch {
-            self.logger.error("Failed to load SSO configs: \(error)")
-            return false
+    public func reloadConfigs() async {
+        logger.info("Reloading social login configurations...")
+        
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                do {
+                    self.socialLoginConfig = try await FronteggAuth.shared.api.getSocialLoginConfig()
+                    self.logger.info("Successfully loaded standard social login configs")
+                } catch {
+                    self.logger.error("Failed to load standard SSO configs: \(error)")
+                }
+            }
+            
+            group.addTask {
+                do {
+                    let response = try await FronteggAuth.shared.api.getCustomSocialLoginConfig()
+                    self.customSocialLoginConfigs = response.providers.filter { $0.active }
+                    self.logger.info("Successfully loaded custom social login configs. Found \(self.customSocialLoginConfigs?.count ?? 0) active providers.")
+                } catch {
+                    self.logger.error("Failed to load custom SSO configs: \(error)")
+                }
+            }
         }
     }
     
-    /// Retrieves the configuration for a specific provider from the stored `SocialLoginConfig`.
     public func configuration(for provider: SocialLoginProvider) async -> SocialLoginOption? {
-        
         if self.socialLoginConfig == nil {
             await reloadConfigs()
         }
@@ -171,35 +187,30 @@ private extension SocialLoginUrlGenerator {
         option: SocialLoginOption,
         action: SocialLoginAction
     ) async throws -> URL? {
-        
         let details = provider.details
         guard var comps = URLComponents(string: details.authorizeEndpoint) else { return nil }
         
         var queryItems: [URLQueryItem] = []
         
-        // 1. Client ID
         if let clientId = option.clientId {
             queryItems.append(URLQueryItem(name: "client_id", value: clientId))
         }
         
-        // 2. Response Type & Mode
         queryItems.append(URLQueryItem(name: "response_type", value: details.responseType))
         if let responseMode = details.responseMode {
             queryItems.append(URLQueryItem(name: "response_mode", value: responseMode))
         }
 
-        // 3. Redirect URI and State
         let redirectUri = defaultSocialLoginRedirectUri()
-        let state = try Self.createState(provider: provider,
-                                     appId: FronteggAuth.shared.applicationId,
-                                     action: action)
+        let state = try Self.createState(provider: provider.rawValue,
+                                         appId: FronteggAuth.shared.applicationId,
+                                         action: action)
         
         queryItems.append(contentsOf: [
             URLQueryItem(name: "redirect_uri", value: redirectUri),
             URLQueryItem(name: "state", value: state)
         ])
         
-        // 4. Scopes
         let baseScopes = (provider == .linkedin && !option.additionalScopes.isEmpty) ? [] : details.defaultScopes
         let allScopes = (baseScopes + option.additionalScopes).joined(separator: " ")
         
@@ -207,7 +218,6 @@ private extension SocialLoginUrlGenerator {
             queryItems.append(URLQueryItem(name: "scope", value: allScopes))
         }
         
-        // 5. PKCE Challenge
         if details.requiresPKCE && FronteggAuth.shared.featureFlags.isOn("identity-sso-force-pkce") {
             let verifier: String = try await Self.getCodeVerifierFromWebview()
             queryItems.append(contentsOf: [
@@ -216,20 +226,57 @@ private extension SocialLoginUrlGenerator {
             ])
         }
         
-        // 6. Prompt for consent
         if let prompt = details.promptValueForConsent {
             let promptKey = (provider == .facebook) ? "auth_type" : "prompt"
             queryItems.append(URLQueryItem(name: promptKey, value: prompt))
         }
 
-        // 7. Provider-specific extras
         if provider == .google || provider == .linkedin {
             queryItems.append(URLQueryItem(name: "include_granted_scopes", value: "true"))
         }
 
         comps.queryItems = queryItems
+        return comps.url
+    }
+    
+    func buildCustomProviderURL(
+        provider: CustomSocialLoginProviderConfig,
+        action: SocialLoginAction
+    ) throws -> URL? {
+        // This will correctly parse the URL and its existing query items.
+        guard var comps = URLComponents(string: provider.authorizationUrl) else {
+            logger.error("Invalid authorizationUrl for custom provider \(provider.displayName)")
+            return nil
+        }
+        
+        let state = try Self.createState(
+            provider: provider.displayName,
+            appId: FronteggAuth.shared.applicationId,
+            action: action
+        )
+        
+        // Use the helper to add/replace our required params, preserving any others.
+        comps.addOrReplaceQueryItem(name: "client_id", value: provider.clientId)
+        comps.addOrReplaceQueryItem(name: "scope", value: provider.scopes)
+        comps.addOrReplaceQueryItem(name: "redirect_uri", value: provider.redirectUrl)
+        comps.addOrReplaceQueryItem(name: "response_type", value: "code")
+        comps.addOrReplaceQueryItem(name: "state", value: state)
+        
+        
+        // Create a clean base URL (scheme + host + path) for matching.
+        let baseUrlString = "\(comps.scheme ?? "")://\(comps.host ?? "")\(comps.path)"
+        
+        // Match against the base URL to see if we should add a consent prompt.
+        if let (matchedProvider, matchedDetails) = ProviderDetails.find(by: baseUrlString),
+           let promptValue = matchedDetails.promptValueForConsent {
+            
+            let promptKey = (matchedProvider == .facebook) ? "auth_type" : "prompt"
+            comps.addOrReplaceQueryItem(name: promptKey, value: promptValue)
+            logger.trace("Adding consent prompt for custom provider matching \(matchedProvider.rawValue)")
+        }
+        
         let url = comps.url
-        logger.trace("Built URL for \(provider.rawValue): \(url?.absoluteString ?? "nil")")
+        logger.trace("Built URL for custom provider \(provider.displayName): \(url?.absoluteString ?? "nil")")
         return url
     }
 }
@@ -247,8 +294,12 @@ public extension SocialLoginUrlGenerator {
     }
     
     static func createState(provider: SocialLoginProvider, appId: String?, action: SocialLoginAction) throws -> String {
+        return try createState(provider: provider.rawValue, appId: appId, action: action)
+    }
+
+    static func createState(provider: String, appId: String?, action: SocialLoginAction) throws -> String {
         let stateObject = OAuthState(
-            provider: provider.rawValue,
+            provider: provider,
             appId: appId ?? "",
             action: action.rawValue,
             bundleId: FronteggApp.shared.bundleIdentifier,
@@ -271,15 +322,9 @@ public extension SocialLoginUrlGenerator {
 
     public func defaultSocialLoginRedirectUri() -> String {
         let base = FronteggAuth.shared.baseUrl
-        let bundleId = FronteggApp.shared.bundleIdentifier
         let baseRedirectUri = "\(base)/oauth/account/social/success"
         
-        guard let encodedRedirectUri = baseRedirectUri
-            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)?
-            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-            return baseRedirectUri
-        }
-        return encodedRedirectUri
+        return baseRedirectUri.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? baseRedirectUri
     }
     
     public func defaultRedirectUri() -> String {
@@ -287,12 +332,7 @@ public extension SocialLoginUrlGenerator {
         let bundleId = FronteggApp.shared.bundleIdentifier
         let baseRedirectUri = "\(base)/oauth/account/redirect/ios/\(bundleId)"
         
-        guard let encodedRedirectUri = baseRedirectUri
-            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)?
-            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-            return baseRedirectUri
-        }
-        return encodedRedirectUri
+        return baseRedirectUri.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? baseRedirectUri
     }
 }
 
@@ -306,26 +346,26 @@ private extension Data {
 }
 
 private extension String {
-    
     func s256CodeChallenge() -> String {
-            let data = Data(self.utf8)                            // UTF-8 bytes (same as TextEncoder)
-            let hash = SHA256.hash(data: data)                    // SHA-256 digest
-            let b64 = Data(hash).base64EncodedString()            // Standard Base64 with padding
-            // Convert to Base64URL without padding to match the TS implementation
-            let b64url = b64
-                .replacingOccurrences(of: "+", with: "-")
-                .replacingOccurrences(of: "/", with: "_")
-                .replacingOccurrences(of: "=", with: "")
-            return b64url
-        }
+        let data = Data(self.utf8)
+        let hash = SHA256.hash(data: data)
+        let b64 = Data(hash).base64EncodedString()
+        let b64url = b64
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return b64url
+    }
 }
 
 private extension URLComponents {
     mutating func addOrReplaceQueryItem(name: String, value: String?) {
         var queryItems = self.queryItems ?? []
+        // Remove existing item with the same name, if any.
         if let index = queryItems.firstIndex(where: { $0.name == name }) {
             queryItems.remove(at: index)
         }
+        // Add the new item.
         queryItems.append(URLQueryItem(name: name, value: value))
         self.queryItems = queryItems
     }

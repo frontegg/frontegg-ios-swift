@@ -131,22 +131,32 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
                 
                 FronteggAuth.shared.handleSocialLogin(
                     providerString: message.payload,
+                    custom: false,
                     action: formAction,
                     completion: self.socialLoginHandler,
                 )
             }
         case "loginWithCustomSocialLoginProvider":
             let formAction = self.getFromAction()
-            FronteggAuth.shared.directLoginAction(window: nil,
-                                                  type: "custom-social-login",
-                                                  data: message.payload,
-                                                  ephemeralSession: false,
-                                                  _completion: self.socialLoginHandler,
-                                                  additionalQueryParams: [
-                                                    "prompt":"consent"
-                                                  ],
-                                                  remainCodeVerifier: true,
-                                                  action: formAction)
+            if let config = try? PlistHelper.fronteggConfig(), config.useLegacySocialLoginFlow {
+                FronteggAuth.shared.directLoginAction(window: nil,
+                                                      type: "custom-social-login",
+                                                      data: message.payload,
+                                                      ephemeralSession: false,
+                                                      _completion: self.socialLoginHandler,
+                                                      additionalQueryParams: [
+                                                        "prompt":"consent"
+                                                      ],
+                                                      remainCodeVerifier: true,
+                                                      action: formAction)
+            } else {
+                FronteggAuth.shared.handleSocialLogin(
+                    providerString: message.payload,
+                    custom: true,
+                    action: formAction,
+                    completion: self.socialLoginHandler,
+                )
+            }
         case "suggestSavePassword":
             guard let data = try? JSONSerialization.jsonObject(with: Data(message.payload.utf8), options: []) as? [String: String],
                   let email = data["email"],

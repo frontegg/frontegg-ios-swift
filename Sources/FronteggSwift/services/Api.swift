@@ -413,6 +413,11 @@ public class Api {
         
         return SocialLoginConfig(options: options)
     }
+    public func getCustomSocialLoginConfig() async throws -> CustomSocialLoginProvidersResponse {
+        let (jsonData, _) = try await FronteggAuth.shared.api.getRequest(path: "/identity/resources/sso/custom/v1", accessToken: nil)
+        return try JSONDecoder().decode(CustomSocialLoginProvidersResponse.self, from: jsonData)
+    }
+    
     
     @available(iOS 15.0, *)
     internal func postloginAppleNative(_ code: String) async throws -> AuthResponse {

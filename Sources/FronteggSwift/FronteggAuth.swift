@@ -236,6 +236,7 @@ public class FronteggAuth: ObservableObject {
             DispatchQueue.global(qos: .userInitiated).async {
                 Task {
                     await self.featureFlags.start();
+                    await SocialLoginUrlGenerator.shared.reloadConfigs()
                     await self.refreshTokenIfNeeded()
                 }
             }
@@ -243,6 +244,7 @@ public class FronteggAuth: ObservableObject {
             DispatchQueue.global(qos: .userInitiated).async {
                 Task {
                     await self.featureFlags.start();
+                    await SocialLoginUrlGenerator.shared.reloadConfigs()
                     DispatchQueue.main.async {
                         self.isLoading = false
                         self.initializing = false
@@ -928,19 +930,15 @@ public class FronteggAuth: ObservableObject {
     ///   - completion: Optional completion handler. A no-op is used if nil.
     public func handleSocialLogin(
         providerString: String,
+        custom:Bool,
         action: SocialLoginAction = .login,
-        completion: FronteggAuth.CompletionHandler? = nil
+        completion: FronteggAuth.CompletionHandler? = nil,
     ) {
         let done = completion ?? { _ in }
 
         // Special-case Apple to keep branching explicit and fast.
         if providerString == "apple" {
             loginWithApple(done)
-            return
-        }
-
-        guard let provider = SocialLoginProvider(rawValue: providerString) else {
-            logger.warning("Social login not supported: \(providerString)")
             return
         }
 
@@ -971,10 +969,18 @@ public class FronteggAuth: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
 
-            guard let authURL = try? await SocialLoginUrlGenerator.shared
-                .authorizeURL(for: provider, action: action)
-            else {
-                self.logger.error("Failed to generate auth URL for \(provider)")
+            let generatedAuthUrl: URL? = if(custom){
+                try? await SocialLoginUrlGenerator.shared
+                    .authorizeURL(forCustomProvider: providerString, action: action)
+            } else if let provider = SocialLoginProvider(rawValue: providerString) {
+                try? await SocialLoginUrlGenerator.shared
+                    .authorizeURL(for: provider, action: action)
+            }else {
+                nil
+            }
+            
+            guard let authURL = generatedAuthUrl else {
+                self.logger.error("Failed to generate auth URL for \(providerString)")
                 return
             }
 
