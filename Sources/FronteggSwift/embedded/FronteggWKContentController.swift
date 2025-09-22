@@ -186,11 +186,11 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
             
             if isLoading {
                 // show immediately
-                FronteggAuth.shared.loginBoxLoading = true
+                FronteggAuth.shared.setLoginBoxLoading(true)
             } else {
                 // schedule hide after 200ms, to avoid flicker
                 let workItem = DispatchWorkItem {
-                    FronteggAuth.shared.loginBoxLoading = false
+                    FronteggAuth.shared.setLoginBoxLoading(false)
                 }
                 hideLoaderWorkItem = workItem
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: workItem)

@@ -6,7 +6,7 @@
 
 import AuthenticationServices
 import UIKit
- 
+
 
 class WebAuthenticator: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
     
@@ -41,11 +41,11 @@ class WebAuthenticator: NSObject, ObservableObject, ASWebAuthenticationPresentat
         webAuthSession.presentationContextProvider = self
         webAuthSession.prefersEphemeralWebBrowserSession = ephemeralSession
         
-
+        
         self.window = window
         self.session = webAuthSession
         webAuthSession.start()
-
+        
     }
     
 }

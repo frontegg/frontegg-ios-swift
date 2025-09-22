@@ -31,8 +31,8 @@ public struct EmbeddedLoginPage: View {
                     ToolbarItem(placement: .navigationBarLeading) {
                         Button("Back to login") {
                             fronteggAuth.pendingAppLink = nil
-                            fronteggAuth.appLink = false
-                            fronteggAuth.externalLink = false
+                            fronteggAuth.setAppLink(false)
+                            fronteggAuth.setExternalLink(false)
                             fronteggAuth.login()
                         }
                     }

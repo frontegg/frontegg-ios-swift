@@ -50,8 +50,8 @@ class StepUpAuthenticator {
     ) {
         let updatedCompletion: FronteggAuth.CompletionHandler = { (result) in
             DispatchQueue.main.async {
-                FronteggAuth.shared.isStepUpAuthorization = false
-                FronteggAuth.shared.isLoading = false
+                FronteggAuth.shared.setIsStepUpAuthorization(false)
+                FronteggAuth.shared.setIsLoading(false)
                 completion?(result)
             }
         }
@@ -63,8 +63,8 @@ class StepUpAuthenticator {
         
         CredentialManager.saveCodeVerifier(codeVerifier)
         DispatchQueue.main.async {
-            FronteggAuth.shared.isLoading = true
-            FronteggAuth.shared.isStepUpAuthorization = true
+            FronteggAuth.shared.setIsStepUpAuthorization(true)
+            FronteggAuth.shared.setIsLoading(false)
             let oauthCallback = FronteggAuth.shared.createOauthCallbackHandler(updatedCompletion)
             WebAuthenticator.shared.start(authorizeUrl, completionHandler: oauthCallback)
         }
