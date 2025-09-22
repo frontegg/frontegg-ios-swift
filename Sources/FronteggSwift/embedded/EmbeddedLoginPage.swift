@@ -13,7 +13,6 @@ public struct EmbeddedLoginPage: View {
     @EnvironmentObject var fronteggAuth: FronteggAuth
     
     public init() {
-        
     }
     
     

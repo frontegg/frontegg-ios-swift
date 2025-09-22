@@ -123,7 +123,7 @@ public final class SocialLoginUrlGenerator {
             return comps.url
         }
         
-        return try buildProviderURL(provider: provider, option: option, action: action)
+        return try await buildProviderURL(provider: provider, option: option, action: action)
     }
     
     @discardableResult
@@ -170,7 +170,7 @@ private extension SocialLoginUrlGenerator {
         provider: SocialLoginProvider,
         option: SocialLoginOption,
         action: SocialLoginAction
-    ) throws -> URL? {
+    ) async throws -> URL? {
         
         let details = provider.details
         guard var comps = URLComponents(string: details.authorizeEndpoint) else { return nil }
@@ -189,7 +189,7 @@ private extension SocialLoginUrlGenerator {
         }
 
         // 3. Redirect URI and State
-        let redirectUri = defaultRedirectUri()
+        let redirectUri = defaultSocialLoginRedirectUri()
         let state = try Self.createState(provider: provider,
                                      appId: FronteggAuth.shared.applicationId,
                                      action: action)
@@ -208,12 +208,12 @@ private extension SocialLoginUrlGenerator {
         }
         
         // 5. PKCE Challenge
-        if details.requiresPKCE {
-//            let verifier = try Self.requireCodeVerifier()
-//            queryItems.append(contentsOf: [
-//                URLQueryItem(name: "code_challenge", value: verifier.s256CodeChallenge()),
-//                URLQueryItem(name: "code_challenge_method", value: "S256")
-//            ])
+        if details.requiresPKCE && FronteggAuth.shared.featureFlags.isOn("identity-sso-force-pkce") {
+            let verifier: String = try await Self.getCodeVerifierFromWebview()
+            queryItems.append(contentsOf: [
+                URLQueryItem(name: "code_challenge", value: verifier.s256CodeChallenge()),
+                URLQueryItem(name: "code_challenge_method", value: "S256")
+            ])
         }
         
         // 6. Prompt for consent
@@ -236,7 +236,7 @@ private extension SocialLoginUrlGenerator {
 
 // MARK: - Helpers & Extensions
 
-private extension SocialLoginUrlGenerator {
+public extension SocialLoginUrlGenerator {
     
     struct OAuthState: Codable {
         let provider: String
@@ -258,18 +258,34 @@ private extension SocialLoginUrlGenerator {
         return String(data: data, encoding: .utf8) ?? ""
     }
 
-    static func requireCodeVerifier() throws -> String {
-        guard let verifier = CredentialManager.getCodeVerifier(), !verifier.isEmpty else {
+    static func getCodeVerifierFromWebview() async throws -> String {
+        guard let webview = FronteggAuth.shared.webview else {
             throw FronteggError.configError(.failedToGenerateAuthorizeURL)
         }
-        return verifier
+        
+        guard let codeVerifier = try? await webview.evaluateJavaScript("window.localStorage['FRONTEGG_CODE_VERIFIER']") as? String else {
+            throw FronteggError.configError(.failedToGenerateAuthorizeURL)
+        }
+        return codeVerifier
     }
 
-    public func defaultRedirectUri() -> String {
+    public func defaultSocialLoginRedirectUri() -> String {
         let base = FronteggAuth.shared.baseUrl
         let bundleId = FronteggApp.shared.bundleIdentifier
         let baseRedirectUri = "\(base)/oauth/account/social/success"
-//        let baseRedirectUri = "\(base)/oauth/account/redirect/ios/\(bundleId)"
+        
+        guard let encodedRedirectUri = baseRedirectUri
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)?
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            return baseRedirectUri
+        }
+        return encodedRedirectUri
+    }
+    
+    public func defaultRedirectUri() -> String {
+        let base = FronteggAuth.shared.baseUrl
+        let bundleId = FronteggApp.shared.bundleIdentifier
+        let baseRedirectUri = "\(base)/oauth/account/redirect/ios/\(bundleId)"
         
         guard let encodedRedirectUri = baseRedirectUri
             .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)?
@@ -290,11 +306,18 @@ private extension Data {
 }
 
 private extension String {
+    
     func s256CodeChallenge() -> String {
-        guard let data = self.data(using: .utf8) else { return "" }
-        let hash = SHA256.hash(data: data)
-        return Data(hash).base64URLEncodedString()
-    }
+            let data = Data(self.utf8)                            // UTF-8 bytes (same as TextEncoder)
+            let hash = SHA256.hash(data: data)                    // SHA-256 digest
+            let b64 = Data(hash).base64EncodedString()            // Standard Base64 with padding
+            // Convert to Base64URL without padding to match the TS implementation
+            let b64url = b64
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+            return b64url
+        }
 }
 
 private extension URLComponents {

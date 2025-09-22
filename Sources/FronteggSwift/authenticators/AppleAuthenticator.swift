@@ -65,10 +65,10 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
                     
                 } catch {
                     if error is FronteggError {
-                        self.completionHandler?(.failure(error as! FronteggError))
+                        await self.completionHandler?(.failure(error as! FronteggError))
                     }else {
-                        self.logger.error("Failed to authenticate with apple \(error.localizedDescription)")
-                        self.completionHandler?(.failure(.authError(.failedToAuthenticate)))
+                        await self.logger.error("Failed to authenticate with apple \(error.localizedDescription)")
+                        await self.completionHandler?(.failure(.authError(.failedToAuthenticate)))
                     }
                     
                 }

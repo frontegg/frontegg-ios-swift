@@ -22,6 +22,7 @@ class RedirectHandler: NSObject, URLSessionTaskDelegate {
 
 
 public class Api {
+    private static let DEAFULT_TIMEOUT: Int = 10
     private let logger = getLogger("Api")
     private let baseUrl: String
     private let clientId: String
@@ -41,103 +42,187 @@ public class Api {
         }
     }
     
-    internal func putRequest(path:String, body: [String: Any?]) async throws -> (Data, URLResponse) {
+    internal func putRequest(
+        path: String,
+        body: [String: Any?],
+        timeout: Int = Api.DEAFULT_TIMEOUT
+    ) async throws -> (Data, URLResponse) {
         let urlStr = "\(self.baseUrl)/\(path)"
         guard let url = URL(string: urlStr) else {
             throw ApiError.invalidUrl("invalid url: \(urlStr)")
         }
         
         var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
-        
-        if (self.applicationId != nil) {
-            request.setValue(self.applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
+        if let applicationId = self.applicationId {
+            request.setValue(applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
         }
-        
         if let accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "authorization")
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         }
-        
-        request.httpMethod = "PUT"
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         
-        return try await URLSession.shared.data(for: request)
+        // per-task timeout
+        request.timeoutInterval = TimeInterval(timeout)
+        
+        // session-level timeouts
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = TimeInterval(timeout)
+        config.timeoutIntervalForResource = TimeInterval(timeout)
+        config.waitsForConnectivity = false
+        
+        let session = URLSession(configuration: config)
+        return try await session.data(for: request)
     }
     
     internal func postRequest(
-        path:String,
+        path: String,
         body: [String: Any?],
         additionalHeaders: [String: String] = [:],
-        followRedirect:Bool = true
+        followRedirect: Bool = true,
+        timeout: Int = Api.DEAFULT_TIMEOUT
     ) async throws -> (Data, URLResponse) {
-        let urlStr = if(path.starts(with: self.baseUrl)) {
-            path
-        }else{
-            "\(self.baseUrl)\(path.starts(with: "/") ? path : "/\(path)")"
-        }
+        // Build URL
+        let urlStr = path.starts(with: self.baseUrl)
+        ? path
+        : "\(self.baseUrl)\(path.starts(with: "/") ? path : "/\(path)")"
         
         guard let url = URL(string: urlStr) else {
             throw ApiError.invalidUrl("invalid url: \(urlStr)")
         }
         
-        
+        // Prepare request
         var request = URLRequest(url: url)
+        request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
         
-        if (self.applicationId != nil) {
-            request.setValue(self.applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
+        if let applicationId = self.applicationId {
+            request.setValue(applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
         }
         
-        additionalHeaders.forEach({ (key: String, value: String) in
+        additionalHeaders.forEach { key, value in
             request.setValue(value, forHTTPHeaderField: key)
-        })
+        }
         
         if let accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
             request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         }
         
-        request.httpMethod = "POST"
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         
-        if(!followRedirect){
-            // Create a custom URLSession with the redirect handler
+        // Apply per-task timeout (covers the whole transfer for this request)
+        request.timeoutInterval = TimeInterval(timeout)
+        
+        // Session-level timeouts (cover request + resource)
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = TimeInterval(timeout)          // idle time between bytes / request phase
+        config.timeoutIntervalForResource = TimeInterval(timeout)         // total resource load time
+        config.waitsForConnectivity = false                               // fail fast if offline (optional)
+        
+        // Choose session (with or without redirect following)
+        let session: URLSession
+        if followRedirect {
+            session = URLSession(configuration: config)
+        } else {
             let redirectHandler = RedirectHandler()
-            let sessionConfig = URLSessionConfiguration.default
-            let session = URLSession(configuration: sessionConfig, delegate: redirectHandler, delegateQueue: nil)
-            return try await session.data(for: request)
-            
+            session = URLSession(configuration: config, delegate: redirectHandler, delegateQueue: nil)
         }
         
-        return try await URLSession.shared.data(for: request)
+        // Make the call
+        return try await session.data(for: request)
     }
     
-    internal func silentAuthorize(refreshTokenCookie:String, deviceTokenCookie: String?) async throws -> (Data, URLResponse) {
+    internal func getRequest(
+        path: String,
+        accessToken: String?,
+        refreshToken: String? = nil,
+        additionalHeaders: [String: String] = [:],
+        followRedirect: Bool = true,
+        timeout: Int = Api.DEAFULT_TIMEOUT
+    ) async throws -> (Data, URLResponse) {
+        let urlStr = path.starts(with: self.baseUrl)
+            ? path
+            : "\(self.baseUrl)\(path.starts(with: "/") ? path : "/\(path)")"
+
+        guard let url = URL(string: urlStr) else {
+            throw ApiError.invalidUrl("invalid url: \(urlStr)")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
+        if let accessToken {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
+        if let refreshToken {
+            request.setValue("\(self.cookieName)=\(refreshToken)", forHTTPHeaderField: "Cookie")
+        }
+        if let applicationId = self.applicationId {
+            request.setValue(applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
+        }
+        additionalHeaders.forEach { k, v in request.setValue(v, forHTTPHeaderField: k) }
+
+        // per-task timeout
+        request.timeoutInterval = TimeInterval(timeout)
+
+        // session-level timeouts
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = TimeInterval(timeout)
+        config.timeoutIntervalForResource = TimeInterval(timeout)
+        config.waitsForConnectivity = false
+
+        let session: URLSession
+        if followRedirect {
+            session = URLSession(configuration: config)
+        } else {
+            let redirectHandler = RedirectHandler()
+            session = URLSession(configuration: config, delegate: redirectHandler, delegateQueue: nil)
+        }
+
+        return try await session.data(for: request)
+    }
+
+    
+    internal func silentAuthorize(
+        refreshTokenCookie: String,
+        deviceTokenCookie: String?,
+        timeout: Int = Api.DEAFULT_TIMEOUT
+    ) async throws -> (Data, URLResponse) {
         let urlStr = "\(self.baseUrl)/oauth/authorize/silent"
         guard let url = URL(string: urlStr) else {
             throw ApiError.invalidUrl("invalid url: \(urlStr)")
         }
-        
+
         var request = URLRequest(url: url)
+        request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
-        
-        if (self.applicationId != nil) {
-            request.setValue(self.applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
+        if let applicationId = self.applicationId {
+            request.setValue(applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
         }
-        
         request.setValue("\(refreshTokenCookie);\(deviceTokenCookie ?? "")", forHTTPHeaderField: "Cookie")
-        
-        request.httpMethod = "POST"
         request.httpBody = try JSONSerialization.data(withJSONObject: [:])
-        
-        return try await URLSession.shared.data(for: request)
+
+        // per-task timeout
+        request.timeoutInterval = TimeInterval(timeout)
+
+        // session-level timeouts
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = TimeInterval(timeout)
+        config.timeoutIntervalForResource = TimeInterval(timeout)
+        config.waitsForConnectivity = false
+
+        let session = URLSession(configuration: config)
+        return try await session.data(for: request)
     }
-    
+
     
     internal func authroizeWithTokens(refreshToken:String, deviceTokenCookie:String? = nil) async throws -> AuthResponse {
         
@@ -150,58 +235,11 @@ public class Api {
         return try JSONDecoder().decode(AuthResponse.self, from: data)
     }
     
-    internal func getRequest(path:String, accessToken:String?, refreshToken: String? = nil, additionalHeaders: [String: String] = [:], followRedirect:Bool = true) async throws -> (Data, URLResponse) {
-        
-        
-        
-        let urlStr = if(path.starts(with: self.baseUrl)) {
-            path
-        }else{
-            "\(self.baseUrl)\(path.starts(with: "/") ? path : "/\(path)")"
-        }
-        
-        guard let url = URL(string: urlStr) else {
-            throw ApiError.invalidUrl("invalid url: \(urlStr)")
-        }
-        
-        var request = URLRequest(url: url)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
-        if(accessToken != nil){
-            request.setValue("Bearer \(accessToken!)", forHTTPHeaderField: "Authorization")
-        }
-        if(refreshToken != nil){
-            let cookieHeaderValue = "\(self.cookieName)=\(refreshToken!)"
-            request.setValue(cookieHeaderValue, forHTTPHeaderField: "Cookie")
-        }
-        if (self.applicationId != nil) {
-            request.setValue(self.applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
-        }
-        
-        additionalHeaders.forEach({ (key: String, value: String) in
-            request.setValue(value, forHTTPHeaderField: key)
-        })
-        
-        request.httpMethod = "GET"
-        
-        
-        if(!followRedirect){
-            // Create a custom URLSession with the redirect handler
-            let redirectHandler = RedirectHandler()
-            let sessionConfig = URLSessionConfiguration.default
-            let session = URLSession(configuration: sessionConfig, delegate: redirectHandler, delegateQueue: nil)
-            return try await session.data(for: request)
-            
-        }
-        
-        return try await URLSession.shared.data(for: request)
-    }
-    
     internal func refreshToken(refreshToken: String) async throws -> AuthResponse {
         let (data, response) = try await postRequest(path: "oauth/token", body: [
             "grant_type": "refresh_token",
             "refresh_token": refreshToken,
-        ])
+        ], timeout: 5)
         
         if let res = response as? HTTPURLResponse, res.statusCode == 401 {
             self.logger.error("failed to refresh token, error: \(String(data: data, encoding: .utf8) ?? "unknown error")")
@@ -209,7 +247,6 @@ public class Api {
         }
         return try JSONDecoder().decode(AuthResponse.self, from: data)
     }
-    
     
     internal func refreshTokenForMfa(refreshTokenCookie: String) async -> [String:Any]? {
         do {
@@ -239,12 +276,12 @@ public class Api {
                 "redirect_uri": redirectUrl,
                 "code_verifier": codeVerifier,
             ])
-
+            
             if let responseString = String(data: data, encoding: .utf8),
                responseString.contains("\"errors\"") || responseString.contains("\"error\"") {
                 return (nil, FronteggError.authError(.other(NSError(domain: "FronteggAuth", code: 400, userInfo: [NSLocalizedDescriptionKey: responseString]))))
             }
-
+            
             return (try JSONDecoder().decode(AuthResponse.self, from: data), nil)
         } catch {
             return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
@@ -269,14 +306,13 @@ public class Api {
         return try JSONDecoder().decode(User.self, from: mergedData)
     }
     
-    
     public func switchTenant(tenantId: String) async throws -> Void {
         _ = try await putRequest(path: "identity/resources/users/v1/tenant", body: ["tenantId":tenantId])
     }
     
     internal func logout(accessToken: String?, refreshToken: String?) async {
         if refreshToken == nil {
-           return
+            return
         }
         
         do {
@@ -288,7 +324,7 @@ public class Api {
                 self.logger.info("Already logged out")
             }
         } catch {
-            self.logger.info("Uknonwn error when try to logout: \(error)")
+            self.logger.warning("API logout failed: \(error.localizedDescription). Proceeding with local cleanup.")
         }
     }
     
@@ -320,7 +356,6 @@ public class Api {
         }
         return nil
     }
-    
     
     internal func preloginWebauthn() async throws -> WebauthnPreloginResponse {
         self.logger.info("Start webauthn prelogin")
@@ -372,16 +407,12 @@ public class Api {
         return try JSONDecoder().decode(AuthResponse.self, from: data)
     }
     
-    
-    
     public func getSocialLoginConfig() async throws -> SocialLoginConfig {
         let (jsonData, _) = try await FronteggAuth.shared.api.getRequest(path: "/frontegg/identity/resources/sso/v2", accessToken: nil)
         let options = try JSONDecoder().decode([SocialLoginOption].self, from: jsonData)
         
         return SocialLoginConfig(options: options)
     }
-    
-    
     
     @available(iOS 15.0, *)
     internal func postloginAppleNative(_ code: String) async throws -> AuthResponse {
@@ -410,7 +441,7 @@ public class Api {
            let mfaRequired = jsonResponse["mfaRequired"] as? Bool, mfaRequired == true {
             
             if let cookies = FronteggAuth.shared.api.getCookiesFromHeaders(response: postloginHTTPResponse),
-                  let refreshToken = cookies.0 {
+               let refreshToken = cookies.0 {
                 throw FronteggError.authError(.mfaRequired(jsonResponse, refreshToken: refreshToken))
             }
             // Throw an exception if MFA is required
@@ -428,6 +459,13 @@ public class Api {
         
         // Decode and return the AuthResponse
         return try JSONDecoder().decode(AuthResponse.self, from: data)
+    }
+    
+    
+    internal func getFeatureFlags() async throws -> String {
+        let (stringData, _) = try await FronteggAuth.shared.api.getRequest(path: "/flags", accessToken: nil)
+        
+        return String(data: stringData, encoding: .utf8) ?? ""
     }
 }
 

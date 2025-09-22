@@ -62,9 +62,10 @@ public class FronteggAuth: ObservableObject {
     
     private let logger = getLogger("FronteggAuth")
     public let credentialManager: CredentialManager
-    public var api: Api
     private var multiFactorAuthenticator: MultiFactorAuthenticator
     private var stepUpAuthenticator: StepUpAuthenticator
+    public var api: Api
+    public var featureFlags: FeatureFlags
     private var subscribers = Set<AnyCancellable>()
     private var refreshTokenDispatch: DispatchWorkItem?
     var loginCompletion: CompletionHandler? = nil
@@ -89,6 +90,7 @@ public class FronteggAuth: ObservableObject {
         self.clientId = clientId
         self.applicationId = applicationId
         self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
+        self.featureFlags = FeatureFlags(.init(clientId:self.clientId, api:self.api))
         self.multiFactorAuthenticator = MultiFactorAuthenticator(api: api, baseUrl: baseUrl)
         self.stepUpAuthenticator = StepUpAuthenticator(credentialManager: credentialManager)
         
@@ -133,6 +135,7 @@ public class FronteggAuth: ObservableObject {
         self.applicationId = applicationId
         self.isRegional = false
         self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
+        self.featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self.api))
         self.initializeSubscriptions()
     }
     
@@ -148,6 +151,7 @@ public class FronteggAuth: ObservableObject {
             self.clientId = config.clientId
             self.applicationId = config.applicationId
             self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
+            self.featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self.api))
             self.initializeSubscriptions()
         }
     }
@@ -172,7 +176,7 @@ public class FronteggAuth: ObservableObject {
         self.applicationId = config.applicationId
         self.selectedRegion = config
         self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
-        
+        self.featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self.api))
         self.initializeSubscriptions()
     }
     
@@ -231,12 +235,20 @@ public class FronteggAuth: ObservableObject {
             
             DispatchQueue.global(qos: .userInitiated).async {
                 Task {
+                    await self.featureFlags.start();
                     await self.refreshTokenIfNeeded()
                 }
             }
         } else {
-            self.isLoading = false
-            self.initializing = false
+            DispatchQueue.global(qos: .userInitiated).async {
+                Task {
+                    await self.featureFlags.start();
+                    DispatchQueue.main.async {
+                        self.isLoading = false
+                        self.initializing = false
+                    }
+                }
+            }
         }
     }
     
@@ -383,11 +395,8 @@ public class FronteggAuth: ObservableObject {
             self.isLoading = true
             defer { self.isLoading = false }
             
-            do {
-                try await self.api.logout(accessToken: self.accessToken, refreshToken: self.refreshToken)
-            } catch {
-                self.logger.warning("API logout failed: \(error.localizedDescription). Proceeding with local cleanup.")
-            }
+            
+            await self.api.logout(accessToken: self.accessToken, refreshToken: self.refreshToken)
             
             self.credentialManager.clear()
             if clearCookie {
@@ -527,45 +536,77 @@ public class FronteggAuth: ObservableObject {
         }
     }
     
+    private func unwrapURLError(_ error: Error) -> URLError? {
+        // Walk underlying errors to find a URLError
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            return URLError(URLError.Code(rawValue: nsError.code))
+        }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+            if underlying.domain == NSURLErrorDomain {
+                return URLError(URLError.Code(rawValue: underlying.code))
+            }
+            // One more level just in case the network error is double-wrapped
+            if let deeper = underlying.userInfo[NSUnderlyingErrorKey] as? NSError, deeper.domain == NSURLErrorDomain {
+                return URLError(URLError.Code(rawValue: deeper.code))
+            }
+        }
+        return nil
+    }
+    private func isConnectivityError(_ error: Error) -> Bool {
+        guard let urlErr = unwrapURLError(error) else { return false }
+        switch urlErr.code {
+        case .notConnectedToInternet,
+                .timedOut,
+                .cannotFindHost,
+                .cannotConnectToHost,
+                .networkConnectionLost,
+                .dnsLookupFailed,          // available via URLError.Code
+                .secureConnectionFailed,
+                .cannotLoadFromNetwork,
+                .internationalRoamingOff,
+                .dataNotAllowed:
+            return true
+        default:
+            return false
+        }
+    }
+    private func handleOfflineLikeFailure(enableOfflineMode: Bool, attempts: Int) {
+        self.logger.info("Refresh rescheduled due to connectivity error")
+        self.lastAttemptReason = .noNetwork
+        
+        if(enableOfflineMode){
+            DispatchQueue.main.sync {
+                self.user = self.user ?? credentialManager.getOfflineUser()
+                self.initializing = false
+                self.isAuthenticated = false
+                self.isLoading = false
+            }
+        }
+        
+        scheduleTokenRefresh(offset: 2, attempts: attempts + 1)
+    }
+    
     public func refreshTokenIfNeeded(attempts: Int = 0) async -> Bool {
         
-        var enableOfflineMode: Bool = false
-        if let config = try? PlistHelper.fronteggConfig() {
-            enableOfflineMode = config.enableOfflineMode
-        }
+        let enableOfflineMode = (try? PlistHelper.fronteggConfig().enableOfflineMode) ?? false
         
         guard let refreshToken = self.refreshToken else {
             self.logger.info("No refresh token found")
             return false
         }
         
-        
+        // Hard no-network (quick exit path)
         guard await NetworkStatusMonitor.isActive else {
             self.logger.info("Refresh rescheduled due to inactive internet")
-            
-            self.lastAttemptReason = .noNetwork
-            if(attempts > 2){
-                let offlineUser = credentialManager.getOfflineUser()
-                DispatchQueue.main.sync {
-                    if enableOfflineMode {
-                        self.user = self.user ?? offlineUser
-                    }
-                    self.initializing = false
-                    self.isAuthenticated = false
-                    self.isLoading = false
-                }
-                scheduleTokenRefresh(offset: 2, attempts: attempts + 1)
-            }else {
-                // attempt = 0 to prevent abandon refresh token due to network errors
-                scheduleTokenRefresh(offset: 2, attempts: attempts + 1)
-            }
+            handleOfflineLikeFailure(enableOfflineMode: enableOfflineMode, attempts: attempts)
             return false
         }
         
         if enableOfflineMode && self.lastAttemptReason == .noNetwork {
-            self.logger.info("refresh tokening after network reconnected, offline mode enabled")
-        } else if (attempts > 10) {
-            self.logger.info("refresh token attemps exceeded, logging out")
+            self.logger.info("Refreshing after network reconnect, offline mode enabled")
+        } else if attempts > 10 {
+            self.logger.info("Refresh token attempts exceeded, logging out")
             self.credentialManager.clear()
             DispatchQueue.main.sync {
                 self.initializing = false
@@ -579,29 +620,16 @@ public class FronteggAuth: ObservableObject {
             return false
         }
         
-        // clear value
         self.lastAttemptReason = nil
         
-        
-        if(self.refreshingToken){
+        if self.refreshingToken {
             self.logger.info("Skip refreshing token - already in progress")
             return false
         }
         
         self.logger.info("Refreshing token")
-        
-        
-        DispatchQueue.main.sync {
-            self.refreshingToken = true
-        }
-        
-        defer {
-            // cleanup scope
-            DispatchQueue.main.sync {
-                self.refreshingToken = false
-            }
-        }
-        
+        DispatchQueue.main.sync { self.refreshingToken = true }
+        defer { DispatchQueue.main.sync { self.refreshingToken = false } }
         
         do {
             let data = try await self.api.refreshToken(refreshToken: refreshToken)
@@ -610,8 +638,8 @@ public class FronteggAuth: ObservableObject {
             return true
             
         } catch let error as FronteggError {
-            switch error {
-            case .authError(FronteggError.Authentication.failedToRefreshToken):
+            // 1) If it’s an auth failure, logout as before
+            if case .authError(FronteggError.Authentication.failedToRefreshToken) = error {
                 DispatchQueue.main.sync {
                     self.initializing = false
                     self.isAuthenticated = false
@@ -621,18 +649,33 @@ public class FronteggAuth: ObservableObject {
                     // isLoading must be at the last bottom
                     self.isLoading = false
                 }
-            default:
-                self.logger.info("Refresh rescheduled due to unknown error \(error.localizedDescription)")
-                scheduleTokenRefresh(offset: 1, attempts: attempts + 1)
-                self.lastAttemptReason = .unknown
+                return false
             }
-        } catch {
+            
+            // 2) If it *behaves like offline* (DNS/host/connect/timeouts), go offline + retry
+            if isConnectivityError(error) {
+                handleOfflineLikeFailure(enableOfflineMode: enableOfflineMode, attempts: attempts)
+                return false
+            }
+            
+            // 3) Unknown/non-connectivity error → retry with small delay, mark unknown
             self.logger.info("Refresh rescheduled due to unknown error \(error.localizedDescription)")
             scheduleTokenRefresh(offset: 1, attempts: attempts + 1)
             self.lastAttemptReason = .unknown
+            return false
+            
+        } catch {
+            // Non-Frontegg error path: still detect connectivity
+            if isConnectivityError(error) {
+                handleOfflineLikeFailure(enableOfflineMode: enableOfflineMode, attempts: attempts)
+                return false
+            }
+            
+            self.logger.info("Refresh rescheduled due to unknown error \(error.localizedDescription)")
+            scheduleTokenRefresh(offset: 1, attempts: attempts + 1)
+            self.lastAttemptReason = .unknown
+            return false
         }
-        return false
-        
     }
     
     
@@ -876,6 +919,81 @@ public class FronteggAuth: ObservableObject {
         WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: ephemeralSession ?? true, window:window,  completionHandler: oauthCallback)
     }
     
+    
+    /// Starts a social login flow.
+    ///
+    /// - Parameters:
+    ///   - providerString: The social provider raw value (e.g., "google", "facebook", "apple").
+    ///   - action: The social login action to perform (default: `.login`).
+    ///   - completion: Optional completion handler. A no-op is used if nil.
+    public func handleSocialLogin(
+        providerString: String,
+        action: SocialLoginAction = .login,
+        completion: FronteggAuth.CompletionHandler? = nil
+    ) {
+        let done = completion ?? { _ in }
+
+        // Special-case Apple to keep branching explicit and fast.
+        if providerString == "apple" {
+            loginWithApple(done)
+            return
+        }
+
+        guard let provider = SocialLoginProvider(rawValue: providerString) else {
+            logger.warning("Social login not supported: \(providerString)")
+            return
+        }
+
+        let oauthCallback: (URL?, Error?) -> Void = { [weak self] callbackURL, error in
+            guard let self else { return }
+
+            if let error {
+                self.logger.error("OAuth error: \(String(describing: error))")
+                return
+            }
+
+            guard let callbackURL else {
+                self.logger.info("OAuth callback invoked with nil URL and no error")
+                return
+            }
+
+            self.logger.debug("OAuth callback URL: \(callbackURL.absoluteString)")
+
+            DispatchQueue.main.async { [weak self] in
+                guard
+                    let self,
+                    let finalURL = self.handleSocialLoginCallback(callbackURL)
+                else { return }
+                self.loadInWebView(finalURL)
+            }
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            guard let authURL = try? await SocialLoginUrlGenerator.shared
+                .authorizeURL(for: provider, action: action)
+            else {
+                self.logger.error("Failed to generate auth URL for \(provider)")
+                return
+            }
+
+            self.logger.debug("Auth URL: \(authURL.absoluteString)")
+
+            WebAuthenticator.shared.start(
+                authURL,
+                ephemeralSession: false,
+                completionHandler: oauthCallback
+            )
+        }
+    }
+    
+    private func loadInWebView(_ url: URL) {
+        guard let webView = webview else { return }
+        let request = URLRequest(url: url, cachePolicy: .reloadRevalidatingCacheData)
+        webView.load(request)
+    }
+    
     public func directLoginAction(
         window: UIWindow?,
         type: String,
@@ -886,8 +1004,7 @@ public class FronteggAuth: ObservableObject {
         remainCodeVerifier: Bool = false,
         action: SocialLoginAction = SocialLoginAction.login,
     ) {
-            
-            
+     
             let completion = _completion ?? { res in
                 
             }
@@ -897,48 +1014,7 @@ public class FronteggAuth: ObservableObject {
                 return
             }
             
-            if let provider = SocialLoginProvider(rawValue: data), type == "social-login" {
-                let oauthCallback: (URL?, Error?) -> Void = { callbackURL, error in
-                    if let error = error {
-                        print("❌ Error: \(error)")
-                    } else if let callbackURL = callbackURL {
-                        print("🔹 URL: \(callbackURL)")
-                        
-                        DispatchQueue.main.async {
-                            if let socialLoginUrl = self.handleSocialLoginCallback(callbackURL){
-                                if let webView = self.webview {
-                                    let request = URLRequest(url: socialLoginUrl, cachePolicy: .reloadRevalidatingCacheData)
-                                    webView.load(request)
-                                    
-                                }
-                            }
-                        }
-                        
-                    } else {
-                        print("ℹ️ Callback invoked with no URL and no error")
-                    }
-                }
-                
-                let task: Task<Void, Never> = Task<Void, Never> {
-                    // Make the result type explicit to help inference
-                    let url: URL? = try? await SocialLoginUrlGenerator.shared
-                        .authorizeURL(for: provider, action: action)
-                    
-                    print("url: \(String(describing: url))")
-                    
-                    guard let authURL = url else {
-                        print("❌ Failed to generate auth URL")
-                        return
-                    }
-                    
-                    WebAuthenticator.shared.start(
-                        authURL,
-                        ephemeralSession: ephemeralSession ?? true,
-                        completionHandler: oauthCallback
-                    )
-                }
-                return
-            }
+        
             
             var directLogin = [
                 "type": type,
@@ -961,9 +1037,9 @@ public class FronteggAuth: ObservableObject {
             let oauthCallback = createOauthCallbackHandler(completion)
             let (authorizeUrl, codeVerifier) = generatedUrl
             CredentialManager.saveCodeVerifier(codeVerifier)
-            
-            WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: ephemeralSession ?? true, window: window ?? getRootVC()?.view.window, completionHandler: oauthCallback)
-        }
+        
+        WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: ephemeralSession ?? true, window: window ?? getRootVC()?.view.window, completionHandler: oauthCallback)
+    }
     
     
     internal func getRootVC(_ useAppRootVC: Bool = false) -> UIViewController? {
@@ -1274,36 +1350,36 @@ public class FronteggAuth: ObservableObject {
     
     public func handleSocialLoginCallback(_ url: URL) -> URL? {
         guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
-
+        
         // 1) Host must match Frontegg base URL host
         guard let allowedHost = URL(string: FronteggAuth.shared.baseUrl)?.host,
               comps.host == allowedHost else { return nil }
-
+        
         // 2) Path: /oauth/account/redirect/ios/{bundleId}/{provider}
         let prefix = "/oauth/account/redirect/ios/"
         let path = comps.path
         guard path.hasPrefix(prefix) || path.hasPrefix("/ios/oauth/callback") else {
             return nil
         }
-
+        
         let bundleId = FronteggApp.shared.bundleIdentifier
         guard !bundleId.isEmpty else { return nil }
-
+        
         // Helpers
         let items = comps.queryItems ?? []
         func q(_ name: String) -> String? { items.first { $0.name == name }?.value }
-
+        
         // Extract supported params
         var queryParams: [String: String] = [:]
-
+        
         if let code = q("code"), !code.isEmpty {
             queryParams["code"] = code
         }
-
+        
         if let idToken = q("id_token"), !idToken.isEmpty {
             queryParams["id_token"] = idToken
         }
-
+        
         let redirectUri = SocialLoginUrlGenerator.shared.defaultRedirectUri()
         queryParams["redirectUri"] = redirectUri.addingPercentEncoding(withAllowedCharacters: .alphanumerics)
         // Process state
@@ -1321,18 +1397,18 @@ public class FronteggAuth: ObservableObject {
                 queryParams["state"] = state
             }
         }
-
+        
         if let s = WebAuthenticator.shared.session {
             s.cancel()
         }
-
+        
         // Build query string safely
         var compsOut = URLComponents()
         compsOut.queryItems = queryParams.map { URLQueryItem(name: $0.key, value: $0.value) }
-
+        
         return URL(string: "\(FronteggAuth.shared.baseUrl)/oauth/account/social/success?\(compsOut.query ?? "")")
     }
-
+    
     
     
     public func requestAuthorizeAsync(refreshToken: String, deviceTokenCookie: String? = nil) async throws -> User {

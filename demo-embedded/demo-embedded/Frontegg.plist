@@ -16,5 +16,7 @@
 	<string>trace</string>
 	<key>applicationId</key>
 	<string>51e9b0d6-6f07-4989-9ce1-2c0b0ad0791f</string>
+	<key>enableOfflineMode</key>
+	<true/>
 </dict>
 </plist>

@@ -16,7 +16,7 @@ public struct FronteggWebView: UIViewRepresentable {
     private var fronteggAuth: FronteggAuth
     private var logger = getLogger("FronteggWebView")
     public init() {
-        self.fronteggAuth = FronteggApp.shared.auth;
+        self.fronteggAuth = FronteggAuth.shared;
     }
 
     public func makeUIView(context: Context) -> WKWebView {
@@ -44,8 +44,6 @@ public struct FronteggWebView: UIViewRepresentable {
             jsObject = "{}"
         }
         
-        
-    
         let jsScript = WKUserScript(source: "window.FronteggNativeBridgeFunctions = \(jsObject);", injectionTime: .atDocumentStart, forMainFrameOnly: false)
         userContentController.addUserScript(jsScript)
         
@@ -74,12 +72,11 @@ public struct FronteggWebView: UIViewRepresentable {
         controller.webView = webView
         webView.backgroundColor = FronteggApp.shared.backgroundColor
 
-#if compiler(>=5.8) && os(iOS) && DEBUG
-if #available(iOS 16.4, *) {
-    webView.isInspectable = true
-}
-#endif
-
+        #if compiler(>=5.8) && os(iOS) && DEBUG
+        if #available(iOS 16.4, *) {
+            webView.isInspectable = true
+        }
+        #endif
         
         var url: URL
         var codeVerifier: String;
@@ -109,9 +106,7 @@ if #available(iOS 16.4, *) {
         return webView
     }
 
-    public func updateUIView(_ uiView: WKWebView, context: Context) {
-        
-    }
+    public func updateUIView(_ uiView: WKWebView, context: Context) {}
     
 }
 
