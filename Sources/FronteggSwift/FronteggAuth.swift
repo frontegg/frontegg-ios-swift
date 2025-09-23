@@ -586,10 +586,13 @@ public class FronteggAuth: FronteggState {
         self.lastAttemptReason = .noNetwork
         
         if(enableOfflineMode){
-            setUser(self.user ?? credentialManager.getOfflineUser())
-            setInitializing(false)
-            setIsAuthenticated(false)
-            setIsLoading(false)
+            let offlineUserData = self.credentialManager.getOfflineUser()
+            DispatchQueue.main.async {
+                self.setUser(self.user ?? offlineUserData)
+                self.setInitializing(false)
+                self.setIsAuthenticated(false)
+                self.setIsLoading(false)
+            }
         }
         
         scheduleTokenRefresh(offset: 2, attempts: attempts + 1)
@@ -617,13 +620,15 @@ public class FronteggAuth: FronteggState {
             self.logger.info("Refresh token attempts exceeded, logging out")
             self.credentialManager.clear()
             
-            setInitializing(false)
-            setIsAuthenticated(false)
-            setAccessToken(nil)
-            setRefreshToken(nil)
-            setRefreshingToken(false)
-            // isLoading must be at the last bottom
-            setIsLoading(false)
+            DispatchQueue.main.sync {
+                self.setInitializing(false)
+                self.setIsAuthenticated(false)
+                self.setAccessToken(nil)
+                self.setRefreshToken(nil)
+                self.setRefreshingToken(false)
+                // isLoading must be at the last bottom
+                self.setIsLoading(false)
+            }
             return false
         }
         
@@ -650,13 +655,16 @@ public class FronteggAuth: FronteggState {
         } catch let error as FronteggError {
             // 1) If it’s an auth failure, logout as before
             if case .authError(FronteggError.Authentication.failedToRefreshToken) = error {
-                setInitializing(false)
-                setIsAuthenticated(false)
-                setAccessToken(nil)
-                setRefreshToken(nil)
+                
                 self.credentialManager.clear()
-                // isLoading must be at the last bottom
-                setIsLoading(false)
+                DispatchQueue.main.sync {
+                    self.setInitializing(false)
+                    self.setIsAuthenticated(false)
+                    self.setAccessToken(nil)
+                    self.setRefreshToken(nil)
+                    // isLoading must be at the last bottom
+                    self.setIsLoading(false)
+                }
                 return false
             }
             
