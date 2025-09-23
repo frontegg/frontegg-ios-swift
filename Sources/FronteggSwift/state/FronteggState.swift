@@ -71,7 +71,7 @@ public class FronteggState: ObservableObject {
         if Thread.isMainThread {
             setIfChanged(\.refreshingToken, v)
         } else {
-            DispatchQueue.main.sync {
+            DispatchQueue.main.async {
                 self.setIfChanged(\.refreshingToken, v)
             }
         }
