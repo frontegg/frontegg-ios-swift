@@ -92,7 +92,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             }
         } else {
             logger.warning("failed to get url from navigationAction")
-            self.fronteggAuth.webLoading = false
+            self.fronteggAuth.setWebLoading(false)
             return .allow
         }
     }
@@ -128,12 +128,12 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                urlType != .Unknown){
                 
                 if(fronteggAuth.webLoading == false) {
-                    fronteggAuth.webLoading = true
+                    fronteggAuth.setWebLoading(true)
                 }
             }
         } else {
             logger.warning("failed to get url from didStartProvisionalNavigation()")
-            self.fronteggAuth.webLoading = false
+            self.fronteggAuth.setWebLoading(false)
         }
     }
     
@@ -146,26 +146,24 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             
             if(urlType == .internalRoutes ) {
                 logger.trace("hiding Loader screen after 300ms")
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     // usually internal routes are redirects
-                    // this 300ms will prevent loader blinking
-                    if(self.fronteggAuth.webLoading) {
-                        self.fronteggAuth.webLoading = false
-                    }
+                    // this 500ms will prevent loader blinking
+                    self.fronteggAuth.setWebLoading(false)
                 }
 
             }
             if urlType == .loginRoutes || urlType == .Unknown {
                 logger.info("hiding Loader screen")
                 if(fronteggAuth.webLoading) {
-                    fronteggAuth.webLoading = false
+                    fronteggAuth.setWebLoading(false)
                 }
             } else if let statusCode = self.lastResponseStatusCode {
                 self.lastResponseStatusCode = nil;
-                self.fronteggAuth.webLoading = false
+                self.fronteggAuth.setWebLoading(false)
                 
                 if(url.absoluteString.starts(with: "\(fronteggAuth.baseUrl)/oauth/authorize")){
-                    self.fronteggAuth.webLoading = false
+                    self.fronteggAuth.setWebLoading(false)
                     let encodedUrl = url.absoluteString.replacingOccurrences(of: "\"", with: "\\\"")
                     let reloadScript = "setTimeout(()=>window.location.href=\"\(encodedUrl)\", 4000)"
                     let jsCode = "(function(){\n" +
@@ -183,14 +181,14 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     let errorMessage = res as? String ?? "Unknown error occured"
                     
                     logger.error("Failed to load page: \(errorMessage), status: \(statusCode)")
-                    self.fronteggAuth.webLoading = false
+                    self.fronteggAuth.setWebLoading(false)
                     let content = generateErrorPage(message: errorMessage, url: url.absoluteString, status: statusCode);
                     webView.loadHTMLString(content, baseURL: nil);
                 }
             }
         } else {
             logger.warning("failed to get url from didFinishNavigation()")
-            self.fronteggAuth.webLoading = false
+            self.fronteggAuth.setWebLoading(false)
         }
     }
     
@@ -225,7 +223,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         logger.error("Failed to load page: \(errorMessage), status: \(statusCode), \(error)")
         
         
-        self.fronteggAuth.webLoading = false
+        self.fronteggAuth.setWebLoading(false)
         let content = generateErrorPage(message: errorMessage, url: url, status: statusCode);
         webView.loadHTMLString(content, baseURL: nil);
         
@@ -244,7 +242,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             _ = webView?.load(URLRequest(url: url))
             return .cancel
         }
-        
+        self.fronteggAuth.setWebLoading(true)
         DispatchQueue.global(qos: .userInitiated).async {
             Task { @MainActor in
                 FronteggAuth.shared.handleHostedLoginCallback(code, savedCodeVerifier ) { res in

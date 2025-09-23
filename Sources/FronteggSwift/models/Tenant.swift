@@ -8,7 +8,7 @@
 import Foundation
 
 
-public struct Tenant: Codable {
+public struct Tenant: Codable, Equatable {
     
     enum DecodeError: Error {
         case invalidJsonData

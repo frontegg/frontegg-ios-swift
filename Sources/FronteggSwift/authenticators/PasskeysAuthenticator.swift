@@ -177,7 +177,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
         do {
     
             DispatchQueue.main.async {
-                FronteggAuth.shared.isLoading = true
+                FronteggAuth.shared.setIsLoading(true)
             }
             
             let prelogin = try await FronteggAuth.shared.api.preloginWebauthn()
@@ -209,7 +209,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
                     logger.error("Error during loginWithPasskeys: \(error.localizedDescription)")
                     
                     DispatchQueue.main.async {
-                        FronteggAuth.shared.isLoading = false
+                        FronteggAuth.shared.setIsLoading(false)
                     }
                     completion?(.failure(.authError(.failedToAuthenticate)))
                 }

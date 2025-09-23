@@ -24,22 +24,8 @@ public enum AttemptReasonType {
 }
 
 
-public class FronteggAuth: ObservableObject {
-    @Published public var accessToken: String?
-    @Published public var refreshToken: String?
-    @Published public var user: User?
-    @Published public var isAuthenticated = false
-    @Published public var isStepUpAuthorization = false
-    @Published public var isLoading = true
-    @Published public var webLoading = true
-    @Published public var loginBoxLoading = false
-    @Published public var initializing = true
-    @Published public var lateInit = false
-    @Published public var showLoader = true
-    @Published public var appLink: Bool = false
-    @Published public var externalLink: Bool = false
-    @Published public var selectedRegion: RegionConfig? = nil
-    @Published public var refreshingToken: Bool = false
+public class FronteggAuth: FronteggState {
+    
     
     public var embeddedMode: Bool
     public var isRegional: Bool
@@ -82,7 +68,6 @@ public class FronteggAuth: ObservableObject {
     ) {
         self.isRegional = isRegional
         self.regionData = regionData
-        self.lateInit = isLateInit ?? false
         self.credentialManager = credentialManager
         
         self.embeddedMode = embeddedMode
@@ -94,7 +79,9 @@ public class FronteggAuth: ObservableObject {
         self.multiFactorAuthenticator = MultiFactorAuthenticator(api: api, baseUrl: baseUrl)
         self.stepUpAuthenticator = StepUpAuthenticator(credentialManager: credentialManager)
         
-        self.selectedRegion = self.getSelectedRegion()
+        super.init()
+        setLateInit(isLateInit ?? false)
+        setSelectedRegion(self.getSelectedRegion())
         
         NotificationCenter.default.addObserver(
             self,
@@ -111,8 +98,8 @@ public class FronteggAuth: ObservableObject {
         )
         
         if ( isRegional || isLateInit == true ) {
-            initializing = false
-            showLoader = false
+            setInitializing(false)
+            setShowLoader(false)
             return;
         }
         
@@ -129,7 +116,7 @@ public class FronteggAuth: ObservableObject {
     
     
     public func manualInit(baseUrl:String, clientId:String, applicationId: String?) {
-        self.lateInit = false
+        setLateInit(false)
         self.baseUrl = baseUrl
         self.clientId = clientId
         self.applicationId = applicationId
@@ -141,10 +128,10 @@ public class FronteggAuth: ObservableObject {
     
     public func manualInitRegions(regions:[RegionConfig]) {
         
-        self.lateInit = false
+        setLateInit(false)
         self.isRegional = true
         self.regionData = regions
-        self.selectedRegion = self.getSelectedRegion()
+        setSelectedRegion(self.getSelectedRegion())
         
         if let config = self.selectedRegion {
             self.baseUrl = config.baseUrl
@@ -174,7 +161,7 @@ public class FronteggAuth: ObservableObject {
         self.baseUrl = config.baseUrl
         self.clientId = config.clientId
         self.applicationId = config.applicationId
-        self.selectedRegion = config
+        setSelectedRegion(config)
         self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
         self.featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self.api))
         self.initializeSubscriptions()
@@ -216,6 +203,28 @@ public class FronteggAuth: ObservableObject {
         let (url, _) = AuthorizeUrlGenerator().generate(remainCodeVerifier:true)
         wv.load(URLRequest(url: url))
         wv.evaluateJavaScript("void(0)", completionHandler: nil)
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            // Stop any in-flight work
+            wv.stopLoading()
+
+            // Drop delegates (they're weak, but do it anyway)
+            wv.navigationDelegate = nil
+            wv.uiDelegate = nil
+            wv.scrollView.delegate = nil
+            
+            // Clear scripts / message handlers if you added any
+           wv.configuration.userContentController.removeAllUserScripts()
+           if #available(iOS 14.0, *) {
+               wv.configuration.userContentController.removeAllScriptMessageHandlers()
+           }
+
+           // Optionally load about:blank to flush page state (not strictly required)
+           wv.loadHTMLString("", baseURL: nil)
+
+           // Detach from view hierarchy and release
+           wv.removeFromSuperview()
+        }
     }
     
     public func initializeSubscriptions() {
@@ -223,15 +232,15 @@ public class FronteggAuth: ObservableObject {
             self.warmingWebView()
         }
         self.$initializing.combineLatest(self.$isAuthenticated, self.$isLoading).sink(){ (initializingValue, isAuthenticatedValue, isLoadingValue) in
-            self.showLoader = initializingValue || (!isAuthenticatedValue && isLoadingValue)
+            self.setShowLoader(initializingValue || (!isAuthenticatedValue && isLoadingValue))
         }.store(in: &subscribers)
         
         if let refreshToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue),
            let accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
             
-            self.refreshToken = refreshToken
-            self.accessToken = accessToken
-            self.isLoading = true
+            setRefreshToken(refreshToken)
+            setAccessToken(accessToken)
+            setIsLoading(true)
             
             DispatchQueue.global(qos: .userInitiated).async {
                 Task {
@@ -241,13 +250,13 @@ public class FronteggAuth: ObservableObject {
                 }
             }
         } else {
-            DispatchQueue.global(qos: .userInitiated).async {
+            DispatchQueue.global(qos: .userInitiated).async { 
                 Task {
                     await self.featureFlags.start();
                     await SocialLoginUrlGenerator.shared.reloadConfigs()
-                    DispatchQueue.main.async {
-                        self.isLoading = false
-                        self.initializing = false
+                    await MainActor.run { [weak self] in
+                        self?.setIsLoading(false)
+                        self?.setInitializing(false)
                     }
                 }
             }
@@ -270,36 +279,35 @@ public class FronteggAuth: ObservableObject {
             }
             
             DispatchQueue.main.sync {
-                self.refreshToken = refreshToken
-                self.accessToken = accessToken
-                self.user = user
-                self.isAuthenticated = true
-                self.appLink = false
-                self.initializing = false
-                self.appLink = false
-                self.isStepUpAuthorization = false
+                
+                setRefreshToken(refreshToken)
+                setAccessToken(accessToken)
+                setUser(user)
+                setIsAuthenticated(true)
+                setAppLink(false)
+                setInitializing(false)
+                setAppLink(false)
+                setIsStepUpAuthorization(false)
                 
                 // isLoading must be at the bottom
-                self.isLoading = false
-                
+                setIsLoading(false)
                 
                 let offset = calculateOffset(expirationTime: decode["exp"] as! Int)
-                
                 scheduleTokenRefresh(offset: offset)
-                
             }
+            
         } catch {
-            logger.error("Failed to load user data: \(error)")
             DispatchQueue.main.sync {
-                self.refreshToken = nil
-                self.accessToken = nil
-                self.user = nil
-                self.isAuthenticated = false
-                self.initializing = false
-                self.appLink = false
+                logger.error("Failed to load user data: \(error)")
+                setRefreshToken(nil)
+                setAccessToken(nil)
+                setUser(nil)
+                setIsAuthenticated(false)
+                setInitializing(false)
+                setAppLink(false)
                 
                 // isLoading must be at the last bottom
-                self.isLoading = false
+                setIsLoading(false)
             }
         }
     }
@@ -394,8 +402,8 @@ public class FronteggAuth: ObservableObject {
     public func logout(clearCookie: Bool = true, _ completion: FronteggAuth.LogoutHandler? = nil) {
         Task { @MainActor in
             
-            self.isLoading = true
-            defer { self.isLoading = false }
+            setIsLoading(true)
+            defer { setIsLoading(false) }
             
             
             await self.api.logout(accessToken: self.accessToken, refreshToken: self.refreshToken)
@@ -405,12 +413,12 @@ public class FronteggAuth: ObservableObject {
                 await self.clearCookie()
             }
             
-            self.isAuthenticated = false
-            self.user = nil
-            self.accessToken = nil
-            self.refreshToken = nil
-            self.initializing = false
-            self.appLink = false
+            setIsAuthenticated(false)
+            setUser(nil)
+            setAccessToken(nil)
+            setRefreshToken(nil)
+            setInitializing(false)
+            setAppLink(false)
             
             completion?(.success(true))
         }
@@ -559,15 +567,15 @@ public class FronteggAuth: ObservableObject {
         guard let urlErr = unwrapURLError(error) else { return false }
         switch urlErr.code {
         case .notConnectedToInternet,
-                .timedOut,
-                .cannotFindHost,
-                .cannotConnectToHost,
-                .networkConnectionLost,
-                .dnsLookupFailed,          // available via URLError.Code
-                .secureConnectionFailed,
-                .cannotLoadFromNetwork,
-                .internationalRoamingOff,
-                .dataNotAllowed:
+             .timedOut,
+             .cannotFindHost,
+             .cannotConnectToHost,
+             .networkConnectionLost,
+             .dnsLookupFailed,        // available via URLError.Code
+             .secureConnectionFailed,
+             .cannotLoadFromNetwork,
+             .internationalRoamingOff,
+             .dataNotAllowed:
             return true
         default:
             return false
@@ -578,18 +586,16 @@ public class FronteggAuth: ObservableObject {
         self.lastAttemptReason = .noNetwork
         
         if(enableOfflineMode){
-            DispatchQueue.main.sync {
-                self.user = self.user ?? credentialManager.getOfflineUser()
-                self.initializing = false
-                self.isAuthenticated = false
-                self.isLoading = false
-            }
+            setUser(self.user ?? credentialManager.getOfflineUser())
+            setInitializing(false)
+            setIsAuthenticated(false)
+            setIsLoading(false)
         }
         
         scheduleTokenRefresh(offset: 2, attempts: attempts + 1)
     }
     
-    public func refreshTokenIfNeeded(attempts: Int = 0) async -> Bool {
+    @discardableResult public func refreshTokenIfNeeded(attempts: Int = 0) async -> Bool {
         
         let enableOfflineMode = (try? PlistHelper.fronteggConfig().enableOfflineMode) ?? false
         
@@ -610,15 +616,14 @@ public class FronteggAuth: ObservableObject {
         } else if attempts > 10 {
             self.logger.info("Refresh token attempts exceeded, logging out")
             self.credentialManager.clear()
-            DispatchQueue.main.sync {
-                self.initializing = false
-                self.isAuthenticated = false
-                self.accessToken = nil
-                self.refreshToken = nil
-                self.refreshingToken = false
-                // isLoading must be at the last bottom
-                self.isLoading = false
-            }
+            
+            setInitializing(false)
+            setIsAuthenticated(false)
+            setAccessToken(nil)
+            setRefreshToken(nil)
+            setRefreshingToken(false)
+            // isLoading must be at the last bottom
+            setIsLoading(false)
             return false
         }
         
@@ -630,8 +635,11 @@ public class FronteggAuth: ObservableObject {
         }
         
         self.logger.info("Refreshing token")
-        DispatchQueue.main.sync { self.refreshingToken = true }
-        defer { DispatchQueue.main.sync { self.refreshingToken = false } }
+        setRefreshingToken(true)
+        
+        defer {
+            setRefreshingToken(false)
+        }
         
         do {
             let data = try await self.api.refreshToken(refreshToken: refreshToken)
@@ -642,15 +650,13 @@ public class FronteggAuth: ObservableObject {
         } catch let error as FronteggError {
             // 1) If it’s an auth failure, logout as before
             if case .authError(FronteggError.Authentication.failedToRefreshToken) = error {
-                DispatchQueue.main.sync {
-                    self.initializing = false
-                    self.isAuthenticated = false
-                    self.accessToken = nil
-                    self.refreshToken = nil
-                    self.credentialManager.clear()
-                    // isLoading must be at the last bottom
-                    self.isLoading = false
-                }
+                setInitializing(false)
+                setIsAuthenticated(false)
+                setAccessToken(nil)
+                setRefreshToken(nil)
+                self.credentialManager.clear()
+                // isLoading must be at the last bottom
+                setIsLoading(false)
                 return false
             }
             
@@ -765,9 +771,9 @@ public class FronteggAuth: ObservableObject {
         
         self.logger.info("Refreshing access token")
         
-        self.refreshingToken = true
+        setRefreshingToken(true)
         defer {
-            self.refreshingToken = false
+            setRefreshingToken(false)
         }
         
         var attempts = 0
@@ -817,11 +823,11 @@ public class FronteggAuth: ObservableObject {
     }
     
     
-    internal func setIsLoading(_ isLoading: Bool){
-        DispatchQueue.main.async {
-            self.isLoading = isLoading
-        }
-    }
+//   internal func setIsLoading(_ isLoading: Bool){
+//       DispatchQueue.main.async {
+//           self.isLoading = isLoading
+//       }
+//   }
     
     internal func createOauthCallbackHandler(_ completion: @escaping FronteggAuth.CompletionHandler) -> ((URL?, Error?) -> Void) {
         
@@ -932,7 +938,7 @@ public class FronteggAuth: ObservableObject {
         providerString: String,
         custom:Bool,
         action: SocialLoginAction = .login,
-        completion: FronteggAuth.CompletionHandler? = nil,
+        completion: FronteggAuth.CompletionHandler? = nil
     ) {
         let done = completion ?? { _ in }
 
@@ -986,7 +992,7 @@ public class FronteggAuth: ObservableObject {
 
             self.logger.debug("Auth URL: \(authURL.absoluteString)")
 
-            WebAuthenticator.shared.start(
+            await WebAuthenticator.shared.start(
                 authURL,
                 ephemeralSession: false,
                 completionHandler: oauthCallback
@@ -1008,41 +1014,40 @@ public class FronteggAuth: ObservableObject {
         _completion: FronteggAuth.CompletionHandler? = nil,
         additionalQueryParams: [String: Any]? = nil,
         remainCodeVerifier: Bool = false,
-        action: SocialLoginAction = SocialLoginAction.login,
+        action: SocialLoginAction = SocialLoginAction.login
     ) {
-     
-            let completion = _completion ?? { res in
-                
-            }
+    
+        let completion = _completion ?? { res in
             
-            if(type == "social-login" && data == "apple") {
-                self.loginWithApple(completion)
-                return
-            }
-            
+        }
         
+        if(type == "social-login" && data == "apple") {
+            self.loginWithApple(completion)
+            return
+        }
+        
+        
+        var directLogin = [
+            "type": type,
+            "data": data,
             
-            var directLogin = [
-                "type": type,
-                "data": data,
-                
-            ] as [String : Any]
-            
-            if let queryParams = additionalQueryParams {
-                directLogin["additionalQueryParams"] = queryParams
-            }
-            
-            var generatedUrl: (URL, String)
-            if let jsonData = try? JSONSerialization.data(withJSONObject: directLogin, options: []) {
-                let jsonString = jsonData.base64EncodedString()
-                generatedUrl = AuthorizeUrlGenerator.shared.generate(loginAction: jsonString, remainCodeVerifier: remainCodeVerifier)
-            } else {
-                generatedUrl = AuthorizeUrlGenerator.shared.generate()
-            }
-            
-            let oauthCallback = createOauthCallbackHandler(completion)
-            let (authorizeUrl, codeVerifier) = generatedUrl
-            CredentialManager.saveCodeVerifier(codeVerifier)
+        ] as [String : Any]
+        
+        if let queryParams = additionalQueryParams {
+            directLogin["additionalQueryParams"] = queryParams
+        }
+        
+        var generatedUrl: (URL, String)
+        if let jsonData = try? JSONSerialization.data(withJSONObject: directLogin, options: []) {
+            let jsonString = jsonData.base64EncodedString()
+            generatedUrl = AuthorizeUrlGenerator.shared.generate(loginAction: jsonString, remainCodeVerifier: remainCodeVerifier)
+        } else {
+            generatedUrl = AuthorizeUrlGenerator.shared.generate()
+        }
+        
+        let oauthCallback = createOauthCallbackHandler(completion)
+        let (authorizeUrl, codeVerifier) = generatedUrl
+        CredentialManager.saveCodeVerifier(codeVerifier)
         
         WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: ephemeralSession ?? true, window: window ?? getRootVC()?.view.window, completionHandler: oauthCallback)
     }
@@ -1277,7 +1282,7 @@ public class FronteggAuth: ObservableObject {
     public func handleOpenUrl(_ url: URL, _ useAppRootVC: Bool = false, internalHandleUrl:Bool = false) -> Bool {
         
         if(!url.absoluteString.hasPrefix(self.baseUrl) && !internalHandleUrl){
-            self.appLink = false
+            setAppLink(false)
             return false
         }
         
@@ -1299,7 +1304,7 @@ public class FronteggAuth: ObservableObject {
         }else {
             self.pendingAppLink = url
         }
-        self.webLoading = true
+        setWebLoading(true)
         
         
         let loginModal = EmbeddedLoginModal(parentVC: rootVC)
@@ -1418,9 +1423,7 @@ public class FronteggAuth: ObservableObject {
     
     
     public func requestAuthorizeAsync(refreshToken: String, deviceTokenCookie: String? = nil) async throws -> User {
-        DispatchQueue.main.async {
-            FronteggAuth.shared.isLoading = true
-        }
+        FronteggAuth.shared.setIsLoading(true)
         
         self.logger.info("Requesting authorize with refresh and device tokens")
         
@@ -1435,9 +1438,7 @@ public class FronteggAuth: ObservableObject {
             throw FronteggError.authError(.failedToAuthenticate)
         } catch {
             self.logger.error("Authorization request failed: \(error.localizedDescription)")
-            DispatchQueue.main.async {
-                FronteggAuth.shared.isLoading = false
-            }
+            FronteggAuth.shared.setIsLoading(false)
             throw error
         }
     }
@@ -1447,11 +1448,11 @@ public class FronteggAuth: ObservableObject {
             Task {
                 do {
                     let user = try await self.requestAuthorizeAsync(refreshToken: refreshToken, deviceTokenCookie: deviceTokenCookie)
-                    DispatchQueue.main.async {
+                    DispatchQueue.main.sync {
                         completion(.success(user)) // Assuming success is represented by empty parentheses
                     }
                 } catch let error as FronteggError {
-                    DispatchQueue.main.async {
+                    DispatchQueue.main.sync {
                         completion(.failure(error))
                     }
                 } catch {
@@ -1492,7 +1493,7 @@ public class FronteggAuth: ObservableObject {
             switch (result) {
             case .success(_):
                 DispatchQueue.main.async {
-                    FronteggAuth.shared.isLoading = false
+                    FronteggAuth.shared.setIsLoading(false)
                     _completion?(result)
                 }
                 
@@ -1520,7 +1521,7 @@ public class FronteggAuth: ObservableObject {
                 }
                 
                 DispatchQueue.main.async {
-                    FronteggAuth.shared.isLoading = false
+                    FronteggAuth.shared.setIsLoading(false)
                     _completion?(result)
                 }
             }
@@ -1549,12 +1550,13 @@ public class FronteggAuth: ObservableObject {
                 
                 CredentialManager.saveCodeVerifier(codeVerifier)
                 
-                DispatchQueue.main.async {
-                    self.isLoading = false
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    self.setIsLoading(false)
                     
                     if self.embeddedMode {
                         self.pendingAppLink = authorizeUrl
-                        self.webLoading = true
+                        self.setWebLoading(true)
                         self.embeddedLogin(completion, loginHint: nil)
                         return
                     }
@@ -1563,8 +1565,9 @@ public class FronteggAuth: ObservableObject {
                     WebAuthenticator.shared.start(authorizeUrl, completionHandler: oauthCallback)
                 }
             } catch let error as FronteggError {
-                DispatchQueue.main.async {
-                    self.isLoading = false
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    self.setIsLoading(false)
                 }
                 completion?(.failure(error))
             }
@@ -1572,5 +1575,3 @@ public class FronteggAuth: ObservableObject {
     }
     
 }
-
-

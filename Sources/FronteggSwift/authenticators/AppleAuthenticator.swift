@@ -52,8 +52,8 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
     func sendApplePostLogin(_ code:String) {
         logger.info("Send apple post login request to obtain session")
         
-        DispatchQueue.main.async {
-            FronteggAuth.shared.isLoading = true
+        DispatchQueue.main.async {   
+            FronteggAuth.shared.setIsLoading(true)
         }
         
         DispatchQueue.global(qos: .background).async {

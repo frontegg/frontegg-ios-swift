@@ -41,10 +41,10 @@ public struct EmbeddedLoginModal: View {
             }
             
         }.onAppear {
-            self.fronteggAuth.webLoading = true
+            self.fronteggAuth.setWebLoading(true)
         }
         .onDisappear {
-            self.fronteggAuth.webLoading = false
+            self.fronteggAuth.setWebLoading(false)
         }
         .environmentObject(fronteggAuth)
     }

@@ -22,17 +22,17 @@ public struct EmbeddedLoginPage: View {
                 VStack(alignment: .center) {
                     ZStack{
                         FronteggWebView()
-                        if fronteggAuth.webLoading || fronteggAuth.loginBoxLoading {
-                           DefaultLoader()
-                       }
+                        if fronteggAuth.webLoading || fronteggAuth.loginBoxLoading || fronteggAuth.isLoading {
+                            DefaultLoader()
+                        }
                     }
                 }
                 .toolbar {
                     ToolbarItem(placement: .navigationBarLeading) {
                         Button("Back to login") {
                             fronteggAuth.pendingAppLink = nil
-                            fronteggAuth.appLink = false
-                            fronteggAuth.externalLink = false
+                            fronteggAuth.setAppLink(false)
+                            fronteggAuth.setExternalLink(false)
                             fronteggAuth.login()
                         }
                     }
@@ -40,10 +40,10 @@ public struct EmbeddedLoginPage: View {
                 .navigationBarHidden(!fronteggAuth.externalLink)
                 .navigationTitle("")
                 .navigationBarTitleDisplayMode(.inline)
-
+                
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .center)
                 .ignoresSafeArea(fronteggAuth.externalLink ? [] : [.all])
-
+                
             }
             .navigationViewStyle(StackNavigationViewStyle())
             

@@ -320,14 +320,14 @@ public extension SocialLoginUrlGenerator {
         return codeVerifier
     }
 
-    public func defaultSocialLoginRedirectUri() -> String {
+    func defaultSocialLoginRedirectUri() -> String {
         let base = FronteggAuth.shared.baseUrl
         let baseRedirectUri = "\(base)/oauth/account/social/success"
         
         return baseRedirectUri.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? baseRedirectUri
     }
     
-    public func defaultRedirectUri() -> String {
+    func defaultRedirectUri() -> String {
         let base = FronteggAuth.shared.baseUrl
         let bundleId = FronteggApp.shared.bundleIdentifier
         let baseRedirectUri = "\(base)/oauth/account/redirect/ios/\(bundleId)"
