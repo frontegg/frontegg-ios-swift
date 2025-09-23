@@ -66,9 +66,9 @@ internal struct ProviderDetails {
         )
     ]
     
-    static func `for`(provider: SocialLoginProvider) -> ProviderDetails {
+    static func `for`(provider: SocialLoginProvider) throws -> ProviderDetails {
         guard let details = providerDetails[provider] else {
-            fatalError("ProviderDetails not configured for \(provider.rawValue)")
+            throw FronteggError.configError(.failedToGenerateAuthorizeURL)
         }
         return details
     }

@@ -94,7 +94,7 @@ public enum SocialLoginProvider: String, Codable, CaseIterable {
     case linkedin = "linkedin"
     
     // Internal helper to access static, provider-specific details.
-    internal var details: ProviderDetails { ProviderDetails.for(provider: self) }
+    internal var details: ProviderDetails { try! ProviderDetails.for(provider: self) }
 }
 
 

@@ -57,7 +57,7 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
         }
         
         DispatchQueue.global(qos: .background).async {
-            Task {
+            Task { @MainActor in
                 do {
                     let authResponse = try await FronteggAuth.shared.api.postloginAppleNative(code)
                     
@@ -65,10 +65,10 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
                     
                 } catch {
                     if error is FronteggError {
-                        await self.completionHandler?(.failure(error as! FronteggError))
+                        self.completionHandler?(.failure(error as! FronteggError))
                     }else {
-                        await self.logger.error("Failed to authenticate with apple \(error.localizedDescription)")
-                        await self.completionHandler?(.failure(.authError(.failedToAuthenticate)))
+                        self.logger.error("Failed to authenticate with apple \(error.localizedDescription)")
+                        self.completionHandler?(.failure(.authError(.failedToAuthenticate)))
                     }
                     
                 }
