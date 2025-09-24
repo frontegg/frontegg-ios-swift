@@ -1,3 +1,8 @@
+## v1.2.48
+FR-22185 - Added support for trigger login with custom sso via WebAuthenticationSession
+FR-22185 - Fix offline mode
+FR-22001 - Support embedded social login flows
+
 ## v1.2.47
 This PR introduces fixes and enhancements to the logout flow, adds offline mode support, and addresses critical issues in login handling.
 - updated readme with new frontegg.plist keys
