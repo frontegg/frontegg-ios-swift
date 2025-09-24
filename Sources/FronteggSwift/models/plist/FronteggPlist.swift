@@ -29,6 +29,7 @@ struct FronteggPlist: Decodable, Equatable {
     var cookieRegex: String? = nil
     let deleteCookieForHostOnly: Bool
     let enableOfflineMode: Bool
+    let useLegacySocialLoginFlow: Bool
 
     enum CodingKeys: CodingKey {
         case keychainService
@@ -47,6 +48,7 @@ struct FronteggPlist: Decodable, Equatable {
         case cookieRegex
         case deleteCookieForHostOnly
         case enableOfflineMode
+        case useLegacySocialLoginFlow
     }
 
     init(
@@ -66,7 +68,8 @@ struct FronteggPlist: Decodable, Equatable {
         backgroundColor: String? = nil,
         cookieRegex: String? = nil,
         deleteCookieForHostOnly: Bool = true,
-        enableOfflineMode:Bool = false
+        enableOfflineMode: Bool = false,
+        useLegacySocialLoginFlow: Bool = false
     ) {
         self.keychainService = keychainService
         self.embeddedMode = embeddedMode
@@ -85,6 +88,7 @@ struct FronteggPlist: Decodable, Equatable {
         self.cookieRegex = cookieRegex
         self.deleteCookieForHostOnly = deleteCookieForHostOnly
         self.enableOfflineMode = enableOfflineMode
+        self.useLegacySocialLoginFlow = useLegacySocialLoginFlow
     }
 
     init(from decoder: any Decoder) throws {
@@ -138,6 +142,8 @@ struct FronteggPlist: Decodable, Equatable {
         let enableOfflineMode = try container.decodeIfPresent(Bool.self, forKey: .enableOfflineMode)
         self.enableOfflineMode = enableOfflineMode ?? false
         
+        let useLegacySocialLoginFlow = try container.decodeIfPresent(Bool.self, forKey: .useLegacySocialLoginFlow)
+        self.useLegacySocialLoginFlow = useLegacySocialLoginFlow ?? false
         
         
         do {

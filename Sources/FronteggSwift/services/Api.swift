@@ -357,10 +357,6 @@ public class Api {
         return nil
     }
     
-    internal func webauthnDevices() {
-        
-    }
-    
     internal func preloginWebauthn() async throws -> WebauthnPreloginResponse {
         self.logger.info("Start webauthn prelogin")
         let (data, response) = try await FronteggAuth.shared.api.postRequest(path: "frontegg/identity/resources/auth/v1/webauthn/prelogin", body: [:])
@@ -417,6 +413,11 @@ public class Api {
         
         return SocialLoginConfig(options: options)
     }
+    public func getCustomSocialLoginConfig() async throws -> CustomSocialLoginProvidersResponse {
+        let (jsonData, _) = try await FronteggAuth.shared.api.getRequest(path: "/identity/resources/sso/custom/v1", accessToken: nil)
+        return try JSONDecoder().decode(CustomSocialLoginProvidersResponse.self, from: jsonData)
+    }
+    
     
     @available(iOS 15.0, *)
     internal func postloginAppleNative(_ code: String) async throws -> AuthResponse {
@@ -463,6 +464,13 @@ public class Api {
         
         // Decode and return the AuthResponse
         return try JSONDecoder().decode(AuthResponse.self, from: data)
+    }
+    
+    
+    internal func getFeatureFlags() async throws -> String {
+        let (stringData, _) = try await FronteggAuth.shared.api.getRequest(path: "/flags", accessToken: nil)
+        
+        return String(data: stringData, encoding: .utf8) ?? ""
     }
 }
 

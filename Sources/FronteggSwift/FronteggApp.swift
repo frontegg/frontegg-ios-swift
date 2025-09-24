@@ -107,9 +107,9 @@ public class FronteggApp {
                 return;
             } else {
                 // skip automatic authorize for regional config
-                self.auth.initializing = false
-                self.auth.isLoading = false
-                self.auth.showLoader = false
+                self.auth.setInitializing(false)
+                self.auth.setIsLoading(false)
+                self.auth.setShowLoader(false)
             }
 
         case let .singleRegion(config):

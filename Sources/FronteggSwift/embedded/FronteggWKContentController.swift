@@ -71,6 +71,17 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
     }
     
     
+    private func getFromAction() -> SocialLoginAction {
+        
+        if let url = self.webView?.url,
+           url.absoluteString.contains("/oauth/account/sign-up"){
+            
+            return .signUp
+            
+        }
+        return .login
+    }
+    
     private func handleAction(_ message: HostedLoginMessage) {
         switch (message.action) {
             
@@ -103,25 +114,49 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
         case "loginWithSocialLogin":
             FronteggAuth.shared.loginWithSocialLogin(socialLoginUrl: message.payload, self.socialLoginHandler)
         case "loginWithSocialLoginProvider":
-            FronteggAuth.shared.directLoginAction(window: nil,
-                                                  type: "social-login",
-                                                  data: message.payload,
-                                                  ephemeralSession: false,
-                                                  _completion: self.socialLoginHandler,
-                                                  additionalQueryParams: [
-                                                    "prompt":"consent"
-                                                  ],
-                                                  remainCodeVerifier: true)
+            let formAction = self.getFromAction()
+            if let config = try? PlistHelper.fronteggConfig(), config.useLegacySocialLoginFlow {
+                FronteggAuth.shared.directLoginAction(window: nil,
+                                                      type: "social-login",
+                                                      data: message.payload,
+                                                      ephemeralSession: false,
+                                                      _completion: self.socialLoginHandler,
+                                                      additionalQueryParams: [
+                                                        "prompt":"consent"
+                                                      ],
+                                                      remainCodeVerifier: true,
+                                                      action: formAction
+                )
+            }else {
+                
+                FronteggAuth.shared.handleSocialLogin(
+                    providerString: message.payload,
+                    custom: false,
+                    action: formAction,
+                    completion: self.socialLoginHandler,
+                )
+            }
         case "loginWithCustomSocialLoginProvider":
-            FronteggAuth.shared.directLoginAction(window: nil,
-                                                  type: "custom-social-login",
-                                                  data: message.payload,
-                                                  ephemeralSession: false,
-                                                  _completion: self.socialLoginHandler,
-                                                  additionalQueryParams: [
-                                                    "prompt":"consent"
-                                                  ],
-                                                  remainCodeVerifier: true)
+            let formAction = self.getFromAction()
+            if let config = try? PlistHelper.fronteggConfig(), config.useLegacySocialLoginFlow {
+                FronteggAuth.shared.directLoginAction(window: nil,
+                                                      type: "custom-social-login",
+                                                      data: message.payload,
+                                                      ephemeralSession: false,
+                                                      _completion: self.socialLoginHandler,
+                                                      additionalQueryParams: [
+                                                        "prompt":"consent"
+                                                      ],
+                                                      remainCodeVerifier: true,
+                                                      action: formAction)
+            } else {
+                FronteggAuth.shared.handleSocialLogin(
+                    providerString: message.payload,
+                    custom: true,
+                    action: formAction,
+                    completion: self.socialLoginHandler,
+                )
+            }
         case "suggestSavePassword":
             guard let data = try? JSONSerialization.jsonObject(with: Data(message.payload.utf8), options: []) as? [String: String],
                   let email = data["email"],
@@ -144,22 +179,22 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
             }
         case "setLoading":
             let isLoading = message.payload == "true"
-                logger.trace("LoginBox.setLoading, \(isLoading)")
-
-                // Cancel any pending hide
-                hideLoaderWorkItem?.cancel()
-
-                if isLoading {
-                    // show immediately
-                    FronteggAuth.shared.loginBoxLoading = true
-                } else {
-                    // schedule hide after 200ms, to avoid flicker
-                    let workItem = DispatchWorkItem {
-                        FronteggAuth.shared.loginBoxLoading = false
-                    }
-                    hideLoaderWorkItem = workItem
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: workItem)
+            logger.trace("LoginBox.setLoading, \(isLoading)")
+            
+            // Cancel any pending hide
+            hideLoaderWorkItem?.cancel()
+            
+            if isLoading {
+                // show immediately
+                FronteggAuth.shared.setLoginBoxLoading(true)
+            } else {
+                // schedule hide after 200ms, to avoid flicker
+                let workItem = DispatchWorkItem {
+                    FronteggAuth.shared.setLoginBoxLoading(false)
                 }
+                hideLoaderWorkItem = workItem
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
+            }
         default:
             return
         }
