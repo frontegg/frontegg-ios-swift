@@ -21,9 +21,9 @@ FR-22001 - Support embedded social login flows
 >   - Update `CHANGELOG.md` with v1.2.48 notes.
 >   - Append v1.2.47 entry to `CHANGELOG.old.md`.
 > - **Versioning**
->   - Bump `FronteggSwift.podspec` from `1.2.47` to `1.2.48`.
+>   - Bump `FronteggSwift.podspec` version from `1.2.47` to `1.2.48`.
 > 
-> <sup>Written by [Cursor Bugbot](https://cursor.com/dashboard?tab=bugbot) for commit 0339e3be8d0e11019d997bcf1dafb25f27ae7ae5. This will update automatically on new commits. Configure [here](https://cursor.com/dashboard?tab=bugbot).</sup>
+> <sup>Written by [Cursor Bugbot](https://cursor.com/dashboard?tab=bugbot) for commit 57beabf2ff6a22f702f499dce814783e24fde676. This will update automatically on new commits. Configure [here](https://cursor.com/dashboard?tab=bugbot).</sup>
 <!-- /CURSOR_SUMMARY -->
 
 ## v1.2.47
