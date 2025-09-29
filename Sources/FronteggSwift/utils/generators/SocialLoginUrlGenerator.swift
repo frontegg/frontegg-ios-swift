@@ -105,15 +105,45 @@ public final class SocialLoginUrlGenerator {
             return nil
         }
         
-        if let authURLString = option.authorizationUrl, let url = URL(string: authURLString) {
-            guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
-            if let prompt = provider.details.promptValueForConsent {
-                comps.addOrReplaceQueryItem(name: "prompt", value: prompt)
+        if let authURLString = option.authorizationUrl {
+            // Check if this is a legacy flow (relative URL starting with /identity/resources/auth/v2/user/sso/default/)
+            if authURLString.hasPrefix("/identity/resources/auth/v2/user/sso/default/") {
+                logger.debug("Detected legacy social login flow for provider: \(provider.rawValue)")
+                return nil // Signal to use legacy flow
             }
-            return comps.url
+            
+            if let url = URL(string: authURLString) {
+                guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+                if let prompt = provider.details.promptValueForConsent {
+                    comps.addOrReplaceQueryItem(name: "prompt", value: prompt)
+                }
+                return comps.url
+            }
         }
         
         return try await buildProviderURL(provider: provider, option: option, action: action)
+    }
+    
+    /// Generates a legacy social login URL for providers that use the old flow.
+    public func legacyAuthorizeURL(
+        for provider: SocialLoginProvider,
+        action: SocialLoginAction = .login
+    ) async throws -> String? {
+        guard let option = await configuration(for: provider), option.active else {
+            logger.debug("Provider inactive or config missing: \(provider.rawValue)")
+            return nil
+        }
+        
+        guard let authURLString = option.authorizationUrl,
+              authURLString.hasPrefix("/identity/resources/auth/v2/user/sso/default/") else {
+            logger.debug("Not a legacy flow for provider: \(provider.rawValue)")
+            return nil
+        }
+        
+        // Convert relative URL to absolute
+        let fullURL = "\(FronteggAuth.shared.baseUrl)\(authURLString)"
+        logger.debug("Generated legacy URL for \(provider.rawValue): \(fullURL)")
+        return fullURL
     }
 
     /// Generates an authorization URL for a custom social login provider.
