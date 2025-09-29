@@ -1,3 +1,7 @@
+## v1.2.47
+This PR introduces fixes and enhancements to the logout flow, adds offline mode support, and addresses critical issues in login handling.
+- updated readme with new frontegg.plist keys
+
 ## v1.2.46
 - Modified `generateRedirectUri` method. It includes `path` now.
 - Modified `AuthorizeUrlGenerator.generate` method.  It includes `path` now.

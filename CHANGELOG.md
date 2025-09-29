@@ -1,3 +1,26 @@
+## v1.2.48
+FR-22185 - Added support for trigger login with custom sso via WebAuthenticationSession
+FR-22185 - Fix offline mode
+FR-22001 - Support embedded social login flows
+- Detect legacy social login flow when authorizationUrl starts with /identity/resources/auth/v2/user/sso/default/
+- Add legacyAuthorizeURL method to generate legacy URLs
+- Modify handleSocialLogin to automatically switch to legacy flow when needed
+- Maintain backward compatibility with existing configurations
+
+<!-- CURSOR_SUMMARY -->
+---
+
+> [!NOTE]
+> Automatically detect legacy social login providers and fall back to a legacy authorize URL when the modern flow isn’t available.
+> 
+> - **Social Login Flow**:
+>   - Detect legacy providers by checking `authorizationUrl` that start with `/identity/resources/auth/v2/user/sso/default/` in `SocialLoginUrlGenerator.authorizeURL(for:)`, signaling fallback by returning `nil`.
+>   - Add `legacyAuthorizeURL(for:action:)` to build absolute legacy URLs (including `prompt` when applicable).
+>   - Update `FronteggAuth.handleSocialLogin` to automatically switch to legacy flow when the modern URL isn’t generated (non-custom providers), invoking `loginWithSocialLogin` with the legacy URL.
+> 
+> <sup>Written by [Cursor Bugbot](https://cursor.com/dashboard?tab=bugbot) for commit 8ba1ec666b185452bce4130ba44134b765a5a142. This will update automatically on new commits. Configure [here](https://cursor.com/dashboard?tab=bugbot).</sup>
+<!-- /CURSOR_SUMMARY -->
+
 ## v1.2.47
 This PR introduces fixes and enhancements to the logout flow, adds offline mode support, and addresses critical issues in login handling.
 - updated readme with new frontegg.plist keys
