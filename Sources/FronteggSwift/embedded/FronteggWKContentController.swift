@@ -133,7 +133,7 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
                     providerString: message.payload,
                     custom: false,
                     action: formAction,
-                    completion: self.socialLoginHandler,
+                    completion: self.socialLoginHandler
                 )
             }
         case "loginWithCustomSocialLoginProvider":
@@ -154,7 +154,7 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
                     providerString: message.payload,
                     custom: true,
                     action: formAction,
-                    completion: self.socialLoginHandler,
+                    completion: self.socialLoginHandler
                 )
             }
         case "suggestSavePassword":

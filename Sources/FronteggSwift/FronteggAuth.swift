@@ -993,6 +993,16 @@ public class FronteggAuth: FronteggState {
                 nil
             }
             
+            // Check if we need to use legacy flow
+            if generatedAuthUrl == nil && !custom {
+                if let provider = SocialLoginProvider(rawValue: providerString),
+                   let legacyUrl = try? await SocialLoginUrlGenerator.shared.legacyAuthorizeURL(for: provider, action: action) {
+                    logger.debug("Using legacy social login flow for provider: \(providerString)")
+                    self.loginWithSocialLogin(socialLoginUrl: legacyUrl, done)
+                    return
+                }
+            }
+            
             guard let authURL = generatedAuthUrl else {
                 self.logger.error("Failed to generate auth URL for \(providerString)")
                 return
