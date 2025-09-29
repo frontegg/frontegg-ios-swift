@@ -11,14 +11,21 @@ FR-22001 - Support embedded social login flows
 ---
 
 > [!NOTE]
-> Automatically detect legacy social login providers and fall back to a legacy authorize URL when the modern flow isn’t available.
+> Release v1.2.48 adds legacy social login fallback, custom SSO via WebAuthenticationSession, offline mode fixes, and bumps the podspec.
 > 
-> - **Social Login Flow**:
->   - Detect legacy providers by checking `authorizationUrl` that start with `/identity/resources/auth/v2/user/sso/default/` in `SocialLoginUrlGenerator.authorizeURL(for:)`, signaling fallback by returning `nil`.
->   - Add `legacyAuthorizeURL(for:action:)` to build absolute legacy URLs (including `prompt` when applicable).
->   - Update `FronteggAuth.handleSocialLogin` to automatically switch to legacy flow when the modern URL isn’t generated (non-custom providers), invoking `loginWithSocialLogin` with the legacy URL.
+> - **Auth & Social Login**:
+>   - Detect legacy providers when `authorizationUrl` starts with `/identity/resources/auth/v2/user/sso/default/` in `SocialLoginUrlGenerator.authorizeURL(for:)`, signaling fallback.
+>   - Add `legacyAuthorizeURL(for:action:)` to build absolute legacy URLs (including `prompt`).
+>   - Update `FronteggAuth.handleSocialLogin` to auto-switch to legacy flow for non-custom providers; support embedded social login flows; maintain backward compatibility.
+> - **SSO**:
+>   - Add support to trigger login with custom SSO via `WebAuthenticationSession`.
+> - **Offline**:
+>   - Fix offline mode behavior.
+> - **Release**:
+>   - Update `CHANGELOG.md` and append `v1.2.47` to `CHANGELOG.old.md`.
+>   - Bump `FronteggSwift.podspec` version to `1.2.48`.
 > 
-> <sup>Written by [Cursor Bugbot](https://cursor.com/dashboard?tab=bugbot) for commit 8ba1ec666b185452bce4130ba44134b765a5a142. This will update automatically on new commits. Configure [here](https://cursor.com/dashboard?tab=bugbot).</sup>
+> <sup>Written by [Cursor Bugbot](https://cursor.com/dashboard?tab=bugbot) for commit d66da509d0b3e2c7cc822e552d940f6f408952ae. This will update automatically on new commits. Configure [here](https://cursor.com/dashboard?tab=bugbot).</sup>
 <!-- /CURSOR_SUMMARY -->
 
 ## v1.2.47
