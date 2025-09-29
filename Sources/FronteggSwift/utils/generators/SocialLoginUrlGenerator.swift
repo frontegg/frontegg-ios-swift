@@ -142,8 +142,21 @@ public final class SocialLoginUrlGenerator {
         
         // Convert relative URL to absolute
         let fullURL = "\(FronteggAuth.shared.baseUrl)\(authURLString)"
-        logger.debug("Generated legacy URL for \(provider.rawValue): \(fullURL)")
-        return fullURL
+        
+        // Add prompt parameter if needed
+        guard var urlComponents = URLComponents(string: fullURL) else {
+            logger.error("Failed to parse legacy URL: \(fullURL)")
+            return fullURL
+        }
+        
+        // Add prompt parameter for legacy flow
+        if let prompt = provider.details.promptValueForConsent {
+            urlComponents.addOrReplaceQueryItem(name: "prompt", value: prompt)
+        }
+        
+        let finalURL = urlComponents.url?.absoluteString ?? fullURL
+        logger.debug("Generated legacy URL for \(provider.rawValue): \(finalURL)")
+        return finalURL
     }
 
     /// Generates an authorization URL for a custom social login provider.
