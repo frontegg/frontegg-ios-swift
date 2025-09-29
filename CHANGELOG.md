@@ -11,14 +11,14 @@ FR-22001 - Support embedded social login flows
 ---
 
 > [!NOTE]
-> Publish v1.2.48 with changelog updates (custom SSO via WebAuthenticationSession, offline mode fix, embedded social login legacy handling) and bump podspec.
+> Publish v1.2.48 with changelog updates (custom SSO, offline fix, embedded social login legacy handling) and bump podspec to 1.2.48.
 > 
 > - **Release v1.2.48**:
->   - **Changelog**: Add notes for custom SSO via `WebAuthenticationSession`, offline mode fix, and embedded social login legacy handling in `CHANGELOG.md`.
->   - **Changelog Archive**: Move previous `v1.2.47` notes to `CHANGELOG.old.md`.
->   - **Versioning**: Bump `FronteggSwift.podspec` version from `1.2.47` to `1.2.48`.
+>   - **Changelog**: Document custom SSO via `WebAuthenticationSession`, offline mode fix, and embedded social login legacy handling (detect legacy URLs, `legacyAuthorizeURL`, auto-switch, backward compatible) in `CHANGELOG.md`.
+>   - **Changelog Archive**: Move prior `v1.2.47` notes to `CHANGELOG.old.md`.
+>   - **Versioning**: Bump `FronteggSwift.podspec` from `1.2.47` to `1.2.48`.
 > 
-> <sup>Written by [Cursor Bugbot](https://cursor.com/dashboard?tab=bugbot) for commit c1a13a8cefe7f4fc21ceef4ef9bc5a33224b8381. This will update automatically on new commits. Configure [here](https://cursor.com/dashboard?tab=bugbot).</sup>
+> <sup>Written by [Cursor Bugbot](https://cursor.com/dashboard?tab=bugbot) for commit 4e62a58b4a89575f7939e5710fa230f64fd72c61. This will update automatically on new commits. Configure [here](https://cursor.com/dashboard?tab=bugbot).</sup>
 <!-- /CURSOR_SUMMARY -->
 
 ## v1.2.47
