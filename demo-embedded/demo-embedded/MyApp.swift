@@ -20,14 +20,18 @@ struct MyApp: View {
     var body: some View {
         ZStack {
             if fronteggAuth.isLoading {
+                // Loading
                 LoaderView()
             } else if fronteggAuth.user != nil {
+                // User is logged in you can check if isOffline or not also here
                 UserPage()
-                
             } else {
+                // User is NOT logged in
                 if fronteggAuth.isOfflineMode {
+                    // disable authentication process if no internet
                     NoConnectionPage()
                 }else {
+                    // display login page if NOT logged in and connected to internet
                     LoginPage()
                 }
             }
