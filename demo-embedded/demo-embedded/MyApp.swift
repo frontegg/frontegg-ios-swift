@@ -19,10 +19,17 @@ struct MyApp: View {
     
     var body: some View {
         ZStack {
-            if fronteggAuth.isAuthenticated {
+            if fronteggAuth.isLoading {
+                LoaderView()
+            } else if fronteggAuth.user != nil {
                 UserPage()
+                
             } else {
-                LoginPage()
+                if fronteggAuth.isOfflineMode {
+                    NoConnectionPage()
+                }else {
+                    LoginPage()
+                }
             }
         }.onAppear() {
             fronteggAuth.$accessToken.sink { accessToken in

@@ -35,6 +35,9 @@ struct UserPage: View {
             }
             
             Spacer().frame(height: 16)
+            if fronteggAuth.isOfflineMode {
+                Text("Offline Mode")
+            }
             userContent
             Spacer(minLength: 220)
         }

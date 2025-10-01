@@ -187,50 +187,81 @@ public class FronteggAuth: FronteggState {
         
     }
     
-    private func warmingWebView() {
-        print("warmingWebView")
-        let cfg = WKWebViewConfiguration()
-        // use your shared processPool below
-        cfg.processPool = WebViewShared.processPool
-        // you can even use nonPersistent() if you don't need cookies
-        cfg.websiteDataStore = .default()
-        let wv = CustomWebView(frame: .zero, configuration: cfg)
-        // load a trivial blank page & eval a no-op JS
+    private func warmingWebView() async {
         
-        wv.navigationDelegate = wv;
-        wv.uiDelegate = wv;
-        
-        let (url, _) = AuthorizeUrlGenerator().generate(remainCodeVerifier:true)
-        wv.load(URLRequest(url: url))
-        wv.evaluateJavaScript("void(0)", completionHandler: nil)
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            // Stop any in-flight work
-            wv.stopLoading()
-
-            // Drop delegates (they're weak, but do it anyway)
-            wv.navigationDelegate = nil
-            wv.uiDelegate = nil
-            wv.scrollView.delegate = nil
+        DispatchQueue.main.sync {
+            self.setIsOfflineMode(false)
+            let cfg = WKWebViewConfiguration()
+            // use your shared processPool below
+            cfg.processPool = WebViewShared.processPool
+            // you can even use nonPersistent() if you don't need cookies
+            cfg.websiteDataStore = .default()
+            let wv = CustomWebView(frame: .zero, configuration: cfg)
+            // load a trivial blank page & eval a no-op JS
             
-            // Clear scripts / message handlers if you added any
-           wv.configuration.userContentController.removeAllUserScripts()
-           if #available(iOS 14.0, *) {
-               wv.configuration.userContentController.removeAllScriptMessageHandlers()
-           }
-
-           // Optionally load about:blank to flush page state (not strictly required)
-           wv.loadHTMLString("", baseURL: nil)
-
-           // Detach from view hierarchy and release
-           wv.removeFromSuperview()
+            wv.navigationDelegate = wv;
+            wv.uiDelegate = wv;
+            
+            let (url, _) = AuthorizeUrlGenerator().generate(remainCodeVerifier:true)
+            wv.load(URLRequest(url: url))
+            wv.evaluateJavaScript("void(0)", completionHandler: nil)
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                // Stop any in-flight work
+                wv.stopLoading()
+                
+                // Drop delegates (they're weak, but do it anyway)
+                wv.navigationDelegate = nil
+                wv.uiDelegate = nil
+                wv.scrollView.delegate = nil
+                
+                // Clear scripts / message handlers if you added any
+                wv.configuration.userContentController.removeAllUserScripts()
+                if #available(iOS 14.0, *) {
+                    wv.configuration.userContentController.removeAllScriptMessageHandlers()
+                }
+                
+                // Optionally load about:blank to flush page state (not strictly required)
+                wv.loadHTMLString("", baseURL: nil)
+                
+                // Detach from view hierarchy and release
+                wv.removeFromSuperview()
+            }
         }
     }
     
-    public func initializeSubscriptions() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            self.warmingWebView()
+    public func reconnectedToInternet() {
+        
+        if(self.isOfflineMode == false){
+            return;
         }
+        self.logger.info("Connected to the internet")
+        self.setIsOfflineMode(false)
+        
+        DispatchQueue.global(qos: .background).async {
+            Task {
+                await self.featureFlags.start();
+                await SocialLoginUrlGenerator.shared.reloadConfigs()
+            }
+        }
+    }
+    public func disconnectedFromInternet() {
+        
+        self.logger.info("Disconnected from the internet")
+        self.setIsOfflineMode(true)
+    }
+    
+    public func initializeSubscriptions() {
+        NetworkStatusMonitor.configure(baseURLString: "\(self.baseUrl)/test")
+        
+        NetworkStatusMonitor.startBackgroundMonitoring(interval: 10) { reachable in
+            if reachable {
+                self.reconnectedToInternet()
+            } else {
+                self.disconnectedFromInternet()
+            }
+        }
+        
         self.$initializing.combineLatest(self.$isAuthenticated, self.$isLoading).sink(){ (initializingValue, isAuthenticatedValue, isLoadingValue) in
             self.setShowLoader(initializingValue || (!isAuthenticatedValue && isLoadingValue))
         }.store(in: &subscribers)
@@ -244,16 +275,25 @@ public class FronteggAuth: FronteggState {
             
             DispatchQueue.global(qos: .userInitiated).async {
                 Task {
-                    await self.featureFlags.start();
-                    await SocialLoginUrlGenerator.shared.reloadConfigs()
+                    if await NetworkStatusMonitor.isActive {
+                        await self.featureFlags.start();
+                        await SocialLoginUrlGenerator.shared.reloadConfigs()
+                        await self.warmingWebView()
+                    }
                     await self.refreshTokenIfNeeded()
                 }
             }
         } else {
-            DispatchQueue.global(qos: .userInitiated).async { 
+            DispatchQueue.global(qos: .userInitiated).async {
                 Task {
-                    await self.featureFlags.start();
-                    await SocialLoginUrlGenerator.shared.reloadConfigs()
+                    if await NetworkStatusMonitor.isActive {
+                        self.setIsOfflineMode(false)
+                        await self.featureFlags.start();
+                        await SocialLoginUrlGenerator.shared.reloadConfigs()
+                    }else {
+                        self.setIsOfflineMode(true)
+                    }
+                    
                     await MainActor.run { [weak self] in
                         self?.setIsLoading(false)
                         self?.setInitializing(false)
@@ -284,6 +324,7 @@ public class FronteggAuth: FronteggState {
                 setAccessToken(accessToken)
                 setUser(user)
                 setIsAuthenticated(true)
+                setIsOfflineMode(false)
                 setAppLink(false)
                 setInitializing(false)
                 setAppLink(false)
@@ -563,43 +604,62 @@ public class FronteggAuth: FronteggState {
         }
         return nil
     }
-    private func isConnectivityError(_ error: Error) -> Bool {
-        guard let urlErr = unwrapURLError(error) else { return false }
-        switch urlErr.code {
-        case .notConnectedToInternet,
-             .timedOut,
-             .cannotFindHost,
-             .cannotConnectToHost,
-             .networkConnectionLost,
-             .dnsLookupFailed,        // available via URLError.Code
-             .secureConnectionFailed,
-             .cannotLoadFromNetwork,
-             .internationalRoamingOff,
-             .dataNotAllowed:
-            return true
-        default:
-            return false
+    
+    
+    
+    // MARK: - Offline-like handler
+    
+    /// Centralized handler for errors that *behave like* no connectivity.
+    /// Decides the backoff offset, updates state (including offline user), and reschedules.
+    private func handleOfflineLikeFailure(
+        error: Error?,
+        enableOfflineMode: Bool,
+        attempts: Int,
+        preferredOffset: TimeInterval? = nil
+    ) {
+        // Classify + choose offset once
+        let isConn = error.map { isConnectivityError($0) } ?? true // treat nil as connectivity (e.g., no active internet path)
+        let offset = preferredOffset ?? (isConn ? 2 : 1)
+        
+        if isConn {
+            self.logger.info("Refresh rescheduled due to network error \(error?.localizedDescription ?? "(no error)")")
+        } else {
+            self.logger.info("Refresh rescheduled due to unknown error \(error?.localizedDescription ?? "(no error)")")
         }
-    }
-    private func handleOfflineLikeFailure(enableOfflineMode: Bool, attempts: Int) {
-        self.logger.info("Refresh rescheduled due to connectivity error")
+        
         self.lastAttemptReason = .noNetwork
         
-        if(enableOfflineMode){
+        if enableOfflineMode {
             let offlineUserData = self.credentialManager.getOfflineUser()
             DispatchQueue.main.async {
                 self.setUser(self.user ?? offlineUserData)
                 self.setInitializing(false)
                 self.setIsAuthenticated(false)
+                self.setIsOfflineMode(true)
                 self.setIsLoading(false)
             }
         }
         
-        scheduleTokenRefresh(offset: 2, attempts: attempts + 1)
+        scheduleTokenRefresh(offset: offset, attempts: attempts + 1)
     }
     
-    @discardableResult public func refreshTokenIfNeeded(attempts: Int = 0) async -> Bool {
+    public func recheckConnection() {
         
+        DispatchQueue.global(qos: .background).async {
+            
+            Task {
+                guard await NetworkStatusMonitor.isActive else {
+                    self.logger.info("No network connection")
+                    return
+                }
+                self.logger.info("Netowrk is back, refreshing...")
+                _ = await self.refreshTokenIfNeeded()
+            }
+        }
+    }
+    
+    @discardableResult
+    public func refreshTokenIfNeeded(attempts: Int = 0) async -> Bool {
         let enableOfflineMode = (try? PlistHelper.fronteggConfig().enableOfflineMode) ?? false
         
         guard let refreshToken = self.refreshToken else {
@@ -607,10 +667,15 @@ public class FronteggAuth: FronteggState {
             return false
         }
         
-        // Hard no-network (quick exit path)
+        // Hard no-network (quick exit path) → route through the central handler
         guard await NetworkStatusMonitor.isActive else {
             self.logger.info("Refresh rescheduled due to inactive internet")
-            handleOfflineLikeFailure(enableOfflineMode: enableOfflineMode, attempts: attempts)
+            handleOfflineLikeFailure(
+                error: nil,                      // nil → treat as connectivity
+                enableOfflineMode: enableOfflineMode,
+                attempts: attempts,
+                preferredOffset: 2               // keep your existing offset
+            )
             return false
         }
         
@@ -619,15 +684,13 @@ public class FronteggAuth: FronteggState {
         } else if attempts > 10 {
             self.logger.info("Refresh token attempts exceeded, logging out")
             self.credentialManager.clear()
-            
             DispatchQueue.main.sync {
                 self.setInitializing(false)
                 self.setIsAuthenticated(false)
                 self.setAccessToken(nil)
                 self.setRefreshToken(nil)
                 self.setRefreshingToken(false)
-                // isLoading must be at the last bottom
-                self.setIsLoading(false)
+                self.setIsLoading(false) // last
             }
             return false
         }
@@ -641,10 +704,7 @@ public class FronteggAuth: FronteggState {
         
         self.logger.info("Refreshing token")
         setRefreshingToken(true)
-        
-        defer {
-            setRefreshingToken(false)
-        }
+        defer { setRefreshingToken(false) }
         
         do {
             let data = try await self.api.refreshToken(refreshToken: refreshToken)
@@ -653,43 +713,34 @@ public class FronteggAuth: FronteggState {
             return true
             
         } catch let error as FronteggError {
-            // 1) If it’s an auth failure, logout as before
+            // Auth failure → logout (unchanged)
             if case .authError(FronteggError.Authentication.failedToRefreshToken) = error {
-                
                 self.credentialManager.clear()
                 DispatchQueue.main.sync {
                     self.setInitializing(false)
                     self.setIsAuthenticated(false)
+                    self.setIsOfflineMode(false)
                     self.setAccessToken(nil)
                     self.setRefreshToken(nil)
-                    // isLoading must be at the last bottom
                     self.setIsLoading(false)
                 }
                 return false
             }
             
-            // 2) If it *behaves like offline* (DNS/host/connect/timeouts), go offline + retry
-            if isConnectivityError(error) {
-                handleOfflineLikeFailure(enableOfflineMode: enableOfflineMode, attempts: attempts)
-                return false
-            }
-            
-            // 3) Unknown/non-connectivity error → retry with small delay, mark unknown
-            self.logger.info("Refresh rescheduled due to unknown error \(error.localizedDescription)")
-            scheduleTokenRefresh(offset: 1, attempts: attempts + 1)
-            self.lastAttemptReason = .unknown
+            // Everything else → centralized offline-like handler decides
+            handleOfflineLikeFailure(
+                error: error,
+                enableOfflineMode: enableOfflineMode,
+                attempts: attempts
+            )
             return false
             
         } catch {
-            // Non-Frontegg error path: still detect connectivity
-            if isConnectivityError(error) {
-                handleOfflineLikeFailure(enableOfflineMode: enableOfflineMode, attempts: attempts)
-                return false
-            }
-            
-            self.logger.info("Refresh rescheduled due to unknown error \(error.localizedDescription)")
-            scheduleTokenRefresh(offset: 1, attempts: attempts + 1)
-            self.lastAttemptReason = .unknown
+            handleOfflineLikeFailure(
+                error: error,
+                enableOfflineMode: enableOfflineMode,
+                attempts: attempts
+            )
             return false
         }
     }
@@ -831,11 +882,11 @@ public class FronteggAuth: FronteggState {
     }
     
     
-//   internal func setIsLoading(_ isLoading: Bool){
-//       DispatchQueue.main.async {
-//           self.isLoading = isLoading
-//       }
-//   }
+    //   internal func setIsLoading(_ isLoading: Bool){
+    //       DispatchQueue.main.async {
+    //           self.isLoading = isLoading
+    //       }
+    //   }
     
     internal func createOauthCallbackHandler(_ completion: @escaping FronteggAuth.CompletionHandler) -> ((URL?, Error?) -> Void) {
         
@@ -949,28 +1000,28 @@ public class FronteggAuth: FronteggState {
         completion: FronteggAuth.CompletionHandler? = nil
     ) {
         let done = completion ?? { _ in }
-
+        
         // Special-case Apple to keep branching explicit and fast.
         if providerString == "apple" {
             loginWithApple(done)
             return
         }
-
+        
         let oauthCallback: (URL?, Error?) -> Void = { [weak self] callbackURL, error in
             guard let self else { return }
-
+            
             if let error {
                 self.logger.error("OAuth error: \(String(describing: error))")
                 return
             }
-
+            
             guard let callbackURL else {
                 self.logger.info("OAuth callback invoked with nil URL and no error")
                 return
             }
-
+            
             self.logger.debug("OAuth callback URL: \(callbackURL.absoluteString)")
-
+            
             DispatchQueue.main.async { [weak self] in
                 guard
                     let self,
@@ -979,10 +1030,10 @@ public class FronteggAuth: FronteggState {
                 self.loadInWebView(finalURL)
             }
         }
-
+        
         Task { [weak self] in
             guard let self else { return }
-
+            
             let generatedAuthUrl: URL? = if(custom){
                 try? await SocialLoginUrlGenerator.shared
                     .authorizeURL(forCustomProvider: providerString, action: action)
@@ -1007,9 +1058,9 @@ public class FronteggAuth: FronteggState {
                 self.logger.error("Failed to generate auth URL for \(providerString)")
                 return
             }
-
+            
             self.logger.debug("Auth URL: \(authURL.absoluteString)")
-
+            
             await WebAuthenticator.shared.start(
                 authURL,
                 ephemeralSession: false,
@@ -1034,7 +1085,7 @@ public class FronteggAuth: FronteggState {
         remainCodeVerifier: Bool = false,
         action: SocialLoginAction = SocialLoginAction.login
     ) {
-    
+        
         let completion = _completion ?? { res in
             
         }
