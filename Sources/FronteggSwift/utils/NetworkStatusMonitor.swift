@@ -2,6 +2,8 @@
 //  NetworkStatusMonitor.swift
 //
 //  Created by Nick Hagi on 18/09/2024.
+//  Updated: Fix handler removal by switching to stable tokens under the hood,
+//  while preserving the original index-based API without index-shift bugs.
 //
 
 import Foundation
@@ -75,8 +77,8 @@ func isConnectivityError(_ error: Error, response: URLResponse? = nil) -> Bool {
 
     // 4) Optional HTTP-level signal (when you have the response)
     if let http = response as? HTTPURLResponse {
-        if http.statusCode == 408 { return true }            // Request Timeout
-        if (300..<400).contains(http.statusCode) { return true } // likely captive portal
+        if http.statusCode == 408 { return true }                  // Request Timeout
+        if (300..<400).contains(http.statusCode) { return true }   // likely captive portal
     }
 
     return false
@@ -155,28 +157,65 @@ public enum NetworkStatusMonitor {
 
     // Cached state for background monitoring
     private static var _cachedReachable = false
-    private static var _onChangeHandlers: [((Bool) -> Void)] = []
+
+    // MARK: Handler storage (token-backed) + stable index mapping
+    public struct OnChangeToken: Hashable { fileprivate let id = UUID() }
+
+    /// All handlers keyed by stable token.
+    private static var _onChangeHandlers: [OnChangeToken: (Bool) -> Void] = [:]
+
+    /// Stable index map: each position holds the token that was returned at that index.
+    /// We never shrink this array on removal; we set positions to `nil` to keep indices stable.
+    private static var _indexMap: [OnChangeToken?] = []
+
     private static let stateLock = NSLock()
-    
+
+    // MARK: - Public API
+
     /// Register an additional on-change handler at runtime.
     /// The handler is invoked on the main queue whenever the state changes,
     /// and also on the first emission after `startBackgroundMonitoring(...)`.
-    /// - Returns: The index token you can keep if you want to remove it later via `removeOnChange(at:)`.
+    /// - Returns: An **index token** compatible with legacy `removeOnChange(at:)`.
     @discardableResult
     public static func addOnChange(_ handler: @escaping (Bool) -> Void) -> Int {
         stateLock.lock()
-        _onChangeHandlers.append(handler)
-        let idx = _onChangeHandlers.count - 1
+        let token = OnChangeToken()
+        _onChangeHandlers[token] = handler
+        _indexMap.append(token)
+        let idx = _indexMap.count - 1
         stateLock.unlock()
         return idx
     }
 
-    /// Remove a previously added handler using the index returned from `addOnChange`.
-    /// If the index is out of bounds or already removed, this is a no-op.
+    /// Modern API: add a handler and get a **stable token** for removal.
+    @discardableResult
+    public static func addOnChangeReturningToken(_ handler: @escaping (Bool) -> Void) -> OnChangeToken {
+        stateLock.lock()
+        let token = OnChangeToken()
+        _onChangeHandlers[token] = handler
+        _indexMap.append(token) // also track in index map so legacy indices remain aligned
+        stateLock.unlock()
+        return token
+    }
+
+    /// Remove a previously added handler using the **stable token**.
+    public static func removeOnChange(_ token: OnChangeToken) {
+        stateLock.lock()
+        _onChangeHandlers.removeValue(forKey: token)
+        // Null-out the first matching index position to preserve index stability for others.
+        if let i = _indexMap.firstIndex(where: { $0 == token }) {
+            _indexMap[i] = nil
+        }
+        stateLock.unlock()
+    }
+
+    /// Legacy removal: remove by **index** returned from `addOnChange(_:)`.
+    /// Indices remain valid even if earlier handlers are removed (we never shift the map).
     public static func removeOnChange(at index: Int) {
         stateLock.lock()
-        if _onChangeHandlers.indices.contains(index) {
-            _onChangeHandlers.remove(at: index)
+        if _indexMap.indices.contains(index), let token = _indexMap[index] {
+            _indexMap[index] = nil
+            _onChangeHandlers.removeValue(forKey: token)
         }
         stateLock.unlock()
     }
@@ -185,9 +224,9 @@ public enum NetworkStatusMonitor {
     public static func removeAllOnChangeHandlers() {
         stateLock.lock()
         _onChangeHandlers.removeAll()
+        _indexMap.removeAll()
         stateLock.unlock()
     }
-
 
     /// Require strict server reachability (TLS + response) for `isActive`.
     public static func configure(baseURLString: String) {
@@ -199,11 +238,9 @@ public enum NetworkStatusMonitor {
         interval: TimeInterval = 10,
         onChange: ((Bool) -> Void)? = nil
     ) {
-        // Store the handler if provided
+        // Store the handler if provided (keeps legacy index-based behavior intact)
         if let handler = onChange {
-            stateLock.lock()
-            _onChangeHandlers.append(handler)
-            stateLock.unlock()
+            _ = addOnChange(handler)
         }
 
         // Retain the path monitor
@@ -286,7 +323,8 @@ public enum NetworkStatusMonitor {
         changed = (value != _cachedReachable)
         _cachedReachable = value
         if changed || forceEmit {
-            handlersCopy = _onChangeHandlers // copy under lock
+            // Snapshot all current handlers (values) under lock
+            handlersCopy = Array(_onChangeHandlers.values)
         }
         stateLock.unlock()
 
@@ -297,6 +335,7 @@ public enum NetworkStatusMonitor {
             handlersCopy.forEach { $0(value) }
         }
     }
+
     private static func routeIsAvailableOnce() async -> Bool {
         await withCheckedContinuation { cont in
             let m = NWPathMonitor()
