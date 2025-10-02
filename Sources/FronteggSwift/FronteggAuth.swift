@@ -187,46 +187,49 @@ public class FronteggAuth: FronteggState {
         
     }
     
-    private func warmingWebView() async {
+    private func warmingWebViewAsync() {
+        DispatchQueue.main.async {
+            self.warmingWebView()
+        }
+    }
+    private func warmingWebView() {
         
-        DispatchQueue.main.sync {
-            self.setIsOfflineMode(false)
-            let cfg = WKWebViewConfiguration()
-            // use your shared processPool below
-            cfg.processPool = WebViewShared.processPool
-            // you can even use nonPersistent() if you don't need cookies
-            cfg.websiteDataStore = .default()
-            let wv = CustomWebView(frame: .zero, configuration: cfg)
-            // load a trivial blank page & eval a no-op JS
+        self.setIsOfflineMode(false)
+        let cfg = WKWebViewConfiguration()
+        // use your shared processPool below
+        cfg.processPool = WebViewShared.processPool
+        // you can even use nonPersistent() if you don't need cookies
+        cfg.websiteDataStore = .default()
+        let wv = CustomWebView(frame: .zero, configuration: cfg)
+        // load a trivial blank page & eval a no-op JS
+        
+        wv.navigationDelegate = wv;
+        wv.uiDelegate = wv;
+        
+        let (url, _) = AuthorizeUrlGenerator().generate(remainCodeVerifier:true)
+        wv.load(URLRequest(url: url))
+        wv.evaluateJavaScript("void(0)", completionHandler: nil)
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            // Stop any in-flight work
+            wv.stopLoading()
             
-            wv.navigationDelegate = wv;
-            wv.uiDelegate = wv;
+            // Drop delegates (they're weak, but do it anyway)
+            wv.navigationDelegate = nil
+            wv.uiDelegate = nil
+            wv.scrollView.delegate = nil
             
-            let (url, _) = AuthorizeUrlGenerator().generate(remainCodeVerifier:true)
-            wv.load(URLRequest(url: url))
-            wv.evaluateJavaScript("void(0)", completionHandler: nil)
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                // Stop any in-flight work
-                wv.stopLoading()
-                
-                // Drop delegates (they're weak, but do it anyway)
-                wv.navigationDelegate = nil
-                wv.uiDelegate = nil
-                wv.scrollView.delegate = nil
-                
-                // Clear scripts / message handlers if you added any
-                wv.configuration.userContentController.removeAllUserScripts()
-                if #available(iOS 14.0, *) {
-                    wv.configuration.userContentController.removeAllScriptMessageHandlers()
-                }
-                
-                // Optionally load about:blank to flush page state (not strictly required)
-                wv.loadHTMLString("", baseURL: nil)
-                
-                // Detach from view hierarchy and release
-                wv.removeFromSuperview()
+            // Clear scripts / message handlers if you added any
+            wv.configuration.userContentController.removeAllUserScripts()
+            if #available(iOS 14.0, *) {
+                wv.configuration.userContentController.removeAllScriptMessageHandlers()
             }
+            
+            // Optionally load about:blank to flush page state (not strictly required)
+            wv.loadHTMLString("", baseURL: nil)
+            
+            // Detach from view hierarchy and release
+            wv.removeFromSuperview()
         }
     }
     
@@ -278,7 +281,7 @@ public class FronteggAuth: FronteggState {
                     if await NetworkStatusMonitor.isActive {
                         await self.featureFlags.start();
                         await SocialLoginUrlGenerator.shared.reloadConfigs()
-                        await self.warmingWebView()
+                        self.warmingWebViewAsync()
                     }
                     await self.refreshTokenIfNeeded()
                 }
