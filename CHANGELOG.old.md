@@ -1,3 +1,27 @@
+## v1.2.48
+FR-22185 - Added support for trigger login with custom sso via WebAuthenticationSession
+FR-22185 - Fix offline mode
+FR-22001 - Support embedded social login flows
+- Detect legacy social login flow when authorizationUrl starts with /identity/resources/auth/v2/user/sso/default/
+- Add legacyAuthorizeURL method to generate legacy URLs
+- Modify handleSocialLogin to automatically switch to legacy flow when needed
+- Maintain backward compatibility with existing configurations
+
+<!-- CURSOR_SUMMARY -->
+---
+
+> [!NOTE]
+> Release v1.2.48 adding custom SSO via WebAuthenticationSession, legacy embedded social login handling, offline fix, and podspec/changelog updates.
+> 
+> - **Release v1.2.48**
+>   - **Auth**: Add custom SSO login via `WebAuthenticationSession`.
+>   - **Embedded Social Login**: Detect legacy flow, auto-switch when `authorizationUrl` matches legacy path, and add `legacyAuthorizeURL`.
+>   - **Fix**: Offline mode.
+> - **Versioning/Docs**: Update `CHANGELOG.md`, move `v1.2.47` to `CHANGELOG.old.md`, and bump `FronteggSwift.podspec` to `1.2.48`.
+> 
+> <sup>Written by [Cursor Bugbot](https://cursor.com/dashboard?tab=bugbot) for commit 31e66ee26717b8b0b7cd67052af8fad646e50ffe. This will update automatically on new commits. Configure [here](https://cursor.com/dashboard?tab=bugbot).</sup>
+<!-- /CURSOR_SUMMARY -->
+
 ## v1.2.47
 This PR introduces fixes and enhancements to the logout flow, adds offline mode support, and addresses critical issues in login handling.
 - updated readme with new frontegg.plist keys
