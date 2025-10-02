@@ -10,6 +10,7 @@ public class FronteggState: ObservableObject {
     @Published public private(set) var refreshToken: String? = nil
     @Published public private(set) var user: User? = nil
     @Published public private(set) var isAuthenticated = false
+    @Published public private(set) var isOfflineMode = false
     @Published public private(set) var isStepUpAuthorization = false
     @Published public private(set) var isLoading = true
     @Published public private(set) var webLoading = true
@@ -67,6 +68,15 @@ public class FronteggState: ObservableObject {
     public func setExternalLink(_ v: Bool) { setIfChanged(\.externalLink, v) }
     public func setSelectedRegion(_ v: RegionConfig?) { setIfChanged(\.selectedRegion, v) }
     
+    public func setIsOfflineMode(_ v: Bool) {
+        if Thread.isMainThread {
+            setIfChanged(\.isOfflineMode, v)
+        } else {
+            DispatchQueue.main.async {
+                self.setIfChanged(\.isOfflineMode, v)
+            }
+        }
+    }
     public func setRefreshingToken(_ v: Bool) {
         if Thread.isMainThread {
             setIfChanged(\.refreshingToken, v)

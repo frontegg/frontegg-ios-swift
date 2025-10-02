@@ -13,6 +13,7 @@
 		412401D32AB20C1000AAC758 /* MyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 412401D22AB20C1000AAC758 /* MyApp.swift */; };
 		412401D52AB20C5600AAC758 /* LoaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 412401D42AB20C5600AAC758 /* LoaderView.swift */; };
 		412401DE2AB2117700AAC758 /* Frontegg.plist in Resources */ = {isa = PBXBuildFile; fileRef = 412401DD2AB2117700AAC758 /* Frontegg.plist */; };
+		41FC61502E8D85FA0057D992 /* NoConnectionPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FC614F2E8D85F70057D992 /* NoConnectionPage.swift */; };
 		454AD0852DE8447D008FEA2E /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 454AD0842DE8447D008FEA2E /* Theme.swift */; };
 		454AD08E2DE846B9008FEA2E /* Manrope-ExtraBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 454AD0882DE846B9008FEA2E /* Manrope-ExtraBold.ttf */; };
 		454AD08F2DE846B9008FEA2E /* Manrope-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 454AD0872DE846B9008FEA2E /* Manrope-Bold.ttf */; };
@@ -39,6 +40,7 @@
 		412401DD2AB2117700AAC758 /* Frontegg.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Frontegg.plist; sourceTree = "<group>"; };
 		41A5FCA52AB4A0500022E386 /* demo-embedded.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "demo-embedded.entitlements"; sourceTree = "<group>"; };
 		41AB118B2AB26F7900219FA9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		41FC614F2E8D85F70057D992 /* NoConnectionPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoConnectionPage.swift; sourceTree = "<group>"; };
 		454AD0842DE8447D008FEA2E /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		454AD0872DE846B9008FEA2E /* Manrope-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Bold.ttf"; sourceTree = "<group>"; };
 		454AD0882DE846B9008FEA2E /* Manrope-ExtraBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-ExtraBold.ttf"; sourceTree = "<group>"; };
@@ -86,6 +88,7 @@
 		412401B52AB20B0900AAC758 /* demo-embedded */ = {
 			isa = PBXGroup;
 			children = (
+				41FC614F2E8D85F70057D992 /* NoConnectionPage.swift */,
 				459BB79F2DE869710025291B /* UserPage.swift */,
 				459BB79D2DE84EB70025291B /* LoginPage.swift */,
 				459BB79B2DE84CDA0025291B /* Footer.swift */,
@@ -228,6 +231,7 @@
 				454AD0852DE8447D008FEA2E /* Theme.swift in Sources */,
 				459BB7A02DE869710025291B /* UserPage.swift in Sources */,
 				459BB79A2DE84C140025291B /* FronteggAppBar.swift in Sources */,
+				41FC61502E8D85FA0057D992 /* NoConnectionPage.swift in Sources */,
 				459BB79E2DE84EB70025291B /* LoginPage.swift in Sources */,
 				412401D32AB20C1000AAC758 /* MyApp.swift in Sources */,
 				412401B72AB20B0900AAC758 /* demo_embeddedApp.swift in Sources */,
