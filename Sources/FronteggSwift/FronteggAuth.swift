@@ -722,6 +722,7 @@ public class FronteggAuth: FronteggState {
                 DispatchQueue.main.sync {
                     self.setInitializing(false)
                     self.setIsAuthenticated(false)
+                    self.setUser(nil)
                     self.setIsOfflineMode(false)
                     self.setAccessToken(nil)
                     self.setRefreshToken(nil)
