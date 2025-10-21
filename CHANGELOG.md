@@ -1,3 +1,29 @@
+## v1.2.49
+FR-22001 - Fix network connection monitor and add isOfflineMode indicator
+
+<!-- CURSOR_SUMMARY -->
+---
+
+> [!NOTE]
+> Introduce offline mode with a revamped network monitor, integrate reconnection-aware auth flows, and add demo UI for no-connection states.
+> 
+> - **Core Auth (`Sources/FronteggSwift/FronteggAuth.swift`)**:
+>   - Add offline state handling: `reconnectedToInternet()`, `disconnectedFromInternet()`, `recheckConnection()`, and `setIsOfflineMode(false)` on successful auth.
+>   - Integrate `NetworkStatusMonitor`: `configure(...)`, background monitoring, and gating feature-flag/social-config loads on `isActive`.
+>   - Centralize retry/backoff via `handleOfflineLikeFailure(...)`; classify errors with `isConnectivityError(...)`; adjust token refresh/logout flows accordingly.
+>   - Warm webview on main thread via `warmingWebViewAsync()` and clean up sequence.
+> - **State (`Sources/FronteggSwift/state/FronteggState.swift`)**:
+>   - Add `@Published isOfflineMode` with thread-safe setter.
+> - **Networking (`Sources/FronteggSwift/utils/NetworkStatusMonitor.swift`)**:
+>   - Overhaul to strict reachability: configurable base URL probes (HEAD/GET), cached state, path monitoring, periodic checks, and token-based onChange handlers; expose async `isActive`.
+> - **Demo App**:
+>   - Add `demo-embedded/NoConnectionPage.swift` and show it when `isOfflineMode` is true.
+>   - Update `demo-embedded/MyApp.swift` to branch UI among loading, logged-in, login, and no-connection.
+>   - Show "Offline Mode" indicator in `demo-embedded/UserPage.swift`.
+> 
+> <sup>Written by [Cursor Bugbot](https://cursor.com/dashboard?tab=bugbot) for commit 2ebd47da5bf85efa4ca14e6edef7bc31357cb3d9. This will update automatically on new commits. Configure [here](https://cursor.com/dashboard?tab=bugbot).</sup>
+<!-- /CURSOR_SUMMARY -->
+
 ## v1.2.48
 FR-22185 - Added support for trigger login with custom sso via WebAuthenticationSession
 FR-22185 - Fix offline mode
