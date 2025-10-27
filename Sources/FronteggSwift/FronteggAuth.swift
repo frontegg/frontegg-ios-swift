@@ -765,27 +765,46 @@ public class FronteggAuth: FronteggState {
             )
             
             guard error == nil else {
-                completion(.failure(error!))
-                setIsLoading(false)
+                DispatchQueue.main.async {
+                    completion(.failure(error!))
+                    self.setIsLoading(false)
+                }
                 return
             }
             
             guard let data = responseData else {
-                completion(.failure(FronteggError.authError(.failedToAuthenticate)))
-                setIsLoading(false)
+                DispatchQueue.main.async {
+                    completion(.failure(FronteggError.authError(.failedToAuthenticate)))
+                    self.setIsLoading(false)
+                }
                 return
             }
             
             do {
                 logger.info("Going to load user data")
                 let user = try await self.api.me(accessToken: data.access_token)
+                
+                guard let user = user else {
+                    DispatchQueue.main.async {
+                        completion(.failure(FronteggError.authError(.failedToLoadUserData("User data is nil"))))
+                        self.setIsLoading(false)
+                    }
+                    return
+                }
+                
                 await setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
                 
-                completion(.success(user!))
+                // Call completion on main thread to avoid race conditions
+                // This ensures the completion handler always runs on the main thread
+                DispatchQueue.main.async {
+                    completion(.success(user))
+                }
             } catch {
                 logger.error("Failed to load user data: \(error.localizedDescription)")
-                completion(.failure(FronteggError.authError(.failedToLoadUserData(error.localizedDescription))))
-                setIsLoading(false)
+                DispatchQueue.main.async {
+                    completion(.failure(FronteggError.authError(.failedToLoadUserData(error.localizedDescription))))
+                    self.setIsLoading(false)
+                }
                 return
             }
             
