@@ -54,6 +54,7 @@ public class FronteggAuth: FronteggState {
     public var featureFlags: FeatureFlags
     private var subscribers = Set<AnyCancellable>()
     private var refreshTokenDispatch: DispatchWorkItem?
+    private var offlineModeDispatch: DispatchWorkItem?
     var loginCompletion: CompletionHandler? = nil
     
     init (
@@ -109,6 +110,10 @@ public class FronteggAuth: FronteggState {
     
     
     deinit {
+        // Cancel any pending work items
+        offlineModeDispatch?.cancel()
+        refreshTokenDispatch?.cancel()
+        
         // Remove the observer when the instance is deallocated
         NotificationCenter.default.removeObserver(self, name: UIApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: UIApplication.didEnterBackgroundNotification, object: nil)
@@ -238,8 +243,32 @@ public class FronteggAuth: FronteggState {
         if(self.isOfflineMode == false){
             return;
         }
+        
+        // Cancel any pending offline mode dispatch to prevent race conditions
+        offlineModeDispatch?.cancel()
+        
         self.logger.info("Connected to the internet")
-        self.setIsOfflineMode(false)
+        
+        // Add a small delay before updating UI to prevent flicker
+        // This ensures the network is stable before showing the user they're back online
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            
+            // Verify that network is still active after the delay
+            Task {
+                let stillOnline = await NetworkStatusMonitor.isActive
+                if stillOnline {
+                    DispatchQueue.main.async {
+                        self.setIsOfflineMode(false)
+                    }
+                } else {
+                    self.logger.info("Network became unavailable during delay")
+                }
+            }
+        }
+        
+        offlineModeDispatch = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
         
         DispatchQueue.global(qos: .background).async {
             Task {
@@ -249,6 +278,10 @@ public class FronteggAuth: FronteggState {
         }
     }
     public func disconnectedFromInternet() {
+        
+        // Cancel any pending reconnection dispatch
+        offlineModeDispatch?.cancel()
+        offlineModeDispatch = nil
         
         self.logger.info("Disconnected from the internet")
         self.setIsOfflineMode(true)
