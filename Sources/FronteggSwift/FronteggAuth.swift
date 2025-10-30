@@ -54,6 +54,8 @@ public class FronteggAuth: FronteggState {
     public var featureFlags: FeatureFlags
     private var subscribers = Set<AnyCancellable>()
     private var refreshTokenDispatch: DispatchWorkItem?
+    private var offlineDebounceWork: DispatchWorkItem?
+    private let offlineDebounceDelay: TimeInterval = 0.6
     var loginCompletion: CompletionHandler? = nil
     
     init (
@@ -239,6 +241,9 @@ public class FronteggAuth: FronteggState {
             return;
         }
         self.logger.info("Connected to the internet")
+        // Cancel any pending offline transition
+        offlineDebounceWork?.cancel()
+        offlineDebounceWork = nil
         self.setIsOfflineMode(false)
         
         DispatchQueue.global(qos: .background).async {
@@ -250,8 +255,17 @@ public class FronteggAuth: FronteggState {
     }
     public func disconnectedFromInternet() {
         
-        self.logger.info("Disconnected from the internet")
-        self.setIsOfflineMode(true)
+        self.logger.info("Disconnected from the internet (debounced)")
+        // Debounce setting offline to avoid brief flicker on quick reconnects
+        offlineDebounceWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            // Only set offline if still disconnected (best effort via lastAttemptReason or state)
+            // We rely on reconnectedToInternet() to cancel this when path is back.
+            self.setIsOfflineMode(true)
+        }
+        offlineDebounceWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + offlineDebounceDelay, execute: work)
     }
     
     public func initializeSubscriptions() {
