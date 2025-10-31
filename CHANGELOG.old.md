@@ -1,3 +1,14 @@
+## v1.2.50
+Fixed race condition for handleHostedLoginCallback method.
+- Add a debounce when transitioning to offline to avoid brief misfires during quick reconnects
+- Cancel any pending offline transition immediately when connectivity is restored
+
+Implementation:
+`FronteggAuth`:
+1. Added offlineDebounceWork and offlineDebounceDelay = 0.6s
+2. `disconnectedFromInternet()` now schedules setIsOfflineMode(true) after the debounce delay
+3. `reconnectedToInternet()` cancels the pending work and sets isOfflineMode(false) immediately.
+
 ## v1.2.49
 FR-22001 - Fix network connection monitor and add isOfflineMode indicator
 
