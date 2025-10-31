@@ -1,5 +1,6 @@
 import SwiftUI
 import FronteggSwift
+import UIKit
 
 struct UserPage: View {
     @EnvironmentObject private var fronteggAuth: FronteggAuth
@@ -55,6 +56,8 @@ struct UserPage: View {
                     Spacer().frame(height: 16)
                     
                     sensitiveActionButton
+                    Spacer().frame(height: 12)
+                    getAccessTokenButton
                     Spacer().frame(height: 24)
                 }
             }
@@ -65,6 +68,26 @@ struct UserPage: View {
     private var sensitiveActionButton: some View {
         Button("Sensitive action") {
             handleSensitiveAction()
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .padding(.horizontal, 8)
+    }
+    
+    private var getAccessTokenButton: some View {
+        Button("Get Current Access Token") {
+            Task {
+                do {
+                    let token = try await fronteggAuth.getOrRefreshAccessTokenAsync()
+                    if let token = token, token.isEmpty == false {
+                        UIPasteboard.general.string = token
+                        showMessage("Access token copied to clipboard", isSuccess: true)
+                    } else {
+                        showMessage("No access token available", isSuccess: false)
+                    }
+                } catch {
+                    showMessage("Failed to get access token", isSuccess: false)
+                }
+            }
         }
         .buttonStyle(PrimaryButtonStyle())
         .padding(.horizontal, 8)
