@@ -1398,6 +1398,13 @@ public class FronteggAuth: FronteggState {
         }
         setWebLoading(true)
         
+        // Cancel any active ASWebAuthenticationSession before presenting EmbeddedLoginModal
+        // This prevents the magic link deep link from opening Internal WebView on top of Custom Tab
+        // which would break the session context
+        if let activeSession = WebAuthenticator.shared.session {
+            activeSession.cancel()
+            WebAuthenticator.shared.session = nil
+        }
         
         let loginModal = EmbeddedLoginModal(parentVC: rootVC)
         let hostingController = UIHostingController(rootView: loginModal)
