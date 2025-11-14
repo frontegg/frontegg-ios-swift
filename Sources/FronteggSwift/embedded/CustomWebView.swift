@@ -57,21 +57,14 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
 
         if let url = url {
             if let scheme = url.scheme, getAppURLSchemes().contains(scheme) {
-                logger.info("Detected deep link (\(scheme)), opening externally: \(url.absoluteString)")
-
                 DispatchQueue.main.async {
                     UIApplication.shared.open(url, options: [:]) { success in
                         if success {
-                            self.logger.info("✅ Deep link opened, dismissing login modal via VCHolder")
                             if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
                                 presentingVC.dismiss(animated: true)
                                 VCHolder.shared.vc = nil
                                 FronteggAuth.shared.loginCompletion?(.failure(.authError(.operationCanceled)))
-                            } else {
-                                self.logger.warning("⚠️ No VC to dismiss in VCHolder.")
                             }
-                        } else {
-                            self.logger.error("❌ Failed to open deep link: \(url.absoluteString)")
                         }
                     }
                 }
@@ -271,6 +264,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         
         weak var webView = _webView
         logger.trace("setSocialLoginRedirectUri()")
+        
         let queryItems = [
             URLQueryItem(name: "redirectUri", value: generateRedirectUri())
         ]
@@ -297,19 +291,29 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             let task = noRedirectSession.dataTask(with: request) { (data, response, error) in
                 // Check for errors
                 if let error = error {
-                    print("Error: \(error.localizedDescription)")
                     return
                 }
                 
                 // Check for valid HTTP response
                 if let httpResponse = response as? HTTPURLResponse {
-                    
                     if let location = httpResponse.value(forHTTPHeaderField: "Location"),
                        let socialLoginUrl = URL(string: location) {
-                        
-                        self.handleSocialLoginRedirectToBrowser(webView, socialLoginUrl)
+                        if socialLoginUrl.host == "appleid.apple.com" || socialLoginUrl.absoluteString.contains("appleid.apple.com") {
+                            // Check if this is form_post (Apple login specific)
+                            if socialLoginUrl.absoluteString.contains("response_mode=form_post") {
+                                // For form_post, Apple sends POST to backend, so we need to load URL in WebView
+                                // to allow backend to process the POST and redirect properly
+                                DispatchQueue.main.async {
+                                    _ = webView?.load(URLRequest(url: socialLoginUrl))
+                                }
+                            } else {
+                                self.handleSocialLoginRedirectToBrowser(webView, socialLoginUrl)
+                            }
+                        } else {
+                            // Not Apple URL, use normal flow
+                            self.handleSocialLoginRedirectToBrowser(webView, socialLoginUrl)
+                        }
                     }
-                    
                 }
             }
             task.resume()
@@ -323,30 +327,29 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         weak var webView = _webView
         
         WebAuthenticator.shared.start(url, ephemeralSession: ephemeralSession, window: self.window) { callbackUrl, error  in
-            print("Social login authentication canceled")
             if(error != nil){
                 if(CustomWebView.isCancelledAsAuthenticationLoginError(error!)){
-                    print("Social login authentication canceled")
+                    // Social login authentication canceled
                 }else {
-                    print("Failed to login with social login \(error?.localizedDescription ?? "unknown error")")
                     let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
                     CredentialManager.saveCodeVerifier(codeVerifier)
                     _ = webView?.load(URLRequest(url: newUrl))
                 }
             }else if (callbackUrl == nil){
-                print("Failed to login with social login \(error?.localizedDescription ?? "unknown error")")
                 let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
                 CredentialManager.saveCodeVerifier(codeVerifier)
                 _ = webView?.load(URLRequest(url: newUrl))
                 
             }else {
-                let components = URLComponents(url: callbackUrl!, resolvingAgainstBaseURL: false)!
-                let query = components.query!
-                let resultUrl = URL(string:
-                                        "\(FronteggAuth.shared.baseUrl)/oauth/account/social/success?\(query)")!
-                _ = webView?.load(URLRequest(url: resultUrl))
-                
-                
+                if let socialLoginUrl = FronteggAuth.shared.handleSocialLoginCallback(callbackUrl!) {
+                    _ = webView?.load(URLRequest(url: socialLoginUrl))
+                } else {
+                    let components = URLComponents(url: callbackUrl!, resolvingAgainstBaseURL: false)!
+                    if let query = components.query, !query.isEmpty {
+                        let resultUrl = URL(string: "\(FronteggAuth.shared.baseUrl)/oauth/account/social/success?\(query)")!
+                        _ = webView?.load(URLRequest(url: resultUrl))
+                    }
+                }
             }
         }
     }
@@ -355,6 +358,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         
         weak var webView = _webView
         logger.trace("handleSocialLoginRedirectToBrowser()")
+        
         let queryItems = [
             URLQueryItem(name: "prompt", value: "select_account"),
         ]

@@ -94,6 +94,7 @@ func isSocialLoginPath(_ string: String) -> Bool {
     
     return false
 }
+
 func getOverrideUrlType (url: URL) -> OverrideUrlType {
     
     let urlStr = url.absoluteString
@@ -103,6 +104,7 @@ func getOverrideUrlType (url: URL) -> OverrideUrlType {
         if(isSocialLoginPath(url.path)){
             return .SocialOauthPreLogin
         }
+        
         if((URLConstants.successLoginRoutes.first { url.path.hasPrefix($0)}) != nil) {
             return .loginRoutes
         }
