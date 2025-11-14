@@ -1,3 +1,6 @@
+## v1.2.51
+Added example of receiving token after login session below the "Sensitive action" button.
+
 ## v1.2.50
 Fixed race condition for handleHostedLoginCallback method.
 - Add a debounce when transitioning to offline to avoid brief misfires during quick reconnects
