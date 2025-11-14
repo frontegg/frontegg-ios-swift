@@ -1397,6 +1397,15 @@ public class FronteggAuth: FronteggState {
             return false;
         }
         
+        // Close active ASWebAuthenticationSession (Custom Tab) before opening EmbeddedLoginModal
+        // This prevents session conflicts and double login issues when magic links are opened
+        // while a directLogin Custom Tab is still active
+        if let activeSession = WebAuthenticator.shared.session {
+            logger.info("Closing active ASWebAuthenticationSession before opening EmbeddedLoginModal for deep link")
+            activeSession.cancel()
+            WebAuthenticator.shared.session = nil
+        }
+        
         if let socialLoginUrl = handleSocialLoginCallback(url){
             print("socialLoginUrl: \(socialLoginUrl.absoluteString)")
             
