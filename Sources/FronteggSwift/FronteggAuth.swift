@@ -1204,10 +1204,19 @@ public class FronteggAuth: FronteggState {
                         if #available(iOS 15.0, *), appleConfig.customised, !config.useAsWebAuthenticationForAppleLogin {
                             await AppleAuthenticator.shared.start(completionHandler: completion)
                         }else {
-                            let oauthCallback = self.createOauthCallbackHandler(completion)
-                            let url = try await self.generateAppleAuthorizeUrl(config: appleConfig)
-                            await WebAuthenticator.shared.start(url, ephemeralSession: true, completionHandler: oauthCallback)
-                            
+                            // In embedded mode, Apple login with form_post must be handled in WebView
+                            // because ASWebAuthenticationSession cannot handle POST-based callbacks
+                            // Backend will receive POST and redirect to deep link, which will be handled by handleOpenUrl
+                            if self.embeddedMode {
+                                let url = try await self.generateAppleAuthorizeUrl(config: appleConfig)
+                                DispatchQueue.main.async {
+                                    self.loadInWebView(url)
+                                }
+                            } else {
+                                let oauthCallback = self.createOauthCallbackHandler(completion)
+                                let url = try await self.generateAppleAuthorizeUrl(config: appleConfig)
+                                await WebAuthenticator.shared.start(url, ephemeralSession: true, completionHandler: oauthCallback)
+                            }
                         }
                     } else {
                         self.logger.error("No active apple configuration, for more info please visit https://docs.frontegg.com/docs/apple-login")
