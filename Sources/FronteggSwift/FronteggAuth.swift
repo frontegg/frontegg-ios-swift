@@ -928,7 +928,6 @@ public class FronteggAuth: FronteggState {
     internal func createOauthCallbackHandler(_ completion: @escaping FronteggAuth.CompletionHandler) -> ((URL?, Error?) -> Void) {
         
         return { callbackUrl, error in
-            
             if let error {
                 completion(.failure(FronteggError.authError(.other(error))))
                 return
@@ -939,26 +938,22 @@ public class FronteggAuth: FronteggState {
                 return
             }
             
-            
-            self.logger.trace("handleHostedLoginCallback, url: \(url)")
-            guard let queryItems = getQueryItems(url.absoluteString), let code = queryItems["code"] else {
+            let parsedQueryItems = getQueryItems(url.absoluteString)
+            guard let queryItems = parsedQueryItems, let code = queryItems["code"] else {
                 let error = FronteggError.authError(.failedToExtractCode)
                 completion(.failure(error))
-                self.logger.error("Failed to extract code, \(error)")
                 return
             }
             
             guard let codeVerifier = CredentialManager.getCodeVerifier() else {
                 let error = FronteggError.authError(.codeVerifierNotFound)
                 completion(.failure(error))
-                self.logger.error("No code verifier found, \(error)")
                 return
             }
             
             if let errorMessage = queryItems["error"] {
                 let error = FronteggError.authError(.oauthError(errorMessage))
                 completion(.failure(error))
-                self.logger.error("Oauth error, \(error)")
                 return
             }
             
@@ -1192,7 +1187,6 @@ public class FronteggAuth: FronteggState {
     
     
     internal func loginWithApple(_ _completion: @escaping FronteggAuth.CompletionHandler)  {
-        
         let completion = handleMfaRequired(_completion)
         DispatchQueue.global(qos: .userInitiated).async {
             Task {
@@ -1207,14 +1201,11 @@ public class FronteggAuth: FronteggState {
                             let oauthCallback = self.createOauthCallbackHandler(completion)
                             let url = try await self.generateAppleAuthorizeUrl(config: appleConfig)
                             await WebAuthenticator.shared.start(url, ephemeralSession: true, completionHandler: oauthCallback)
-                            
                         }
                     } else {
-                        self.logger.error("No active apple configuration, for more info please visit https://docs.frontegg.com/docs/apple-login")
                         throw FronteggError.configError(.socialLoginMissing("Apple"))
                     }
                 } catch {
-                    
                     if error is FronteggError {
                         completion(.failure(error as! FronteggError))
                     }else {
@@ -1231,6 +1222,7 @@ public class FronteggAuth: FronteggState {
     
     func createOauth2SessionState() async throws -> Data {
         let (url, codeVerifier)  = AuthorizeUrlGenerator.shared.generate()
+        
         let (_, authorizeResponse) = try await FronteggAuth.shared.api.getRequest(path: url.absoluteString, accessToken: nil, additionalHeaders: ["Accept":"text/html"])
         
         guard let authorizeResponseUrl = authorizeResponse.url,
@@ -1238,17 +1230,17 @@ public class FronteggAuth: FronteggState {
               let sessionState = authorizeComponent.queryItems?.first(where: { q in
                   q.name == "state"
               })?.value else {
-            self.logger.error("Failed to generate oauth2 session response: \(authorizeResponse)")
             throw FronteggError.authError(.failedToAuthenticate)
         }
         
+        let redirectUri = generateRedirectUri()
+        
         let oauthStateDic = [
-            "FRONTEGG_OAUTH_REDIRECT_AFTER_LOGIN": generateRedirectUri(),
+            "FRONTEGG_OAUTH_REDIRECT_AFTER_LOGIN": redirectUri,
             "FRONTEGG_OAUTH_STATE_AFTER_LOGIN": sessionState,
         ]
         
         guard let oauthStateJson = try? JSONSerialization.data(withJSONObject: oauthStateDic, options: .withoutEscapingSlashes) else {
-            self.logger.error("Failed to generate post login state, oauthState: \(oauthStateDic)")
             throw FronteggError.authError(.failedToAuthenticate)
         }
         
@@ -1257,12 +1249,10 @@ public class FronteggAuth: FronteggState {
         return oauthStateJson
     }
     func generateAppleAuthorizeUrl(config: SocialLoginOption) async throws -> URL {
-        
         let sessionState = try await createOauth2SessionState()
         
         let scope = ["openid", "name", "email"] + config.additionalScopes
         let appId = FronteggAuth.shared.applicationId ?? ""
-        
         
         let stateDict = [
             "oauthState": sessionState.base64EncodedString(),
@@ -1271,11 +1261,8 @@ public class FronteggAuth: FronteggState {
             "action": "login",
         ]
         
-        
         guard let stateJson = try? JSONSerialization.data(withJSONObject: stateDict, options: .withoutEscapingSlashes),
               let state = String(data: stateJson, encoding: .utf8) else {
-            
-            self.logger.error("Failed to generate apple authorization url")
             throw FronteggError.authError(.failedToAuthenticate)
         }
         
@@ -1289,7 +1276,9 @@ public class FronteggAuth: FronteggState {
             URLQueryItem(name: "client_id", value: config.clientId)
         ]
         
-        return urlComponent.url!
+        let finalUrl = urlComponent.url!
+        
+        return finalUrl
     }
     
     func loginWithSocialLogin(socialLoginUrl: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
@@ -1386,20 +1375,17 @@ public class FronteggAuth: FronteggState {
         }
     }
     public func handleOpenUrl(_ url: URL, _ useAppRootVC: Bool = false, internalHandleUrl:Bool = false) -> Bool {
-        
         if(!url.absoluteString.hasPrefix(self.baseUrl) && !internalHandleUrl){
             setAppLink(false)
             return false
         }
         
         guard let rootVC = self.getRootVC(useAppRootVC) else {
-            logger.error(FronteggError.authError(.couldNotFindRootViewController).localizedDescription)
+            self.logger.error(FronteggError.authError(.couldNotFindRootViewController).localizedDescription)
             return false;
         }
         
         if let socialLoginUrl = handleSocialLoginCallback(url){
-            print("socialLoginUrl: \(socialLoginUrl.absoluteString)")
-            
             if let webView = self.webview {
                 let request = URLRequest(url: socialLoginUrl, cachePolicy: .reloadRevalidatingCacheData)
                 webView.load(request)
@@ -1412,6 +1398,13 @@ public class FronteggAuth: FronteggState {
         }
         setWebLoading(true)
         
+        // Cancel any active ASWebAuthenticationSession before presenting EmbeddedLoginModal
+        // This prevents the magic link deep link from opening Internal WebView on top of Custom Tab
+        // which would break the session context
+        if let activeSession = WebAuthenticator.shared.session {
+            activeSession.cancel()
+            WebAuthenticator.shared.session = nil
+        }
         
         let loginModal = EmbeddedLoginModal(parentVC: rootVC)
         let hostingController = UIHostingController(rootView: loginModal)
@@ -1466,11 +1459,18 @@ public class FronteggAuth: FronteggState {
     
     
     public func handleSocialLoginCallback(_ url: URL) -> URL? {
-        guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
         
         // 1) Host must match Frontegg base URL host
-        guard let allowedHost = URL(string: FronteggAuth.shared.baseUrl)?.host,
-              comps.host == allowedHost else { return nil }
+        guard let allowedHost = URL(string: FronteggAuth.shared.baseUrl)?.host else {
+            return nil
+        }
+        
+        guard comps.host == allowedHost else {
+            return nil
+        }
         
         // 2) Path: /oauth/account/redirect/ios/{bundleId}/{provider}
         let prefix = "/oauth/account/redirect/ios/"
@@ -1480,7 +1480,9 @@ public class FronteggAuth: FronteggState {
         }
         
         let bundleId = FronteggApp.shared.bundleIdentifier
-        guard !bundleId.isEmpty else { return nil }
+        guard !bundleId.isEmpty else {
+            return nil
+        }
         
         // Helpers
         let items = comps.queryItems ?? []
@@ -1499,6 +1501,7 @@ public class FronteggAuth: FronteggState {
         
         let redirectUri = SocialLoginUrlGenerator.shared.defaultRedirectUri()
         queryParams["redirectUri"] = redirectUri.addingPercentEncoding(withAllowedCharacters: .alphanumerics)
+        
         // Process state
         if let state = q("state"), !state.isEmpty {
             if let data = state.data(using: .utf8),
@@ -1523,7 +1526,9 @@ public class FronteggAuth: FronteggState {
         var compsOut = URLComponents()
         compsOut.queryItems = queryParams.map { URLQueryItem(name: $0.key, value: $0.value) }
         
-        return URL(string: "\(FronteggAuth.shared.baseUrl)/oauth/account/social/success?\(compsOut.query ?? "")")
+        let finalUrl = URL(string: "\(FronteggAuth.shared.baseUrl)/oauth/account/social/success?\(compsOut.query ?? "")")
+        
+        return finalUrl
     }
     
     
