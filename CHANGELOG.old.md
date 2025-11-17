@@ -1,3 +1,7 @@
+## v1.2.52
+Apple login fix in webview from embedded mode.
+Magic links directLogin fix.
+
 ## v1.2.51
 Added example of receiving token after login session below the "Sensitive action" button.
 
