@@ -388,9 +388,17 @@ public class FronteggAuth: FronteggState {
             logger.info("Checking if refresh token is available...")
             
             // Check if the refresh token is available
-            guard let _ = self.refreshToken else {
-                logger.debug("No refresh token available. Exiting...")
-                return
+            if self.refreshToken == nil {
+                // Try to reload from keychain before giving up
+                if let keychainToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+                    logger.info("Reloaded refresh token from keychain in refreshTokenWhenNeeded")
+                    DispatchQueue.main.sync {
+                        setRefreshToken(keychainToken)
+                    }
+                } else {
+                    logger.debug("No refresh token available in memory or keychain. Exiting...")
+                    return
+                }
             }
             
             logger.debug("Refresh token is available. Checking access token...")
@@ -439,11 +447,10 @@ public class FronteggAuth: FronteggState {
         logger.info("Schedule token refresh after, (\(offset) s) (attempt: \(attempts))")
         
         var workItem: DispatchWorkItem? = nil
-        workItem = DispatchWorkItem {
-            if !(workItem!.isCancelled) {
-                Task {
-                    await self.refreshTokenIfNeeded(attempts: attempts)
-                }
+        workItem = DispatchWorkItem { [weak self] in
+            guard let self = self, !(workItem!.isCancelled) else { return }
+            Task {
+                await self.refreshTokenIfNeeded(attempts: attempts)
             }
         }
         refreshTokenDispatch = workItem
@@ -679,8 +686,20 @@ public class FronteggAuth: FronteggState {
     public func refreshTokenIfNeeded(attempts: Int = 0) async -> Bool {
         let enableOfflineMode = (try? PlistHelper.fronteggConfig().enableOfflineMode) ?? false
         
-        guard let refreshToken = self.refreshToken else {
-            self.logger.info("No refresh token found")
+        // Try to reload from keychain if in-memory token is nil
+        var refreshToken = self.refreshToken
+        if refreshToken == nil {
+            if let keychainToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+                self.logger.info("Reloaded refresh token from keychain")
+                await MainActor.run {
+                    setRefreshToken(keychainToken)
+                }
+                refreshToken = keychainToken
+            }
+        }
+        
+        guard let refreshToken = refreshToken else {
+            self.logger.info("No refresh token found in memory or keychain")
             return false
         }
         
@@ -844,7 +863,20 @@ public class FronteggAuth: FronteggState {
         
         self.logger.info("Checking if refresh token exists")
         
-        guard let refreshToken = self.refreshToken else {
+        // Try to reload from keychain if in-memory token is nil
+        var refreshToken = self.refreshToken
+        if refreshToken == nil {
+            if let keychainToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+                self.logger.info("Reloaded refresh token from keychain in getOrRefreshAccessTokenAsync")
+                await MainActor.run {
+                    setRefreshToken(keychainToken)
+                }
+                refreshToken = keychainToken
+            }
+        }
+        
+        guard let refreshToken = refreshToken else {
+            self.logger.info("No refresh token found in memory or keychain")
             return nil
         }
         
