@@ -11,6 +11,6 @@
 	<key>logLevel</key>
 	<string>trace</string>
 	<key>embeddedMode</key>
-    <false/>
+	<false/>
 </dict>
 </plist>

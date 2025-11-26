@@ -470,8 +470,20 @@ public class FronteggAuth: FronteggState {
             setIsLoading(true)
             defer { setIsLoading(false) }
             
+            // Try to reload from keychain if in-memory token is nil
+            // This ensures we can invalidate the session on the server even if the token
+            // was not loaded into memory (e.g., after app restart)
+            var refreshToken = self.refreshToken
+            if refreshToken == nil {
+                if let keychainToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+                    self.logger.info("Reloaded refresh token from keychain for logout")
+                    refreshToken = keychainToken
+                } else {
+                    self.logger.warning("No refresh token found in memory or keychain. Server session may remain active.")
+                }
+            }
             
-            await self.api.logout(accessToken: self.accessToken, refreshToken: self.refreshToken)
+            await self.api.logout(accessToken: self.accessToken, refreshToken: refreshToken)
             
             self.credentialManager.clear()
             if clearCookie {
@@ -784,13 +796,23 @@ public class FronteggAuth: FronteggState {
     
     
     func handleHostedLoginCallback(_ code: String, _ codeVerifier: String, _ completion: @escaping FronteggAuth.CompletionHandler) {
+        handleHostedLoginCallback(code, codeVerifier, redirectUri: nil, completion)
+    }
+    
+    func handleHostedLoginCallback(_ code: String, _ codeVerifier: String?, _ completion: @escaping FronteggAuth.CompletionHandler) {
+        handleHostedLoginCallback(code, codeVerifier, redirectUri: nil, completion)
+    }
+    
+    func handleHostedLoginCallback(_ code: String, _ codeVerifier: String?, redirectUri: String?, _ completion: @escaping FronteggAuth.CompletionHandler) {
         
-        let redirectUri = generateRedirectUri()
+        // Use provided redirectUri or generate default one
+        // For magic link flow, we should use the redirectUri from the callback URL
+        let redirectUri = redirectUri ?? generateRedirectUri()
         setIsLoading(true)
         
         Task {
             
-            logger.info("Going to exchange token")
+            logger.info("Going to exchange token with redirectUri: \(redirectUri), codeVerifier: \(codeVerifier != nil ? "provided" : "nil")")
             let (responseData, error) = await api.exchangeToken(
                 code: code,
                 redirectUrl: redirectUri,

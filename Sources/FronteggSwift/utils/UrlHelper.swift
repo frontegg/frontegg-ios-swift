@@ -64,7 +64,13 @@ public func generateRedirectUri() -> String {
         exit(1)
     }
     
-    return "\(bundleIdentifier.lowercased())://\(urlComponents.host!)\(urlComponents.path)/ios/oauth/callback"
+    // Normalize path - if path is empty or just "/", don't include it
+    var path = urlComponents.path
+    if path.isEmpty || path == "/" {
+        path = ""
+    }
+    
+    return "\(bundleIdentifier.lowercased())://\(urlComponents.host!)\(path)/ios/oauth/callback"
 }
 
 

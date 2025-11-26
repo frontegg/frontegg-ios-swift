@@ -268,14 +268,21 @@ public class Api {
     
     internal func exchangeToken(code: String,
                                 redirectUrl: String,
-                                codeVerifier: String) async -> (AuthResponse?, FronteggError?) {
+                                codeVerifier: String?) async -> (AuthResponse?, FronteggError?) {
         do {
-            let (data, _) = try await postRequest(path: "oauth/token", body: [
+            var body: [String: Any] = [
                 "grant_type": "authorization_code",
                 "code": code,
                 "redirect_uri": redirectUrl,
-                "code_verifier": codeVerifier,
-            ])
+            ]
+            
+            // Only include code_verifier if it's provided (for PKCE flow)
+            // Magic link flow doesn't use PKCE, so code_verifier should be nil
+            if let codeVerifier = codeVerifier {
+                body["code_verifier"] = codeVerifier
+            }
+            
+            let (data, _) = try await postRequest(path: "oauth/token", body: body)
             
             if let responseString = String(data: data, encoding: .utf8),
                responseString.contains("\"errors\"") || responseString.contains("\"error\"") {
@@ -312,16 +319,21 @@ public class Api {
     
     internal func logout(accessToken: String?, refreshToken: String?) async {
         if refreshToken == nil {
+            self.logger.warning("Cannot logout on server: refreshToken is nil. Session may remain active on server.")
             return
         }
         
         do {
-            let (_, response) = try await postRequest(path: "identity/resources/auth/v1/logout", body: ["refreshToken":refreshToken])
+            let (_, response) = try await postRequest(path: "identity/resources/auth/v1/logout", body: ["refreshToken":refreshToken!])
             
-            if let res = response as? HTTPURLResponse, res.statusCode != 401 {
-                self.logger.info("logged out successfully")
-            }else {
-                self.logger.info("Already logged out")
+            if let res = response as? HTTPURLResponse {
+                if res.statusCode == 200 || res.statusCode == 204 {
+                    self.logger.info("logged out successfully")
+                } else if res.statusCode == 401 {
+                    self.logger.info("Already logged out")
+                } else {
+                    self.logger.warning("Logout returned unexpected status code: \(res.statusCode). Session may remain active on server.")
+                }
             }
         } catch {
             self.logger.warning("API logout failed: \(error.localizedDescription). Proceeding with local cleanup.")
