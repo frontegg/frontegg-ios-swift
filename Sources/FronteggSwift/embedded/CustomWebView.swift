@@ -73,6 +73,16 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 return .cancel
             }
 
+            // Check if this is a magic link callback URL (intermediate redirect with code)
+            // Magic link flow uses /oauth/account/redirect/iOS/{bundleId}/oauth/callback?code=...
+            // This URL is detected as .loginRoutes but should be handled as HostedLoginCallback
+            if url.path.contains("/oauth/account/redirect/iOS/") && url.path.hasSuffix("/oauth/callback") {
+                if let queryItems = getQueryItems(url.absoluteString), queryItems["code"] != nil {
+                    logger.info("Detected magic link callback URL with code, handling as HostedLoginCallback")
+                    return self.handleHostedLoginCallback(webView, url)
+                }
+            }
+            
             let urlType = getOverrideUrlType(url: url)
             logger.info("urlType: \(urlType)")
 
@@ -254,9 +264,35 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         
         // For magic link flow, the server uses an intermediate redirect URL (/oauth/account/redirect/iOS/{bundleId})
         // We need to use this intermediate URL as redirect_uri for token exchange, not the custom scheme
-        // If we detected a magic link redirect_uri earlier, use it; otherwise use the standard one
-        let redirectUri = magicLinkRedirectUri ?? generateRedirectUri()
-        let isMagicLink = magicLinkRedirectUri != nil
+        // Check if this is a magic link callback by examining the URL path
+        var redirectUri: String
+        var isMagicLink: Bool
+        
+        if url.path.contains("/oauth/account/redirect/iOS/") && url.path.hasSuffix("/oauth/callback") {
+            // This is a magic link callback - extract redirect_uri from the URL itself (without query parameters)
+            isMagicLink = true
+            if let urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                var redirectUriComponents = URLComponents()
+                redirectUriComponents.scheme = urlComponents.scheme
+                redirectUriComponents.host = urlComponents.host
+                redirectUriComponents.path = urlComponents.path
+                if let extractedRedirectUri = redirectUriComponents.url {
+                    redirectUri = extractedRedirectUri.absoluteString
+                    logger.trace("Extracted magic link redirect_uri from callback URL: \(redirectUri)")
+                } else {
+                    // Fallback to cached value or default
+                    redirectUri = magicLinkRedirectUri ?? generateRedirectUri()
+                    logger.warning("Failed to extract redirect_uri from URL, using fallback: \(redirectUri)")
+                }
+            } else {
+                redirectUri = magicLinkRedirectUri ?? generateRedirectUri()
+                logger.warning("Failed to parse URL components, using fallback: \(redirectUri)")
+            }
+        } else {
+            // Regular OAuth callback - use cached magic link redirect_uri if available, otherwise use standard one
+            redirectUri = magicLinkRedirectUri ?? generateRedirectUri()
+            isMagicLink = magicLinkRedirectUri != nil
+        }
         
         // For magic link flow, the server generates code without PKCE, so we shouldn't send code_verifier
         // For regular OAuth flow, we need code_verifier for PKCE
