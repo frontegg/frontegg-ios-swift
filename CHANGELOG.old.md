@@ -1,3 +1,6 @@
+## v1.2.53
+FR-22756 Unexpecred logouts fix.
+
 ## v1.2.52
 Apple login fix in webview from embedded mode.
 Magic links directLogin fix.
