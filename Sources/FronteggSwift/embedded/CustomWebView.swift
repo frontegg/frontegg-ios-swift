@@ -15,6 +15,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     private let logger = getLogger("CustomWebView")
     private var lastResponseStatusCode: Int? = nil
     private var cachedUrlSchemes: [String]? = nil
+    private var magicLinkRedirectUri: String? = nil
     
     
     override var inputAccessoryView: UIView? {
@@ -136,6 +137,22 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             let urlType = getOverrideUrlType(url: url)
             logger.info("urlType: \(urlType), for: \(url.absoluteString)")
             
+            // Track magic link intermediate redirect URL
+            // For magic link flow, the server redirects to /oauth/account/redirect/iOS/{bundleId}?code=...
+            // We need to use this URL as redirect_uri for token exchange, not the custom scheme
+            if urlType == .loginRoutes && url.path.contains("/oauth/account/redirect/iOS/") {
+                // Extract redirect_uri from this intermediate URL (without query parameters)
+                if let urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                    var redirectUriComponents = URLComponents()
+                    redirectUriComponents.scheme = urlComponents.scheme
+                    redirectUriComponents.host = urlComponents.host
+                    redirectUriComponents.path = urlComponents.path
+                    if let redirectUri = redirectUriComponents.url {
+                        self.magicLinkRedirectUri = redirectUri.absoluteString
+                        logger.trace("Detected magic link redirect_uri: \(self.magicLinkRedirectUri!)")
+                    }
+                }
+            }
             
             if(urlType == .internalRoutes ) {
                 logger.trace("hiding Loader screen after 300ms")
@@ -226,8 +243,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     private func handleHostedLoginCallback(_ webView: WKWebView?, _ url: URL) -> WKNavigationActionPolicy {
         logger.trace("handleHostedLoginCallback, url: \(url)")
         guard let queryItems = getQueryItems(url.absoluteString),
-              let code = queryItems["code"],
-              let savedCodeVerifier =  CredentialManager.getCodeVerifier() else {
+              let code = queryItems["code"] else {
             logger.error("failed to get extract code from hostedLoginCallback url")
             logger.info("Restast the process by generating a new authorize url")
             let (url, codeVerifier) = AuthorizeUrlGenerator().generate()
@@ -235,10 +251,26 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             _ = webView?.load(URLRequest(url: url))
             return .cancel
         }
+        
+        // For magic link flow, the server uses an intermediate redirect URL (/oauth/account/redirect/iOS/{bundleId})
+        // We need to use this intermediate URL as redirect_uri for token exchange, not the custom scheme
+        // If we detected a magic link redirect_uri earlier, use it; otherwise use the standard one
+        let redirectUri = magicLinkRedirectUri ?? generateRedirectUri()
+        let isMagicLink = magicLinkRedirectUri != nil
+        
+        // For magic link flow, the server generates code without PKCE, so we shouldn't send code_verifier
+        // For regular OAuth flow, we need code_verifier for PKCE
+        let codeVerifier: String? = isMagicLink ? nil : CredentialManager.getCodeVerifier()
+        
+        logger.trace("Using redirect_uri: \(redirectUri), isMagicLink: \(isMagicLink), codeVerifier: \(codeVerifier != nil ? "provided" : "nil")")
+        
+        // Clear the magic link redirect_uri after using it
+        magicLinkRedirectUri = nil
+        
         self.fronteggAuth.setWebLoading(true)
         DispatchQueue.global(qos: .userInitiated).async {
             Task { @MainActor in
-                FronteggAuth.shared.handleHostedLoginCallback(code, savedCodeVerifier ) { res in
+                FronteggAuth.shared.handleHostedLoginCallback(code, codeVerifier, redirectUri: redirectUri) { res in
                     switch (res) {
                     case .success(_):
                         let logger = getLogger("CustomWebView")

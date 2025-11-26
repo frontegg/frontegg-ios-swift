@@ -6,6 +6,8 @@
 	<array>
 		<string>applinks:auth.davidantoon.me</string>
 		<string>webcredentials:auth.davidantoon.me</string>
+		<string>applinks:app-v686mk10lsu7.stg.frontegg.com</string>
+		<string>webcredentials:app-v686mk10lsu7.stg.frontegg.com</string>
 	</array>
 </dict>
 </plist>
