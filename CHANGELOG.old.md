@@ -1,3 +1,6 @@
+## v1.2.54
+Fixed: post Activation Redirect to App fails, leaving user on "Opening Application" page
+
 ## v1.2.53
 FR-22756 Unexpecred logouts fix.
 
