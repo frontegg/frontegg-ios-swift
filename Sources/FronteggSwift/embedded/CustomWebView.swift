@@ -73,13 +73,26 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 return .cancel
             }
 
-            // Check if this is a magic link callback URL (intermediate redirect with code)
-            // Magic link flow uses /oauth/account/redirect/iOS/{bundleId}/oauth/callback?code=...
+            // Check if this is an intermediate redirect callback URL (magic link, forget password, unlock account, invite)
+            // These flows use /oauth/account/redirect/iOS/{bundleId} or /oauth/account/redirect/iOS/{bundleId}/oauth/callback
             // This URL is detected as .loginRoutes but should be handled as HostedLoginCallback
-            if url.path.contains("/oauth/account/redirect/iOS/") && url.path.hasSuffix("/oauth/callback") {
+            if url.path.contains("/oauth/account/redirect/iOS/") {
                 if let queryItems = getQueryItems(url.absoluteString), queryItems["code"] != nil {
-                    logger.info("Detected magic link callback URL with code, handling as HostedLoginCallback")
+                    logger.info("Detected intermediate redirect callback URL with code, handling as HostedLoginCallback")
                     return self.handleHostedLoginCallback(webView, url)
+                }
+            }
+            
+            // Check if this is an OAuth callback URL with code parameter in /oauth/account/ path
+            // This handles other flows that might use different paths
+            // These URLs are detected as .loginRoutes but should be handled as HostedLoginCallback
+            if url.path.hasPrefix("/oauth/account/") {
+                if let queryItems = getQueryItems(url.absoluteString), queryItems["code"] != nil {
+                    // Check if it's a callback URL (not just any URL with code in /oauth/account/)
+                    if url.path.contains("/callback") || url.path.contains("/redirect/") {
+                        logger.info("Detected OAuth callback URL with code in /oauth/account/ path, handling as HostedLoginCallback")
+                        return self.handleHostedLoginCallback(webView, url)
+                    }
                 }
             }
             
@@ -262,14 +275,17 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             return .cancel
         }
         
-        // For magic link flow, the server uses an intermediate redirect URL (/oauth/account/redirect/iOS/{bundleId})
+        // For magic link and similar flows (forget password, unlock account, invite), the server uses 
+        // an intermediate redirect URL (/oauth/account/redirect/iOS/{bundleId} or /oauth/account/redirect/iOS/{bundleId}/oauth/callback)
         // We need to use this intermediate URL as redirect_uri for token exchange, not the custom scheme
-        // Check if this is a magic link callback by examining the URL path
+        // Check if this is an intermediate redirect callback by examining the URL path
         var redirectUri: String
         var isMagicLink: Bool
         
-        if url.path.contains("/oauth/account/redirect/iOS/") && url.path.hasSuffix("/oauth/callback") {
-            // This is a magic link callback - extract redirect_uri from the URL itself (without query parameters)
+        // Check if URL contains /oauth/account/redirect/iOS/ - this indicates an intermediate redirect
+        // (used for magic link, forget password, unlock account, invite flows)
+        if url.path.contains("/oauth/account/redirect/iOS/") {
+            // This is an intermediate redirect callback - extract redirect_uri from the URL itself (without query parameters)
             isMagicLink = true
             if let urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false) {
                 var redirectUriComponents = URLComponents()
@@ -278,7 +294,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 redirectUriComponents.path = urlComponents.path
                 if let extractedRedirectUri = redirectUriComponents.url {
                     redirectUri = extractedRedirectUri.absoluteString
-                    logger.trace("Extracted magic link redirect_uri from callback URL: \(redirectUri)")
+                    logger.trace("Extracted intermediate redirect_uri from callback URL: \(redirectUri)")
                 } else {
                     // Fallback to cached value or default
                     redirectUri = magicLinkRedirectUri ?? generateRedirectUri()
@@ -435,8 +451,13 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         
         let url = urlComps.url!
         
-        DispatchQueue.main.sync {
+        // Use async dispatch to avoid deadlock if already on main thread
+        if Thread.isMainThread {
             self.startExternalBrowser(webView, url)
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.startExternalBrowser(webView, url)
+            }
         }
     }
     
