@@ -335,8 +335,7 @@ public class FronteggAuth: FronteggState {
                 self.credentialManager.saveOfflineUser(user: user)
             }
             
-            DispatchQueue.main.sync {
-                
+            await MainActor.run {
                 setRefreshToken(refreshToken)
                 setAccessToken(accessToken)
                 setUser(user)
@@ -355,7 +354,7 @@ public class FronteggAuth: FronteggState {
             }
             
         } catch {
-            DispatchQueue.main.sync {
+            await MainActor.run {
                 logger.error("Failed to load user data: \(error)")
                 setRefreshToken(nil)
                 setAccessToken(nil)
@@ -392,8 +391,13 @@ public class FronteggAuth: FronteggState {
                 // Try to reload from keychain before giving up
                 if let keychainToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
                     logger.info("Reloaded refresh token from keychain in refreshTokenWhenNeeded")
-                    DispatchQueue.main.sync {
+                    // Use async dispatch to avoid deadlock if already on main thread
+                    if Thread.isMainThread {
                         setRefreshToken(keychainToken)
+                    } else {
+                        DispatchQueue.main.async { [weak self] in
+                            self?.setRefreshToken(keychainToken)
+                        }
                     }
                 } else {
                     logger.debug("No refresh token available in memory or keychain. Exiting...")
@@ -732,7 +736,7 @@ public class FronteggAuth: FronteggState {
         } else if attempts > 10 {
             self.logger.info("Refresh token attempts exceeded, logging out")
             self.credentialManager.clear()
-            DispatchQueue.main.sync {
+            await MainActor.run {
                 self.setInitializing(false)
                 self.setIsAuthenticated(false)
                 self.setAccessToken(nil)
@@ -764,7 +768,7 @@ public class FronteggAuth: FronteggState {
             // Auth failure → logout (unchanged)
             if case .authError(FronteggError.Authentication.failedToRefreshToken) = error {
                 self.credentialManager.clear()
-                DispatchQueue.main.sync {
+                await MainActor.run {
                     self.setInitializing(false)
                     self.setIsAuthenticated(false)
                     self.setUser(nil)
@@ -1613,16 +1617,16 @@ public class FronteggAuth: FronteggState {
             Task {
                 do {
                     let user = try await self.requestAuthorizeAsync(refreshToken: refreshToken, deviceTokenCookie: deviceTokenCookie)
-                    DispatchQueue.main.sync {
+                    await MainActor.run {
                         completion(.success(user)) // Assuming success is represented by empty parentheses
                     }
                 } catch let error as FronteggError {
-                    DispatchQueue.main.sync {
+                    await MainActor.run {
                         completion(.failure(error))
                     }
                 } catch {
                     self.logger.error("Failed to authenticate: \(error.localizedDescription)")
-                    DispatchQueue.main.async {
+                    await MainActor.run {
                         completion(.failure(.authError(.failedToAuthenticate)))
                     }
                 }

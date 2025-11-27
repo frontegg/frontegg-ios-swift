@@ -16,6 +16,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     private var lastResponseStatusCode: Int? = nil
     private var cachedUrlSchemes: [String]? = nil
     private var magicLinkRedirectUri: String? = nil
+    private var previousUrl: URL? = nil
     
     
     override var inputAccessoryView: UIView? {
@@ -57,6 +58,12 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         logger.trace("navigationAction check for \(urlString)")
 
         if let url = url {
+            // Save current URL as previousUrl BEFORE processing, but only if it's not the same as the new URL
+            // This ensures we track the URL we came FROM, not the URL we're going TO
+            if let currentUrl = webView?.url, currentUrl.absoluteString != url.absoluteString {
+                previousUrl = currentUrl
+                logger.trace("Updated previousUrl to: \(currentUrl.absoluteString)")
+            }
             if let scheme = url.scheme, getAppURLSchemes().contains(scheme) {
                 DispatchQueue.main.async {
                     UIApplication.shared.open(url, options: [:]) { success in
@@ -73,21 +80,98 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 return .cancel
             }
 
-            // Check if this is a magic link callback URL (intermediate redirect with code)
-            // Magic link flow uses /oauth/account/redirect/iOS/{bundleId}/oauth/callback?code=...
+            // Check if this is an intermediate redirect callback URL (magic link, forget password, unlock account, invite)
+            // These flows use /oauth/account/redirect/iOS/{bundleId} or /oauth/account/redirect/iOS/{bundleId}/oauth/callback
             // This URL is detected as .loginRoutes but should be handled as HostedLoginCallback
-            if url.path.contains("/oauth/account/redirect/iOS/") && url.path.hasSuffix("/oauth/callback") {
+            if url.path.contains("/oauth/account/redirect/iOS/") {
                 if let queryItems = getQueryItems(url.absoluteString), queryItems["code"] != nil {
-                    logger.info("Detected magic link callback URL with code, handling as HostedLoginCallback")
+                    logger.info("Detected intermediate redirect callback URL with code, handling as HostedLoginCallback")
                     return self.handleHostedLoginCallback(webView, url)
                 }
             }
             
+            // Check if this is an OAuth callback URL with code parameter in /oauth/account/ path
+            // This handles other flows that might use different paths
+            // These URLs are detected as .loginRoutes but should be handled as HostedLoginCallback
+            if url.path.hasPrefix("/oauth/account/") {
+                if let queryItems = getQueryItems(url.absoluteString), queryItems["code"] != nil {
+                    // Check if it's a callback URL (not just any URL with code in /oauth/account/)
+                    if url.path.contains("/callback") || url.path.contains("/redirect/") {
+                        logger.info("Detected OAuth callback URL with code in /oauth/account/ path, handling as HostedLoginCallback")
+                        return self.handleHostedLoginCallback(webView, url)
+                    }
+                }
+            }
+
             let urlType = getOverrideUrlType(url: url)
             logger.info("urlType: \(urlType)")
 
             switch urlType {
             case .HostedLoginCallback:
+                // Check if this is unlock account flow - custom scheme URL without code after unlock
+                // In unlock account flow, after unlock, server redirects to /oauth/account/redirect/iOS/{bundleId}
+                // (without code), then redirects to custom scheme URL (also without code)
+                // In this case, we should just allow the user to login normally, not treat it as OAuth callback
+                let urlScheme = url.scheme ?? ""
+                let appSchemes = getAppURLSchemes()
+                let isCustomScheme = !urlScheme.isEmpty && (appSchemes.contains(urlScheme) || !urlScheme.hasPrefix("http"))
+                let queryItems = getQueryItems(url.absoluteString)
+                let hasCode = queryItems?["code"] != nil
+                
+                logger.info("HostedLoginCallback check - urlScheme: \(urlScheme), appSchemes: \(appSchemes), isCustomScheme: \(isCustomScheme), hasCode: \(hasCode), previousUrl: \(previousUrl?.absoluteString ?? "nil"), magicLinkRedirectUri: \(magicLinkRedirectUri ?? "nil")")
+                
+                if isCustomScheme && !hasCode {
+                    logger.info("Custom scheme URL without code detected. Previous URL: \(previousUrl?.absoluteString ?? "nil"), magicLinkRedirectUri: \(magicLinkRedirectUri ?? "nil")")
+                    
+                    // Check if magicLinkRedirectUri was set but URL doesn't have code
+                    // This indicates unlock account flow or similar flow that doesn't use OAuth callback
+                    // We check this FIRST because it's the most reliable indicator
+                    if magicLinkRedirectUri != nil {
+                        // Also check if previous URL was intermediate redirect without code
+                        var shouldIgnore = false
+                        if let prevUrl = previousUrl {
+                            // If previous URL was intermediate redirect without code, definitely unlock account flow
+                            let prevHasCode = getQueryItems(prevUrl.absoluteString)?["code"] != nil
+                            shouldIgnore = prevUrl.path.contains("/oauth/account/redirect/iOS/") && !prevHasCode
+                            logger.info("Previous URL check - path contains /oauth/account/redirect/iOS/: \(prevUrl.path.contains("/oauth/account/redirect/iOS/")), prevHasCode: \(prevHasCode), shouldIgnore: \(shouldIgnore)")
+                        } else {
+                            // If no previous URL but magicLinkRedirectUri is set, likely unlock account flow
+                            shouldIgnore = true
+                            logger.info("No previous URL but magicLinkRedirectUri is set, shouldIgnore: true")
+                        }
+                        
+                        if shouldIgnore {
+                            logger.info("Detected unlock account flow completion - custom scheme URL without code after intermediate redirect, allowing normal login")
+                            // Clear magicLinkRedirectUri as it's not needed for unlock account flow
+                            magicLinkRedirectUri = nil
+                            previousUrl = nil
+                            // Reset webview to initial state by loading fresh login page
+                            // This ensures the app returns to initial state after unlock account flow
+                            DispatchQueue.main.async {
+                                let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
+                                CredentialManager.saveCodeVerifier(codeVerifier)
+                                webView?.load(URLRequest(url: loginUrl))
+                            }
+                            return .cancel
+                        }
+                    }
+                    
+                    // Check if we came directly from unlock account flow
+                    if let prevUrl = previousUrl, prevUrl.path.contains("/oauth/account/unlock") {
+                        logger.info("Detected unlock account flow completion - custom scheme URL without code after unlock, allowing normal login")
+                        // Clear magicLinkRedirectUri as it's not needed for unlock account flow
+                        magicLinkRedirectUri = nil
+                        previousUrl = nil
+                        // Reset webview to initial state by loading fresh login page
+                        // This ensures the app returns to initial state after unlock account flow
+                        DispatchQueue.main.async {
+                            let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
+                            CredentialManager.saveCodeVerifier(codeVerifier)
+                            webView?.load(URLRequest(url: loginUrl))
+                        }
+                        return .cancel
+                    }
+                }
                 return self.handleHostedLoginCallback(webView, url)
             case .SocialOauthPreLogin:
                 return self.setSocialLoginRedirectUri(webView, url)
@@ -128,6 +212,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             
             logger.info("urlType: \(urlType)")
             
+            // Update previousUrl for tracking unlock account flow
+            previousUrl = url
+            
             if(urlType != .SocialOauthPreLogin &&
                urlType != .Unknown){
                 
@@ -147,20 +234,37 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             let urlType = getOverrideUrlType(url: url)
             logger.info("urlType: \(urlType), for: \(url.absoluteString)")
             
+            // Update previousUrl for tracking unlock account flow
+            previousUrl = url
+            
             // Track magic link intermediate redirect URL
             // For magic link flow, the server redirects to /oauth/account/redirect/iOS/{bundleId}?code=...
             // We need to use this URL as redirect_uri for token exchange, not the custom scheme
+            // BUT: For unlock account flow, the server redirects to /oauth/account/redirect/iOS/{bundleId} WITHOUT code
+            // In this case, we should NOT set magicLinkRedirectUri, as it's not an OAuth callback
             if urlType == .loginRoutes && url.path.contains("/oauth/account/redirect/iOS/") {
-                // Extract redirect_uri from this intermediate URL (without query parameters)
-                if let urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false) {
-                    var redirectUriComponents = URLComponents()
-                    redirectUriComponents.scheme = urlComponents.scheme
-                    redirectUriComponents.host = urlComponents.host
-                    redirectUriComponents.path = urlComponents.path
-                    if let redirectUri = redirectUriComponents.url {
-                        self.magicLinkRedirectUri = redirectUri.absoluteString
-                        logger.trace("Detected magic link redirect_uri: \(self.magicLinkRedirectUri!)")
+                // Check if this is unlock account flow (no code parameter) or magic link flow (with code)
+                let queryItems = getQueryItems(url.absoluteString)
+                let hasCode = queryItems?["code"] != nil
+                
+                if hasCode {
+                    // This is magic link flow - extract redirect_uri from this intermediate URL (without query parameters)
+                    if let urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                        var redirectUriComponents = URLComponents()
+                        redirectUriComponents.scheme = urlComponents.scheme
+                        redirectUriComponents.host = urlComponents.host
+                        redirectUriComponents.path = urlComponents.path
+                        if let redirectUri = redirectUriComponents.url {
+                            self.magicLinkRedirectUri = redirectUri.absoluteString
+                            logger.trace("Detected magic link redirect_uri: \(self.magicLinkRedirectUri!)")
+                        }
                     }
+                } else {
+                    // This is unlock account flow - clear any existing magicLinkRedirectUri and reset state
+                    // After unlock account, the user should be able to login normally, so we clear state
+                    logger.info("Detected unlock account flow intermediate redirect (no code) - clearing state to allow normal login")
+                    self.magicLinkRedirectUri = nil
+                    // Don't clear previousUrl here - we need it to detect unlock account flow in decidePolicyFor
                 }
             }
             
@@ -255,21 +359,25 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         guard let queryItems = getQueryItems(url.absoluteString),
               let code = queryItems["code"] else {
             logger.error("failed to get extract code from hostedLoginCallback url")
-            logger.info("Restast the process by generating a new authorize url")
+            logger.warning("URL without code parameter detected. Previous URL: \(previousUrl?.absoluteString ?? "nil"), magicLinkRedirectUri: \(magicLinkRedirectUri ?? "nil")")
+            logger.info("Restarting the process by generating a new authorize url")
             let (url, codeVerifier) = AuthorizeUrlGenerator().generate()
             CredentialManager.saveCodeVerifier(codeVerifier)
             _ = webView?.load(URLRequest(url: url))
             return .cancel
         }
         
-        // For magic link flow, the server uses an intermediate redirect URL (/oauth/account/redirect/iOS/{bundleId})
+        // For magic link and similar flows (forget password, unlock account, invite), the server uses 
+        // an intermediate redirect URL (/oauth/account/redirect/iOS/{bundleId} or /oauth/account/redirect/iOS/{bundleId}/oauth/callback)
         // We need to use this intermediate URL as redirect_uri for token exchange, not the custom scheme
-        // Check if this is a magic link callback by examining the URL path
+        // Check if this is an intermediate redirect callback by examining the URL path
         var redirectUri: String
         var isMagicLink: Bool
         
-        if url.path.contains("/oauth/account/redirect/iOS/") && url.path.hasSuffix("/oauth/callback") {
-            // This is a magic link callback - extract redirect_uri from the URL itself (without query parameters)
+        // Check if URL contains /oauth/account/redirect/iOS/ - this indicates an intermediate redirect
+        // (used for magic link, forget password, unlock account, invite flows)
+        if url.path.contains("/oauth/account/redirect/iOS/") {
+            // This is an intermediate redirect callback - extract redirect_uri from the URL itself (without query parameters)
             isMagicLink = true
             if let urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false) {
                 var redirectUriComponents = URLComponents()
@@ -278,7 +386,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 redirectUriComponents.path = urlComponents.path
                 if let extractedRedirectUri = redirectUriComponents.url {
                     redirectUri = extractedRedirectUri.absoluteString
-                    logger.trace("Extracted magic link redirect_uri from callback URL: \(redirectUri)")
+                    logger.trace("Extracted intermediate redirect_uri from callback URL: \(redirectUri)")
                 } else {
                     // Fallback to cached value or default
                     redirectUri = magicLinkRedirectUri ?? generateRedirectUri()
@@ -435,8 +543,13 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         
         let url = urlComps.url!
         
-        DispatchQueue.main.sync {
+        // Use async dispatch to avoid deadlock if already on main thread
+        if Thread.isMainThread {
             self.startExternalBrowser(webView, url)
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.startExternalBrowser(webView, url)
+            }
         }
     }
     
