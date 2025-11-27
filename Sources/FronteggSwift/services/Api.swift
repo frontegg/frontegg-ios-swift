@@ -328,9 +328,9 @@ public class Api {
             
             if let res = response as? HTTPURLResponse {
                 if res.statusCode == 200 || res.statusCode == 204 {
-                    self.logger.info("logged out successfully")
+                self.logger.info("logged out successfully")
                 } else if res.statusCode == 401 {
-                    self.logger.info("Already logged out")
+                self.logger.info("Already logged out")
                 } else {
                     self.logger.warning("Logout returned unexpected status code: \(res.statusCode). Session may remain active on server.")
                 }
