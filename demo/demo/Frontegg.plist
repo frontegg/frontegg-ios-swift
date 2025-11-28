@@ -2,15 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>keepUserLoggedInAfterReinstall</key>
-	<false/>
 	<key>baseUrl</key>
-	<string>https://auth.davidantoon.me</string>
+	<string>https://autheu.davidantoon.me</string>
 	<key>clientId</key>
 	<string>b6adfe4c-d695-4c04-b95f-3ec9fd0c6cca</string>
 	<key>logLevel</key>
 	<string>trace</string>
 	<key>embeddedMode</key>
-	<false/>
+    <false/>
+	<key>enableSessionPerTenant</key>
+	<true/>
 </dict>
 </plist>

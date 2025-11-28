@@ -30,6 +30,7 @@ struct FronteggPlist: Decodable, Equatable {
     let deleteCookieForHostOnly: Bool
     let enableOfflineMode: Bool
     let useLegacySocialLoginFlow: Bool
+    let enableSessionPerTenant: Bool
 
     enum CodingKeys: CodingKey {
         case keychainService
@@ -49,6 +50,7 @@ struct FronteggPlist: Decodable, Equatable {
         case deleteCookieForHostOnly
         case enableOfflineMode
         case useLegacySocialLoginFlow
+        case enableSessionPerTenant
     }
 
     init(
@@ -69,7 +71,8 @@ struct FronteggPlist: Decodable, Equatable {
         cookieRegex: String? = nil,
         deleteCookieForHostOnly: Bool = true,
         enableOfflineMode: Bool = false,
-        useLegacySocialLoginFlow: Bool = false
+        useLegacySocialLoginFlow: Bool = false,
+        enableSessionPerTenant: Bool = false
     ) {
         self.keychainService = keychainService
         self.embeddedMode = embeddedMode
@@ -89,6 +92,7 @@ struct FronteggPlist: Decodable, Equatable {
         self.deleteCookieForHostOnly = deleteCookieForHostOnly
         self.enableOfflineMode = enableOfflineMode
         self.useLegacySocialLoginFlow = useLegacySocialLoginFlow
+        self.enableSessionPerTenant = enableSessionPerTenant
     }
 
     init(from decoder: any Decoder) throws {
@@ -145,6 +149,8 @@ struct FronteggPlist: Decodable, Equatable {
         let useLegacySocialLoginFlow = try container.decodeIfPresent(Bool.self, forKey: .useLegacySocialLoginFlow)
         self.useLegacySocialLoginFlow = useLegacySocialLoginFlow ?? false
         
+        let enableSessionPerTenant = try container.decodeIfPresent(Bool.self, forKey: .enableSessionPerTenant)
+        self.enableSessionPerTenant = enableSessionPerTenant ?? false
         
         do {
             self.payload = try Payload(from: decoder)

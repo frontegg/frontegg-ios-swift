@@ -12,6 +12,7 @@ public enum KeychainKeys: String {
     case codeVerifier = "fe_codeVerifier"
     case region = "fe_region"
     case userInfo = "user_me"
+    case lastActiveTenantId = "fe_lastActiveTenantId"
 }
 
 
@@ -177,5 +178,41 @@ public class CredentialManager {
             return user
         }
         return nil
+    }
+    
+    func saveTokenForTenant(_ token: String, tenantId: String, tokenType: KeychainKeys) throws {
+        let key = "\(tokenType.rawValue)_\(tenantId)"
+        try save(key: key, value: token)
+    }
+    
+    func getTokenForTenant(tenantId: String, tokenType: KeychainKeys) throws -> String? {
+        let key = "\(tokenType.rawValue)_\(tenantId)"
+        return try get(key: key)
+    }
+    
+    func deleteTokenForTenant(tenantId: String, tokenType: KeychainKeys) {
+        let key = "\(tokenType.rawValue)_\(tenantId)"
+        delete(key: key)
+    }
+    
+    func deleteAllTokensForTenant(tenantId: String) {
+        deleteTokenForTenant(tenantId: tenantId, tokenType: .accessToken)
+        deleteTokenForTenant(tenantId: tenantId, tokenType: .refreshToken)
+    }
+    
+    func saveLastActiveTenantId(_ tenantId: String) {
+        do {
+            try save(key: KeychainKeys.lastActiveTenantId.rawValue, value: tenantId)
+        } catch {
+            logger.warning("Failed to save last active tenant ID: \(error)")
+        }
+    }
+    
+    func getLastActiveTenantId() -> String? {
+        return try? get(key: KeychainKeys.lastActiveTenantId.rawValue)
+    }
+    
+    func deleteLastActiveTenantId() {
+        delete(key: KeychainKeys.lastActiveTenantId.rawValue)
     }
 }
