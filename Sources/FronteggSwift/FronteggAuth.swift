@@ -926,7 +926,28 @@ public class FronteggAuth: FronteggState {
                 }
             }
             
-            let data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: enableSessionPerTenant ? currentTenantId : nil)
+            var data: AuthResponse
+            
+            if enableSessionPerTenant, let tenantId = currentTenantId {
+                // Try tenant-specific refresh first
+                // Include access token if available - it may be needed for tenant-specific refresh
+                let currentAccessToken = self.accessToken
+                do {
+                    self.logger.info("Attempting tenant-specific refresh with tenantId: \(tenantId)")
+                    data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: tenantId, accessToken: currentAccessToken)
+                    self.logger.info("Tenant-specific refresh successful")
+                } catch {
+                    // If tenant-specific refresh fails, fall back to standard OAuth refresh
+                    // This can happen if the refresh token isn't valid for the tenant-specific endpoint
+                    // (e.g., after a server-side tenant switch)
+                    self.logger.warning("Tenant-specific refresh failed: \(error). Falling back to standard OAuth refresh.")
+                    data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: nil)
+                    self.logger.info("Standard OAuth refresh successful (fallback)")
+                }
+            } else {
+                // Standard OAuth refresh for non-per-tenant sessions
+                data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: nil)
+            }
             
             if enableSessionPerTenant, let preserved = preservedTenantId {
                 if credentialManager.getLastActiveTenantId() != preserved {
@@ -1155,7 +1176,27 @@ public class FronteggAuth: FronteggState {
         var attempts = 0
         while attempts < 5 {
             do {
-                let data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: enableSessionPerTenant ? currentTenantId : nil)
+                var data: AuthResponse
+                
+                if enableSessionPerTenant, let tenantId = currentTenantId {
+                    // Try tenant-specific refresh first
+                    // Include access token if available - it may be needed for tenant-specific refresh
+                    let currentAccessToken = self.accessToken
+                    do {
+                        self.logger.info("Attempting tenant-specific refresh with tenantId: \(tenantId) in getOrRefreshAccessTokenAsync")
+                        data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: tenantId, accessToken: currentAccessToken)
+                        self.logger.info("Tenant-specific refresh successful in getOrRefreshAccessTokenAsync")
+                    } catch {
+                        // If tenant-specific refresh fails, fall back to standard OAuth refresh
+                        self.logger.warning("Tenant-specific refresh failed in getOrRefreshAccessTokenAsync: \(error). Falling back to standard OAuth refresh.")
+                        data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: nil)
+                        self.logger.info("Standard OAuth refresh successful (fallback) in getOrRefreshAccessTokenAsync")
+                    }
+                } else {
+                    // Standard OAuth refresh for non-per-tenant sessions
+                    data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: nil)
+                }
+                
                 await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
                 self.logger.info("Token refreshed successfully")
                 return self.accessToken
@@ -1826,21 +1867,16 @@ public class FronteggAuth: FronteggState {
                     var data: AuthResponse
                     
                     if enableSessionPerTenant {
-                        do {
-                            self.logger.info("Attempting tenant-specific refresh with tenantId: \(tenantId)")
-                            data = try await self.api.refreshToken(
-                                refreshToken: refreshToken,
-                                tenantId: tenantId
-                            )
-                            self.logger.info("Tenant-specific refresh successful")
-                        } catch {
-                            self.logger.warning("Tenant-specific refresh failed: \(error). Falling back to standard OAuth refresh.")
-                            data = try await self.api.refreshToken(
-                                refreshToken: refreshToken,
-                                tenantId: nil
-                            )
-                            self.logger.info("Standard OAuth refresh successful after tenant switch")
-                        }
+                        // After a server-side tenant switch, we MUST use standard OAuth refresh first
+                        // to get a new refresh token that's valid for the new tenant.
+                        // The old refresh token is still associated with the old tenant, so
+                        // tenant-specific refresh will fail until we get new tokens.
+                        self.logger.info("Using standard OAuth refresh after server-side tenant switch to get new tokens for tenant: \(tenantId)")
+                        data = try await self.api.refreshToken(
+                            refreshToken: refreshToken,
+                            tenantId: nil
+                        )
+                        self.logger.info("Standard OAuth refresh successful after tenant switch. New tokens will be saved with tenant ID: \(tenantId)")
                     } else {
                         data = try await self.api.refreshToken(
                             refreshToken: refreshToken,

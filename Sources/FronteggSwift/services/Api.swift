@@ -109,8 +109,12 @@ public class Api {
             request.setValue(value, forHTTPHeaderField: key)
         }
         
-        if let accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        // Only add Authorization header from keychain if it's not already set in additionalHeaders
+        // This allows callers to explicitly provide an access token (e.g., for tenant-specific refresh)
+        if request.value(forHTTPHeaderField: "Authorization") == nil {
+            if let accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
+                request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            }
         }
         
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -235,18 +239,28 @@ public class Api {
         return try JSONDecoder().decode(AuthResponse.self, from: data)
     }
     
-    internal func refreshToken(refreshToken: String, tenantId: String? = nil) async throws -> AuthResponse {
+    internal func refreshToken(refreshToken: String, tenantId: String? = nil, accessToken: String? = nil) async throws -> AuthResponse {
         // If tenantId is provided, use the new refresh endpoint that supports per-tenant sessions
         if let tenantId = tenantId {
             self.logger.info("Refreshing token with tenantId: \(tenantId) (refresh token length: \(refreshToken.count))")
             let refreshTokenCookie = "\(self.cookieName)=\(refreshToken)"
+            
+            var headers: [String: String] = [
+                "Cookie": refreshTokenCookie,
+                "frontegg-vendor-host": self.baseUrl
+            ]
+            
+            // Include access token in Authorization header if provided
+            // This is needed for tenant-specific refresh to work correctly
+            if let accessToken = accessToken {
+                headers["Authorization"] = "Bearer \(accessToken)"
+                self.logger.info("Including access token in Authorization header for tenant-specific refresh")
+            }
+            
             let (data, response) = try await postRequest(
                 path: "identity/resources/auth/v1/user/token/refresh",
                 body: ["tenantId": tenantId],
-                additionalHeaders: [
-                    "Cookie": refreshTokenCookie,
-                    "frontegg-vendor-host": self.baseUrl
-                ],
+                additionalHeaders: headers,
                 timeout: 5
             )
             
