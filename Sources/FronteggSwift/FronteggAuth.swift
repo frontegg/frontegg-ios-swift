@@ -927,6 +927,7 @@ public class FronteggAuth: FronteggState {
             }
             
             let data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: enableSessionPerTenant ? currentTenantId : nil)
+            
             if enableSessionPerTenant, let preserved = preservedTenantId {
                 if credentialManager.getLastActiveTenantId() != preserved {
                     self.logger.warning("CRITICAL: Tenant ID was lost during refresh! Restoring: \(preserved)")
@@ -1138,10 +1139,16 @@ public class FronteggAuth: FronteggState {
         var currentTenantId: String? = nil
         
         if enableSessionPerTenant {
-            if let user = self.user {
+            // Prioritize lastActiveTenantId for per-tenant session isolation
+            if let localTenantId = credentialManager.getLastActiveTenantId() {
+                currentTenantId = localTenantId
+                self.logger.info("Using LOCAL tenant ID for refresh in getOrRefreshAccessTokenAsync: \(localTenantId)")
+            } else if let user = self.user {
                 currentTenantId = user.activeTenant.id
+                self.logger.info("No local tenant stored, using user's active tenant: \(currentTenantId!)")
             } else if let offlineUser = credentialManager.getOfflineUser() {
                 currentTenantId = offlineUser.activeTenant.id
+                self.logger.info("No local tenant stored, using offline user's tenant: \(currentTenantId!)")
             }
         }
         
@@ -1816,10 +1823,31 @@ public class FronteggAuth: FronteggState {
                 // Refresh tokens to get updated user data with new tenant
                 do {
                     self.logger.info("Refreshing token after tenant switch to: \(tenantId)")
-                    let data = try await self.api.refreshToken(
-                        refreshToken: refreshToken,
-                        tenantId: nil
-                    )
+                    var data: AuthResponse
+                    
+                    if enableSessionPerTenant {
+                        do {
+                            self.logger.info("Attempting tenant-specific refresh with tenantId: \(tenantId)")
+                            data = try await self.api.refreshToken(
+                                refreshToken: refreshToken,
+                                tenantId: tenantId
+                            )
+                            self.logger.info("Tenant-specific refresh successful")
+                        } catch {
+                            self.logger.warning("Tenant-specific refresh failed: \(error). Falling back to standard OAuth refresh.")
+                            data = try await self.api.refreshToken(
+                                refreshToken: refreshToken,
+                                tenantId: nil
+                            )
+                            self.logger.info("Standard OAuth refresh successful after tenant switch")
+                        }
+                    } else {
+                        data = try await self.api.refreshToken(
+                            refreshToken: refreshToken,
+                            tenantId: nil
+                        )
+                    }
+                    
                     self.logger.info("Token refresh successful, updating credentials")
                     await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
                     if let user = self.user {
