@@ -927,7 +927,6 @@ public class FronteggAuth: FronteggState {
             }
             
             let data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: enableSessionPerTenant ? currentTenantId : nil)
-            =
             if enableSessionPerTenant, let preserved = preservedTenantId {
                 if credentialManager.getLastActiveTenantId() != preserved {
                     self.logger.warning("CRITICAL: Tenant ID was lost during refresh! Restoring: \(preserved)")
