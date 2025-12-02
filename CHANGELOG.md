@@ -1,3 +1,6 @@
+## v1.2.56
+https://frontegg.atlassian.net/browse/FR-22800
+
 ## v1.2.55
 Redirect fixing for unlock account, forgot password and invite existing user to another tenant.
 

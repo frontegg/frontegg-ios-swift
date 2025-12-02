@@ -1,3 +1,6 @@
+## v1.2.55
+Redirect fixing for unlock account, forgot password and invite existing user to another tenant.
+
 ## v1.2.54
 Fixed: post Activation Redirect to App fails, leaving user on "Opening Application" page
 
