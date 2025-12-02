@@ -109,8 +109,12 @@ public class Api {
             request.setValue(value, forHTTPHeaderField: key)
         }
         
-        if let accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        // Only add Authorization header from keychain if it's not already set in additionalHeaders
+        // This allows callers to explicitly provide an access token (e.g., for tenant-specific refresh)
+        if request.value(forHTTPHeaderField: "Authorization") == nil {
+            if let accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
+                request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            }
         }
         
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -235,17 +239,82 @@ public class Api {
         return try JSONDecoder().decode(AuthResponse.self, from: data)
     }
     
-    internal func refreshToken(refreshToken: String) async throws -> AuthResponse {
-        let (data, response) = try await postRequest(path: "oauth/token", body: [
-            "grant_type": "refresh_token",
-            "refresh_token": refreshToken,
-        ], timeout: 5)
-        
-        if let res = response as? HTTPURLResponse, res.statusCode == 401 {
-            self.logger.error("failed to refresh token, error: \(String(data: data, encoding: .utf8) ?? "unknown error")")
-            throw FronteggError.authError(.failedToRefreshToken)
+    internal func refreshToken(refreshToken: String, tenantId: String? = nil, accessToken: String? = nil) async throws -> AuthResponse {
+        // If tenantId is provided, use the new refresh endpoint that supports per-tenant sessions
+        if let tenantId = tenantId {
+            self.logger.info("Refreshing token with tenantId: \(tenantId) (refresh token length: \(refreshToken.count))")
+            let refreshTokenCookie = "\(self.cookieName)=\(refreshToken)"
+            
+            var headers: [String: String] = [
+                "Cookie": refreshTokenCookie,
+                "frontegg-vendor-host": self.baseUrl
+            ]
+            
+            // Include access token in Authorization header if provided
+            // This is needed for tenant-specific refresh to work correctly
+            if let accessToken = accessToken {
+                headers["Authorization"] = "Bearer \(accessToken)"
+                self.logger.info("Including access token in Authorization header for tenant-specific refresh")
+            }
+            
+            let (data, response) = try await postRequest(
+                path: "identity/resources/auth/v1/user/token/refresh",
+                body: ["tenantId": tenantId],
+                additionalHeaders: headers,
+                timeout: 5
+            )
+            
+            if let res = response as? HTTPURLResponse {
+                let responseString = String(data: data, encoding: .utf8) ?? "no response body"
+                self.logger.info("Refresh with tenantId response: status=\(res.statusCode), body=\(responseString.prefix(200))")
+                
+                if res.statusCode == 401 {
+                    self.logger.error("failed to refresh token with tenantId (401), error: \(responseString)")
+                    throw FronteggError.authError(.failedToRefreshToken)
+                } else if res.statusCode != 200 {
+                    self.logger.error("failed to refresh token with tenantId, status: \(res.statusCode), error: \(responseString)")
+                    throw FronteggError.authError(.failedToRefreshToken)
+                }
+            }
+            
+            do {
+                let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
+                self.logger.info("Successfully decoded AuthResponse from refresh with tenantId")
+                return authResponse
+            } catch {
+                let responseString = String(data: data, encoding: .utf8) ?? "no response body"
+                self.logger.error("Failed to decode AuthResponse from refresh with tenantId: \(error), response: \(responseString.prefix(200))")
+                throw error
+            }
+        } else {
+            let (data, response) = try await postRequest(path: "oauth/token", body: [
+                "grant_type": "refresh_token",
+                "refresh_token": refreshToken,
+            ], timeout: 5)
+            
+            if let res = response as? HTTPURLResponse {
+                let responseString = String(data: data, encoding: .utf8) ?? "no response body"
+                self.logger.info("OAuth refresh response: status=\(res.statusCode), body=\(responseString.prefix(200))")
+                
+                if res.statusCode == 401 {
+                    self.logger.error("failed to refresh token (401), error: \(responseString)")
+                    throw FronteggError.authError(.failedToRefreshToken)
+                } else if res.statusCode != 200 {
+                    self.logger.error("failed to refresh token, status: \(res.statusCode), error: \(responseString)")
+                    throw FronteggError.authError(.failedToRefreshToken)
+                }
+            }
+            
+            do {
+                let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
+                self.logger.info("Successfully decoded AuthResponse from OAuth refresh")
+                return authResponse
+            } catch {
+                let responseString = String(data: data, encoding: .utf8) ?? "no response body"
+                self.logger.error("Failed to decode AuthResponse: \(error), response: \(responseString.prefix(200))")
+                throw error
+            }
         }
-        return try JSONDecoder().decode(AuthResponse.self, from: data)
     }
     
     internal func refreshTokenForMfa(refreshTokenCookie: String) async -> [String:Any]? {
@@ -304,6 +373,17 @@ public class Api {
         
         let tenantsObj = try JSONSerialization.jsonObject(with: tenantsData, options: [])  as! [String: Any]
         
+        if let tenants = tenantsObj["tenants"] as? [[String: Any]] {
+            self.logger.info("Found \(tenants.count) tenant(s) from API")
+            for tenant in tenants {
+                if let name = tenant["name"] as? String, let id = tenant["id"] as? String {
+                    self.logger.info("  - Tenant: \(name) (ID: \(id))")
+                }
+            }
+        } else {
+            self.logger.warning("No tenants array found in API response: \(tenantsObj)")
+        }
+        
         meObj["tenants"] = tenantsObj["tenants"]
         meObj["activeTenant"] = tenantsObj["activeTenant"]
         
@@ -313,8 +393,53 @@ public class Api {
         return try JSONDecoder().decode(User.self, from: mergedData)
     }
     
-    public func switchTenant(tenantId: String) async throws -> Void {
-        _ = try await putRequest(path: "identity/resources/users/v1/tenant", body: ["tenantId":tenantId])
+    public func switchTenant(tenantId: String, accessToken: String? = nil) async throws -> Void {
+        var tokenToUse = accessToken
+        if tokenToUse == nil {
+            if let currentToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
+                tokenToUse = currentToken
+            }
+        }
+        
+        let urlStr = "\(self.baseUrl)/identity/resources/users/v1/tenant"
+        guard let url = URL(string: urlStr) else {
+            throw ApiError.invalidUrl("invalid url: \(urlStr)")
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
+        if let applicationId = self.applicationId {
+            request.setValue(applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
+        }
+        if let token = tokenToUse {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        } else {
+            self.logger.warning("No access token available for switchTenant request")
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["tenantId": tenantId])
+        
+        request.timeoutInterval = TimeInterval(10)
+        
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = TimeInterval(10)
+        config.timeoutIntervalForResource = TimeInterval(10)
+        config.waitsForConnectivity = false
+        
+        let session = URLSession(configuration: config)
+        let (data, response) = try await session.data(for: request)
+        
+        if let httpResponse = response as? HTTPURLResponse {
+            if httpResponse.statusCode == 200 || httpResponse.statusCode == 204 {
+                self.logger.info("Tenant switched successfully to: \(tenantId)")
+            } else {
+                let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+                self.logger.error("Failed to switch tenant. Status: \(httpResponse.statusCode), Response: \(errorMessage)")
+                throw FronteggError.authError(.failedToSwitchTenant)
+            }
+        }
     }
     
     internal func logout(accessToken: String?, refreshToken: String?) async {
