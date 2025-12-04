@@ -17,6 +17,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     private var cachedUrlSchemes: [String]? = nil
     private var magicLinkRedirectUri: String? = nil
     private var previousUrl: URL? = nil
+    private var isSocialLoginFlow: Bool = false
     
     
     override var inputAccessoryView: UIView? {
@@ -103,6 +104,71 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 }
             }
 
+            // Check if this is a redirect to dashboard/tenant selection after social login
+            // This happens when user already has an active session in Safari
+            // After Google auth, server redirects to dashboard instead of callback URL
+            if isSocialLoginFlow || 
+               (previousUrl != nil && (
+                   previousUrl!.path.contains("/oauth/account/social/success") ||
+                   previousUrl!.path.contains("/oauth/account/redirect/ios/")
+               )) {
+                // Check if current URL is a dashboard/tenant selection page
+                let isDashboardOrTenantSelection = url.path.contains("/dashboard") ||
+                                                   url.path.contains("/tenant") ||
+                                                   (url.path == "/" && !url.path.contains("/oauth/") && !url.path.contains("/login"))
+                
+                if isDashboardOrTenantSelection && url.absoluteString.starts(with: fronteggAuth.baseUrl) {
+                    logger.info("Detected redirect to dashboard/tenant selection after social login. Previous URL: \(previousUrl?.absoluteString ?? "nil"), Current URL: \(url.absoluteString)")
+                    // This means the user is already authenticated, we should complete the login flow
+                    // by checking if we have a valid session
+                    DispatchQueue.main.async { [weak self, weak webView] in
+                        guard let self = self else { return }
+                        // Try to get user info to verify authentication
+                        Task { [weak self, weak webView] in
+                            guard let self = self else { return }
+                            // Wait a bit for cookies to be set
+                            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                            
+                            // Try to refresh token or get user info to verify authentication
+                            if let refreshToken = try? self.fronteggAuth.credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+                                do {
+                                    // Use requestAuthorizeAsync which handles token refresh and user loading
+                                    let user = try await self.fronteggAuth.requestAuthorizeAsync(refreshToken: refreshToken)
+                                    // User is authenticated, complete login
+                                    self.logger.info("User is authenticated after social login redirect, completing login flow")
+                                    await MainActor.run {
+                                        self.fronteggAuth.loginCompletion?(.success(user))
+                                        // Dismiss the webview
+                                        if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
+                                            presentingVC.dismiss(animated: true)
+                                            VCHolder.shared.vc = nil
+                                        }
+                                    }
+                                } catch {
+                                    // Refresh failed, reload login page
+                                    self.logger.warning("Token refresh failed after social login redirect: \(error), reloading login page")
+                                    let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
+                                    CredentialManager.saveCodeVerifier(codeVerifier)
+                                    await MainActor.run {
+                                        webView?.load(URLRequest(url: loginUrl))
+                                    }
+                                }
+                            } else {
+                                // No refresh token, reload login page
+                                self.logger.warning("No refresh token found after social login redirect, reloading login page")
+                                let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
+                                CredentialManager.saveCodeVerifier(codeVerifier)
+                                await MainActor.run {
+                                    webView?.load(URLRequest(url: loginUrl))
+                                }
+                            }
+                        }
+                    }
+                    isSocialLoginFlow = false
+                    return .cancel
+                }
+            }
+            
             let urlType = getOverrideUrlType(url: url)
             logger.info("urlType: \(urlType)")
 
@@ -174,6 +240,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 }
                 return self.handleHostedLoginCallback(webView, url)
             case .SocialOauthPreLogin:
+                isSocialLoginFlow = true
                 return self.setSocialLoginRedirectUri(webView, url)
             default:
                 return .allow
@@ -419,9 +486,11 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     case .success(_):
                         let logger = getLogger("CustomWebView")
                         logger.info("Authentication succeeded")
+                        self.isSocialLoginFlow = false
                         
                     case .failure(let error):
                         print("Error \(error)")
+                        self.isSocialLoginFlow = false
                         let (url, codeVerifier)  = AuthorizeUrlGenerator().generate()
                         CredentialManager.saveCodeVerifier(codeVerifier)
                         DispatchQueue.main.async {
@@ -498,7 +567,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         return .cancel
     }
     
-    private func startExternalBrowser(_ _webView:WKWebView?, _ url:URL, _ ephemeralSession:Bool = false) -> Void {
+    private func startExternalBrowser(_ _webView:WKWebView?, _ url:URL, _ ephemeralSession:Bool = true) -> Void {
         
         weak var webView = _webView
         

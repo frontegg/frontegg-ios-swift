@@ -37,9 +37,6 @@ public class Api {
         self.credentialManager = CredentialManager(serviceKey: "frontegg")
         
         self.cookieName = "fe_refresh_\(clientId)"
-        if let range = self.cookieName.range(of: "-") {
-            self.cookieName.removeSubrange(range)
-        }
     }
     
     internal func putRequest(
@@ -449,7 +446,12 @@ public class Api {
         }
         
         do {
-            let (_, response) = try await postRequest(path: "identity/resources/auth/v1/logout", body: ["refreshToken":refreshToken!])
+            let refreshTokenCookie = "\(self.cookieName)=\(refreshToken!)"
+            let (_, response) = try await postRequest(
+                path: "identity/resources/auth/v1/logout",
+                body: [:],
+                additionalHeaders: ["Cookie": refreshTokenCookie]
+            )
             
             if let res = response as? HTTPURLResponse {
                 if res.statusCode == 200 || res.statusCode == 204 {
