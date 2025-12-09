@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>baseUrl</key>
-	<string>https://autheu.davidantoon.me</string>
+	<string>https://app-v686mk10lsu7.stg.frontegg.com</string>
 	<key>clientId</key>
-	<string>b6adfe4c-d695-4c04-b95f-3ec9fd0c6cca</string>
+	<string>8bb0a851-96e8-4b4d-ae75-e21fc0fefc33</string>
 	<key>logLevel</key>
 	<string>trace</string>
 	<key>embeddedMode</key>
-    <false/>
+	<false/>
 	<key>enableSessionPerTenant</key>
 	<true/>
 </dict>

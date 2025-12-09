@@ -353,6 +353,7 @@ public class FronteggAuth: FronteggState {
     
     
     public func setCredentials(accessToken: String, refreshToken: String) async {
+        self.logger.info("  RefreshToken: \(refreshToken)")
         
         do {
             let config = try? PlistHelper.fronteggConfig()
