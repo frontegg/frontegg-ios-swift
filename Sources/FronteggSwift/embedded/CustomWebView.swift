@@ -17,6 +17,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     private var cachedUrlSchemes: [String]? = nil
     private var magicLinkRedirectUri: String? = nil
     private var previousUrl: URL? = nil
+    private var isSocialLoginFlow: Bool = false
     
     
     override var inputAccessoryView: UIView? {
@@ -103,6 +104,118 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 }
             }
 
+            // Check if this is a redirect to dashboard/tenant selection after social login
+            // This happens when user already has an active session in Safari
+            // After Google auth, server redirects to dashboard instead of callback URL
+            if isSocialLoginFlow || 
+               (previousUrl != nil && (
+                   previousUrl!.path.contains("/oauth/account/social/success") ||
+                   previousUrl!.path.contains("/oauth/account/redirect/ios/")
+               )) {
+                // Check if current URL is a dashboard/tenant selection page
+                let isDashboardOrTenantSelection = url.path.contains("/dashboard") ||
+                                                   url.path.contains("/tenant") ||
+                                                   (url.path == "/" && !url.path.contains("/oauth/") && !url.path.contains("/login"))
+                
+                if isDashboardOrTenantSelection && url.absoluteString.starts(with: fronteggAuth.baseUrl) {
+                    logger.info("Detected redirect to dashboard/tenant selection after social login. Previous URL: \(previousUrl?.absoluteString ?? "nil"), Current URL: \(url.absoluteString)")
+                    // This means the user is already authenticated, we should complete the login flow
+                    // by checking if we have a valid session
+                    DispatchQueue.main.async { [weak self, weak webView] in
+                        guard let self = self else { return }
+                        // Try to get user info to verify authentication
+                        Task { [weak self, weak webView] in
+                            guard let self = self else { return }
+                            // Wait a bit for cookies to be set
+                            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                            
+                            // First, try to extract cookies from WebView (this handles the case when user has active Safari session)
+                            let (refreshTokenCookie, deviceTokenCookie) = await self.extractAuthCookiesFromWebView()
+                            
+                            if let refreshCookie = refreshTokenCookie {
+                                // Extract just the token value from cookie string "name=value"
+                                // Handle case where value might contain "=" by splitting only on first "="
+                                let cookieParts = refreshCookie.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+                                if cookieParts.count == 2 {
+                                    let refreshToken = String(cookieParts[1])
+                                    
+                                    do {
+                                        // Use requestAuthorizeAsync which handles token refresh and user loading
+                                        // Pass device token cookie if available (extract value the same way)
+                                        let deviceToken: String? = {
+                                            if let deviceCookie = deviceTokenCookie {
+                                                let deviceParts = deviceCookie.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+                                                if deviceParts.count == 2 {
+                                                    return String(deviceParts[1])
+                                                } else {
+                                                    self.logger.warning("Invalid device token cookie format: \(deviceCookie)")
+                                                    return nil
+                                                }
+                                            } else {
+                                                return nil
+                                            }
+                                        }()
+                                        
+                                        let user = try await self.fronteggAuth.requestAuthorizeAsync(refreshToken: refreshToken, deviceTokenCookie: deviceToken)
+                                        // User is authenticated, complete login
+                                        self.logger.info("User is authenticated after social login redirect using WebView cookies, completing login flow")
+                                        await MainActor.run {
+                                            self.fronteggAuth.loginCompletion?(.success(user))
+                                            // Dismiss the webview
+                                            if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
+                                                presentingVC.dismiss(animated: true)
+                                                VCHolder.shared.vc = nil
+                                            }
+                                        }
+                                        return
+                                    } catch {
+                                        self.logger.warning("Authentication failed using WebView cookies: \(error), trying keychain fallback")
+                                    }
+                                } else {
+                                    self.logger.warning("Invalid refresh token cookie format: \(refreshCookie), trying keychain fallback")
+                                }
+                            }
+                            
+                            // Fallback: Try to get refresh token from keychain
+                            if let refreshToken = try? self.fronteggAuth.credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+                                do {
+                                    // Use requestAuthorizeAsync which handles token refresh and user loading
+                                    let user = try await self.fronteggAuth.requestAuthorizeAsync(refreshToken: refreshToken)
+                                    // User is authenticated, complete login
+                                    self.logger.info("User is authenticated after social login redirect using keychain token, completing login flow")
+                                    await MainActor.run {
+                                        self.fronteggAuth.loginCompletion?(.success(user))
+                                        // Dismiss the webview
+                                        if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
+                                            presentingVC.dismiss(animated: true)
+                                            VCHolder.shared.vc = nil
+                                        }
+                                    }
+                                } catch {
+                                    // Refresh failed, reload login page
+                                    self.logger.warning("Token refresh failed after social login redirect: \(error), reloading login page")
+                                    let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
+                                    CredentialManager.saveCodeVerifier(codeVerifier)
+                                    await MainActor.run {
+                                        webView?.load(URLRequest(url: loginUrl))
+                                    }
+                                }
+                            } else {
+                                // No cookies and no refresh token, reload login page
+                                self.logger.warning("No authentication cookies or refresh token found after social login redirect, reloading login page")
+                                let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
+                                CredentialManager.saveCodeVerifier(codeVerifier)
+                                await MainActor.run {
+                                    webView?.load(URLRequest(url: loginUrl))
+                                }
+                            }
+                        }
+                    }
+                    isSocialLoginFlow = false
+                    return .cancel
+                }
+            }
+            
             let urlType = getOverrideUrlType(url: url)
             logger.info("urlType: \(urlType)")
 
@@ -174,6 +287,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 }
                 return self.handleHostedLoginCallback(webView, url)
             case .SocialOauthPreLogin:
+                isSocialLoginFlow = true
                 return self.setSocialLoginRedirectUri(webView, url)
             default:
                 return .allow
@@ -202,6 +316,56 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             .compactMap { $0["CFBundleURLSchemes"] as? [String] }
             .flatMap { $0 }
         return cachedUrlSchemes ?? []
+    }
+    
+    /// Extracts authentication cookies (fe_refresh and fe_device) from WebView's cookie store
+    /// Returns tuple of (refreshTokenCookie, deviceTokenCookie) where cookies are in format "name=value"
+    private func extractAuthCookiesFromWebView() async -> (String?, String?) {
+        guard let webView = self as? WKWebView else {
+            logger.warning("Cannot extract cookies: webView is not available")
+            return (nil, nil)
+        }
+        
+        let store = webView.configuration.websiteDataStore.httpCookieStore
+        let baseUrlHost = URL(string: fronteggAuth.baseUrl)?.host
+        
+        // Fetch all cookies
+        let cookies: [HTTPCookie] = await withCheckedContinuation { (cont: CheckedContinuation<[HTTPCookie], Never>) in
+            store.getAllCookies { cont.resume(returning: $0) }
+        }
+        
+        // Filter cookies for the base URL domain
+        // Cookie domain can be in format ".example.com" (with leading dot) or "example.com"
+        let relevantCookies = cookies.filter { cookie in
+            guard let host = baseUrlHost else { return true }
+            let cookieDomain = cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain
+            return cookieDomain == host || host.hasSuffix(".\(cookieDomain)") || cookieDomain.hasSuffix(".\(host)")
+        }
+        
+        // Find fe_refresh cookie (pattern: fe_refresh_*)
+        let refreshCookie = relevantCookies.first { cookie in
+            cookie.name.hasPrefix("fe_refresh")
+        }
+        
+        // Find fe_device cookie (pattern: fe_device_*)
+        let deviceCookie = relevantCookies.first { cookie in
+            cookie.name.hasPrefix("fe_device")
+        }
+        
+        let refreshTokenCookie = refreshCookie.map { "\($0.name)=\($0.value)" }
+        let deviceTokenCookie = deviceCookie.map { "\($0.name)=\($0.value)" }
+        
+        if refreshTokenCookie != nil {
+            logger.info("Extracted refresh token cookie from WebView: \(refreshCookie!.name)")
+        } else {
+            logger.warning("No refresh token cookie found in WebView")
+        }
+        
+        if deviceTokenCookie != nil {
+            logger.info("Extracted device token cookie from WebView: \(deviceCookie!.name)")
+        }
+        
+        return (refreshTokenCookie, deviceTokenCookie)
     }
 
     
@@ -419,9 +583,11 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     case .success(_):
                         let logger = getLogger("CustomWebView")
                         logger.info("Authentication succeeded")
+                        self.isSocialLoginFlow = false
                         
                     case .failure(let error):
                         print("Error \(error)")
+                        self.isSocialLoginFlow = false
                         let (url, codeVerifier)  = AuthorizeUrlGenerator().generate()
                         CredentialManager.saveCodeVerifier(codeVerifier)
                         DispatchQueue.main.async {
@@ -498,7 +664,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         return .cancel
     }
     
-    private func startExternalBrowser(_ _webView:WKWebView?, _ url:URL, _ ephemeralSession:Bool = false) -> Void {
+    private func startExternalBrowser(_ _webView:WKWebView?, _ url:URL, _ ephemeralSession:Bool = true) -> Void {
         
         weak var webView = _webView
         
