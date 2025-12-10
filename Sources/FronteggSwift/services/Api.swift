@@ -262,15 +262,16 @@ public class Api {
             )
             
             if let res = response as? HTTPURLResponse {
-                let responseString = String(data: data, encoding: .utf8) ?? "no response body"
-                self.logger.info("Refresh with tenantId response: status=\(res.statusCode), body=\(responseString.prefix(200))")
-                
                 if res.statusCode == 401 {
+                    let responseString = String(data: data, encoding: .utf8) ?? "no response body"
                     self.logger.error("failed to refresh token with tenantId (401), error: \(responseString)")
                     throw FronteggError.authError(.failedToRefreshToken)
                 } else if res.statusCode != 200 {
+                    let responseString = String(data: data, encoding: .utf8) ?? "no response body"
                     self.logger.error("failed to refresh token with tenantId, status: \(res.statusCode), error: \(responseString)")
                     throw FronteggError.authError(.failedToRefreshToken)
+                } else {
+                    self.logger.info("Refresh with tenantId response: status=\(res.statusCode)")
                 }
             }
             
@@ -279,8 +280,7 @@ public class Api {
                 self.logger.info("Successfully decoded AuthResponse from refresh with tenantId")
                 return authResponse
             } catch {
-                let responseString = String(data: data, encoding: .utf8) ?? "no response body"
-                self.logger.error("Failed to decode AuthResponse from refresh with tenantId: \(error), response: \(responseString.prefix(200))")
+                self.logger.error("Failed to decode AuthResponse from refresh with tenantId: \(error)")
                 throw error
             }
         } else {
@@ -290,15 +290,16 @@ public class Api {
             ], timeout: 5)
             
             if let res = response as? HTTPURLResponse {
-                let responseString = String(data: data, encoding: .utf8) ?? "no response body"
-                self.logger.info("OAuth refresh response: status=\(res.statusCode), body=\(responseString.prefix(200))")
-                
                 if res.statusCode == 401 {
+                    let responseString = String(data: data, encoding: .utf8) ?? "no response body"
                     self.logger.error("failed to refresh token (401), error: \(responseString)")
                     throw FronteggError.authError(.failedToRefreshToken)
                 } else if res.statusCode != 200 {
+                    let responseString = String(data: data, encoding: .utf8) ?? "no response body"
                     self.logger.error("failed to refresh token, status: \(res.statusCode), error: \(responseString)")
                     throw FronteggError.authError(.failedToRefreshToken)
+                } else {
+                    self.logger.info("OAuth refresh response: status=\(res.statusCode)")
                 }
             }
             
@@ -307,8 +308,7 @@ public class Api {
                 self.logger.info("Successfully decoded AuthResponse from OAuth refresh")
                 return authResponse
             } catch {
-                let responseString = String(data: data, encoding: .utf8) ?? "no response body"
-                self.logger.error("Failed to decode AuthResponse: \(error), response: \(responseString.prefix(200))")
+                self.logger.error("Failed to decode AuthResponse: \(error)")
                 throw error
             }
         }
