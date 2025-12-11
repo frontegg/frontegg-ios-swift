@@ -1,3 +1,6 @@
+## v1.2.57
+Fixed: Google Login fails to redirect to app in embeddedMode when Safari session exists
+
 ## v1.2.56
 https://frontegg.atlassian.net/browse/FR-22800
 
