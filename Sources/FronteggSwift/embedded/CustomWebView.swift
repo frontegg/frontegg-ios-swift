@@ -65,7 +65,29 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 previousUrl = currentUrl
                 logger.trace("Updated previousUrl to: \(currentUrl.absoluteString)")
             }
+            
+            // Check if this is an external OIDC provider redirect (e.g., Auth0, Okta, Microsoft)
+            // This happens when Frontegg server redirects to OIDC provider for SSO
+            // We need to allow these external redirects to proceed in the web view
+            // This check must be BEFORE custom scheme check to allow OIDC provider navigation
+            let urlString = url.absoluteString
+            if !urlString.starts(with: fronteggAuth.baseUrl) &&
+               !urlString.starts(with: generateRedirectUri()) &&
+               (urlString.contains("/authorize") || urlString.contains("/oauth/authorize") || 
+                urlString.contains("auth0.com") || urlString.contains("okta.com") || 
+                urlString.contains("login.microsoftonline.com") || urlString.contains("accounts.google.com")) {
+                logger.info("Detected external OIDC provider redirect, allowing navigation: \(urlString)")
+                return .allow
+            }
+            
             if let scheme = url.scheme, getAppURLSchemes().contains(scheme) {
+                // Check if this is an OAuth callback with code - handle it directly instead of opening externally
+                if let queryItems = getQueryItems(url.absoluteString), queryItems["code"] != nil {
+                    logger.info("Detected custom scheme OAuth callback URL with code, handling as HostedLoginCallback")
+                    return self.handleHostedLoginCallback(webView, url)
+                }
+                
+                // For other custom scheme URLs (without code), open externally
                 DispatchQueue.main.async {
                     UIApplication.shared.open(url, options: [:]) { success in
                         if success {
@@ -94,9 +116,17 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             // Check if this is an OAuth callback URL with code parameter in /oauth/account/ path
             // This handles other flows that might use different paths
             // These URLs are detected as .loginRoutes but should be handled as HostedLoginCallback
+            // EXCEPT for OIDC callback - we need to let the server redirect to custom scheme first
             if url.path.hasPrefix("/oauth/account/") {
                 if let queryItems = getQueryItems(url.absoluteString), queryItems["code"] != nil {
-                    // Check if it's a callback URL (not just any URL with code in /oauth/account/)
+                    // Check if it's an OIDC callback - let the server redirect to custom scheme first
+                    if url.path.contains("/oauth/account/oidc/callback") {
+                        logger.info("Detected OIDC callback URL, allowing server to redirect to custom scheme")
+                        // Allow the server to process the OIDC callback and redirect to custom scheme
+                        // The custom scheme redirect will be caught by the custom scheme check above
+                        return .allow
+                    }
+                    // For other callback URLs (not OIDC), handle them directly
                     if url.path.contains("/callback") || url.path.contains("/redirect/") {
                         logger.info("Detected OAuth callback URL with code in /oauth/account/ path, handling as HostedLoginCallback")
                         return self.handleHostedLoginCallback(webView, url)
@@ -560,6 +590,16 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 redirectUri = magicLinkRedirectUri ?? generateRedirectUri()
                 logger.warning("Failed to parse URL components, using fallback: \(redirectUri)")
             }
+        } else if url.path.contains("/oauth/account/oidc/callback") {
+            // OIDC callback - use standard redirect_uri (custom scheme) for token exchange
+            // In hosted mode, ASWebAuthenticationSession callback comes through custom scheme URL
+            // In embedded mode, callback comes through HTTPS URL, but we still need to use standard redirect_uri
+            // The OIDC callback URL is an intermediate redirect from OIDC provider back to Frontegg,
+            // but for token exchange we need to use the original redirect_uri from the authorize request to Frontegg
+            // (the same redirect_uri that was used in the initial authorize request, not the OIDC provider's redirect_uri)
+            isMagicLink = false
+            redirectUri = generateRedirectUri()
+            logger.trace("OIDC callback detected, using standard redirect_uri for token exchange: \(redirectUri)")
         } else {
             // Regular OAuth callback - use cached magic link redirect_uri if available, otherwise use standard one
             redirectUri = magicLinkRedirectUri ?? generateRedirectUri()
