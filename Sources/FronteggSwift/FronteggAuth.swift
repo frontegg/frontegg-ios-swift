@@ -269,13 +269,18 @@ public class FronteggAuth: FronteggState {
     }
     
     public func initializeSubscriptions() {
-        NetworkStatusMonitor.configure(baseURLString: "\(self.baseUrl)/test")
-        
-        NetworkStatusMonitor.startBackgroundMonitoring(interval: 10) { reachable in
-            if reachable {
-                self.reconnectedToInternet()
-            } else {
-                self.disconnectedFromInternet()
+        let config = try? PlistHelper.fronteggConfig()
+        let enableOfflineMode = config?.enableOfflineMode ?? false
+
+        if enableOfflineMode {
+            NetworkStatusMonitor.configure(baseURLString: "\(self.baseUrl)/test")
+            
+            NetworkStatusMonitor.startBackgroundMonitoring(interval: 10) { reachable in
+                if reachable {
+                    self.reconnectedToInternet()
+                } else {
+                    self.disconnectedFromInternet()
+                }
             }
         }
         
@@ -283,7 +288,6 @@ public class FronteggAuth: FronteggState {
             self.setShowLoader(initializingValue || (!isAuthenticatedValue && isLoadingValue))
         }.store(in: &subscribers)
         
-        let config = try? PlistHelper.fronteggConfig()
         let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
         
         var refreshToken: String? = nil
