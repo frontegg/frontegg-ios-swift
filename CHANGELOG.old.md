@@ -1,3 +1,6 @@
+## v1.2.58
+Fixed: Login with SSO OIDC.
+
 ## v1.2.57
 Fixed: Google Login fails to redirect to app in embeddedMode when Safari session exists
 
