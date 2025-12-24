@@ -479,32 +479,30 @@ public class FronteggAuth: FronteggState {
         let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
         
         if enableSessionPerTenant {
-            if let user = self.user {
-                let tenantId = user.activeTenant.id
-                if let tenantToken = try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .refreshToken) {
-                    logger.info("Reloaded refresh token for tenant \(tenantId) from keychain")
-                    if Thread.isMainThread {
-                        setRefreshToken(tenantToken)
-                    } else {
-                        DispatchQueue.main.async { [weak self] in
-                            self?.setRefreshToken(tenantToken)
-                        }
-                    }
-                    return tenantToken
-                }
+            var tenantId: String? = nil
+            
+            if let localTenantId = credentialManager.getLastActiveTenantId() {
+                tenantId = localTenantId
+                logger.info("Using cached tenant ID: \(localTenantId)")
             } else if let offlineUser = credentialManager.getOfflineUser() {
-                let tenantId = offlineUser.activeTenant.id
-                if let tenantToken = try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .refreshToken) {
-                    logger.info("Reloaded refresh token for tenant \(tenantId) from keychain")
-                    if Thread.isMainThread {
-                        setRefreshToken(tenantToken)
-                    } else {
-                        DispatchQueue.main.async { [weak self] in
-                            self?.setRefreshToken(tenantToken)
-                        }
-                    }
-                    return tenantToken
+                tenantId = offlineUser.activeTenant.id
+                if let tid = tenantId {
+                    credentialManager.saveLastActiveTenantId(tid)
+                    logger.info("No cached tenant ID, using offline user's tenant: \(tid) (saved as cached tenant)")
                 }
+            }
+            
+            if let tid = tenantId,
+               let tenantToken = try? credentialManager.getTokenForTenant(tenantId: tid, tokenType: .refreshToken) {
+                logger.info("Reloaded refresh token for tenant \(tid) from keychain")
+                if Thread.isMainThread {
+                    setRefreshToken(tenantToken)
+                } else {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.setRefreshToken(tenantToken)
+                    }
+                }
+                return tenantToken
             }
             return nil
         } else {
@@ -543,8 +541,6 @@ public class FronteggAuth: FronteggState {
                     if let tid = resolvedTenantId {
                         credentialManager.saveLastActiveTenantId(tid)
                     }
-                } else if let user = self.user {
-                    resolvedTenantId = user.activeTenant.id
                 }
             }
             
@@ -1139,10 +1135,13 @@ public class FronteggAuth: FronteggState {
         if refreshToken == nil {
             var tenantId: String? = nil
             if enableSessionPerTenant {
-                if let user = self.user {
-                    tenantId = user.activeTenant.id
+                if let localTenantId = credentialManager.getLastActiveTenantId() {
+                    tenantId = localTenantId
                 } else if let offlineUser = credentialManager.getOfflineUser() {
                     tenantId = offlineUser.activeTenant.id
+                    if let tid = tenantId {
+                        credentialManager.saveLastActiveTenantId(tid)
+                    }
                 }
             }
             refreshToken = await loadRefreshTokenFromKeychainAsync(tenantId: tenantId)
