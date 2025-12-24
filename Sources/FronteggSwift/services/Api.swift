@@ -37,6 +37,10 @@ public class Api {
         self.credentialManager = CredentialManager(serviceKey: "frontegg")
         
         self.cookieName = "fe_refresh_\(clientId)"
+
+        if let range = self.cookieName.range(of: "-") {
+            self.cookieName.removeSubrange(range)
+        }
     }
     
     internal func putRequest(

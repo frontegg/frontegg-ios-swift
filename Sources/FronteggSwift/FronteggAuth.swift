@@ -475,65 +475,126 @@ public class FronteggAuth: FronteggState {
         return remainingTime > minRefreshWindow ? adaptiveRefreshTime / 1000 : max((remainingTime - minRefreshWindow) / 1000, 0)
     }
     
+    /// Loads refresh token from keychain and sets it in memory (synchronous version).
+    /// This method handles both tenant-specific and global token loading based on configuration.
+    /// - Returns: The loaded refresh token, or nil if not found
+    private func loadRefreshTokenFromKeychainSync() -> String? {
+        let config = try? PlistHelper.fronteggConfig()
+        let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
+        
+        if enableSessionPerTenant {
+            var tenantId: String? = nil
+            
+            if let localTenantId = credentialManager.getLastActiveTenantId() {
+                tenantId = localTenantId
+                logger.info("Using cached tenant ID: \(localTenantId)")
+            } else if let offlineUser = credentialManager.getOfflineUser() {
+                tenantId = offlineUser.activeTenant.id
+                if let tid = tenantId {
+                    credentialManager.saveLastActiveTenantId(tid)
+                    logger.info("No cached tenant ID, using offline user's tenant: \(tid) (saved as cached tenant)")
+                }
+            }
+            
+            if let tid = tenantId,
+               let tenantToken = try? credentialManager.getTokenForTenant(tenantId: tid, tokenType: .refreshToken) {
+                logger.info("Reloaded refresh token for tenant \(tid) from keychain")
+                if Thread.isMainThread {
+                    setRefreshToken(tenantToken)
+                } else {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.setRefreshToken(tenantToken)
+                    }
+                }
+                return tenantToken
+            }
+            return nil
+        } else {
+            // Legacy behavior: load global token
+            if let keychainToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+                logger.info("Reloaded refresh token from keychain")
+                if Thread.isMainThread {
+                    setRefreshToken(keychainToken)
+                } else {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.setRefreshToken(keychainToken)
+                    }
+                }
+                return keychainToken
+            }
+            return nil
+        }
+    }
+    
+    /// Loads refresh token from keychain and sets it in memory (asynchronous version).
+    /// This method handles both tenant-specific and global token loading based on configuration.
+    /// - Parameter tenantId: Optional tenant ID. If nil, will be determined automatically for tenant-specific mode.
+    /// - Returns: The loaded refresh token, or nil if not found
+    private func loadRefreshTokenFromKeychainAsync(tenantId: String? = nil) async -> String? {
+        let config = try? PlistHelper.fronteggConfig()
+        let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
+        
+        if enableSessionPerTenant {
+            var resolvedTenantId: String? = tenantId
+            
+            if resolvedTenantId == nil {
+                if let localTenantId = credentialManager.getLastActiveTenantId() {
+                    resolvedTenantId = localTenantId
+                } else if let offlineUser = credentialManager.getOfflineUser() {
+                    resolvedTenantId = offlineUser.activeTenant.id
+                    if let tid = resolvedTenantId {
+                        credentialManager.saveLastActiveTenantId(tid)
+                    }
+                }
+            }
+            
+            if let tid = resolvedTenantId,
+               let tenantToken = try? credentialManager.getTokenForTenant(tenantId: tid, tokenType: .refreshToken) {
+                self.logger.info("Reloaded refresh token for tenant \(tid) from keychain")
+                await MainActor.run {
+                    setRefreshToken(tenantToken)
+                }
+                return tenantToken
+            }
+            return nil
+        } else {
+            // Legacy behavior: load global token
+            if let keychainToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+                self.logger.info("Reloaded refresh token from keychain")
+                await MainActor.run {
+                    setRefreshToken(keychainToken)
+                }
+                return keychainToken
+            }
+            return nil
+        }
+    }
+    
     func refreshTokenWhenNeeded() {
         do {
             logger.info("Checking if refresh token is available...")
             
-            let config = try? PlistHelper.fronteggConfig()
-            let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
-            
-            // Check if the refresh token is available
             if self.refreshToken == nil {
-                if enableSessionPerTenant {
-                    // Try to load tenant-specific token
-                    if let user = self.user {
-                        let tenantId = user.activeTenant.id
-                        if let tenantToken = try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .refreshToken) {
-                            logger.info("Reloaded refresh token for tenant \(tenantId) from keychain in refreshTokenWhenNeeded")
-                            DispatchQueue.main.sync {
-                                setRefreshToken(tenantToken)
-                            }
+                if loadRefreshTokenFromKeychainSync() != nil {
+                } else {
+                    let config = try? PlistHelper.fronteggConfig()
+                    let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
+                    
+                    if enableSessionPerTenant {
+                        if self.user == nil && credentialManager.getOfflineUser() == nil {
+                            logger.debug("No user or tenant information available. Exiting...")
                         } else {
-                            logger.debug("No refresh token available for tenant \(tenantId). Exiting...")
-                            return
-                        }
-                    } else if let offlineUser = credentialManager.getOfflineUser() {
-                        let tenantId = offlineUser.activeTenant.id
-                        if let tenantToken = try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .refreshToken) {
-                            logger.info("Reloaded refresh token for tenant \(tenantId) from keychain in refreshTokenWhenNeeded")
-                            DispatchQueue.main.sync {
-                                setRefreshToken(tenantToken)
-                            }
-                        } else {
-                            logger.debug("No refresh token available for tenant \(tenantId). Exiting...")
-                            return
+                            logger.debug("No refresh token available in keychain. Exiting...")
                         }
                     } else {
-                        logger.debug("No user or tenant information available. Exiting...")
-                        return
+                        logger.debug("No refresh token available in memory or keychain. Exiting...")
                     }
-                } else {
-                    // Try to reload from keychain before giving up (legacy behavior)
-                if let keychainToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
-                    logger.info("Reloaded refresh token from keychain in refreshTokenWhenNeeded")
-                    // Use async dispatch to avoid deadlock if already on main thread
-                    if Thread.isMainThread {
-                        setRefreshToken(keychainToken)
-                    } else {
-                        DispatchQueue.main.async { [weak self] in
-                            self?.setRefreshToken(keychainToken)
-                        }
-                    }
-                } else {
-                    logger.debug("No refresh token available in memory or keychain. Exiting...")
                     return
-                    }
                 }
             }
             
             logger.debug("Refresh token is available. Checking access token...")
             
-            // Check if the access token is available
             guard let accessToken = self.accessToken else {
                 logger.debug("No access token found. Attempting to refresh token...")
                 Task {
@@ -544,7 +605,6 @@ public class FronteggAuth: FronteggState {
             
             logger.debug("Access token found. Attempting to decode JWT...")
             
-            // Decode the access token to get the expiration time
             let decode = try JWTHelper.decode(jwtToken: accessToken)
             let expirationTime = decode["exp"] as! Int
             logger.debug("JWT decoded successfully. Expiration time: \(expirationTime)")
@@ -831,7 +891,6 @@ public class FronteggAuth: FronteggState {
         let enableOfflineMode = config?.enableOfflineMode ?? false
         let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
         
-        // Try to reload from keychain if in-memory token is nil
         var refreshToken = self.refreshToken
         var currentTenantId: String? = nil
         
@@ -850,30 +909,10 @@ public class FronteggAuth: FronteggState {
                     logger.info("No local tenant stored and no offline user available for refresh")
                 }
             }
-            
-            // Load tenant-specific refresh token
-            if let tenantId = currentTenantId {
-                if refreshToken == nil {
-                    if let tenantToken = try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .refreshToken) {
-                        self.logger.info("Reloaded refresh token for tenant \(tenantId) from keychain")
-                        await MainActor.run {
-                            setRefreshToken(tenantToken)
-                        }
-                        refreshToken = tenantToken
-                    }
-                }
-            }
-        } else {
-            // Legacy behavior: load global refresh token
+        }
+        
         if refreshToken == nil {
-            if let keychainToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
-                self.logger.info("Reloaded refresh token from keychain")
-                await MainActor.run {
-                    setRefreshToken(keychainToken)
-                }
-                refreshToken = keychainToken
-                }
-            }
+            refreshToken = await loadRefreshTokenFromKeychainAsync(tenantId: currentTenantId)
         }
         
         guard let refreshToken = refreshToken else {
@@ -881,14 +920,13 @@ public class FronteggAuth: FronteggState {
             return false
         }
         
-        // Hard no-network (quick exit path) → route through the central handler
         guard await NetworkStatusMonitor.isActive else {
             self.logger.info("Refresh rescheduled due to inactive internet")
             handleOfflineLikeFailure(
-                error: nil,                      // nil → treat as connectivity
+                error: nil,
                 enableOfflineMode: enableOfflineMode,
                 attempts: attempts,
-                preferredOffset: 2               // keep your existing offset
+                preferredOffset: 2
             )
             return false
         }
@@ -1097,39 +1135,20 @@ public class FronteggAuth: FronteggState {
         let config = try? PlistHelper.fronteggConfig()
         let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
         
-        // Try to reload from keychain if in-memory token is nil
         var refreshToken = self.refreshToken
         if refreshToken == nil {
+            var tenantId: String? = nil
             if enableSessionPerTenant {
-                if let user = self.user {
-                    let tenantId = user.activeTenant.id
-                    if let tenantToken = try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .refreshToken) {
-                        self.logger.info("Reloaded refresh token for tenant \(tenantId) from keychain in getOrRefreshAccessTokenAsync")
-                        await MainActor.run {
-                            setRefreshToken(tenantToken)
-                        }
-                        refreshToken = tenantToken
-                    }
+                if let localTenantId = credentialManager.getLastActiveTenantId() {
+                    tenantId = localTenantId
                 } else if let offlineUser = credentialManager.getOfflineUser() {
-                    let tenantId = offlineUser.activeTenant.id
-                    if let tenantToken = try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .refreshToken) {
-                        self.logger.info("Reloaded refresh token for tenant \(tenantId) from keychain in getOrRefreshAccessTokenAsync")
-                        await MainActor.run {
-                            setRefreshToken(tenantToken)
-                        }
-                        refreshToken = tenantToken
+                    tenantId = offlineUser.activeTenant.id
+                    if let tid = tenantId {
+                        credentialManager.saveLastActiveTenantId(tid)
                     }
-                }
-            } else {
-                // Legacy behavior: load global token
-            if let keychainToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
-                self.logger.info("Reloaded refresh token from keychain in getOrRefreshAccessTokenAsync")
-                await MainActor.run {
-                    setRefreshToken(keychainToken)
-                }
-                refreshToken = keychainToken
                 }
             }
+            refreshToken = await loadRefreshTokenFromKeychainAsync(tenantId: tenantId)
         }
         
         guard let refreshToken = refreshToken else {
@@ -1137,7 +1156,7 @@ public class FronteggAuth: FronteggState {
             return nil
         }
         
-        self.logger.info("Check if the access token exists and is still valid")
+        self.logger.info("Checking if access token exists and is still valid")
         
         if let accessToken = self.accessToken {
             do {
@@ -1161,11 +1180,9 @@ public class FronteggAuth: FronteggState {
             setRefreshingToken(false)
         }
         
-        // Reuse config and enableSessionPerTenant from earlier in the function
         var currentTenantId: String? = nil
         
         if enableSessionPerTenant {
-            // Prioritize lastActiveTenantId for per-tenant session isolation
             if let localTenantId = credentialManager.getLastActiveTenantId() {
                 currentTenantId = localTenantId
                 self.logger.info("Using LOCAL tenant ID for refresh in getOrRefreshAccessTokenAsync: \(localTenantId)")
@@ -1184,21 +1201,17 @@ public class FronteggAuth: FronteggState {
                 var data: AuthResponse
                 
                 if enableSessionPerTenant, let tenantId = currentTenantId {
-                    // Try tenant-specific refresh first
-                    // Include access token if available - it may be needed for tenant-specific refresh
                     let currentAccessToken = self.accessToken
                     do {
                         self.logger.info("Attempting tenant-specific refresh with tenantId: \(tenantId) in getOrRefreshAccessTokenAsync")
                         data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: tenantId, accessToken: currentAccessToken)
                         self.logger.info("Tenant-specific refresh successful in getOrRefreshAccessTokenAsync")
                     } catch {
-                        // If tenant-specific refresh fails, fall back to standard OAuth refresh
                         self.logger.warning("Tenant-specific refresh failed in getOrRefreshAccessTokenAsync: \(error). Falling back to standard OAuth refresh.")
                         data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: nil)
                         self.logger.info("Standard OAuth refresh successful (fallback) in getOrRefreshAccessTokenAsync")
                     }
                 } else {
-                    // Standard OAuth refresh for non-per-tenant sessions
                     data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: nil)
                 }
                 
