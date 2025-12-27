@@ -1,3 +1,9 @@
+## v1.2.60
+- Before login (login screen shown): /test calls run every 10 seconds to check connectivity
+- After login (user authenticated): /test calls stop completely, reducing network usage
+- After logout: /test calls resume automatically
+- Respects configuration: Only runs when enableOfflineMode == true in Frontegg.plist
+
 ## v1.2.59
 - If the customer leaves enableOfflineMode false (the default), the SDK will no longer schedule the 10‑second background probes to `/fe-auth/test` at all, significantly reducing network usage during normal app usage (before and after authentication)
 - `NetworkStatusMonitor.isActive` is still available and used for on-demand checks (e.g., before refreshing tokens) but those do not run every 10 seconds and won’t generate the continuous `/test` traffic they’re seeing
