@@ -57,6 +57,7 @@ public class FronteggAuth: FronteggState {
     private var offlineDebounceWork: DispatchWorkItem?
     private let offlineDebounceDelay: TimeInterval = 0.6
     var loginCompletion: CompletionHandler? = nil
+    private var networkMonitoringToken: NetworkStatusMonitor.OnChangeToken?
     
     init (
         baseUrl:String,
@@ -271,24 +272,53 @@ public class FronteggAuth: FronteggState {
     public func initializeSubscriptions() {
         let config = try? PlistHelper.fronteggConfig()
         let enableOfflineMode = config?.enableOfflineMode ?? false
-
+        let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
+        
         if enableOfflineMode {
             NetworkStatusMonitor.configure(baseURLString: "\(self.baseUrl)/test")
             
-            NetworkStatusMonitor.startBackgroundMonitoring(interval: 10) { reachable in
-                if reachable {
-                    self.reconnectedToInternet()
+           
+            let updateMonitoring = { [weak self] (isAuthenticated: Bool) in
+                guard let self = self else { return }
+                if !isAuthenticated {
+                    NetworkStatusMonitor.stopBackgroundMonitoring()
+                    if let token = self.networkMonitoringToken {
+                        NetworkStatusMonitor.removeOnChange(token)
+                        self.networkMonitoringToken = nil
+                    }
+                    
+                    let token = NetworkStatusMonitor.addOnChangeReturningToken { [weak self] reachable in
+                        guard let self = self else { return }
+                        if reachable {
+                            self.reconnectedToInternet()
+                        } else {
+                            self.disconnectedFromInternet()
+                        }
+                    }
+                    self.networkMonitoringToken = token
+                    
+                    NetworkStatusMonitor.startBackgroundMonitoring(interval: 10, onChange: nil)
                 } else {
-                    self.disconnectedFromInternet()
+                    NetworkStatusMonitor.stopBackgroundMonitoring()
+                    if let token = self.networkMonitoringToken {
+                        NetworkStatusMonitor.removeOnChange(token)
+                        self.networkMonitoringToken = nil
+                    }
                 }
             }
+            
+            // Observe authentication state changes to start/stop monitoring
+            self.$isAuthenticated.sink { isAuthenticated in
+                updateMonitoring(isAuthenticated)
+            }.store(in: &subscribers)
+            
+            // Initial state: start monitoring if not authenticated
+            updateMonitoring(self.isAuthenticated)
         }
         
         self.$initializing.combineLatest(self.$isAuthenticated, self.$isLoading).sink(){ (initializingValue, isAuthenticatedValue, isLoadingValue) in
             self.setShowLoader(initializingValue || (!isAuthenticatedValue && isLoadingValue))
         }.store(in: &subscribers)
-        
-        let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
         
         var refreshToken: String? = nil
         var accessToken: String? = nil
