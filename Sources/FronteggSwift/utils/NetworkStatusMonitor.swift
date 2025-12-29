@@ -157,6 +157,12 @@ public enum NetworkStatusMonitor {
 
     // Cached state for background monitoring
     private static var _cachedReachable = false
+    
+    // Guard to prevent multiple simultaneous starts
+    private static var _isMonitoringActive = false
+    private static let _monitoringLock = NSLock()
+    private static var _hasInitialCheckFired = false
+    private static var _initialCheckTask: Task<Void, Never>?
 
     // MARK: Handler storage (token-backed) + stable index mapping
     public struct OnChangeToken: Hashable { fileprivate let id = UUID() }
@@ -238,33 +244,75 @@ public enum NetworkStatusMonitor {
         interval: TimeInterval = 10,
         onChange: ((Bool) -> Void)? = nil
     ) {
+        // Prevent multiple simultaneous starts
+        _monitoringLock.lock()
+        let wasActive = _isMonitoringActive
+        guard !wasActive else {
+            _monitoringLock.unlock()
+            // Already monitoring, skip duplicate start
+            return
+        }
+        _isMonitoringActive = true
+        _hasInitialCheckFired = false // Reset flag for new monitoring session (inside lock)
+        _monitoringLock.unlock()
+        
+        // Stop any existing monitoring resources before starting new one (defensive cleanup)
+        backgroundTimer?.cancel()
+        backgroundTimer = nil
+        pathMonitor?.cancel()
+        pathMonitor = nil
+        
         // Store the handler if provided (keeps legacy index-based behavior intact)
         if let handler = onChange {
             _ = addOnChange(handler)
         }
 
+        // Cancel any pending initial check
+        _initialCheckTask?.cancel()
+        _initialCheckTask = nil
+        
         // Retain the path monitor
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { path in
-            if path.status != .satisfied {
-                updateCached(false)
-            } else if let base = configuredBaseURLString {
-                Task {
-                    let ok = await checkServerConnectivity(baseURLString: base)
-                    updateCached(ok)
+            // Use lock to safely check and set the initial check flag
+            _monitoringLock.lock()
+            let isInitialCheck = !_hasInitialCheckFired
+            if isInitialCheck {
+                _hasInitialCheckFired = true
+            }
+            _monitoringLock.unlock()
+            
+            // Only make /test call if this is the initial fire
+            if isInitialCheck {
+                // This is the initial check - make the /test call
+                if path.status != .satisfied {
+                    updateCached(false, forceEmit: true)
+                } else if let base = configuredBaseURLString {
+                    _initialCheckTask = Task {
+                        let ok = await checkServerConnectivity(baseURLString: base)
+                        updateCached(ok, forceEmit: true)
+                    }
+                } else {
+                    updateCached(true, forceEmit: true) // route-only success
                 }
             } else {
-                updateCached(true) // route-only success
+                // Not initial check - update cached state without making /test call
+                // The periodic timer will handle server connectivity checks
+                if path.status != .satisfied {
+                    updateCached(false)
+                } else if configuredBaseURLString == nil {
+                    updateCached(true) // route-only success
+                }
+                // If path is satisfied and we have baseURL, don't update here - let periodic timer handle it
             }
         }
-        monitor.start(queue: pathQueue)
         pathMonitor = monitor
+        monitor.start(queue: pathQueue)
 
         // Periodic active probe (only if strict mode is configured)
-        backgroundTimer?.cancel()
         if configuredBaseURLString != nil {
             let t = DispatchSource.makeTimerSource(queue: backgroundQueue)
-            t.schedule(deadline: .now() + 0.1, repeating: interval)
+            t.schedule(deadline: .now() + interval, repeating: interval)
             t.setEventHandler {
                 guard let base = configuredBaseURLString else { return }
                 Task {
@@ -277,20 +325,16 @@ public enum NetworkStatusMonitor {
         } else {
             backgroundTimer = nil
         }
-
-        // Emit an initial value immediately
-        Task {
-            if let base = configuredBaseURLString {
-                let ok = await checkServerConnectivity(baseURLString: base)
-                updateCached(ok, forceEmit: true)
-            } else {
-                let route = await routeIsAvailableOnce()
-                updateCached(route, forceEmit: true)
-            }
-        }
     }
 
     public static func stopBackgroundMonitoring() {
+        _monitoringLock.lock()
+        _isMonitoringActive = false
+        _hasInitialCheckFired = false // Reset flag when stopping
+        _monitoringLock.unlock()
+        
+        _initialCheckTask?.cancel()
+        _initialCheckTask = nil
         backgroundTimer?.cancel()
         backgroundTimer = nil
         pathMonitor?.cancel()
