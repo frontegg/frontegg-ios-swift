@@ -1253,7 +1253,9 @@ public class FronteggAuth: FronteggState {
     
     internal func createOauthCallbackHandler(_ completion: @escaping FronteggAuth.CompletionHandler) -> ((URL?, Error?) -> Void) {
         
-        return { callbackUrl, error in
+        return { [weak self] callbackUrl, error in
+            guard let self = self else { return }
+            
             if let error {
                 completion(.failure(FronteggError.authError(.other(error))))
                 return
@@ -1265,7 +1267,22 @@ public class FronteggAuth: FronteggState {
             }
             
             let parsedQueryItems = getQueryItems(url.absoluteString)
-            guard let queryItems = parsedQueryItems, let code = queryItems["code"] else {
+            guard let queryItems = parsedQueryItems else {
+                completion(.failure(FronteggError.authError(.failedToExtractCode)))
+                return
+            }
+            
+            // Check for error in callback
+            if let errorMessage = queryItems["error"] {
+                let error = FronteggError.authError(.oauthError(errorMessage))
+                completion(.failure(error))
+                return
+            }
+            
+            guard let code = queryItems["code"] else {
+                // If this is a verification callback and there's no code, the verification might have succeeded
+                // but the redirect didn't include the code. In this case, we should inform the user
+                // that verification succeeded but they need to try logging in again.
                 let error = FronteggError.authError(.failedToExtractCode)
                 completion(.failure(error))
                 return
@@ -1273,12 +1290,6 @@ public class FronteggAuth: FronteggState {
             
             guard let codeVerifier = CredentialManager.getCodeVerifier() else {
                 let error = FronteggError.authError(.codeVerifierNotFound)
-                completion(.failure(error))
-                return
-            }
-            
-            if let errorMessage = queryItems["error"] {
-                let error = FronteggError.authError(.oauthError(errorMessage))
                 completion(.failure(error))
                 return
             }
@@ -1418,12 +1429,22 @@ public class FronteggAuth: FronteggState {
             }
             
             self.logger.debug("Auth URL: \(authURL.absoluteString)")
+           
+             let window: UIWindow? = await MainActor.run {
+                return self.getRootVC()?.view.window
+            }
             
-            await WebAuthenticator.shared.start(
-                authURL,
-                ephemeralSession: false,
-                completionHandler: oauthCallback
-            )
+            let isMicrosoft = providerString.lowercased() == "microsoft" || authURL.absoluteString.contains("microsoft") || authURL.absoluteString.contains("login.microsoftonline.com")
+            let useEphemeral = !isMicrosoft
+            
+            await MainActor.run {
+                WebAuthenticator.shared.start(
+                    authURL,
+                    ephemeralSession: useEphemeral,
+                    window: window,
+                    completionHandler: oauthCallback
+                )
+            }
         }
     }
     
@@ -1631,7 +1652,27 @@ public class FronteggAuth: FronteggState {
         let (authorizeUrl, codeVerifier) = generatedUrl
         CredentialManager.saveCodeVerifier(codeVerifier)
         
-        WebAuthenticator.shared.start(authorizeUrl, completionHandler: oauthCallback)
+       let window: UIWindow?
+        if Thread.isMainThread {
+            window = getRootVC()?.view.window
+        } else {
+            var mainWindow: UIWindow?
+            DispatchQueue.main.sync {
+                mainWindow = getRootVC()?.view.window
+            }
+            window = mainWindow
+        }
+        
+        let isMicrosoft = socialLoginUrl.contains("microsoft") || socialLoginUrl.contains("login.microsoftonline.com")
+        let useEphemeral = !isMicrosoft
+        
+         if Thread.isMainThread {
+            WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: useEphemeral, window: window, completionHandler: oauthCallback)
+        } else {
+            DispatchQueue.main.async {
+                WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: useEphemeral, window: window, completionHandler: oauthCallback)
+            }
+        }
     }
     
     
@@ -1704,6 +1745,122 @@ public class FronteggAuth: FronteggState {
         if(!url.absoluteString.hasPrefix(self.baseUrl) && !internalHandleUrl){
             setAppLink(false)
             return false
+        }
+        
+        if url.path.contains("/postlogin/verify") {
+            var verificationUrl = url
+            if var urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                var queryItems = urlComponents.queryItems ?? []
+                
+                let redirectUri = generateRedirectUri()
+                if !queryItems.contains(where: { $0.name == "redirect_uri" }) {
+                    queryItems.append(URLQueryItem(name: "redirect_uri", value: redirectUri))
+                }
+                
+                if let codeVerifier = CredentialManager.getCodeVerifier() {
+                     if !queryItems.contains(where: { $0.name == "code_verifier_pkce" }) {
+                        queryItems.append(URLQueryItem(name: "code_verifier_pkce", value: codeVerifier))
+                        logger.info("Added code_verifier_pkce to verification URL")
+                    }
+                } else {
+                    logger.warning("No code verifier found for verification URL - this may cause verification to fail")
+                }
+                
+                urlComponents.queryItems = queryItems
+                if let updatedUrl = urlComponents.url {
+                    verificationUrl = updatedUrl
+                }
+            }
+            
+            let completion: FronteggAuth.CompletionHandler
+            if let existingCompletion = self.loginCompletion {
+                completion = existingCompletion
+            } else {
+                completion = { [weak self] result in
+                    guard let self = self else { return }
+                    switch result {
+                    case .success(let user):
+                        self.logger.info("✅ Email verification completed successfully. User logged in: \(user.email ?? "unknown")")
+                        // Login is complete, no need to do anything else
+                    case .failure(let error):
+                        self.logger.error("❌ Email verification failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+            
+            let oauthCallback = createOauthCallbackHandler(completion)
+            
+            var callbackReceived = false
+            let wrappedCallback: (URL?, Error?) -> Void = { [weak self] callbackUrl, error in
+                guard let self = self else { return }
+                callbackReceived = true
+                
+                if let url = callbackUrl, let host = url.host, (host.contains("localhost") || host.contains("127.0.0.1")) {
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        if let urlComponents = URLComponents(url: verificationUrl, resolvingAgainstBaseURL: false),
+                           let queryItems = urlComponents.queryItems,
+                           let type = queryItems.first(where: { $0.name == "type" })?.value {
+                            self.handleSocialLogin(providerString: type, custom: false, action: .login) { result in
+                                switch result {
+                                case .success(let user):
+                                    completion(.success(user))
+                                case .failure(let error):
+                                    completion(.failure(error))
+                                }
+                            }
+                        } else {
+                            completion(.failure(FronteggError.authError(.unknown)))
+                        }
+                    }
+                    return
+                }
+                
+                
+                oauthCallback(callbackUrl, error)
+            }
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { [weak self] in
+                guard let self = self, !callbackReceived else { return }
+                
+                if let urlComponents = URLComponents(url: verificationUrl, resolvingAgainstBaseURL: false),
+                   let queryItems = urlComponents.queryItems,
+                   let type = queryItems.first(where: { $0.name == "type" })?.value {
+                    self.logger.info("🔄 Retrying login with provider: \(type)")
+                    self.handleSocialLogin(providerString: type, custom: false, action: .login) { result in
+                        switch result {
+                        case .success(let user):
+                            self.logger.info("✅ Login completed successfully after verification timeout")
+                            completion(.success(user))
+                        case .failure(let error):
+                            self.logger.error("❌ Login failed after verification timeout: \(error.localizedDescription)")
+                            completion(.failure(error))
+                        }
+                    }
+                } else {
+                    completion(.failure(FronteggError.authError(.unknown)))
+                }
+            }
+            
+            let window: UIWindow?
+            if Thread.isMainThread {
+                window = getRootVC(useAppRootVC)?.view.window
+            } else {
+                var mainWindow: UIWindow?
+                DispatchQueue.main.sync {
+                    mainWindow = getRootVC(useAppRootVC)?.view.window
+                }
+                window = mainWindow
+            }
+            
+            if Thread.isMainThread {
+                WebAuthenticator.shared.start(verificationUrl, ephemeralSession: false, window: window, completionHandler: wrappedCallback)
+            } else {
+                DispatchQueue.main.async {
+                    WebAuthenticator.shared.start(verificationUrl, ephemeralSession: false, window: window, completionHandler: wrappedCallback)
+                }
+            }
+            return true
         }
         
         guard let rootVC = self.getRootVC(useAppRootVC) else {

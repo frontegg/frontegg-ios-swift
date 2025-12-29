@@ -463,6 +463,37 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             }
             
             if(urlType == .internalRoutes ) {
+                if url.path.contains("/postlogin/verify") {
+                    let redirectUri = generateRedirectUri()
+                    if url.absoluteString.starts(with: redirectUri) {
+                        return
+                    }
+                    
+                   webView.evaluateJavaScript("""
+                        (function() {
+                            // Check for meta refresh redirect
+                            var metaRefresh = document.querySelector('meta[http-equiv="refresh"]');
+                            if (metaRefresh) {
+                                var content = metaRefresh.getAttribute('content');
+                                if (content) {
+                                    var match = content.match(/url=(.+)/i);
+                                    if (match) return 'META_REDIRECT:' + match[1];
+                                }
+                            }
+                            // Check for window.location redirect
+                            if (window.location.href !== '\(url.absoluteString)') {
+                                return 'JS_REDIRECT:' + window.location.href;
+                            }
+                            return null;
+                        })()
+                    """) { [weak self] result, error in
+                        if let redirectInfo = result as? String {
+                            self?.logger.info("🔐 Detected redirect in verification page: \(redirectInfo)")
+                            print("🔐 Frontegg Verification page redirect: \(redirectInfo)")
+                        }
+                    }
+                }
+                
                 logger.trace("hiding Loader screen after 300ms")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     // usually internal routes are redirects
@@ -495,10 +526,36 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     return
                 }
                 
-                webView.evaluateJavaScript("JSON.parse(document.body.innerText).errors.join('\\n')") { [self] res, err in
+                // Try to extract error message from response body
+                webView.evaluateJavaScript("""
+                    (function() {
+                        try {
+                            var bodyText = document.body.innerText || document.body.textContent || '';
+                            if (bodyText) {
+                                try {
+                                    var json = JSON.parse(bodyText);
+                                    if (json.errors && Array.isArray(json.errors)) {
+                                        return json.errors.join('\\n');
+                                    }
+                                    if (json.error) {
+                                        return json.error;
+                                    }
+                                    if (json.message) {
+                                        return json.message;
+                                    }
+                                } catch(e) {
+                                    // Not JSON, return raw text
+                                    return bodyText.substring(0, 500);
+                                }
+                            }
+                            return 'Unknown error occured';
+                        } catch(e) {
+                            return 'Unknown error occured';
+                        }
+                    })()
+                """) { [self] res, err in
                     let errorMessage = res as? String ?? "Unknown error occured"
                     
-                    logger.error("Failed to load page: \(errorMessage), status: \(statusCode)")
                     self.fronteggAuth.setWebLoading(false)
                     let content = generateErrorPage(message: errorMessage, url: url.absoluteString, status: statusCode);
                     webView.loadHTMLString(content, baseURL: nil);

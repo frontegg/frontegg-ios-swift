@@ -89,6 +89,27 @@ public struct FronteggWebView: UIViewRepresentable {
                 codeVerifier = createRandomString()
                 CredentialManager.saveCodeVerifier(codeVerifier)
             }
+            
+            if url.path.contains("/postlogin/verify") {
+                if var urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                    var queryItems = urlComponents.queryItems ?? []
+                    
+                    let redirectUri = generateRedirectUri()
+                    if !queryItems.contains(where: { $0.name == "redirect_uri" }) {
+                        queryItems.append(URLQueryItem(name: "redirect_uri", value: redirectUri))
+                    }
+                    
+                    if !queryItems.contains(where: { $0.name == "code_verifier_pkce" }) {
+                        queryItems.append(URLQueryItem(name: "code_verifier_pkce", value: codeVerifier))
+                    }
+                    
+                    urlComponents.queryItems = queryItems
+                    if let updatedUrl = urlComponents.url {
+                        url = updatedUrl
+                    }
+                }
+            }
+            
             fronteggAuth.pendingAppLink = nil
         } else {
             (url, codeVerifier) = AuthorizeUrlGenerator().generate(loginHint: fronteggAuth.loginHint)

@@ -16,7 +16,15 @@ class WebAuthenticator: NSObject, ObservableObject, ASWebAuthenticationPresentat
     var session: ASWebAuthenticationSession? = nil
     
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        return window ?? FronteggAuth.shared.getRootVC()?.view.window ?? ASPresentationAnchor()
+       if Thread.isMainThread {
+            return window ?? FronteggAuth.shared.getRootVC()?.view.window ?? ASPresentationAnchor()
+        } else {
+            var anchor: ASPresentationAnchor = ASPresentationAnchor()
+            DispatchQueue.main.sync {
+                anchor = window ?? FronteggAuth.shared.getRootVC()?.view.window ?? ASPresentationAnchor()
+            }
+            return anchor
+        }
     }
     
     override func responds(to aSelector: Selector!) -> Bool {
