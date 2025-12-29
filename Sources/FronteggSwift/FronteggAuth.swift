@@ -58,6 +58,8 @@ public class FronteggAuth: FronteggState {
     private let offlineDebounceDelay: TimeInterval = 0.6
     var loginCompletion: CompletionHandler? = nil
     private var networkMonitoringToken: NetworkStatusMonitor.OnChangeToken?
+    private var networkMonitoringCancellable: AnyCancellable?
+    private var monitoringUpdateDebounceWork: DispatchWorkItem?
     
     init (
         baseUrl:String,
@@ -277,43 +279,89 @@ public class FronteggAuth: FronteggState {
         if enableOfflineMode {
             NetworkStatusMonitor.configure(baseURLString: "\(self.baseUrl)/test")
             
-           
-            let updateMonitoring = { [weak self] (isAuthenticated: Bool) in
-                guard let self = self else { return }
-                if !isAuthenticated {
-                    NetworkStatusMonitor.stopBackgroundMonitoring()
-                    if let token = self.networkMonitoringToken {
-                        NetworkStatusMonitor.removeOnChange(token)
-                        self.networkMonitoringToken = nil
-                    }
-                    
-                    let token = NetworkStatusMonitor.addOnChangeReturningToken { [weak self] reachable in
-                        guard let self = self else { return }
-                        if reachable {
-                            self.reconnectedToInternet()
-                        } else {
-                            self.disconnectedFromInternet()
-                        }
-                    }
-                    self.networkMonitoringToken = token
-                    
-                    NetworkStatusMonitor.startBackgroundMonitoring(interval: 10, onChange: nil)
-                } else {
-                    NetworkStatusMonitor.stopBackgroundMonitoring()
-                    if let token = self.networkMonitoringToken {
-                        NetworkStatusMonitor.removeOnChange(token)
-                        self.networkMonitoringToken = nil
-                    }
-                }
+            networkMonitoringCancellable?.cancel()
+            networkMonitoringCancellable = nil
+            
+            NetworkStatusMonitor.stopBackgroundMonitoring()
+            if let token = self.networkMonitoringToken {
+                NetworkStatusMonitor.removeOnChange(token)
+                self.networkMonitoringToken = nil
             }
             
-            // Observe authentication state changes to start/stop monitoring
-            self.$isAuthenticated.sink { isAuthenticated in
-                updateMonitoring(isAuthenticated)
-            }.store(in: &subscribers)
+            let updateMonitoring = { [weak self] in
+                guard let self = self else { return }
+                
+                self.monitoringUpdateDebounceWork?.cancel()
+                
+                let work = DispatchWorkItem { [weak self] in
+                    guard let self = self else { return }
+                    let hasTokens = self.accessToken != nil
+                    
+                    if !hasTokens {
+                        NetworkStatusMonitor.stopBackgroundMonitoring()
+                        if let token = self.networkMonitoringToken {
+                            NetworkStatusMonitor.removeOnChange(token)
+                            self.networkMonitoringToken = nil
+                        }
+                        
+                        let token = NetworkStatusMonitor.addOnChangeReturningToken { [weak self] reachable in
+                            guard let self = self else { return }
+                            if reachable {
+                                self.reconnectedToInternet()
+                            } else {
+                                self.disconnectedFromInternet()
+                            }
+                        }
+                        self.networkMonitoringToken = token
+                        
+                        NetworkStatusMonitor.startBackgroundMonitoring(interval: 10, onChange: nil)
+                    } else {
+                        NetworkStatusMonitor.stopBackgroundMonitoring()
+                        if let token = self.networkMonitoringToken {
+                            NetworkStatusMonitor.removeOnChange(token)
+                            self.networkMonitoringToken = nil
+                        }
+                    }
+                }
+                self.monitoringUpdateDebounceWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
+            }
             
-            // Initial state: start monitoring if not authenticated
-            updateMonitoring(self.isAuthenticated)
+            // Observe accessToken changes to start/stop monitoring
+            // We check accessToken instead of isAuthenticated because in offline mode,
+            // isAuthenticated can be false even when user has tokens stored
+            let cancellable = self.$accessToken.sink { _ in
+                updateMonitoring()
+            }
+            networkMonitoringCancellable = cancellable
+            cancellable.store(in: &subscribers)
+            
+            let hasTokens = self.accessToken != nil
+            if !hasTokens {
+                NetworkStatusMonitor.stopBackgroundMonitoring()
+                if let token = self.networkMonitoringToken {
+                    NetworkStatusMonitor.removeOnChange(token)
+                    self.networkMonitoringToken = nil
+                }
+                
+                let token = NetworkStatusMonitor.addOnChangeReturningToken { [weak self] reachable in
+                    guard let self = self else { return }
+                    if reachable {
+                        self.reconnectedToInternet()
+                    } else {
+                        self.disconnectedFromInternet()
+                    }
+                }
+                self.networkMonitoringToken = token
+                
+                NetworkStatusMonitor.startBackgroundMonitoring(interval: 10, onChange: nil)
+            } else {
+                NetworkStatusMonitor.stopBackgroundMonitoring()
+                if let token = self.networkMonitoringToken {
+                    NetworkStatusMonitor.removeOnChange(token)
+                    self.networkMonitoringToken = nil
+                }
+            }
         }
         
         self.$initializing.combineLatest(self.$isAuthenticated, self.$isLoading).sink(){ (initializingValue, isAuthenticatedValue, isLoadingValue) in
