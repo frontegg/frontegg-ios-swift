@@ -207,7 +207,36 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                             }
                             
                             // Fallback: Try to get refresh token from keychain
-                            if let refreshToken = try? self.fronteggAuth.credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+                            // Check if session per tenant is enabled and retrieve token accordingly
+                            let config = try? PlistHelper.fronteggConfig()
+                            let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
+                            
+                            var refreshToken: String? = nil
+                            if enableSessionPerTenant {
+                                // Try to get tenant-specific token
+                                if let tenantId = self.fronteggAuth.credentialManager.getLastActiveTenantId() {
+                                    refreshToken = try? self.fronteggAuth.credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .refreshToken)
+                                    if refreshToken != nil {
+                                        self.logger.info("Found tenant-specific refresh token for tenant: \(tenantId)")
+                                    }
+                                } else {
+                                    // No tenant ID stored yet, tokens might not be saved - will try legacy lookup as last resort
+                                    self.logger.info("No tenant ID stored, trying legacy keychain lookup as fallback")
+                                }
+                                
+                                // If tenant-specific lookup failed, try legacy global key (for backward compatibility during transition)
+                                if refreshToken == nil {
+                                    refreshToken = try? self.fronteggAuth.credentialManager.get(key: KeychainKeys.refreshToken.rawValue)
+                                    if refreshToken != nil {
+                                        self.logger.info("Found refresh token in legacy global keychain location")
+                                    }
+                                }
+                            } else {
+                                // Legacy behavior: use global key
+                                refreshToken = try? self.fronteggAuth.credentialManager.get(key: KeychainKeys.refreshToken.rawValue)
+                            }
+                            
+                            if let refreshToken = refreshToken {
                                 do {
                                     // Use requestAuthorizeAsync which handles token refresh and user loading
                                     let user = try await self.fronteggAuth.requestAuthorizeAsync(refreshToken: refreshToken)

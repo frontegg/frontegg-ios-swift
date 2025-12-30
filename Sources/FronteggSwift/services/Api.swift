@@ -108,7 +108,7 @@ public class Api {
         
         // Only add Authorization header from keychain if it's not already set in additionalHeaders
         // This allows callers to explicitly provide an access token (e.g., for tenant-specific refresh)
-        if request.value(forHTTPHeaderField: "Authorization") == nil {
+        if request.value(forHTTPHeaderField: "Authorization") == nil && !path.contains("oauth/token") {
             if let accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
                 request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
             }

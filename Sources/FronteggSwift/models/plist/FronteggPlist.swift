@@ -31,6 +31,7 @@ struct FronteggPlist: Decodable, Equatable {
     let enableOfflineMode: Bool
     let useLegacySocialLoginFlow: Bool
     let enableSessionPerTenant: Bool
+    let networkMonitoringInterval: TimeInterval
 
     enum CodingKeys: CodingKey {
         case keychainService
@@ -51,6 +52,7 @@ struct FronteggPlist: Decodable, Equatable {
         case enableOfflineMode
         case useLegacySocialLoginFlow
         case enableSessionPerTenant
+        case networkMonitoringInterval
     }
 
     init(
@@ -72,7 +74,8 @@ struct FronteggPlist: Decodable, Equatable {
         deleteCookieForHostOnly: Bool = true,
         enableOfflineMode: Bool = false,
         useLegacySocialLoginFlow: Bool = false,
-        enableSessionPerTenant: Bool = false
+        enableSessionPerTenant: Bool = false,
+        networkMonitoringInterval: TimeInterval = 10
     ) {
         self.keychainService = keychainService
         self.embeddedMode = embeddedMode
@@ -93,6 +96,7 @@ struct FronteggPlist: Decodable, Equatable {
         self.enableOfflineMode = enableOfflineMode
         self.useLegacySocialLoginFlow = useLegacySocialLoginFlow
         self.enableSessionPerTenant = enableSessionPerTenant
+        self.networkMonitoringInterval = networkMonitoringInterval
     }
 
     init(from decoder: any Decoder) throws {
@@ -151,6 +155,9 @@ struct FronteggPlist: Decodable, Equatable {
         
         let enableSessionPerTenant = try container.decodeIfPresent(Bool.self, forKey: .enableSessionPerTenant)
         self.enableSessionPerTenant = enableSessionPerTenant ?? false
+        
+        let networkMonitoringInterval = try container.decodeIfPresent(TimeInterval.self, forKey: .networkMonitoringInterval)
+        self.networkMonitoringInterval = networkMonitoringInterval ?? 10
         
         do {
             self.payload = try Payload(from: decoder)

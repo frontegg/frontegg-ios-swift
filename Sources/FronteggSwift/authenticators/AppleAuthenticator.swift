@@ -16,7 +16,7 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
     static let shared = AppleAuthenticator()
     
     var logger = getLogger("AppleAuthenticator")
-    var completionHandler: FronteggAuth.CompletionHandler? = nil
+    var completionHandler: ((Result<User, FronteggError>) -> Void)? = nil
     
     func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
         return  FronteggAuth.shared.getRootVC()?.view.window ?? ASPresentationAnchor()
@@ -77,7 +77,7 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
         
     }
     
-    func start(completionHandler: @escaping FronteggAuth.CompletionHandler) {
+    func start(completionHandler: @escaping (Result<User, FronteggError>) -> Void) {
         let appleIDProvider = ASAuthorizationAppleIDProvider()
         let request = appleIDProvider.createRequest()
         

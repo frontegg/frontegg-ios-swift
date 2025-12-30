@@ -5,6 +5,7 @@
 //
 
 import Foundation
+import Dispatch
 import WebKit
 import Combine
 import AuthenticationServices
@@ -58,12 +59,7 @@ public class FronteggAuth: FronteggState {
     private let offlineDebounceDelay: TimeInterval = 0.6
     var loginCompletion: CompletionHandler? = nil
     private var networkMonitoringToken: NetworkStatusMonitor.OnChangeToken?
-    private var networkMonitoringCancellable: AnyCancellable?
-    private var monitoringUpdateDebounceWork: DispatchWorkItem?
-    private var isMonitoringInitialized = false
-    private var isMonitoringActive = false
-    private let monitoringQueue = DispatchQueue(label: "com.frontegg.monitoring", qos: .userInitiated)
-    private let monitoringLock = NSLock()
+    private var isInitializingWithTokens: Bool = false
     
     init (
         baseUrl:String,
@@ -280,7 +276,10 @@ public class FronteggAuth: FronteggState {
         let enableOfflineMode = config?.enableOfflineMode ?? false
         let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
         
-        // Load tokens from keychain FIRST to determine if we should start monitoring
+        self.$initializing.combineLatest(self.$isAuthenticated, self.$isLoading).sink(){ (initializingValue, isAuthenticatedValue, isLoadingValue) in
+            self.setShowLoader(initializingValue || (!isAuthenticatedValue && isLoadingValue))
+        }.store(in: &subscribers)
+        
         var refreshToken: String? = nil
         var accessToken: String? = nil
         
@@ -311,179 +310,134 @@ public class FronteggAuth: FronteggState {
             accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue)
         }
         
-        // Check if tokens exist BEFORE setting up monitoring
-        let hasTokensInKeychain = (refreshToken != nil && accessToken != nil)
-        
-        if enableOfflineMode && !isMonitoringInitialized {
-            // Prevent multiple initializations - only set up monitoring once
-            isMonitoringInitialized = true
-            
+        if enableOfflineMode {
             NetworkStatusMonitor.configure(baseURLString: "\(self.baseUrl)/test")
             
-            // Ensure we stop any existing monitoring first
-            NetworkStatusMonitor.stopBackgroundMonitoring()
-            networkMonitoringCancellable?.cancel()
-            networkMonitoringCancellable = nil
-            if let token = self.networkMonitoringToken {
-                NetworkStatusMonitor.removeOnChange(token)
-                self.networkMonitoringToken = nil
+            let monitoringInterval = config?.networkMonitoringInterval ?? 10
+            
+            let hasTokensInKeychain = (accessToken != nil && refreshToken != nil)
+            
+            // Track that we're initializing with tokens to prevent subscription from starting monitoring
+            if hasTokensInKeychain {
+                self.isInitializingWithTokens = true
             }
             
-            let updateMonitoring = { [weak self] in
-                guard let self = self else { return }
-                
-                self.monitoringUpdateDebounceWork?.cancel()
-                
-                let work = DispatchWorkItem { [weak self] in
+            // Set up subscription to handle future accessToken changes
+            // When tokens exist initially, we skip the initial emissions to prevent monitoring from starting
+            let dropCount = hasTokensInKeychain ? 2 : 1
+            self.$accessToken
+                .removeDuplicates()
+                .dropFirst(dropCount)
+                .sink { [weak self] accessToken in
                     guard let self = self else { return }
-                    let hasTokens = self.accessToken != nil
                     
-                    self.monitoringQueue.async { [weak self] in
-                        guard let self = self else { return }
-                        
-                        if !hasTokens {
-                            self.monitoringLock.lock()
-                            guard !self.isMonitoringActive else {
-                                self.monitoringLock.unlock()
-                                self.logger.info("⚠️ Monitoring already active, skipping duplicate start")
-                                return
-                            }
-                            self.isMonitoringActive = true
-                            self.monitoringLock.unlock()
-                            
-                            self.logger.info("🟢 Starting /test monitoring - user not logged in (no tokens)")
-                            // Stop any existing monitoring first (double-check)
-                            NetworkStatusMonitor.stopBackgroundMonitoring()
-                            if let token = self.networkMonitoringToken {
-                                NetworkStatusMonitor.removeOnChange(token)
-                                self.networkMonitoringToken = nil
-                            }
-                            
-                            let token = NetworkStatusMonitor.addOnChangeReturningToken { [weak self] reachable in
-                                guard let self = self else { return }
-                                if reachable {
-                                    self.reconnectedToInternet()
-                                } else {
-                                    self.disconnectedFromInternet()
-                                }
-                            }
-                            self.networkMonitoringToken = token
-                            NetworkStatusMonitor.startBackgroundMonitoring(interval: 10, onChange: nil)
-                        } else {
-                            self.monitoringLock.lock()
-                            guard self.isMonitoringActive else {
-                                self.monitoringLock.unlock()
-                                self.logger.info("⚠️ Monitoring not active, skipping stop")
-                                return
-                            }
-                            self.isMonitoringActive = false
-                            self.monitoringLock.unlock()
-                            
-                            self.logger.info("🔴 Stopping /test monitoring - user logged in (has tokens)")
-                            NetworkStatusMonitor.stopBackgroundMonitoring()
-                            if let token = self.networkMonitoringToken {
-                                NetworkStatusMonitor.removeOnChange(token)
-                                self.networkMonitoringToken = nil
-                            }
+                    // During initialization with tokens, never start monitoring
+                    // Wait until initialization is complete before allowing subscription to start monitoring
+                    if self.isInitializingWithTokens {
+                        // Still initializing - don't start monitoring, just ensure it's stopped
+                        NetworkStatusMonitor.stopBackgroundMonitoring()
+                        if let token = self.networkMonitoringToken {
+                            NetworkStatusMonitor.removeOnChange(token)
+                            self.networkMonitoringToken = nil
                         }
-                    }
-                }
-                self.monitoringUpdateDebounceWork = work
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
-            }
-            
-            // Observe accessToken changes to start/stop monitoring
-            // We check accessToken instead of isAuthenticated because in offline mode,
-            // isAuthenticated can be false even when user has tokens stored
-            let cancellable = self.$accessToken.sink { _ in
-                updateMonitoring()
-            }
-            networkMonitoringCancellable = cancellable
-            cancellable.store(in: &subscribers)
-            
-            // Only start monitoring if no tokens found in keychain
-            if !hasTokensInKeychain {
-                // Check flag synchronously to prevent race conditions
-                self.monitoringLock.lock()
-                let shouldStart = !self.isMonitoringActive
-                if shouldStart {
-                    self.isMonitoringActive = true
-                    self.logger.info("🟢 Starting /test monitoring (initial) - user not logged in (no tokens in keychain)")
-                } else {
-                    self.logger.info("⚠️ Monitoring already active (initial), skipping duplicate start")
-                }
-                self.monitoringLock.unlock()
-                
-                guard shouldStart else {
-                    return
-                }
-                
-                // Ensure we're on the monitoring queue for the actual start
-                self.monitoringQueue.async { [weak self] in
-                    guard let self = self else { return }
-                    
-                    // Final check before starting
-                    self.monitoringLock.lock()
-                    let stillShouldStart = self.isMonitoringActive
-                    self.monitoringLock.unlock()
-                    
-                    guard stillShouldStart else {
-                        self.logger.info("⚠️ Monitoring flag cleared before start, aborting")
                         return
                     }
                     
-                    // Stop any existing monitoring first
-                    NetworkStatusMonitor.stopBackgroundMonitoring()
-                    if let token = self.networkMonitoringToken {
-                        NetworkStatusMonitor.removeOnChange(token)
-                        self.networkMonitoringToken = nil
-                    }
-                    
-                    let token = NetworkStatusMonitor.addOnChangeReturningToken { [weak self] reachable in
-                        guard let self = self else { return }
-                        if reachable {
-                            self.reconnectedToInternet()
-                        } else {
-                            self.disconnectedFromInternet()
+                    // After initialization, handle normal token changes
+                    if accessToken != nil {
+                        // Token was set - ensure monitoring is stopped
+                        NetworkStatusMonitor.stopBackgroundMonitoring()
+                        if let token = self.networkMonitoringToken {
+                            NetworkStatusMonitor.removeOnChange(token)
+                            self.networkMonitoringToken = nil
                         }
+                    } else {
+                        // Token was cleared - start monitoring
+                        NetworkStatusMonitor.stopBackgroundMonitoring()
+                        if let token = self.networkMonitoringToken {
+                            NetworkStatusMonitor.removeOnChange(token)
+                            self.networkMonitoringToken = nil
+                        }
+                        
+                        let token = NetworkStatusMonitor.addOnChangeReturningToken { [weak self] reachable in
+                            guard let self = self else { return }
+                            if reachable {
+                                self.reconnectedToInternet()
+                            } else {
+                                self.disconnectedFromInternet()
+                            }
+                        }
+                        self.networkMonitoringToken = token
+                        NetworkStatusMonitor.startBackgroundMonitoring(interval: monitoringInterval, onChange: nil)
                     }
-                    self.networkMonitoringToken = token
-                    NetworkStatusMonitor.startBackgroundMonitoring(interval: 10, onChange: nil)
+                }.store(in: &subscribers)
+            
+            if !hasTokensInKeychain {
+                logger.info("🟢 Starting /test monitoring (initial) - user not logged in (no tokens in keychain)")
+                let token = NetworkStatusMonitor.addOnChangeReturningToken { [weak self] reachable in
+                    guard let self = self else { return }
+                    if reachable {
+                        self.reconnectedToInternet()
+                    } else {
+                        self.disconnectedFromInternet()
+                    }
                 }
+                self.networkMonitoringToken = token
+                NetworkStatusMonitor.startBackgroundMonitoring(interval: monitoringInterval, onChange: nil)
             } else {
-                self.logger.info("🔴 Not starting /test monitoring (initial) - user logged in (has tokens in keychain)")
-                self.monitoringLock.lock()
-                self.isMonitoringActive = false
-                self.monitoringLock.unlock()
+                NetworkStatusMonitor.stopBackgroundMonitoring()
+                if let token = self.networkMonitoringToken {
+                    NetworkStatusMonitor.removeOnChange(token)
+                    self.networkMonitoringToken = nil
+                }
             }
+            
+            if let refreshToken = refreshToken, let accessToken = accessToken {
+                setRefreshToken(refreshToken)
+                setAccessToken(accessToken)
+                // Clear initialization flag after tokens are set (prevents subscription from starting monitoring)
+                self.isInitializingWithTokens = false
+            } else {
+                // Clear flag if no tokens (initialization complete even without tokens)
+                self.isInitializingWithTokens = false
+            }
+        } else {
+            if let refreshToken = refreshToken, let accessToken = accessToken {
+                setRefreshToken(refreshToken)
+                setAccessToken(accessToken)
+            }
+            // Clear flag (initialization complete)
+            self.isInitializingWithTokens = false
         }
         
-        self.$initializing.combineLatest(self.$isAuthenticated, self.$isLoading).sink(){ (initializingValue, isAuthenticatedValue, isLoadingValue) in
-            self.setShowLoader(initializingValue || (!isAuthenticatedValue && isLoadingValue))
-        }.store(in: &subscribers)
-        
         if let refreshToken = refreshToken, let accessToken = accessToken {
-            // Set tokens before checking monitoring - this will trigger the subscription
-            // which will properly stop monitoring since we have tokens
-            setRefreshToken(refreshToken)
-            setAccessToken(accessToken)
             setIsLoading(true)
             
             DispatchQueue.global(qos: .userInitiated).async {
                 Task {
-                    if await NetworkStatusMonitor.isActive {
-                        await self.featureFlags.start();
-                        await SocialLoginUrlGenerator.shared.reloadConfigs()
-                        self.warmingWebViewAsync()
+                    // When tokens exist, try to refresh but don't start monitoring if offline
+                    // Skip network check to prevent /test call when monitoring is stopped
+                    await self.featureFlags.start();
+                    await SocialLoginUrlGenerator.shared.reloadConfigs()
+                    self.warmingWebViewAsync()
+                    
+                    // Try to refresh token, but handle offline gracefully without starting monitoring
+                    do {
+                        // Try to check network without triggering /test call
+                        // If network check would trigger /test, just proceed and let refresh fail naturally
+                        let _ = await self.refreshTokenIfNeeded(skipNetworkCheck: true)
+                    } catch {
+                        // If refresh fails due to network, that's okay - user stays logged in with existing tokens
+                        self.logger.info("Token refresh failed (likely offline), user remains logged in with existing tokens")
                     }
-                    await self.refreshTokenIfNeeded()
                 }
             }
         } else {
             // No tokens found - monitoring already started above if enableOfflineMode
             DispatchQueue.global(qos: .userInitiated).async {
                 Task {
-                    if await NetworkStatusMonitor.isActive {
+                    let networkAvailable = await NetworkStatusMonitor.isActive
+                    if networkAvailable {
                         self.setIsOfflineMode(false)
                         await self.featureFlags.start();
                         await SocialLoginUrlGenerator.shared.reloadConfigs()
@@ -536,8 +490,8 @@ public class FronteggAuth: FronteggState {
                 logger.info("Saved tokens for tenant: \(tenantIdToUse!)")
             } else {
                 // Store tokens globally (legacy behavior)
-            try self.credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: refreshToken)
-            try self.credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: accessToken)
+                try self.credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: refreshToken)
+                try self.credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: accessToken)
             }
             
             var userToUse = user
@@ -717,7 +671,7 @@ public class FronteggAuth: FronteggState {
     
     
     
-    func scheduleTokenRefresh(offset: TimeInterval, attempts: Int = 0) {
+    func scheduleTokenRefresh(offset: TimeInterval, attempts: Int = 0, skipNetworkCheck: Bool = false) {
         cancelScheduledTokenRefresh()
         logger.info("Schedule token refresh after, (\(offset) s) (attempt: \(attempts))")
         
@@ -725,7 +679,7 @@ public class FronteggAuth: FronteggState {
         workItem = DispatchWorkItem { [weak self] in
             guard let self = self, !(workItem!.isCancelled) else { return }
             Task {
-                await self.refreshTokenIfNeeded(attempts: attempts)
+                await self.refreshTokenIfNeeded(attempts: attempts, skipNetworkCheck: skipNetworkCheck)
             }
         }
         refreshTokenDispatch = workItem
@@ -927,7 +881,8 @@ public class FronteggAuth: FronteggState {
         error: Error?,
         enableOfflineMode: Bool,
         attempts: Int,
-        preferredOffset: TimeInterval? = nil
+        preferredOffset: TimeInterval? = nil,
+        skipNetworkCheck: Bool = false
     ) {
         // Classify + choose offset once
         let isConn = error.map { isConnectivityError($0) } ?? true // treat nil as connectivity (e.g., no active internet path)
@@ -946,13 +901,26 @@ public class FronteggAuth: FronteggState {
             DispatchQueue.main.async {
                 self.setUser(self.user ?? offlineUserData)
                 self.setInitializing(false)
-                self.setIsAuthenticated(false)
+                if self.refreshToken != nil || self.accessToken != nil {
+                    self.setIsAuthenticated(true)
+                } else {
+                    self.setIsAuthenticated(false)
+                }
                 self.setIsOfflineMode(true)
                 self.setIsLoading(false)
             }
         }
         
-        scheduleTokenRefresh(offset: offset, attempts: attempts + 1)
+        // When skipNetworkCheck is true and we have tokens, don't schedule refreshes
+        // This prevents scheduled refreshes from calling isActive (which triggers /test calls)
+        // In offline mode with tokens, we want the user to stay logged in without network checks
+        if skipNetworkCheck && (self.refreshToken != nil || self.accessToken != nil) {
+            // Don't schedule refresh - user has tokens and we want to avoid /test calls
+            self.logger.info("Skipping token refresh scheduling to avoid /test calls (offline with tokens)")
+            return
+        }
+        
+        scheduleTokenRefresh(offset: offset, attempts: attempts + 1, skipNetworkCheck: skipNetworkCheck)
     }
     
     public func recheckConnection() {
@@ -971,7 +939,7 @@ public class FronteggAuth: FronteggState {
     }
     
     @discardableResult
-    public func refreshTokenIfNeeded(attempts: Int = 0) async -> Bool {
+    public func refreshTokenIfNeeded(attempts: Int = 0, skipNetworkCheck: Bool = false) async -> Bool {
         let config = try? PlistHelper.fronteggConfig()
         let enableOfflineMode = config?.enableOfflineMode ?? false
         let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
@@ -1027,15 +995,19 @@ public class FronteggAuth: FronteggState {
         }
         
         // Hard no-network (quick exit path) → route through the central handler
-        guard await NetworkStatusMonitor.isActive else {
-            self.logger.info("Refresh rescheduled due to inactive internet")
-            handleOfflineLikeFailure(
-                error: nil,                      // nil → treat as connectivity
-                enableOfflineMode: enableOfflineMode,
-                attempts: attempts,
-                preferredOffset: 2               // keep your existing offset
-            )
-            return false
+        // Skip network check if requested (e.g., when user is logged in and monitoring is stopped)
+        // This prevents unnecessary /test calls when monitoring is not active
+        if !skipNetworkCheck {
+            guard await NetworkStatusMonitor.isActive else {
+                self.logger.info("Refresh rescheduled due to inactive internet")
+                handleOfflineLikeFailure(
+                    error: nil,                      // nil → treat as connectivity
+                    enableOfflineMode: enableOfflineMode,
+                    attempts: attempts,
+                    preferredOffset: 2               // keep your existing offset
+                )
+                return false
+            }
         }
         
         if enableOfflineMode && self.lastAttemptReason == .noNetwork {
@@ -1134,7 +1106,8 @@ public class FronteggAuth: FronteggState {
             handleOfflineLikeFailure(
                 error: error,
                 enableOfflineMode: enableOfflineMode,
-                attempts: attempts
+                attempts: attempts,
+                skipNetworkCheck: skipNetworkCheck
             )
             return false
             
@@ -1142,7 +1115,8 @@ public class FronteggAuth: FronteggState {
             handleOfflineLikeFailure(
                 error: error,
                 enableOfflineMode: enableOfflineMode,
-                attempts: attempts
+                attempts: attempts,
+                skipNetworkCheck: skipNetworkCheck
             )
             return false
         }
@@ -1339,7 +1313,7 @@ public class FronteggAuth: FronteggState {
                     } catch {
                         // If tenant-specific refresh fails, fall back to standard OAuth refresh
                         self.logger.warning("Tenant-specific refresh failed in getOrRefreshAccessTokenAsync: \(error). Falling back to standard OAuth refresh.")
-                        data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: nil)
+                data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: nil)
                         self.logger.info("Standard OAuth refresh successful (fallback) in getOrRefreshAccessTokenAsync")
                     }
                 } else {
