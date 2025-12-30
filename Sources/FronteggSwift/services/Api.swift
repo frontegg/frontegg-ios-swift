@@ -72,7 +72,9 @@ public class Api {
         config.waitsForConnectivity = false
         
         let session = URLSession(configuration: config)
-        return try await session.data(for: request)
+        let (data, response) = try await session.data(for: request)
+        TraceIdLogger.shared.extractAndLogTraceId(from: response)
+        return (data, response)
     }
     
     internal func postRequest(
@@ -135,7 +137,9 @@ public class Api {
         }
         
         // Make the call
-        return try await session.data(for: request)
+        let (data, response) = try await session.data(for: request)
+        TraceIdLogger.shared.extractAndLogTraceId(from: response)
+        return (data, response)
     }
     
     internal func getRequest(
@@ -186,7 +190,9 @@ public class Api {
             session = URLSession(configuration: config, delegate: redirectHandler, delegateQueue: nil)
         }
 
-        return try await session.data(for: request)
+        let (data, response) = try await session.data(for: request)
+        TraceIdLogger.shared.extractAndLogTraceId(from: response)
+        return (data, response)
     }
 
     
@@ -221,7 +227,9 @@ public class Api {
         config.waitsForConnectivity = false
 
         let session = URLSession(configuration: config)
-        return try await session.data(for: request)
+        let (data, response) = try await session.data(for: request)
+        TraceIdLogger.shared.extractAndLogTraceId(from: response)
+        return (data, response)
     }
 
     
@@ -427,6 +435,7 @@ public class Api {
         
         let session = URLSession(configuration: config)
         let (data, response) = try await session.data(for: request)
+        TraceIdLogger.shared.extractAndLogTraceId(from: response)
         
         if let httpResponse = response as? HTTPURLResponse {
             if httpResponse.statusCode == 200 || httpResponse.statusCode == 204 {
