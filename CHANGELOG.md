@@ -1,3 +1,14 @@
+## v1.2.62
+- Offline Mode /test Calls Fixes
+- Network Monitoring Enhancements
+- Session Per Tenant Fixes
+- Offline Authentication Improvements
+- **New debug utility**: Added `TraceIdLogger` class to capture and store `frontegg-trace-id` headers from API responses
+- **Configurable via plist**: Added `enableTraceIdLogging` boolean flag to `FronteggPlist` config
+-  **Configurable monitoring interval**: Added `networkMonitoringInterval` config option (defaults to 10 seconds) to control frequency of `/test` calls
+- fixed keychain error in demo app
+- added more debug logs
+
 ## v1.2.61
 - Only one subscription exists at a time (previous ones are canceled)
 - Only one monitoring instance runs at a time (stopped before starting)

@@ -1,3 +1,9 @@
+## v1.2.61
+- Only one subscription exists at a time (previous ones are canceled)
+- Only one monitoring instance runs at a time (stopped before starting)
+- Rapid successive calls are debounced to prevent multiple simultaneous starts
+- /test calls only occur when the user is not logged in (no tokens)
+
 ## v1.2.60
 - Before login (login screen shown): /test calls run every 10 seconds to check connectivity
 - After login (user authenticated): /test calls stop completely, reducing network usage
