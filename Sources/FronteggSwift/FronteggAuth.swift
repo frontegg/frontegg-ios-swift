@@ -10,6 +10,7 @@ import Combine
 import AuthenticationServices
 import UIKit
 import SwiftUI
+import Network
 
 
 extension UIWindow {
@@ -398,9 +399,14 @@ public class FronteggAuth: FronteggState {
             // Observe accessToken changes to start/stop monitoring
             // We check accessToken instead of isAuthenticated because in offline mode,
             // isAuthenticated can be false even when user has tokens stored
-            let cancellable = self.$accessToken.sink { _ in
-                updateMonitoring()
-            }
+            // Use dropFirst(1) to skip the initial nil value and removeDuplicates to prevent unnecessary calls
+            let cancellable = self.$accessToken
+                .removeDuplicates()
+                .dropFirst(1) // Skip initial nil value
+                .sink { [weak self] _ in
+                    guard let self = self else { return }
+                    updateMonitoring()
+                }
             networkMonitoringCancellable = cancellable
             cancellable.store(in: &subscribers)
             
@@ -466,20 +472,96 @@ public class FronteggAuth: FronteggState {
         }.store(in: &subscribers)
         
         if let refreshToken = refreshToken, let accessToken = accessToken {
-            // Set tokens before checking monitoring - this will trigger the subscription
-            // which will properly stop monitoring since we have tokens
+            // IMPORTANT: Stop monitoring FIRST and set flag to false BEFORE setting tokens
+            // This prevents any race conditions where monitoring might start
+            self.monitoringLock.lock()
+            self.isMonitoringActive = false
+            self.monitoringLock.unlock()
+            
+            // Explicitly stop any existing monitoring
+            NetworkStatusMonitor.stopBackgroundMonitoring()
+            if let token = self.networkMonitoringToken {
+                NetworkStatusMonitor.removeOnChange(token)
+                self.networkMonitoringToken = nil
+            }
+            
+            // Now set tokens - the subscription will see tokens exist and won't start monitoring
             setRefreshToken(refreshToken)
             setAccessToken(accessToken)
-            setIsLoading(true)
             
-            DispatchQueue.global(qos: .userInitiated).async {
-                Task {
-                    if await NetworkStatusMonitor.isActive {
-                        await self.featureFlags.start();
-                        await SocialLoginUrlGenerator.shared.reloadConfigs()
-                        self.warmingWebViewAsync()
+            // For offline mode, check network path status without making /test calls
+            // If offline and we have tokens, keep user logged in without attempting refresh
+            if enableOfflineMode {
+                DispatchQueue.global(qos: .userInitiated).async {
+                    Task {
+                        // Use NWPathMonitor to check network path without making HTTP calls
+                        let monitor = NWPathMonitor()
+                        let queue = DispatchQueue(label: "NetworkPathCheck")
+                        let semaphore = DispatchSemaphore(value: 0)
+                        var isNetworkAvailable = false
+                        
+                        monitor.pathUpdateHandler = { path in
+                            isNetworkAvailable = (path.status == .satisfied)
+                            semaphore.signal()
+                            monitor.cancel()
+                        }
+                        
+                        monitor.start(queue: queue)
+                        _ = semaphore.wait(timeout: .now() + 0.5) // Wait max 0.5s for path status
+                        monitor.cancel()
+                        
+                        if !isNetworkAvailable {
+                            // Network unavailable - keep user logged in offline
+                            self.logger.info("Network path unavailable on startup, keeping user logged in offline")
+                            
+                            // Cancel any scheduled token refreshes to prevent network abuse
+                            self.cancelScheduledTokenRefresh()
+                            
+                            // Load offline user data if available
+                            if let offlineUser = self.credentialManager.getOfflineUser() {
+                                await MainActor.run {
+                                    self.setUser(offlineUser)
+                                    self.setIsAuthenticated(true)
+                                    self.setIsOfflineMode(true)
+                                    self.setIsLoading(false)
+                                    self.setInitializing(false)
+                                }
+                            } else {
+                                // No offline user data, but still keep authenticated with tokens
+                                await MainActor.run {
+                                    self.setIsAuthenticated(true)
+                                    self.setIsOfflineMode(true)
+                                    self.setIsLoading(false)
+                                    self.setInitializing(false)
+                                }
+                            }
+                        } else {
+                            // Network available - proceed with normal initialization and token refresh
+                            await MainActor.run {
+                                self.setIsLoading(true)
+                            }
+                            
+                            await self.featureFlags.start();
+                            await SocialLoginUrlGenerator.shared.reloadConfigs()
+                            self.warmingWebViewAsync()
+                            
+                            await self.refreshTokenIfNeeded()
+                        }
                     }
-                    await self.refreshTokenIfNeeded()
+                }
+            } else {
+                // Offline mode not enabled - proceed with normal initialization
+                setIsLoading(true)
+                
+                DispatchQueue.global(qos: .userInitiated).async {
+                    Task {
+                        if await NetworkStatusMonitor.isActive {
+                            await self.featureFlags.start();
+                            await SocialLoginUrlGenerator.shared.reloadConfigs()
+                            self.warmingWebViewAsync()
+                        }
+                        await self.refreshTokenIfNeeded()
+                    }
                 }
             }
         } else {
@@ -971,12 +1053,24 @@ public class FronteggAuth: FronteggState {
         
         if enableOfflineMode {
             let offlineUserData = self.credentialManager.getOfflineUser()
+            // If we have tokens, keep user authenticated even when offline
+            let hasTokens = (self.refreshToken != nil || self.accessToken != nil)
             DispatchQueue.main.async {
                 self.setUser(self.user ?? offlineUserData)
                 self.setInitializing(false)
-                self.setIsAuthenticated(false)
+                // Only set isAuthenticated to false if we don't have tokens
+                // If we have tokens, keep user logged in offline
+                self.setIsAuthenticated(hasTokens)
                 self.setIsOfflineMode(true)
                 self.setIsLoading(false)
+            }
+            
+            // If we have tokens and we're offline, DON'T schedule token refreshes
+            // This prevents repeated network calls when offline
+            if hasTokens {
+                self.logger.info("Offline with tokens - canceling scheduled token refreshes to avoid network abuse")
+                self.cancelScheduledTokenRefresh()
+                return // Don't schedule another refresh
             }
         }
         
@@ -1055,15 +1149,46 @@ public class FronteggAuth: FronteggState {
         }
         
         // Hard no-network (quick exit path) → route through the central handler
-        guard await NetworkStatusMonitor.isActive else {
-            self.logger.info("Refresh rescheduled due to inactive internet")
-            handleOfflineLikeFailure(
-                error: nil,                      // nil → treat as connectivity
-                enableOfflineMode: enableOfflineMode,
-                attempts: attempts,
-                preferredOffset: 2               // keep your existing offset
-            )
-            return false
+        // IMPORTANT: When offline mode is enabled and we have tokens, we should NOT make /test calls
+        // Use NWPathMonitor to check network path without making HTTP calls
+        if enableOfflineMode {
+            let monitor = NWPathMonitor()
+            let queue = DispatchQueue(label: "NetworkPathCheckRefresh")
+            let semaphore = DispatchSemaphore(value: 0)
+            var isNetworkAvailable = false
+            
+            monitor.pathUpdateHandler = { path in
+                isNetworkAvailable = (path.status == .satisfied)
+                semaphore.signal()
+                monitor.cancel()
+            }
+            
+            monitor.start(queue: queue)
+            _ = semaphore.wait(timeout: .now() + 0.3) // Quick check, max 0.3s
+            monitor.cancel()
+            
+            guard isNetworkAvailable else {
+                self.logger.info("Refresh rescheduled due to inactive internet (path check, no /test call)")
+                handleOfflineLikeFailure(
+                    error: nil,                      // nil → treat as connectivity
+                    enableOfflineMode: enableOfflineMode,
+                    attempts: attempts,
+                    preferredOffset: 2               // keep your existing offset
+                )
+                return false
+            }
+        } else {
+            // Offline mode not enabled - use NetworkStatusMonitor.isActive (will make /test call)
+            guard await NetworkStatusMonitor.isActive else {
+                self.logger.info("Refresh rescheduled due to inactive internet")
+                handleOfflineLikeFailure(
+                    error: nil,                      // nil → treat as connectivity
+                    enableOfflineMode: enableOfflineMode,
+                    attempts: attempts,
+                    preferredOffset: 2               // keep your existing offset
+                )
+                return false
+            }
         }
         
         if enableOfflineMode && self.lastAttemptReason == .noNetwork {
