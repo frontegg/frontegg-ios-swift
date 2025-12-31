@@ -157,11 +157,10 @@ public enum NetworkStatusMonitor {
 
     // Cached state for background monitoring
     private static var _cachedReachable = false
-    
-    // Guard to prevent multiple simultaneous starts
+    private static var _hasInitialCheckFired = false
+    private static let _initialCheckLock = NSLock()
     private static var _isMonitoringActive = false
     private static let _monitoringLock = NSLock()
-    private static var _hasInitialCheckFired = false
     private static var _initialCheckTask: Task<Void, Never>?
 
     // MARK: Handler storage (token-backed) + stable index mapping
@@ -244,19 +243,16 @@ public enum NetworkStatusMonitor {
         interval: TimeInterval = 10,
         onChange: ((Bool) -> Void)? = nil
     ) {
-        // Prevent multiple simultaneous starts
+        // Prevent multiple simultaneous starts - check and set flag atomically
         _monitoringLock.lock()
-        let wasActive = _isMonitoringActive
-        guard !wasActive else {
+        if _isMonitoringActive {
             _monitoringLock.unlock()
-            // Already monitoring, skip duplicate start
-            return
+            return // Already monitoring, skip duplicate start
         }
         _isMonitoringActive = true
-        _hasInitialCheckFired = false // Reset flag for new monitoring session (inside lock)
         _monitoringLock.unlock()
         
-        // Stop any existing monitoring resources before starting new one (defensive cleanup)
+        // Stop any existing monitoring resources (defensive cleanup)
         backgroundTimer?.cancel()
         backgroundTimer = nil
         pathMonitor?.cancel()
@@ -267,7 +263,12 @@ public enum NetworkStatusMonitor {
             _ = addOnChange(handler)
         }
 
-        // Cancel any pending initial check
+        // Reset initial check flag for new monitoring session
+        _initialCheckLock.lock()
+        _hasInitialCheckFired = false
+        _initialCheckLock.unlock()
+        
+        // Cancel any pending initial check task
         _initialCheckTask?.cancel()
         _initialCheckTask = nil
         
@@ -308,20 +309,16 @@ public enum NetworkStatusMonitor {
                     updateCached(true, forceEmit: true) // route-only success
                 }
             } else {
-                // Not initial check - update cached state without making /test call
-                // The periodic timer will handle server connectivity checks
-                if path.status != .satisfied {
-                    updateCached(false)
-                } else if configuredBaseURLString == nil {
-                    updateCached(true) // route-only success
-                }
-                // If path is satisfied and we have baseURL, don't update here - let periodic timer handle it
+                // No base URL configured, just use path status
+                updateCached(true)
             }
         }
         pathMonitor = monitor
         monitor.start(queue: pathQueue)
 
         // Periodic active probe (only if strict mode is configured)
+        // Schedule timer to start after the full interval to avoid duplicate initial call
+        // (pathUpdateHandler already provides the initial check when monitor.start() is called)
         if configuredBaseURLString != nil {
             let t = DispatchSource.makeTimerSource(queue: backgroundQueue)
             t.schedule(deadline: .now() + interval, repeating: interval)
@@ -342,11 +339,12 @@ public enum NetworkStatusMonitor {
     public static func stopBackgroundMonitoring() {
         _monitoringLock.lock()
         _isMonitoringActive = false
-        _hasInitialCheckFired = false // Reset flag when stopping
         _monitoringLock.unlock()
-        
         _initialCheckTask?.cancel()
         _initialCheckTask = nil
+        _initialCheckLock.lock()
+        _hasInitialCheckFired = false
+        _initialCheckLock.unlock()
         backgroundTimer?.cancel()
         backgroundTimer = nil
         pathMonitor?.cancel()
@@ -356,6 +354,22 @@ public enum NetworkStatusMonitor {
     /// Keeps your existing call site: `guard await NetworkStatusMonitor.isActive else { ... }`
     public static var isActive: Bool {
         get async {
+            // If background monitoring is active, use cached value to avoid duplicate /test calls
+            // Background monitoring will keep the cache updated via periodic checks
+            _monitoringLock.lock()
+            let monitoringActive = _isMonitoringActive
+            _monitoringLock.unlock()
+            
+            if monitoringActive {
+                // Return cached value when background monitoring is active
+                // This prevents duplicate /test calls during the initial monitoring phase
+                stateLock.lock()
+                let cached = _cachedReachable
+                stateLock.unlock()
+                return cached
+            }
+            
+            // When monitoring is not active, perform a fresh check (on-demand)
             if let base = configuredBaseURLString {
                 let ok = await checkServerConnectivity(baseURLString: base)
                 updateCached(ok, forceEmit: true)
