@@ -11,6 +11,7 @@ import Combine
 import AuthenticationServices
 import UIKit
 import SwiftUI
+import Network
 
 
 extension UIWindow {
@@ -310,12 +311,13 @@ public class FronteggAuth: FronteggState {
             accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue)
         }
         
+        // Check if tokens exist BEFORE setting up monitoring
+        let hasTokensInKeychain = (refreshToken != nil && accessToken != nil)
+        
         if enableOfflineMode {
             NetworkStatusMonitor.configure(baseURLString: "\(self.baseUrl)/test")
             
             let monitoringInterval = config?.networkMonitoringInterval ?? 10
-            
-            let hasTokensInKeychain = (accessToken != nil && refreshToken != nil)
             
             // Track that we're initializing with tokens to prevent subscription from starting monitoring
             if hasTokensInKeychain {
@@ -330,45 +332,36 @@ public class FronteggAuth: FronteggState {
                 .dropFirst(dropCount)
                 .sink { [weak self] accessToken in
                     guard let self = self else { return }
-                    
-                    // During initialization with tokens, never start monitoring
-                    // Wait until initialization is complete before allowing subscription to start monitoring
-                    if self.isInitializingWithTokens {
-                        // Still initializing - don't start monitoring, just ensure it's stopped
-                        NetworkStatusMonitor.stopBackgroundMonitoring()
-                        if let token = self.networkMonitoringToken {
-                            NetworkStatusMonitor.removeOnChange(token)
-                            self.networkMonitoringToken = nil
-                        }
-                        return
-                    }
-                    
-                    // After initialization, handle normal token changes
-                    if accessToken != nil {
-                        // Token was set - ensure monitoring is stopped
-                        NetworkStatusMonitor.stopBackgroundMonitoring()
-                        if let token = self.networkMonitoringToken {
-                            NetworkStatusMonitor.removeOnChange(token)
-                            self.networkMonitoringToken = nil
-                        }
-                    } else {
-                        // Token was cleared - start monitoring
-                        NetworkStatusMonitor.stopBackgroundMonitoring()
-                        if let token = self.networkMonitoringToken {
-                            NetworkStatusMonitor.removeOnChange(token)
-                            self.networkMonitoringToken = nil
-                        }
+                    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                        guard let self = self else { return }
                         
-                        let token = NetworkStatusMonitor.addOnChangeReturningToken { [weak self] reachable in
-                            guard let self = self else { return }
-                            if reachable {
-                                self.reconnectedToInternet()
-                            } else {
-                                self.disconnectedFromInternet()
+                        // After initialization, handle normal token changes
+                        if accessToken != nil {
+                            // Token was set - ensure monitoring is stopped
+                            NetworkStatusMonitor.stopBackgroundMonitoring()
+                            if let token = self.networkMonitoringToken {
+                                NetworkStatusMonitor.removeOnChange(token)
+                                self.networkMonitoringToken = nil
                             }
+                        } else {
+                            // Token was cleared - start monitoring
+                            NetworkStatusMonitor.stopBackgroundMonitoring()
+                            if let token = self.networkMonitoringToken {
+                                NetworkStatusMonitor.removeOnChange(token)
+                                self.networkMonitoringToken = nil
+                            }
+                            
+                            let token = NetworkStatusMonitor.addOnChangeReturningToken { [weak self] reachable in
+                                guard let self = self else { return }
+                                if reachable {
+                                    self.reconnectedToInternet()
+                                } else {
+                                    self.disconnectedFromInternet()
+                                }
+                            }
+                            self.networkMonitoringToken = token
+                            NetworkStatusMonitor.startBackgroundMonitoring(interval: monitoringInterval, onChange: nil)
                         }
-                        self.networkMonitoringToken = token
-                        NetworkStatusMonitor.startBackgroundMonitoring(interval: monitoringInterval, onChange: nil)
                     }
                 }.store(in: &subscribers)
             
@@ -393,42 +386,104 @@ public class FronteggAuth: FronteggState {
             }
             
             if let refreshToken = refreshToken, let accessToken = accessToken {
-                setRefreshToken(refreshToken)
-                setAccessToken(accessToken)
-                // Clear initialization flag after tokens are set (prevents subscription from starting monitoring)
-                self.isInitializingWithTokens = false
+                // Clear initialization flag - tokens will be set after this block
+                self.isInitializingWithTokens = true
             } else {
                 // Clear flag if no tokens (initialization complete even without tokens)
                 self.isInitializingWithTokens = false
             }
         } else {
-            if let refreshToken = refreshToken, let accessToken = accessToken {
-                setRefreshToken(refreshToken)
-                setAccessToken(accessToken)
-            }
             // Clear flag (initialization complete)
             self.isInitializingWithTokens = false
         }
         
         if let refreshToken = refreshToken, let accessToken = accessToken {
-            setIsLoading(true)
+            // Explicitly stop any existing monitoring before setting tokens
+            NetworkStatusMonitor.stopBackgroundMonitoring()
+            if let token = self.networkMonitoringToken {
+                NetworkStatusMonitor.removeOnChange(token)
+                self.networkMonitoringToken = nil
+            }
             
-            DispatchQueue.global(qos: .userInitiated).async {
-                Task {
-                    // When tokens exist, try to refresh but don't start monitoring if offline
-                    // Skip network check to prevent /test call when monitoring is stopped
-                    await self.featureFlags.start();
-                    await SocialLoginUrlGenerator.shared.reloadConfigs()
-                    self.warmingWebViewAsync()
-                    
-                    // Try to refresh token, but handle offline gracefully without starting monitoring
-                    do {
-                        // Try to check network without triggering /test call
-                        // If network check would trigger /test, just proceed and let refresh fail naturally
-                        let _ = await self.refreshTokenIfNeeded(skipNetworkCheck: true)
-                    } catch {
-                        // If refresh fails due to network, that's okay - user stays logged in with existing tokens
-                        self.logger.info("Token refresh failed (likely offline), user remains logged in with existing tokens")
+            // Set tokens - the subscription will see tokens exist and won't start monitoring
+            setRefreshToken(refreshToken)
+            setAccessToken(accessToken)
+            
+            // Clear initialization flag after tokens are set
+            self.isInitializingWithTokens = false
+            
+            // For offline mode, check network path status without making /test calls
+            // If offline and we have tokens, keep user logged in without attempting refresh
+            if enableOfflineMode {
+                DispatchQueue.global(qos: .userInitiated).async {
+                    Task {
+                        // Use NWPathMonitor to check network path without making HTTP calls
+                        let monitor = NWPathMonitor()
+                        let queue = DispatchQueue(label: "NetworkPathCheck")
+                        let semaphore = DispatchSemaphore(value: 0)
+                        var isNetworkAvailable = false
+                        
+                        monitor.pathUpdateHandler = { path in
+                            isNetworkAvailable = (path.status == .satisfied)
+                            semaphore.signal()
+                            monitor.cancel()
+                        }
+                        
+                        monitor.start(queue: queue)
+                        _ = semaphore.wait(timeout: .now() + 0.5) // Wait max 0.5s for path status
+                        monitor.cancel()
+                        
+                        if !isNetworkAvailable {
+                            // Network unavailable - keep user logged in offline
+                            self.logger.info("Network path unavailable on startup, keeping user logged in offline")
+                            
+                            // Cancel any scheduled token refreshes to prevent network abuse
+                            self.cancelScheduledTokenRefresh()
+                            
+                            // Load offline user data if available
+                            if let offlineUser = self.credentialManager.getOfflineUser() {
+                                await MainActor.run {
+                                    self.setUser(offlineUser)
+                                    self.setIsAuthenticated(true)
+                                    self.setIsOfflineMode(true)
+                                    self.setIsLoading(false)
+                                    self.setInitializing(false)
+                                }
+                            } else {
+                                // No offline user data, but still keep authenticated with tokens
+                                await MainActor.run {
+                                    self.setIsAuthenticated(true)
+                                    self.setIsOfflineMode(true)
+                                    self.setIsLoading(false)
+                                    self.setInitializing(false)
+                                }
+                            }
+                        } else {
+                            // Network available - proceed with normal initialization and token refresh
+                            await MainActor.run {
+                                self.setIsLoading(true)
+                            }
+                            
+                            await self.featureFlags.start();
+                            await SocialLoginUrlGenerator.shared.reloadConfigs()
+                            self.warmingWebViewAsync()
+                            
+                            await self.refreshTokenIfNeeded()
+                        }
+                    }
+                }
+            } else {
+                // Offline mode not enabled - proceed with normal initialization
+                setIsLoading(true)
+                
+                DispatchQueue.global(qos: .userInitiated).async {
+                    Task {
+                        if await NetworkStatusMonitor.isActive {
+                            await self.featureFlags.start();
+                            await SocialLoginUrlGenerator.shared.reloadConfigs()
+                            self.warmingWebViewAsync()
+                        }
+                        await self.refreshTokenIfNeeded()
                     }
                 }
             }
@@ -455,7 +510,7 @@ public class FronteggAuth: FronteggState {
     }
     
     
-    public func setCredentials(accessToken: String, refreshToken: String) async {
+    public func setCredentials(accessToken: String, refreshToken: String, user: User? = nil) async {
         self.logger.info("Setting credentials (refresh token length: \(refreshToken.count))")
         
         do {
@@ -464,8 +519,16 @@ public class FronteggAuth: FronteggState {
             
             // Decode token to get tenantId
             let decode = try JWTHelper.decode(jwtToken: accessToken)
-            guard let user = try await self.api.me(accessToken: accessToken) else {
-                throw FronteggError.authError(.failedToLoadUserData("User data is nil"))
+            
+            // Use provided user if available, otherwise fetch from API
+            let userToUse: User
+            if let providedUser = user {
+                userToUse = providedUser
+            } else {
+                guard let fetchedUser = try await self.api.me(accessToken: accessToken) else {
+                    throw FronteggError.authError(.failedToLoadUserData("User data is nil"))
+                }
+                userToUse = fetchedUser
             }
             
             var tenantIdToUse: String? = nil
@@ -474,31 +537,23 @@ public class FronteggAuth: FronteggState {
             if enableSessionPerTenant {
                 if let localTenantId = credentialManager.getLastActiveTenantId() {
                     tenantIdToUse = localTenantId
-                    logger.info("Using LOCAL tenant ID: \(tenantIdToUse!) (ignoring server's active tenant: \(user.activeTenant.id))")
+                    logger.info("Using LOCAL tenant ID: \(tenantIdToUse!) (ignoring server's active tenant: \(userToUse.activeTenant.id))")
                     
-                    if !user.tenants.contains(where: { $0.id == localTenantId }) {
-                        logger.error("CRITICAL: Local tenant ID (\(localTenantId)) not found in user's tenants list! Available: \(user.tenants.map { $0.id }). This should not happen.")
+                    if !userToUse.tenants.contains(where: { $0.id == localTenantId }) {
+                        logger.error("CRITICAL: Local tenant ID (\(localTenantId)) not found in user's tenants list! Available: \(userToUse.tenants.map { $0.id }). This should not happen.")
                     }
                 } else {
-                    tenantIdToUse = user.activeTenant.id
+                    tenantIdToUse = userToUse.activeTenant.id
                     self.credentialManager.saveLastActiveTenantId(tenantIdToUse!)
                     logger.info("No local tenant stored, using server's active tenant: \(tenantIdToUse!) (saved as local tenant)")
                 }
-                
-                try self.credentialManager.saveTokenForTenant(refreshToken, tenantId: tenantIdToUse!, tokenType: .refreshToken)
-                try self.credentialManager.saveTokenForTenant(accessToken, tenantId: tenantIdToUse!, tokenType: .accessToken)
-                logger.info("Saved tokens for tenant: \(tenantIdToUse!)")
-            } else {
-                // Store tokens globally (legacy behavior)
-                try self.credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: refreshToken)
-                try self.credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: accessToken)
             }
             
-            var userToUse = user
+            var finalUserToUse = userToUse
             if enableSessionPerTenant, let localTenantId = tenantIdToUse {
-                if let matchingTenant = user.tenants.first(where: { $0.id == localTenantId }) {
+                if let matchingTenant = userToUse.tenants.first(where: { $0.id == localTenantId }) {
                     do {
-                        var userDict = try JSONEncoder().encode(user)
+                        var userDict = try JSONEncoder().encode(userToUse)
                         var userJson = try JSONSerialization.jsonObject(with: userDict) as! [String: Any]
                         
                         if let matchingTenantData = try? JSONEncoder().encode(matchingTenant),
@@ -507,10 +562,10 @@ public class FronteggAuth: FronteggState {
                             userJson["tenantId"] = matchingTenant.tenantId
                             
                             let modifiedUserData = try JSONSerialization.data(withJSONObject: userJson)
-                            userToUse = try JSONDecoder().decode(User.self, from: modifiedUserData)
+                            finalUserToUse = try JSONDecoder().decode(User.self, from: modifiedUserData)
                             
-                            if localTenantId != user.activeTenant.id {
-                                logger.info("Modified user to use local tenant (\(localTenantId)) instead of server's active tenant (\(user.activeTenant.id))")
+                            if localTenantId != userToUse.activeTenant.id {
+                                logger.info("Modified user to use local tenant (\(localTenantId)) instead of server's active tenant (\(userToUse.activeTenant.id))")
                             } else {
                                 logger.info("User already matches local tenant (\(localTenantId))")
                             }
@@ -519,18 +574,16 @@ public class FronteggAuth: FronteggState {
                         logger.warning("Failed to modify user for local tenant: \(error). Using server's active tenant.")
                     }
                 } else {
-                    logger.error("Local tenant ID (\(localTenantId)) not found in user's tenants list. This should not happen. Available tenants: \(user.tenants.map { $0.id })")
+                    logger.error("Local tenant ID (\(localTenantId)) not found in user's tenants list. This should not happen. Available tenants: \(userToUse.tenants.map { $0.id })")
                 }
             }
             
-            if let config = config, config.enableOfflineMode {
-                self.credentialManager.saveOfflineUser(user: userToUse)
-            }
-            
+            // Set in-memory state FIRST before saving to keychain
+            // This ensures user stays logged in even if keychain save fails
             await MainActor.run {
                 setRefreshToken(refreshToken)
                 setAccessToken(accessToken)
-                setUser(userToUse)
+                setUser(finalUserToUse)
                 setIsAuthenticated(true)
                 setIsOfflineMode(false)
                 setAppLink(false)
@@ -545,9 +598,36 @@ public class FronteggAuth: FronteggState {
                 scheduleTokenRefresh(offset: offset)
             }
             
+            // Now try to save to keychain (non-critical - user is already logged in)
+            // If this fails, we log a warning but don't fail the login
+            do {
+                if enableSessionPerTenant, let tenantId = tenantIdToUse {
+                    try self.credentialManager.saveTokenForTenant(refreshToken, tenantId: tenantId, tokenType: .refreshToken)
+                    try self.credentialManager.saveTokenForTenant(accessToken, tenantId: tenantId, tokenType: .accessToken)
+                    logger.info("Saved tokens for tenant: \(tenantId)")
+                } else {
+                    // Store tokens globally (legacy behavior)
+                    try self.credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: refreshToken)
+                    try self.credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: accessToken)
+                    logger.info("Saved tokens to keychain")
+                }
+                
+                if let config = config, config.enableOfflineMode {
+                    self.credentialManager.saveOfflineUser(user: finalUserToUse)
+                }
+            } catch {
+                // Keychain save failed, but user is already logged in
+                // Log warning but don't fail the login - tokens are in memory
+                logger.warning("Failed to save credentials to keychain (user will remain logged in for this session): \(error)")
+                // Try to save offline user anyway (might work even if token save failed)
+                if let config = config, config.enableOfflineMode {
+                    self.credentialManager.saveOfflineUser(user: finalUserToUse)
+                }
+            }
+            
         } catch {
             await MainActor.run {
-                logger.error("Failed to load user data: \(error)")
+                logger.error("Failed to set credentials: \(error)")
                 setRefreshToken(nil)
                 setAccessToken(nil)
                 setUser(nil)
@@ -898,16 +978,24 @@ public class FronteggAuth: FronteggState {
         
         if enableOfflineMode {
             let offlineUserData = self.credentialManager.getOfflineUser()
+            // If we have tokens, keep user authenticated even when offline
+            let hasTokens = (self.refreshToken != nil || self.accessToken != nil)
             DispatchQueue.main.async {
                 self.setUser(self.user ?? offlineUserData)
                 self.setInitializing(false)
-                if self.refreshToken != nil || self.accessToken != nil {
-                    self.setIsAuthenticated(true)
-                } else {
-                    self.setIsAuthenticated(false)
-                }
+                // Only set isAuthenticated to false if we don't have tokens
+                // If we have tokens, keep user logged in offline
+                self.setIsAuthenticated(hasTokens)
                 self.setIsOfflineMode(true)
                 self.setIsLoading(false)
+            }
+            
+            // If we have tokens and we're offline, DON'T schedule token refreshes
+            // This prevents repeated network calls when offline
+            if hasTokens {
+                self.logger.info("Offline with tokens - canceling scheduled token refreshes to avoid network abuse")
+                self.cancelScheduledTokenRefresh()
+                return // Don't schedule another refresh
             }
         }
         
@@ -995,9 +1083,36 @@ public class FronteggAuth: FronteggState {
         }
         
         // Hard no-network (quick exit path) → route through the central handler
-        // Skip network check if requested (e.g., when user is logged in and monitoring is stopped)
-        // This prevents unnecessary /test calls when monitoring is not active
-        if !skipNetworkCheck {
+        // IMPORTANT: When offline mode is enabled and we have tokens, we should NOT make /test calls
+        // Use NWPathMonitor to check network path without making HTTP calls
+        if enableOfflineMode {
+            let monitor = NWPathMonitor()
+            let queue = DispatchQueue(label: "NetworkPathCheckRefresh")
+            let semaphore = DispatchSemaphore(value: 0)
+            var isNetworkAvailable = false
+            
+            monitor.pathUpdateHandler = { path in
+                isNetworkAvailable = (path.status == .satisfied)
+                semaphore.signal()
+                monitor.cancel()
+            }
+            
+            monitor.start(queue: queue)
+            _ = semaphore.wait(timeout: .now() + 0.3) // Quick check, max 0.3s
+            monitor.cancel()
+            
+            guard isNetworkAvailable else {
+                self.logger.info("Refresh rescheduled due to inactive internet (path check, no /test call)")
+                handleOfflineLikeFailure(
+                    error: nil,                      // nil → treat as connectivity
+                    enableOfflineMode: enableOfflineMode,
+                    attempts: attempts,
+                    preferredOffset: 2               // keep your existing offset
+                )
+                return false
+            }
+        } else {
+            // Offline mode not enabled - use NetworkStatusMonitor.isActive (will make /test call)
             guard await NetworkStatusMonitor.isActive else {
                 self.logger.info("Refresh rescheduled due to inactive internet")
                 handleOfflineLikeFailure(
@@ -1138,6 +1253,10 @@ public class FronteggAuth: FronteggState {
         let redirectUri = redirectUri ?? generateRedirectUri()
         setIsLoading(true)
         
+        logger.info("🔵 [Social Login Debug] Redirect URI for token exchange: \(redirectUri)")
+        logger.info("🔵 [Social Login Debug] Code verifier: \(codeVerifier != nil ? "provided" : "nil")")
+        logger.info("🔵 [Social Login Debug] Code length: \(code.count) characters")
+        
         Task {
             
             logger.info("Going to exchange token with redirectUri: \(redirectUri), codeVerifier: \(codeVerifier != nil ? "provided" : "nil")")
@@ -1148,6 +1267,8 @@ public class FronteggAuth: FronteggState {
             )
             
             guard error == nil else {
+                logger.error("❌ [Social Login Debug] Token exchange failed with error: \(error!.localizedDescription)")
+                logger.error("❌ [Social Login Debug] Redirect URI used: \(redirectUri)")
                 DispatchQueue.main.async {
                     completion(.failure(error!))
                     self.setIsLoading(false)
@@ -1156,12 +1277,16 @@ public class FronteggAuth: FronteggState {
             }
             
             guard let data = responseData else {
+                logger.error("❌ [Social Login Debug] Token exchange returned nil response data")
+                logger.error("❌ [Social Login Debug] Redirect URI used: \(redirectUri)")
                 DispatchQueue.main.async {
                     completion(.failure(FronteggError.authError(.failedToAuthenticate)))
                     self.setIsLoading(false)
                 }
                 return
             }
+            
+            logger.info("✅ [Social Login Debug] Token exchange succeeded")
             
             do {
                 logger.info("Going to load user data")
@@ -1171,15 +1296,17 @@ public class FronteggAuth: FronteggState {
                     DispatchQueue.main.async {
                         completion(.failure(FronteggError.authError(.failedToLoadUserData("User data is nil"))))
                         self.setIsLoading(false)
+                        self.setWebLoading(false)
                     }
                     return
                 }
                 
-                await setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
+                await setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token, user: user)
                 
                 // Call completion on main thread to avoid race conditions
                 // This ensures the completion handler always runs on the main thread
                 DispatchQueue.main.async {
+                    self.setWebLoading(false)
                     completion(.success(user))
                 }
             } catch {
@@ -1187,6 +1314,7 @@ public class FronteggAuth: FronteggState {
                 DispatchQueue.main.async {
                     completion(.failure(FronteggError.authError(.failedToLoadUserData(error.localizedDescription))))
                     self.setIsLoading(false)
+                    self.setWebLoading(false)
                 }
                 return
             }
@@ -2294,3 +2422,4 @@ public class FronteggAuth: FronteggState {
     }
     
 }
+

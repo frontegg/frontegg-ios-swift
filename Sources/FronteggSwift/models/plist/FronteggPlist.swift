@@ -31,7 +31,7 @@ struct FronteggPlist: Decodable, Equatable {
     let enableOfflineMode: Bool
     let useLegacySocialLoginFlow: Bool
     let enableSessionPerTenant: Bool
-    let networkMonitoringInterval: TimeInterval
+    var networkMonitoringInterval: TimeInterval
     let enableTraceIdLogging: Bool
 
     enum CodingKeys: CodingKey {

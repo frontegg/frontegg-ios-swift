@@ -272,44 +272,42 @@ public enum NetworkStatusMonitor {
         _initialCheckTask?.cancel()
         _initialCheckTask = nil
         
-        // Schedule a single initial check task with debounce delay to consolidate multiple rapid fires
-        // This ensures only one /test call happens after initialization settles
-        _initialCheckTask = Task {
-            // Longer delay to allow app initialization to complete and prevent rapid fire events
-            try? await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
-            
-            // Verify we're still monitoring and haven't been stopped
-            _monitoringLock.lock()
-            let stillMonitoring = _isMonitoringActive
-            _monitoringLock.unlock()
-            
-            guard stillMonitoring else { return }
-            
-            // Check if initial check has already fired (shouldn't happen, but defensive)
-            _initialCheckLock.lock()
-            let alreadyFired = _hasInitialCheckFired
-            if !alreadyFired {
-                _hasInitialCheckFired = true
-            }
-            _initialCheckLock.unlock()
-            
-            guard !alreadyFired, let base = configuredBaseURLString else { return }
-            
-            // Make the initial /test call
-            let ok = await checkServerConnectivity(baseURLString: base)
-            updateCached(ok, forceEmit: true)
-        }
-        
-        // Create new path monitor
+        // Retain the path monitor
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { path in
-            if path.status != .satisfied {
-                // Immediately update for offline state (no /test call needed)
-                updateCached(false)
-            } else if let base = configuredBaseURLString {
-                // Don't make /test call here - the scheduled initial check task handles it
-                // Just update cached state based on path availability
-                // The initial check task will make the actual /test call after delay
+            // Use lock to safely check and set the initial check flag atomically
+            // This prevents duplicate /test calls when NWPathMonitor fires multiple times rapidly
+            var shouldMakeInitialCheck = false
+            _monitoringLock.lock()
+            if !_hasInitialCheckFired && _initialCheckTask == nil {
+                _hasInitialCheckFired = true
+                shouldMakeInitialCheck = true
+            }
+            _monitoringLock.unlock()
+            
+            // Only make /test call if this is the initial fire
+            if shouldMakeInitialCheck {
+                // This is the initial check - make the /test call
+                if path.status != .satisfied {
+                    updateCached(false, forceEmit: true)
+                } else if let base = configuredBaseURLString {
+                    // Create the task and store it atomically
+                    _monitoringLock.lock()
+                    // Double-check that task doesn't exist (race condition protection)
+                    if _initialCheckTask == nil {
+                        _initialCheckTask = Task {
+                            let ok = await checkServerConnectivity(baseURLString: base)
+                            updateCached(ok, forceEmit: true)
+                            // Clear the task reference when done
+                            _monitoringLock.lock()
+                            _initialCheckTask = nil
+                            _monitoringLock.unlock()
+                        }
+                    }
+                    _monitoringLock.unlock()
+                } else {
+                    updateCached(true, forceEmit: true) // route-only success
+                }
             } else {
                 // No base URL configured, just use path status
                 updateCached(true)
