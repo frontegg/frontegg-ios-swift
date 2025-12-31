@@ -70,7 +70,15 @@ public func generateRedirectUri() -> String {
         path = ""
     }
     
-    return "\(bundleIdentifier.lowercased())://\(urlComponents.host!)\(path)/ios/oauth/callback"
+    let redirectUri = "\(bundleIdentifier.lowercased())://\(urlComponents.host!)\(path)/ios/oauth/callback"
+    let logger = getLogger("UrlHelper")
+    logger.info("🔵 [Social Login Debug] Generated redirect URI: \(redirectUri)")
+    logger.info("🔵 [Social Login Debug]   - Base URL: \(baseUrl)")
+    logger.info("🔵 [Social Login Debug]   - Bundle ID: \(bundleIdentifier)")
+    logger.info("🔵 [Social Login Debug]   - URL host: \(urlComponents.host ?? "nil")")
+    logger.info("🔵 [Social Login Debug]   - URL path: \(path)")
+    
+    return redirectUri
 }
 
 

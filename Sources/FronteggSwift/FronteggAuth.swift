@@ -1317,6 +1317,10 @@ public class FronteggAuth: FronteggState {
         let redirectUri = redirectUri ?? generateRedirectUri()
         setIsLoading(true)
         
+        logger.info("🔵 [Social Login Debug] Redirect URI for token exchange: \(redirectUri)")
+        logger.info("🔵 [Social Login Debug] Code verifier: \(codeVerifier != nil ? "provided" : "nil")")
+        logger.info("🔵 [Social Login Debug] Code length: \(code.count) characters")
+        
         Task {
             
             logger.info("Going to exchange token with redirectUri: \(redirectUri), codeVerifier: \(codeVerifier != nil ? "provided" : "nil")")
@@ -1327,6 +1331,8 @@ public class FronteggAuth: FronteggState {
             )
             
             guard error == nil else {
+                logger.error("❌ [Social Login Debug] Token exchange failed with error: \(error!.localizedDescription)")
+                logger.error("❌ [Social Login Debug] Redirect URI used: \(redirectUri)")
                 DispatchQueue.main.async {
                     completion(.failure(error!))
                     self.setIsLoading(false)
@@ -1335,12 +1341,16 @@ public class FronteggAuth: FronteggState {
             }
             
             guard let data = responseData else {
+                logger.error("❌ [Social Login Debug] Token exchange returned nil response data")
+                logger.error("❌ [Social Login Debug] Redirect URI used: \(redirectUri)")
                 DispatchQueue.main.async {
                     completion(.failure(FronteggError.authError(.failedToAuthenticate)))
                     self.setIsLoading(false)
                 }
                 return
             }
+            
+            logger.info("✅ [Social Login Debug] Token exchange succeeded")
             
             do {
                 logger.info("Going to load user data")

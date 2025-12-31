@@ -81,10 +81,19 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             }
             
             if let scheme = url.scheme, getAppURLSchemes().contains(scheme) {
+                let appSchemes = getAppURLSchemes()
+                logger.info("🔵 [Social Login Debug] Custom scheme detected: \(scheme)")
+                logger.info("🔵 [Social Login Debug] All app URL schemes: \(appSchemes)")
+                logger.info("🔵 [Social Login Debug] Custom scheme URL: \(url.absoluteString)")
+                
                 // Check if this is an OAuth callback with code - handle it directly instead of opening externally
                 if let queryItems = getQueryItems(url.absoluteString), queryItems["code"] != nil {
-                    logger.info("Detected custom scheme OAuth callback URL with code, handling as HostedLoginCallback")
+                    logger.info("✅ [Social Login Debug] Detected custom scheme OAuth callback URL with code, handling as HostedLoginCallback")
+                    logger.info("✅ [Social Login Debug] This is the expected redirect flow for social login")
                     return self.handleHostedLoginCallback(webView, url)
+                } else {
+                    logger.warning("⚠️ [Social Login Debug] Custom scheme URL detected but no code parameter found")
+                    logger.warning("⚠️ [Social Login Debug] URL: \(url.absoluteString)")
                 }
                 
                 // For other custom scheme URLs (without code), open externally
@@ -107,9 +116,12 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             // These flows use /oauth/account/redirect/iOS/{bundleId} or /oauth/account/redirect/iOS/{bundleId}/oauth/callback
             // This URL is detected as .loginRoutes but should be handled as HostedLoginCallback
             if url.path.contains("/oauth/account/redirect/iOS/") {
+                logger.info("🔵 [Social Login Debug] Intermediate redirect URL detected: \(url.absoluteString)")
                 if let queryItems = getQueryItems(url.absoluteString), queryItems["code"] != nil {
-                    logger.info("Detected intermediate redirect callback URL with code, handling as HostedLoginCallback")
+                    logger.info("✅ [Social Login Debug] Intermediate redirect callback URL with code, handling as HostedLoginCallback")
                     return self.handleHostedLoginCallback(webView, url)
+                } else {
+                    logger.warning("⚠️ [Social Login Debug] Intermediate redirect URL detected but no code parameter found")
                 }
             }
             
@@ -118,19 +130,23 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             // These URLs are detected as .loginRoutes but should be handled as HostedLoginCallback
             // EXCEPT for OIDC callback - we need to let the server redirect to custom scheme first
             if url.path.hasPrefix("/oauth/account/") {
+                logger.info("🔵 [Social Login Debug] OAuth account path detected: \(url.path)")
                 if let queryItems = getQueryItems(url.absoluteString), queryItems["code"] != nil {
                     // Check if it's an OIDC callback - let the server redirect to custom scheme first
                     if url.path.contains("/oauth/account/oidc/callback") {
-                        logger.info("Detected OIDC callback URL, allowing server to redirect to custom scheme")
+                        logger.info("🔵 [Social Login Debug] OIDC callback URL detected, allowing server to redirect to custom scheme")
+                        logger.info("🔵 [Social Login Debug] OIDC callback URL: \(url.absoluteString)")
                         // Allow the server to process the OIDC callback and redirect to custom scheme
                         // The custom scheme redirect will be caught by the custom scheme check above
                         return .allow
                     }
                     // For other callback URLs (not OIDC), handle them directly
                     if url.path.contains("/callback") || url.path.contains("/redirect/") {
-                        logger.info("Detected OAuth callback URL with code in /oauth/account/ path, handling as HostedLoginCallback")
+                        logger.info("✅ [Social Login Debug] OAuth callback URL with code in /oauth/account/ path, handling as HostedLoginCallback")
                         return self.handleHostedLoginCallback(webView, url)
                     }
+                } else {
+                    logger.warning("⚠️ [Social Login Debug] OAuth account path detected but no code parameter found: \(url.absoluteString)")
                 }
             }
 
@@ -549,10 +565,23 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     
     
     private func handleHostedLoginCallback(_ webView: WKWebView?, _ url: URL) -> WKNavigationActionPolicy {
-        logger.trace("handleHostedLoginCallback, url: \(url)")
+        let expectedRedirectUri = generateRedirectUri()
+        logger.info("🔵 [Social Login Debug] Received URL: \(url.absoluteString)")
+        logger.info("🔵 [Social Login Debug] Expected redirect_uri: \(expectedRedirectUri)")
+        logger.info("🔵 [Social Login Debug] URL scheme: \(url.scheme ?? "nil")")
+        logger.info("🔵 [Social Login Debug] URL host: \(url.host ?? "nil")")
+        logger.info("🔵 [Social Login Debug] URL path: \(url.path)")
+        logger.info("🔵 [Social Login Debug] URL query: \(url.query ?? "nil")")
+        logger.info("🔵 [Social Login Debug] Previous URL: \(previousUrl?.absoluteString ?? "nil")")
+        logger.info("🔵 [Social Login Debug] Magic link redirect URI: \(magicLinkRedirectUri ?? "nil")")
+        logger.info("🔵 [Social Login Debug] App URL schemes: \(getAppURLSchemes())")
+        logger.info("🔵 [Social Login Debug] Is custom scheme match: \(getAppURLSchemes().contains(url.scheme ?? ""))")
+        logger.info("🔵 [Social Login Debug] URL matches expected redirect URI: \(url.absoluteString.starts(with: expectedRedirectUri))")
+        
         guard let queryItems = getQueryItems(url.absoluteString),
               let code = queryItems["code"] else {
-            logger.error("failed to get extract code from hostedLoginCallback url")
+            logger.error("❌ [Social Login Debug] Failed to extract code from callback URL")
+            logger.error("❌ [Social Login Debug] URL without code parameter. Full URL: \(url.absoluteString)")
             logger.warning("URL without code parameter detected. Previous URL: \(previousUrl?.absoluteString ?? "nil"), magicLinkRedirectUri: \(magicLinkRedirectUri ?? "nil")")
             logger.info("Restarting the process by generating a new authorize url")
             let (url, codeVerifier) = AuthorizeUrlGenerator().generate()
@@ -571,6 +600,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         // Check if URL contains /oauth/account/redirect/iOS/ - this indicates an intermediate redirect
         // (used for magic link, forget password, unlock account, invite flows)
         if url.path.contains("/oauth/account/redirect/iOS/") {
+            logger.info("🔵 [Social Login Debug] Detected intermediate redirect URL (magic link flow)")
             // This is an intermediate redirect callback - extract redirect_uri from the URL itself (without query parameters)
             isMagicLink = true
             if let urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false) {
@@ -580,17 +610,18 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 redirectUriComponents.path = urlComponents.path
                 if let extractedRedirectUri = redirectUriComponents.url {
                     redirectUri = extractedRedirectUri.absoluteString
-                    logger.trace("Extracted intermediate redirect_uri from callback URL: \(redirectUri)")
+                    logger.info("🔵 [Social Login Debug] Extracted intermediate redirect_uri: \(redirectUri)")
                 } else {
                     // Fallback to cached value or default
                     redirectUri = magicLinkRedirectUri ?? generateRedirectUri()
-                    logger.warning("Failed to extract redirect_uri from URL, using fallback: \(redirectUri)")
+                    logger.warning("⚠️ [Social Login Debug] Failed to extract redirect_uri from URL, using fallback: \(redirectUri)")
                 }
             } else {
                 redirectUri = magicLinkRedirectUri ?? generateRedirectUri()
-                logger.warning("Failed to parse URL components, using fallback: \(redirectUri)")
+                logger.warning("⚠️ [Social Login Debug] Failed to parse URL components, using fallback: \(redirectUri)")
             }
         } else if url.path.contains("/oauth/account/oidc/callback") {
+            logger.info("🔵 [Social Login Debug] Detected OIDC callback URL")
             // OIDC callback - use standard redirect_uri (custom scheme) for token exchange
             // In hosted mode, ASWebAuthenticationSession callback comes through custom scheme URL
             // In embedded mode, callback comes through HTTPS URL, but we still need to use standard redirect_uri
@@ -599,17 +630,22 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             // (the same redirect_uri that was used in the initial authorize request, not the OIDC provider's redirect_uri)
             isMagicLink = false
             redirectUri = generateRedirectUri()
-            logger.trace("OIDC callback detected, using standard redirect_uri for token exchange: \(redirectUri)")
+            logger.info("🔵 [Social Login Debug] Using standard redirect_uri for OIDC token exchange: \(redirectUri)")
         } else {
+            logger.info("🔵 [Social Login Debug] Detected regular OAuth callback URL")
             // Regular OAuth callback - use cached magic link redirect_uri if available, otherwise use standard one
             redirectUri = magicLinkRedirectUri ?? generateRedirectUri()
             isMagicLink = magicLinkRedirectUri != nil
+            logger.info("🔵 [Social Login Debug] Regular OAuth callback - using redirect_uri: \(redirectUri), isMagicLink: \(isMagicLink)")
         }
         
         // For magic link flow, the server generates code without PKCE, so we shouldn't send code_verifier
         // For regular OAuth flow, we need code_verifier for PKCE
         let codeVerifier: String? = isMagicLink ? nil : CredentialManager.getCodeVerifier()
         
+        logger.info("🔵 [Social Login Debug] Final redirect_uri for token exchange: \(redirectUri)")
+        logger.info("🔵 [Social Login Debug] Is magic link flow: \(isMagicLink)")
+        logger.info("🔵 [Social Login Debug] Code verifier present: \(codeVerifier != nil ? "yes" : "no")")
         logger.trace("Using redirect_uri: \(redirectUri), isMagicLink: \(isMagicLink), codeVerifier: \(codeVerifier != nil ? "provided" : "nil")")
         
         // Clear the magic link redirect_uri after using it
@@ -645,7 +681,10 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     private func setSocialLoginRedirectUri(_ _webView:WKWebView?, _ url:URL) -> WKNavigationActionPolicy {
         
         weak var webView = _webView
-        logger.trace("setSocialLoginRedirectUri()")
+        let expectedRedirectUri = generateRedirectUri()
+        logger.info("🔵 [Social Login Debug] setSocialLoginRedirectUri called")
+        logger.info("🔵 [Social Login Debug] Social login pre-auth URL: \(url.absoluteString)")
+        logger.info("🔵 [Social Login Debug] Expected redirect URI to be added: \(expectedRedirectUri)")
         
         let queryItems = [
             URLQueryItem(name: "redirectUri", value: generateRedirectUri())
@@ -659,9 +698,12 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         
         urlComps.queryItems = filteredQueryItems + queryItems
         
-        logger.trace("added redirectUri to socialLogin auth url \(urlComps.url!)")
+        let finalUrl = urlComps.url!
+        logger.info("🔵 [Social Login Debug] Added redirectUri to social login auth URL")
+        logger.info("🔵 [Social Login Debug] Final social login URL with redirect_uri: \(finalUrl.absoluteString)")
+        logger.trace("added redirectUri to socialLogin auth url \(finalUrl)")
         
-        let followUrl = urlComps.url!
+        let followUrl = finalUrl
         DispatchQueue.global(qos: .userInitiated).sync {
             
             var request = URLRequest(url: followUrl)
