@@ -31,6 +31,8 @@ struct FronteggPlist: Decodable, Equatable {
     let enableOfflineMode: Bool
     let useLegacySocialLoginFlow: Bool
     let enableSessionPerTenant: Bool
+    let networkMonitoringInterval: TimeInterval
+    let enableTraceIdLogging: Bool
 
     enum CodingKeys: CodingKey {
         case keychainService
@@ -51,6 +53,8 @@ struct FronteggPlist: Decodable, Equatable {
         case enableOfflineMode
         case useLegacySocialLoginFlow
         case enableSessionPerTenant
+        case networkMonitoringInterval
+        case enableTraceIdLogging
     }
 
     init(
@@ -72,7 +76,9 @@ struct FronteggPlist: Decodable, Equatable {
         deleteCookieForHostOnly: Bool = true,
         enableOfflineMode: Bool = false,
         useLegacySocialLoginFlow: Bool = false,
-        enableSessionPerTenant: Bool = false
+        enableSessionPerTenant: Bool = false,
+        networkMonitoringInterval: TimeInterval = 10,
+        enableTraceIdLogging: Bool = false
     ) {
         self.keychainService = keychainService
         self.embeddedMode = embeddedMode
@@ -93,6 +99,8 @@ struct FronteggPlist: Decodable, Equatable {
         self.enableOfflineMode = enableOfflineMode
         self.useLegacySocialLoginFlow = useLegacySocialLoginFlow
         self.enableSessionPerTenant = enableSessionPerTenant
+        self.networkMonitoringInterval = networkMonitoringInterval
+        self.enableTraceIdLogging = enableTraceIdLogging
     }
 
     init(from decoder: any Decoder) throws {
@@ -151,6 +159,12 @@ struct FronteggPlist: Decodable, Equatable {
         
         let enableSessionPerTenant = try container.decodeIfPresent(Bool.self, forKey: .enableSessionPerTenant)
         self.enableSessionPerTenant = enableSessionPerTenant ?? false
+        
+        let networkMonitoringInterval = try container.decodeIfPresent(TimeInterval.self, forKey: .networkMonitoringInterval)
+        self.networkMonitoringInterval = networkMonitoringInterval ?? 10
+        
+        let enableTraceIdLogging = try container.decodeIfPresent(Bool.self, forKey: .enableTraceIdLogging)
+        self.enableTraceIdLogging = enableTraceIdLogging ?? false
         
         do {
             self.payload = try Payload(from: decoder)
