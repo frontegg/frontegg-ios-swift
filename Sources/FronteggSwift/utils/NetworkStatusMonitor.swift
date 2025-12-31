@@ -274,24 +274,36 @@ public enum NetworkStatusMonitor {
         // Retain the path monitor
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { path in
-            // Use lock to safely check and set the initial check flag
+            // Use lock to safely check and set the initial check flag atomically
+            // This prevents duplicate /test calls when NWPathMonitor fires multiple times rapidly
+            var shouldMakeInitialCheck = false
             _monitoringLock.lock()
-            let isInitialCheck = !_hasInitialCheckFired
-            if isInitialCheck {
+            if !_hasInitialCheckFired && _initialCheckTask == nil {
                 _hasInitialCheckFired = true
+                shouldMakeInitialCheck = true
             }
             _monitoringLock.unlock()
             
             // Only make /test call if this is the initial fire
-            if isInitialCheck {
+            if shouldMakeInitialCheck {
                 // This is the initial check - make the /test call
                 if path.status != .satisfied {
                     updateCached(false, forceEmit: true)
                 } else if let base = configuredBaseURLString {
-                    _initialCheckTask = Task {
-                        let ok = await checkServerConnectivity(baseURLString: base)
-                        updateCached(ok, forceEmit: true)
+                    // Create the task and store it atomically
+                    _monitoringLock.lock()
+                    // Double-check that task doesn't exist (race condition protection)
+                    if _initialCheckTask == nil {
+                        _initialCheckTask = Task {
+                            let ok = await checkServerConnectivity(baseURLString: base)
+                            updateCached(ok, forceEmit: true)
+                            // Clear the task reference when done
+                            _monitoringLock.lock()
+                            _initialCheckTask = nil
+                            _monitoringLock.unlock()
+                        }
                     }
+                    _monitoringLock.unlock()
                 } else {
                     updateCached(true, forceEmit: true) // route-only success
                 }

@@ -3,14 +3,20 @@
 <plist version="1.0">
 <dict>
 	<key>baseUrl</key>
-	<string>https://app-v686mk10lsu7.stg.frontegg.com</string>
+	<string>https://autheu.davidantoon.me</string>
 	<key>clientId</key>
-	<string>8bb0a851-96e8-4b4d-ae75-e21fc0fefc33</string>
+	<string>b6adfe4c-d695-4c04-b95f-3ec9fd0c6cca</string>
+	<key>enableOfflineMode</key>
+	<true/>
 	<key>logLevel</key>
 	<string>trace</string>
+	<key>keepUserLoggedInAfterReinstall</key>
+	<true/>
 	<key>embeddedMode</key>
-	<false/>
+	<true/>
 	<key>enableSessionPerTenant</key>
 	<true/>
+	<key>networkMonitoringInterval</key>
+	<integer>40</integer>
 </dict>
 </plist>

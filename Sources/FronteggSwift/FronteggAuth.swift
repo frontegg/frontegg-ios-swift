@@ -318,6 +318,9 @@ public class FronteggAuth: FronteggState {
             // Prevent multiple initializations - only set up monitoring once
             isMonitoringInitialized = true
             
+            // Get network monitoring interval from config (default: 10 seconds)
+            let monitoringInterval = (try? PlistHelper.fronteggConfig())?.networkMonitoringInterval ?? 10
+            
             NetworkStatusMonitor.configure(baseURLString: "\(self.baseUrl)/test")
             
             // Ensure we stop any existing monitoring first
@@ -368,7 +371,7 @@ public class FronteggAuth: FronteggState {
                                 }
                             }
                             self.networkMonitoringToken = token
-                            NetworkStatusMonitor.startBackgroundMonitoring(interval: 10, onChange: nil)
+                            NetworkStatusMonitor.startBackgroundMonitoring(interval: monitoringInterval, onChange: nil)
                         } else {
                             self.monitoringLock.lock()
                             guard self.isMonitoringActive else {
@@ -448,7 +451,7 @@ public class FronteggAuth: FronteggState {
                         }
                     }
                     self.networkMonitoringToken = token
-                    NetworkStatusMonitor.startBackgroundMonitoring(interval: 10, onChange: nil)
+                    NetworkStatusMonitor.startBackgroundMonitoring(interval: monitoringInterval, onChange: nil)
                 }
             } else {
                 self.logger.info("🔴 Not starting /test monitoring (initial) - user logged in (has tokens in keychain)")
@@ -501,7 +504,7 @@ public class FronteggAuth: FronteggState {
     }
     
     
-    public func setCredentials(accessToken: String, refreshToken: String) async {
+    public func setCredentials(accessToken: String, refreshToken: String, user: User? = nil) async {
         self.logger.info("Setting credentials (refresh token length: \(refreshToken.count))")
         
         do {
@@ -510,8 +513,16 @@ public class FronteggAuth: FronteggState {
             
             // Decode token to get tenantId
             let decode = try JWTHelper.decode(jwtToken: accessToken)
-            guard let user = try await self.api.me(accessToken: accessToken) else {
-                throw FronteggError.authError(.failedToLoadUserData("User data is nil"))
+            
+            // Use provided user if available, otherwise fetch from API
+            let userToUse: User
+            if let providedUser = user {
+                userToUse = providedUser
+            } else {
+                guard let fetchedUser = try await self.api.me(accessToken: accessToken) else {
+                    throw FronteggError.authError(.failedToLoadUserData("User data is nil"))
+                }
+                userToUse = fetchedUser
             }
             
             var tenantIdToUse: String? = nil
@@ -520,31 +531,23 @@ public class FronteggAuth: FronteggState {
             if enableSessionPerTenant {
                 if let localTenantId = credentialManager.getLastActiveTenantId() {
                     tenantIdToUse = localTenantId
-                    logger.info("Using LOCAL tenant ID: \(tenantIdToUse!) (ignoring server's active tenant: \(user.activeTenant.id))")
+                    logger.info("Using LOCAL tenant ID: \(tenantIdToUse!) (ignoring server's active tenant: \(userToUse.activeTenant.id))")
                     
-                    if !user.tenants.contains(where: { $0.id == localTenantId }) {
-                        logger.error("CRITICAL: Local tenant ID (\(localTenantId)) not found in user's tenants list! Available: \(user.tenants.map { $0.id }). This should not happen.")
+                    if !userToUse.tenants.contains(where: { $0.id == localTenantId }) {
+                        logger.error("CRITICAL: Local tenant ID (\(localTenantId)) not found in user's tenants list! Available: \(userToUse.tenants.map { $0.id }). This should not happen.")
                     }
                 } else {
-                    tenantIdToUse = user.activeTenant.id
+                    tenantIdToUse = userToUse.activeTenant.id
                     self.credentialManager.saveLastActiveTenantId(tenantIdToUse!)
                     logger.info("No local tenant stored, using server's active tenant: \(tenantIdToUse!) (saved as local tenant)")
                 }
-                
-                try self.credentialManager.saveTokenForTenant(refreshToken, tenantId: tenantIdToUse!, tokenType: .refreshToken)
-                try self.credentialManager.saveTokenForTenant(accessToken, tenantId: tenantIdToUse!, tokenType: .accessToken)
-                logger.info("Saved tokens for tenant: \(tenantIdToUse!)")
-            } else {
-                // Store tokens globally (legacy behavior)
-            try self.credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: refreshToken)
-            try self.credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: accessToken)
             }
             
-            var userToUse = user
+            var finalUserToUse = userToUse
             if enableSessionPerTenant, let localTenantId = tenantIdToUse {
-                if let matchingTenant = user.tenants.first(where: { $0.id == localTenantId }) {
+                if let matchingTenant = userToUse.tenants.first(where: { $0.id == localTenantId }) {
                     do {
-                        var userDict = try JSONEncoder().encode(user)
+                        var userDict = try JSONEncoder().encode(userToUse)
                         var userJson = try JSONSerialization.jsonObject(with: userDict) as! [String: Any]
                         
                         if let matchingTenantData = try? JSONEncoder().encode(matchingTenant),
@@ -553,10 +556,10 @@ public class FronteggAuth: FronteggState {
                             userJson["tenantId"] = matchingTenant.tenantId
                             
                             let modifiedUserData = try JSONSerialization.data(withJSONObject: userJson)
-                            userToUse = try JSONDecoder().decode(User.self, from: modifiedUserData)
+                            finalUserToUse = try JSONDecoder().decode(User.self, from: modifiedUserData)
                             
-                            if localTenantId != user.activeTenant.id {
-                                logger.info("Modified user to use local tenant (\(localTenantId)) instead of server's active tenant (\(user.activeTenant.id))")
+                            if localTenantId != userToUse.activeTenant.id {
+                                logger.info("Modified user to use local tenant (\(localTenantId)) instead of server's active tenant (\(userToUse.activeTenant.id))")
                             } else {
                                 logger.info("User already matches local tenant (\(localTenantId))")
                             }
@@ -565,18 +568,16 @@ public class FronteggAuth: FronteggState {
                         logger.warning("Failed to modify user for local tenant: \(error). Using server's active tenant.")
                     }
                 } else {
-                    logger.error("Local tenant ID (\(localTenantId)) not found in user's tenants list. This should not happen. Available tenants: \(user.tenants.map { $0.id })")
+                    logger.error("Local tenant ID (\(localTenantId)) not found in user's tenants list. This should not happen. Available tenants: \(userToUse.tenants.map { $0.id })")
                 }
             }
             
-            if let config = config, config.enableOfflineMode {
-                self.credentialManager.saveOfflineUser(user: userToUse)
-            }
-            
+            // Set in-memory state FIRST before saving to keychain
+            // This ensures user stays logged in even if keychain save fails
             await MainActor.run {
                 setRefreshToken(refreshToken)
                 setAccessToken(accessToken)
-                setUser(userToUse)
+                setUser(finalUserToUse)
                 setIsAuthenticated(true)
                 setIsOfflineMode(false)
                 setAppLink(false)
@@ -591,9 +592,36 @@ public class FronteggAuth: FronteggState {
                 scheduleTokenRefresh(offset: offset)
             }
             
+            // Now try to save to keychain (non-critical - user is already logged in)
+            // If this fails, we log a warning but don't fail the login
+            do {
+                if enableSessionPerTenant, let tenantId = tenantIdToUse {
+                    try self.credentialManager.saveTokenForTenant(refreshToken, tenantId: tenantId, tokenType: .refreshToken)
+                    try self.credentialManager.saveTokenForTenant(accessToken, tenantId: tenantId, tokenType: .accessToken)
+                    logger.info("Saved tokens for tenant: \(tenantId)")
+                } else {
+                    // Store tokens globally (legacy behavior)
+                    try self.credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: refreshToken)
+                    try self.credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: accessToken)
+                    logger.info("Saved tokens to keychain")
+                }
+                
+                if let config = config, config.enableOfflineMode {
+                    self.credentialManager.saveOfflineUser(user: finalUserToUse)
+                }
+            } catch {
+                // Keychain save failed, but user is already logged in
+                // Log warning but don't fail the login - tokens are in memory
+                logger.warning("Failed to save credentials to keychain (user will remain logged in for this session): \(error)")
+                // Try to save offline user anyway (might work even if token save failed)
+                if let config = config, config.enableOfflineMode {
+                    self.credentialManager.saveOfflineUser(user: finalUserToUse)
+                }
+            }
+            
         } catch {
             await MainActor.run {
-                logger.error("Failed to load user data: \(error)")
+                logger.error("Failed to set credentials: \(error)")
                 setRefreshToken(nil)
                 setAccessToken(nil)
                 setUser(nil)
@@ -1197,15 +1225,17 @@ public class FronteggAuth: FronteggState {
                     DispatchQueue.main.async {
                         completion(.failure(FronteggError.authError(.failedToLoadUserData("User data is nil"))))
                         self.setIsLoading(false)
+                        self.setWebLoading(false)
                     }
                     return
                 }
                 
-                await setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
+                await setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token, user: user)
                 
                 // Call completion on main thread to avoid race conditions
                 // This ensures the completion handler always runs on the main thread
                 DispatchQueue.main.async {
+                    self.setWebLoading(false)
                     completion(.success(user))
                 }
             } catch {
@@ -1213,6 +1243,7 @@ public class FronteggAuth: FronteggState {
                 DispatchQueue.main.async {
                     completion(.failure(FronteggError.authError(.failedToLoadUserData(error.localizedDescription))))
                     self.setIsLoading(false)
+                    self.setWebLoading(false)
                 }
                 return
             }
@@ -2320,3 +2351,4 @@ public class FronteggAuth: FronteggState {
     }
     
 }
+

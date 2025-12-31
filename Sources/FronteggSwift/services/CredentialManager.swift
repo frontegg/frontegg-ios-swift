@@ -47,23 +47,34 @@ public class CredentialManager {
             let status = SecItemAdd(query, nil)
             
             if status == errSecDuplicateItem {
-                logger.trace("Updating exising \(key)")
+                logger.trace("Updating existing \(key)")
+                // For update, don't include kSecAttrAccessible in the search query
+                // It should only be in the attributes dictionary if we want to change it
                 let updateQuery = [
                     kSecClass: kSecClassGenericPassword,
                     kSecAttrService: serviceKey ?? "frontegg",
-                    kSecAttrAccount: key,
-                    kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlock
+                    kSecAttrAccount: key
                 ] as [CFString : Any] as CFDictionary
                 
                 let newAttributes : CFDictionary = [
-                    kSecValueData: value.data(using: .utf8)
+                    kSecValueData: valueData,
+                    kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlock
                 ] as CFDictionary
                 
                 let updateStatus = SecItemUpdate(updateQuery, newAttributes)
                 if updateStatus != errSecSuccess {
+                    // Error -34018 (errSecMissingEntitlement) is often a simulator issue
+                    // Log additional context for debugging
+                    if updateStatus == -34018 {
+                        logger.warning("Keychain update failed with errSecMissingEntitlement (-34018) for key: \(key). This is often a simulator issue. Testing on a physical device is recommended.")
+                    }
                     throw KeychainError.unknown(updateStatus)
                 }
             } else if status != errSecSuccess {
+                // Error -34018 (errSecMissingEntitlement) is often a simulator issue
+                if status == -34018 {
+                    logger.warning("Keychain add failed with errSecMissingEntitlement (-34018) for key: \(key). This is often a simulator issue. Testing on a physical device is recommended.")
+                }
                 throw KeychainError.unknown(status)
             }
             
