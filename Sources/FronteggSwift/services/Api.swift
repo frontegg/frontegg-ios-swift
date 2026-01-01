@@ -197,48 +197,23 @@ public class Api {
 
     
     internal func silentAuthorize(
-        refreshTokenCookie: String,
-        deviceTokenCookie: String?,
+        refreshToken: String,
         timeout: Int = Api.DEAFULT_TIMEOUT
     ) async throws -> (Data, URLResponse) {
-        let urlStr = "\(self.baseUrl)/oauth/authorize/silent"
-        guard let url = URL(string: urlStr) else {
-            throw ApiError.invalidUrl("invalid url: \(urlStr)")
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
-        if let applicationId = self.applicationId {
-            request.setValue(applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
-        }
-        request.setValue("\(refreshTokenCookie);\(deviceTokenCookie ?? "")", forHTTPHeaderField: "Cookie")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [:])
-
-        // per-task timeout
-        request.timeoutInterval = TimeInterval(timeout)
-
-        // session-level timeouts
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = TimeInterval(timeout)
-        config.timeoutIntervalForResource = TimeInterval(timeout)
-        config.waitsForConnectivity = false
-
-        let session = URLSession(configuration: config)
-        let (data, response) = try await session.data(for: request)
+        // Use POST /oauth/token with grant_type=refresh_token
+        let (data, response) = try await postRequest(path: "oauth/token", body: [
+            "grant_type": "refresh_token",
+            "refresh_token": refreshToken,
+        ], timeout: timeout)
+        
         TraceIdLogger.shared.extractAndLogTraceId(from: response)
         return (data, response)
     }
 
     
     internal func authroizeWithTokens(refreshToken:String, deviceTokenCookie:String? = nil) async throws -> AuthResponse {
-        
-        
-        let refreshTokenCookie = "\(self.cookieName)=\(refreshToken)"
-        // Silent authorize with the extracted tokens
-        let (data, _) = try await FronteggAuth.shared.api.silentAuthorize(refreshTokenCookie: refreshTokenCookie, deviceTokenCookie: deviceTokenCookie)
+        // Use POST /oauth/token with grant_type=refresh_token
+        let (data, _) = try await FronteggAuth.shared.api.silentAuthorize(refreshToken: refreshToken)
         
         // Decode and return the AuthResponse
         return try JSONDecoder().decode(AuthResponse.self, from: data)
@@ -540,7 +515,7 @@ public class Api {
         
         // Extract cookies for further authorization
         guard let cookies = FronteggAuth.shared.api.getCookiesFromHeaders(response: postloginHTTPResponse),
-              let refreshToken = cookies.0, let deviceToken = cookies.1 else {
+              let refreshTokenCookie = cookies.0 else {
             if let httpError = String(data: postloginResponseData, encoding: .utf8) {
                 throw FronteggError.authError(.failedToAuthenticateWithPasskeys(httpError))
             } else {
@@ -548,8 +523,15 @@ public class Api {
             }
         }
         
-        // Silent authorize with the extracted tokens
-        let (data, _) = try await FronteggAuth.shared.api.silentAuthorize(refreshTokenCookie: refreshToken, deviceTokenCookie: deviceToken)
+        // Extract token value from cookie string "name=value"
+        let cookieParts = refreshTokenCookie.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+        guard cookieParts.count == 2 else {
+            throw FronteggError.authError(.failedToAuthenticateWithPasskeys("Invalid refresh token cookie format"))
+        }
+        let refreshToken = String(cookieParts[1])
+        
+        // Silent authorize with the extracted token
+        let (data, _) = try await FronteggAuth.shared.api.silentAuthorize(refreshToken: refreshToken)
         
         // Decode and return the AuthResponse
         return try JSONDecoder().decode(AuthResponse.self, from: data)
@@ -603,12 +585,19 @@ public class Api {
         
         // Extract cookies for further authorization
         guard let cookies = FronteggAuth.shared.api.getCookiesFromHeaders(response: postloginHTTPResponse),
-              let refreshToken = cookies.0, let deviceToken = cookies.1 else {
+              let refreshTokenCookie = cookies.0 else {
             throw FronteggError.authError(.invalidPasskeysRequest)
         }
         
-        // Silent authorize with the extracted tokens
-        let (data, _) = try await FronteggAuth.shared.api.silentAuthorize(refreshTokenCookie: refreshToken, deviceTokenCookie: deviceToken)
+        // Extract token value from cookie string "name=value"
+        let cookieParts = refreshTokenCookie.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+        guard cookieParts.count == 2 else {
+            throw FronteggError.authError(.invalidPasskeysRequest)
+        }
+        let refreshToken = String(cookieParts[1])
+        
+        // Silent authorize with the extracted token
+        let (data, _) = try await FronteggAuth.shared.api.silentAuthorize(refreshToken: refreshToken)
         
         // Decode and return the AuthResponse
         return try JSONDecoder().decode(AuthResponse.self, from: data)
