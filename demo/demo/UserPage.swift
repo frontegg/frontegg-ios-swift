@@ -52,6 +52,7 @@ struct UserPage: View {
                     Spacer().frame(height: 16)
                     
                     sensitiveActionButton
+                    requestAuthorizeButton
                     Spacer().frame(height: 24)
                 }
             }
@@ -66,6 +67,30 @@ struct UserPage: View {
         .buttonStyle(PrimaryButtonStyle())
         .padding(.horizontal, 8)
     }
+
+    private var requestAuthorizeButton: some View {
+        Button("Request Authorize") {
+            handleRequestAuthorize()
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .padding(.horizontal, 8)
+    }
+
+   private func handleRequestAuthorize() {
+    Task {
+        do {
+            guard let refreshToken = fronteggAuth.refreshToken else {
+                showMessage("No refresh token available", isSuccess: false)
+                return
+            }
+            
+            let user = try await fronteggAuth.requestAuthorizeAsync(refreshToken: refreshToken)
+            showMessage("Authorization successful: \(user.name)", isSuccess: true)
+        } catch {
+            showMessage("Authorization failed: \(error.localizedDescription)", isSuccess: false)
+        }
+    }
+}
     
     private var footerContent: some View {
         VStack {
