@@ -1,3 +1,6 @@
+## v1.2.63
+- Replaced silent authorize api  
+
 ## v1.2.62
 - Offline Mode /test Calls Fixes
 - Network Monitoring Enhancements
