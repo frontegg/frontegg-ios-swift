@@ -204,14 +204,41 @@ public class Api {
         refreshToken: String,
         timeout: Int = 10
     ) async throws -> (Data, URLResponse) {
-        let (data, response) = try await getRequest(
-            path: "/frontegg/oauth/authorize/silent",
-            accessToken: nil,
-            refreshToken: refreshToken,
-            additionalHeaders: [:],
-            followRedirect: true,
-            timeout: timeout
-        )
+        // Use POST /frontegg/oauth/authorize/silent with cookie fe_refresh_client-id=refresh-token
+        let urlStr = "/frontegg/oauth/authorize/silent"
+        let fullUrl = urlStr.starts(with: self.baseUrl)
+            ? urlStr
+            : "\(self.baseUrl)\(urlStr.starts(with: "/") ? urlStr : "/\(urlStr)")"
+        
+        guard let url = URL(string: fullUrl) else {
+            throw ApiError.invalidUrl("invalid url: \(fullUrl)")
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
+        request.setValue("\(self.cookieName)=\(refreshToken)", forHTTPHeaderField: "Cookie")
+        
+        if let applicationId = self.applicationId {
+            request.setValue(applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
+        }
+        
+        // Empty body for POST request
+        request.httpBody = try JSONSerialization.data(withJSONObject: [:])
+        
+        // per-task timeout
+        request.timeoutInterval = TimeInterval(timeout)
+        
+        // session-level timeouts
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = TimeInterval(timeout)
+        config.timeoutIntervalForResource = TimeInterval(timeout)
+        config.waitsForConnectivity = false
+        
+        let session = URLSession(configuration: config)
+        let (data, response) = try await session.data(for: request)
         
         TraceIdLogger.shared.extractAndLogTraceId(from: response)
         return (data, response)
