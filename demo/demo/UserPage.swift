@@ -84,10 +84,15 @@ struct UserPage: View {
                 return
             }
             
-            let user = try await fronteggAuth.requestAuthorizeAsync(refreshToken: refreshToken)
-            showMessage("Authorization successful: \(user.name)", isSuccess: true)
+            showMessage("Calling silentAuthorize...", isSuccess: true)
+            
+            let (data, _) = try await fronteggAuth.api.silentAuthorize(refreshToken: refreshToken)
+            
+            let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
+            
+            showMessage("Silent authorize successful! Access token received.", isSuccess: true)
         } catch {
-            showMessage("Authorization failed: \(error.localizedDescription)", isSuccess: false)
+            showMessage("Request failed: \(error.localizedDescription)", isSuccess: false)
         }
     }
 }
