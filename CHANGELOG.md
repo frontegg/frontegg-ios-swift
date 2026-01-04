@@ -1,3 +1,6 @@
+## v1.2.64
+- added web example `SignUp` flow with usage of `/frontegg/oauth/authorize/silent`
+
 ## v1.2.63
 - Replaced silent authorize api  
 
