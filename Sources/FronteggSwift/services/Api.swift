@@ -22,7 +22,7 @@ class RedirectHandler: NSObject, URLSessionTaskDelegate {
 
 
 public class Api {
-    private static let DEAFULT_TIMEOUT: Int = 10
+    internal static let DEAFULT_TIMEOUT: Int = 10
     private let logger = getLogger("Api")
     private let baseUrl: String
     private let clientId: String
@@ -36,7 +36,11 @@ public class Api {
         self.applicationId = applicationId
         self.credentialManager = CredentialManager(serviceKey: "frontegg")
         
-        self.cookieName = "fe_refresh_\(clientId)"
+        var clientIdWithoutFirstDash = clientId
+        if let firstDashIndex = clientId.firstIndex(of: "-") {
+            clientIdWithoutFirstDash.remove(at: firstDashIndex)
+        }
+        self.cookieName = "fe_refresh_\(clientIdWithoutFirstDash)"
     }
     
     internal func putRequest(
@@ -196,7 +200,24 @@ public class Api {
     }
 
     
-    internal func silentAuthorize(
+    public func silentAuthorize(
+        refreshToken: String,
+        timeout: Int = 10
+    ) async throws -> (Data, URLResponse) {
+        let (data, response) = try await getRequest(
+            path: "/frontegg/oauth/authorize/silent",
+            accessToken: nil,
+            refreshToken: refreshToken,
+            additionalHeaders: [:],
+            followRedirect: true,
+            timeout: timeout
+        )
+        
+        TraceIdLogger.shared.extractAndLogTraceId(from: response)
+        return (data, response)
+    }
+    
+    internal func silentAuthorizeWithToken(
         refreshToken: String,
         timeout: Int = Api.DEAFULT_TIMEOUT
     ) async throws -> (Data, URLResponse) {

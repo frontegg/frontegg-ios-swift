@@ -79,15 +79,19 @@ struct UserPage: View {
    private func handleRequestAuthorize() {
     Task {
         do {
-            guard let refreshToken = fronteggAuth.refreshToken else {
-                showMessage("No refresh token available", isSuccess: false)
-                return
-            }
             
-            let user = try await fronteggAuth.requestAuthorizeAsync(refreshToken: refreshToken)
-            showMessage("Authorization successful: \(user.name)", isSuccess: true)
+            let signUpResponse = try await signUpUser()
+            let refreshToken = signUpResponse.authResponse.refreshToken
+            
+            showMessage("Sign up successful, calling silentAuthorize...", isSuccess: true)
+            
+            let (data, _) = try await fronteggAuth.api.silentAuthorize(refreshToken: refreshToken)
+            
+            let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
+            
+            showMessage("Silent authorize successful! Access token received.", isSuccess: true)
         } catch {
-            showMessage("Authorization failed: \(error.localizedDescription)", isSuccess: false)
+            showMessage("Request failed: \(error.localizedDescription)", isSuccess: false)
         }
     }
 }
@@ -404,5 +408,61 @@ struct TenantDropdown: View {
 
 #Preview {
     UserPage()
+}
+
+// MARK: - Sign Up Response Models
+struct SignUpResponse: Decodable {
+    let authResponse: SignUpAuthResponse
+    let shouldActivate: Bool
+    let tenantId: String
+    let userId: String
+}
+
+struct SignUpAuthResponse: Decodable {
+    let mfaRequired: Bool
+    let accessToken: String
+    let refreshToken: String
+    let expiresIn: Int
+    let expires: String
+    let userId: String
+}
+
+// MARK: - Sign Up API Call
+func signUpUser() async throws -> SignUpResponse {
+    let baseUrl = "https://autheu.davidantoon.me"
+    let url = URL(string: "\(baseUrl)/frontegg/identity/resources/users/v1/signUp")!
+    
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("*/*", forHTTPHeaderField: "Accept")
+    request.setValue(baseUrl, forHTTPHeaderField: "Origin")
+    request.setValue("login-box", forHTTPHeaderField: "frontegg-source")
+    request.setValue("react@18.2.0", forHTTPHeaderField: "x-frontegg-framework")
+    request.setValue("@frontegg/react@7.12.13", forHTTPHeaderField: "x-frontegg-sdk")
+    
+    // Generate unique email for testing
+    let timestamp = Int(Date().timeIntervalSince1970)
+    let signUpBody: [String: Any] = [
+        "name": "Diana",
+        "password": "Password1.",
+        "companyName": "frontegg",
+        "email": "user+\(timestamp)@gmail.com"
+    ]
+    
+    request.httpBody = try JSONSerialization.data(withJSONObject: signUpBody)
+    
+    let (data, response) = try await URLSession.shared.data(for: request)
+    
+    guard let httpResponse = response as? HTTPURLResponse else {
+        throw NSError(domain: "SignUpError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
+    }
+    
+    guard (200...299).contains(httpResponse.statusCode) else {
+        let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+        throw NSError(domain: "SignUpError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Sign up failed: \(errorMessage)"])
+    }
+    
+    return try JSONDecoder().decode(SignUpResponse.self, from: data)
 }
 
