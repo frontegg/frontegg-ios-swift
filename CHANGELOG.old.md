@@ -1,3 +1,6 @@
+## v1.2.65
+- updated to use `POST` instead of `GET`
+
 ## v1.2.64
 - added web example `SignUp` flow with usage of `/frontegg/oauth/authorize/silent`
 
