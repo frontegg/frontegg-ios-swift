@@ -1,3 +1,6 @@
+## v1.2.66
+- microsoft verification callback support
+
 ## v1.2.65
 - updated to use `POST` instead of `GET`
 
