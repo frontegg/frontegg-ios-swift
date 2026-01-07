@@ -173,7 +173,7 @@ public final class SocialLoginUrlGenerator {
             return nil
         }
 
-        return try self.buildCustomProviderURL(provider: providerConfig, action: action)
+        return try await self.buildCustomProviderURL(provider: providerConfig, action: action)
     }
     
     public func reloadConfigs() async {
@@ -263,8 +263,9 @@ private extension SocialLoginUrlGenerator {
         
         if details.requiresPKCE && FronteggAuth.shared.featureFlags.isOn("identity-sso-force-pkce") {
             let verifier: String = try await Self.getCodeVerifierFromWebview()
+            let codeChallenge = verifier.s256CodeChallenge()
             queryItems.append(contentsOf: [
-                URLQueryItem(name: "code_challenge", value: verifier.s256CodeChallenge()),
+                URLQueryItem(name: "code_challenge", value: codeChallenge),
                 URLQueryItem(name: "code_challenge_method", value: "S256")
             ])
         }
@@ -285,7 +286,7 @@ private extension SocialLoginUrlGenerator {
     func buildCustomProviderURL(
         provider: CustomSocialLoginProviderConfig,
         action: SocialLoginAction
-    ) throws -> URL? {
+    ) async throws -> URL? {
         // This will correctly parse the URL and its existing query items.
         guard var comps = URLComponents(string: provider.authorizationUrl) else {
             logger.error("Invalid authorizationUrl for custom provider \(provider.displayName)")
@@ -309,13 +310,22 @@ private extension SocialLoginUrlGenerator {
         // Create a clean base URL (scheme + host + path) for matching.
         let baseUrlString = "\(comps.scheme ?? "")://\(comps.host ?? "")\(comps.path)"
         
-        // Match against the base URL to see if we should add a consent prompt.
-        if let (matchedProvider, matchedDetails) = ProviderDetails.find(by: baseUrlString),
-           let promptValue = matchedDetails.promptValueForConsent {
+        if let (matchedProvider, matchedDetails) = ProviderDetails.find(by: baseUrlString) {
+            if let promptValue = matchedDetails.promptValueForConsent {
+                let promptKey = (matchedProvider == .facebook) ? "auth_type" : "prompt"
+                comps.addOrReplaceQueryItem(name: promptKey, value: promptValue)
+            }
             
-            let promptKey = (matchedProvider == .facebook) ? "auth_type" : "prompt"
-            comps.addOrReplaceQueryItem(name: promptKey, value: promptValue)
-            logger.trace("Adding consent prompt for custom provider matching \(matchedProvider.rawValue)")
+            if matchedDetails.requiresPKCE && FronteggAuth.shared.featureFlags.isOn("identity-sso-force-pkce") {
+                do {
+                    let verifier: String = try await Self.getCodeVerifierFromWebview()
+                    let codeChallenge = verifier.s256CodeChallenge()
+                    comps.addOrReplaceQueryItem(name: "code_challenge", value: codeChallenge)
+                    comps.addOrReplaceQueryItem(name: "code_challenge_method", value: "S256")
+                } catch {
+                    logger.warning("Failed to get code verifier from webview for custom provider \(provider.displayName): \(error)")
+                }
+            }
         }
         
         let url = comps.url
@@ -360,6 +370,9 @@ public extension SocialLoginUrlGenerator {
         guard let codeVerifier = try? await webview.evaluateJavaScript("window.localStorage['FRONTEGG_CODE_VERIFIER']") as? String else {
             throw FronteggError.configError(.failedToGenerateAuthorizeURL)
         }
+        
+        CredentialManager.saveCodeVerifier(codeVerifier)
+        
         return codeVerifier
     }
 

@@ -378,7 +378,7 @@ public class Api {
             if let codeVerifier = codeVerifier {
                 body["code_verifier"] = codeVerifier
             }
-            
+                        
             let (data, _) = try await postRequest(path: "oauth/token", body: body)
             
             if let responseString = String(data: data, encoding: .utf8),
