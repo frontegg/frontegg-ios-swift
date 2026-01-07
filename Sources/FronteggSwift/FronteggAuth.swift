@@ -1791,27 +1791,34 @@ public class FronteggAuth: FronteggState {
             let oauthCallback = createOauthCallbackHandler(completion)
             
             var callbackReceived = false
+            var sessionRef: ASWebAuthenticationSession? = nil
+            
             let wrappedCallback: (URL?, Error?) -> Void = { [weak self] callbackUrl, error in
                 guard let self = self else { return }
                 callbackReceived = true
                 
+                // Cancel the session immediately to prevent showing localhost
+                if let session = sessionRef {
+                    session.cancel()
+                    sessionRef = nil
+                }
+                
                 if let url = callbackUrl, let host = url.host, (host.contains("localhost") || host.contains("127.0.0.1")) {
-                    
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        if let urlComponents = URLComponents(url: verificationUrl, resolvingAgainstBaseURL: false),
-                           let queryItems = urlComponents.queryItems,
-                           let type = queryItems.first(where: { $0.name == "type" })?.value {
-                            self.handleSocialLogin(providerString: type, custom: false, action: .login) { result in
-                                switch result {
-                                case .success(let user):
-                                    completion(.success(user))
-                                case .failure(let error):
-                                    completion(.failure(error))
-                                }
+                    self.logger.warning("⚠️ Detected localhost redirect in verification callback, retrying social login immediately")
+                    // Retry immediately without delay
+                    if let urlComponents = URLComponents(url: verificationUrl, resolvingAgainstBaseURL: false),
+                       let queryItems = urlComponents.queryItems,
+                       let type = queryItems.first(where: { $0.name == "type" })?.value {
+                        self.handleSocialLogin(providerString: type, custom: false, action: .login) { result in
+                            switch result {
+                            case .success(let user):
+                                completion(.success(user))
+                            case .failure(let error):
+                                completion(.failure(error))
                             }
-                        } else {
-                            completion(.failure(FronteggError.authError(.unknown)))
                         }
+                    } else {
+                        completion(.failure(FronteggError.authError(.unknown)))
                     }
                     return
                 }
@@ -1820,13 +1827,21 @@ public class FronteggAuth: FronteggState {
                 oauthCallback(callbackUrl, error)
             }
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { [weak self] in
+            // Reduce timeout to 3 seconds to minimize localhost visibility
+            // If verification takes longer, it likely redirected to localhost
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
                 guard let self = self, !callbackReceived else { return }
                 
+                // Cancel the session to stop showing localhost
+                if let session = sessionRef {
+                    session.cancel()
+                    sessionRef = nil
+                }
+                
+                self.logger.info("🔄 Verification timeout - retrying social login to avoid localhost redirect")
                 if let urlComponents = URLComponents(url: verificationUrl, resolvingAgainstBaseURL: false),
                    let queryItems = urlComponents.queryItems,
                    let type = queryItems.first(where: { $0.name == "type" })?.value {
-                    self.logger.info("🔄 Retrying login with provider: \(type)")
                     self.handleSocialLogin(providerString: type, custom: false, action: .login) { result in
                         switch result {
                         case .success(let user):
@@ -1855,9 +1870,11 @@ public class FronteggAuth: FronteggState {
             
             if Thread.isMainThread {
                 WebAuthenticator.shared.start(verificationUrl, ephemeralSession: false, window: window, completionHandler: wrappedCallback)
+                sessionRef = WebAuthenticator.shared.session
             } else {
                 DispatchQueue.main.async {
                     WebAuthenticator.shared.start(verificationUrl, ephemeralSession: false, window: window, completionHandler: wrappedCallback)
+                    sessionRef = WebAuthenticator.shared.session
                 }
             }
             return true

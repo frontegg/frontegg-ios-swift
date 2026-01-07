@@ -66,6 +66,42 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 logger.trace("Updated previousUrl to: \(currentUrl.absoluteString)")
             }
             
+            if let host = url.host, (host.contains("localhost") || host.contains("127.0.0.1")) {
+                logger.warning("⚠️ Blocking navigation to localhost: \(url.absoluteString)")
+                
+                if let prevUrl = previousUrl, prevUrl.path.contains("/postlogin/verify") {
+                    logger.warning("Detected localhost redirect after /postlogin/verify. Previous URL: \(prevUrl.absoluteString), Current URL: \(url.absoluteString)")
+
+                    if let urlComponents = URLComponents(url: prevUrl, resolvingAgainstBaseURL: false),
+                       let queryItems = urlComponents.queryItems,
+                       let type = queryItems.first(where: { $0.name == "type" })?.value {
+                        logger.info("Retrying social login with provider: \(type) to avoid localhost redirect")
+                        DispatchQueue.main.async { [weak self, weak webView] in
+                            guard let self = self else { return }
+                            self.fronteggAuth.handleSocialLogin(providerString: type, custom: false, action: .login) { result in
+                                switch result {
+                                case .success(let user):
+                                    self.logger.info("✅ Social login completed successfully after blocking localhost redirect")
+                                    self.fronteggAuth.loginCompletion?(.success(user))
+                                    // Dismiss the webview
+                                    if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
+                                        presentingVC.dismiss(animated: true)
+                                        VCHolder.shared.vc = nil
+                                    }
+                                case .failure(let error):
+                                    self.logger.error("❌ Social login failed after blocking localhost redirect: \(error.localizedDescription)")
+                                    self.fronteggAuth.loginCompletion?(.failure(error))
+                                }
+                            }
+                        }
+                        return .cancel
+                    }
+                }
+                
+                logger.warning("Blocking localhost navigation: \(url.absoluteString)")
+                return .cancel
+            }
+            
             // Check if this is an external OIDC provider redirect (e.g., Auth0, Okta, Microsoft)
             // This happens when Frontegg server redirects to OIDC provider for SSO
             // We need to allow these external redirects to proceed in the web view
@@ -134,6 +170,44 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 }
             }
 
+            // Check if this is a /postlogin/verify URL
+            // IMPORTANT: If the URL has a token parameter (from app link), we must preserve it for device verification
+            // Add missing redirect_uri and code_verifier_pkce parameters while preserving the token
+            if url.path.contains("/postlogin/verify") {
+                if var urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                    var queryItems = urlComponents.queryItems ?? []
+                    var needsUpdate = false
+                    
+                    let redirectUri = generateRedirectUri()
+                    if !queryItems.contains(where: { $0.name == "redirect_uri" }) {
+                        queryItems.append(URLQueryItem(name: "redirect_uri", value: redirectUri))
+                        needsUpdate = true
+                        logger.info("Added redirect_uri to /postlogin/verify URL: \(redirectUri)")
+                    }
+                    
+                    if let codeVerifier = CredentialManager.getCodeVerifier() {
+                        if !queryItems.contains(where: { $0.name == "code_verifier_pkce" }) {
+                            queryItems.append(URLQueryItem(name: "code_verifier_pkce", value: codeVerifier))
+                            needsUpdate = true
+                            logger.info("Added code_verifier_pkce to /postlogin/verify URL")
+                        }
+                    } else {
+                        logger.warning("No code verifier found for /postlogin/verify URL - this may cause verification to fail")
+                    }
+                    
+                    if needsUpdate {
+                        urlComponents.queryItems = queryItems
+                        if let updatedUrl = urlComponents.url {
+                            logger.info("Updating /postlogin/verify URL with required parameters while preserving token: \(updatedUrl.absoluteString)")
+                            DispatchQueue.main.async {
+                                webView?.load(URLRequest(url: updatedUrl))
+                            }
+                            return .cancel
+                        }
+                    }
+                }
+            }
+            
             // Check if this is a redirect to dashboard/tenant selection after social login
             // This happens when user already has an active session in Safari
             // After Google auth, server redirects to dashboard instead of callback URL
