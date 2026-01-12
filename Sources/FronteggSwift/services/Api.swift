@@ -480,7 +480,7 @@ public class Api {
         do {
             let refreshTokenCookie = "\(self.cookieName)=\(refreshToken!)"
             let (_, response) = try await postRequest(
-                path: "identity/resources/auth/v1/logout",
+                path: "oauth/logout/token",
                 body: [:],
                 additionalHeaders: ["Cookie": refreshTokenCookie]
             )
