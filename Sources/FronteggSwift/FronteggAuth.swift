@@ -1061,6 +1061,24 @@ public class FronteggAuth: FronteggState {
                             setRefreshToken(tenantToken)
                         }
                         refreshToken = tenantToken
+                    } else {
+                        if let legacyToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+                            self.logger.warning("No tenant-specific token found for tenant \(tenantId), falling back to legacy token (migration scenario)")
+                            await MainActor.run {
+                                setRefreshToken(legacyToken)
+                            }
+                            refreshToken = legacyToken
+                        }
+                    }
+                }
+            } else {
+                if refreshToken == nil {
+                    if let legacyToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+                        self.logger.warning("No tenant ID available, falling back to legacy token (migration scenario)")
+                        await MainActor.run {
+                            setRefreshToken(legacyToken)
+                        }
+                        refreshToken = legacyToken
                     }
                 }
             }

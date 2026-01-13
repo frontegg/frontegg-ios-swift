@@ -2,10 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>            await MainActor.run {
+            await MainActor.run {
+enableSessionPerTenant</key>
+	<true/>
 	<key>baseUrl</key>
-	<string>https://autheu.davidantoon.me</string>
+	<string>https://app-vn16blhh11fb.stg.frontegg.com</string>
 	<key>clientId</key>
-	<string>b6adfe4c-d695-4c04-b95f-3ec9fd0c6cca</string>
+	<string>9cfa5020-49bf-4b28-be5c-3a2d5ddfa85d</string>
 	<key>enableOfflineMode</key>
 	<true/>
 	<key>logLevel</key>
