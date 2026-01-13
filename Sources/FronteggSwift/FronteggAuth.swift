@@ -305,6 +305,15 @@ public class FronteggAuth: FronteggState {
                 refreshToken = try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .refreshToken)
                 accessToken = try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .accessToken)
             }
+            
+            if refreshToken == nil || accessToken == nil {
+                if let legacyRefreshToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue),
+                   let legacyAccessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
+                    logger.warning("No tenant-specific tokens found, falling back to legacy tokens (migration scenario)")
+                    refreshToken = legacyRefreshToken
+                    accessToken = legacyAccessToken
+                }
+            }
         } else {
             // Legacy behavior: load global tokens
             refreshToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue)
