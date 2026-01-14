@@ -167,15 +167,14 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             // EXCEPT for OIDC callback - we need to let the server redirect to custom scheme first
             if url.path.hasPrefix("/oauth/account/") {
                 logger.info("🔵 [Social Login Debug] OAuth account path detected: \(url.path)")
+                if url.path.contains("/oauth/account/oidc/callback") {
+                    logger.info("🔵 [Social Login Debug] OIDC callback URL detected, allowing server to redirect to custom scheme")
+                    logger.info("🔵 [Social Login Debug] OIDC callback URL: \(url.absoluteString)")
+                    isSocialLoginFlow = true
+                    return .allow
+                }
+                
                 if let queryItems = getQueryItems(url.absoluteString), queryItems["code"] != nil {
-                    // Check if it's an OIDC callback - let the server redirect to custom scheme first
-                    if url.path.contains("/oauth/account/oidc/callback") {
-                        logger.info("🔵 [Social Login Debug] OIDC callback URL detected, allowing server to redirect to custom scheme")
-                        logger.info("🔵 [Social Login Debug] OIDC callback URL: \(url.absoluteString)")
-                        // Allow the server to process the OIDC callback and redirect to custom scheme
-                        // The custom scheme redirect will be caught by the custom scheme check above
-                        return .allow
-                    }
                     // For other callback URLs (not OIDC), handle them directly
                     if url.path.contains("/callback") || url.path.contains("/redirect/") {
                         logger.info("✅ [Social Login Debug] OAuth callback URL with code in /oauth/account/ path, handling as HostedLoginCallback")
@@ -230,7 +229,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             if isSocialLoginFlow || 
                (previousUrl != nil && (
                    previousUrl!.path.contains("/oauth/account/social/success") ||
-                   previousUrl!.path.contains("/oauth/account/redirect/ios/")
+                   previousUrl!.path.contains("/oauth/account/redirect/ios/") ||
+                   previousUrl!.path.contains("/oauth/account/oidc/callback")
                )) {
                 // Check if current URL is a dashboard/tenant selection page
                 let isDashboardOrTenantSelection = url.path.contains("/dashboard") ||
