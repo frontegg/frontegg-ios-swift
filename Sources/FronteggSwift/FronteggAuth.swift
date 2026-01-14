@@ -1284,6 +1284,13 @@ public class FronteggAuth: FronteggState {
         logger.info("🔵 [Social Login Debug] Code verifier: \(codeVerifier != nil ? "provided" : "nil")")
         logger.info("🔵 [Social Login Debug] Code length: \(code.count) characters")
         
+        if let verifier = codeVerifier {
+            logger.info("🔵 [PKCE Debug] Token exchange - code_verifier length: \(verifier.count)")
+            logger.info("🔵 [PKCE Debug] Token exchange - code_verifier first 10 chars: \(String(verifier.prefix(10)))")
+        } else {
+            logger.warning("🔵 [PKCE Debug] Token exchange - code_verifier is nil (this may cause PKCE mismatch)")
+        }
+        
         Task {
             
             logger.info("Going to exchange token with redirectUri: \(redirectUri), codeVerifier: \(codeVerifier != nil ? "provided" : "nil")")
