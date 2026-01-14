@@ -1204,6 +1204,32 @@ public class FronteggAuth: FronteggState {
                 if enableSessionPerTenant, let preserved = preservedTenantId {
                     self.logger.warning("Token refresh failed, but preserving tenant ID: \(preserved)")
                 }
+                
+                var context: [String: [String: Any]] = [
+                    "auth": [
+                        "method": "refreshTokenIfNeeded",
+                        "attempts": attempts,
+                        "enableSessionPerTenant": enableSessionPerTenant,
+                        "hasPreservedTenantId": enableSessionPerTenant && preservedTenantId != nil
+                    ],
+                    "error": [
+                        "type": "failed_to_refresh_token",
+                        "description": "Refresh token is not valid"
+                    ]
+                ]
+                
+                if enableSessionPerTenant, let preserved = preservedTenantId {
+                    context["auth"] = (context["auth"] ?? [:]).merging([
+                        "preservedTenantId": preserved
+                    ]) { _, new in new }
+                }
+                
+                SentryHelper.logMessage(
+                    "Api: failed to refresh token, error: {\"errors\":[\"Refresh token is not valid\"]}",
+                    level: .error,
+                    context: context
+                )
+                
                 self.credentialManager.clear()
                 await MainActor.run {
                     self.setInitializing(false)
@@ -1454,13 +1480,52 @@ public class FronteggAuth: FronteggState {
                 return self.accessToken
             } catch let error as FronteggError {
                 if case .authError(FronteggError.Authentication.failedToRefreshToken) = error {
+                    SentryHelper.logMessage(
+                        "Api: failed to refresh token, error: {\"errors\":[\"Refresh token is not valid\"]}",
+                        level: .error,
+                        context: [
+                            "auth": [
+                                "method": "getOrRefreshAccessTokenAsync",
+                                "attempts": attempts + 1,
+                                "enableSessionPerTenant": enableSessionPerTenant
+                            ],
+                            "error": [
+                                "type": "failed_to_refresh_token",
+                                "description": "Refresh token is not valid"
+                            ]
+                        ]
+                    )
                     return nil
                 }
                 self.logger.error("Failed to refresh token: \(error.localizedDescription), retrying... (\(attempts + 1) attempts)")
+                
+                SentryHelper.logError(error, context: [
+                    "auth": [
+                        "method": "getOrRefreshAccessTokenAsync",
+                        "attempts": attempts + 1,
+                        "enableSessionPerTenant": enableSessionPerTenant
+                    ],
+                    "error": [
+                        "type": "token_refresh_error"
+                    ]
+                ])
+                
                 attempts += 1
                 try await Task.sleep(nanoseconds: 1_000_000_000) // Sleep for 1 second before retrying
             } catch {
                 self.logger.error("Unknown error while refreshing token: \(error.localizedDescription), retrying... (\(attempts + 1) attempts)")
+                
+                SentryHelper.logError(error, context: [
+                    "auth": [
+                        "method": "getOrRefreshAccessTokenAsync",
+                        "attempts": attempts + 1,
+                        "enableSessionPerTenant": enableSessionPerTenant
+                    ],
+                    "error": [
+                        "type": "unknown_token_refresh_error"
+                    ]
+                ])
+                
                 attempts += 1
                 try await Task.sleep(nanoseconds: 1_000_000_000) // Sleep for 1 second before retrying
             }

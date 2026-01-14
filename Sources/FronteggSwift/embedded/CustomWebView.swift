@@ -915,11 +915,42 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 if(CustomWebView.isCancelledAsAuthenticationLoginError(error!)){
                     // Social login authentication canceled
                 }else {
+                    SentryHelper.logError(error!, context: [
+                        "social_login": [
+                            "url": url.absoluteString,
+                            "ephemeralSession": ephemeralSession,
+                            "embeddedMode": FronteggApp.shared.embeddedMode,
+                            "stage": "external_browser_callback"
+                        ],
+                        "error": [
+                            "type": "social_login_error"
+                        ]
+                    ])
+                    
                     let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
                     CredentialManager.saveCodeVerifier(codeVerifier)
                     _ = webView?.load(URLRequest(url: newUrl))
                 }
             }else if (callbackUrl == nil){
+                // Critical: callback URL is nil - redirect failed
+                SentryHelper.logMessage(
+                    "Google Login fails to redirect to app in embeddedMode when Safari session exists - callbackUrl is nil",
+                    level: .error,
+                    context: [
+                        "social_login": [
+                            "url": url.absoluteString,
+                            "ephemeralSession": ephemeralSession,
+                            "embeddedMode": FronteggApp.shared.embeddedMode,
+                            "stage": "external_browser_callback",
+                            "callbackUrl": "nil"
+                        ],
+                        "error": [
+                            "type": "social_login_redirect_failed",
+                            "description": "Callback URL is nil in startExternalBrowser - redirect to app failed"
+                        ]
+                    ]
+                )
+                
                 let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
                 CredentialManager.saveCodeVerifier(codeVerifier)
                 _ = webView?.load(URLRequest(url: newUrl))

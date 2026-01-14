@@ -41,10 +41,76 @@ class WebAuthenticator: NSObject, ObservableObject, ASWebAuthenticationPresentat
         }
         
         let bundleIdentifier = FronteggApp.shared.bundleIdentifier
+        
+        // Add breadcrumb for social login start
+        SentryHelper.addBreadcrumb(
+            "Starting ASWebAuthenticationSession for social login",
+            category: "social_login",
+            level: .info,
+            data: [
+                "url": websiteURL.absoluteString,
+                "callbackScheme": bundleIdentifier,
+                "ephemeralSession": ephemeralSession,
+                "embeddedMode": FronteggApp.shared.embeddedMode
+            ]
+        )
+        
         let webAuthSession = ASWebAuthenticationSession.init(
             url: websiteURL,
             callbackURLScheme: bundleIdentifier,
-            completionHandler: completionHandler)
+            completionHandler: { callbackUrl, error in
+                // Log completion result
+                if let error = error {
+                    let nsError = error as NSError
+                    if nsError.code != ASWebAuthenticationSessionError.canceledLogin.rawValue {
+                        SentryHelper.logError(error, context: [
+                            "social_login": [
+                                "url": websiteURL.absoluteString,
+                                "callbackScheme": bundleIdentifier,
+                                "ephemeralSession": ephemeralSession,
+                                "embeddedMode": FronteggApp.shared.embeddedMode,
+                                "errorCode": nsError.code,
+                                "errorDomain": nsError.domain
+                            ],
+                            "error": [
+                                "type": "social_login_redirect_failed"
+                            ]
+                        ])
+                    }
+                } else if callbackUrl == nil {
+                    // This is the critical case: redirect failed but no error
+                    SentryHelper.logMessage(
+                        "Google Login fails to redirect to app in embeddedMode when Safari session exists",
+                        level: .error,
+                        context: [
+                            "social_login": [
+                                "url": websiteURL.absoluteString,
+                                "callbackScheme": bundleIdentifier,
+                                "ephemeralSession": ephemeralSession,
+                                "embeddedMode": FronteggApp.shared.embeddedMode,
+                                "callbackUrl": "nil"
+                            ],
+                            "error": [
+                                "type": "social_login_redirect_failed",
+                                "description": "Callback URL is nil - redirect to app failed"
+                            ]
+                        ]
+                    )
+                } else if let callbackUrl = callbackUrl {
+                    // Success - add breadcrumb
+                    SentryHelper.addBreadcrumb(
+                        "Social login redirect successful",
+                        category: "social_login",
+                        level: .info,
+                        data: [
+                            "callbackUrl": callbackUrl.absoluteString
+                        ]
+                    )
+                }
+                
+                // Call original completion handler
+                completionHandler(callbackUrl, error)
+            })
         // Run the session
         webAuthSession.presentationContextProvider = self
         webAuthSession.prefersEphemeralWebBrowserSession = ephemeralSession

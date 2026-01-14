@@ -46,6 +46,8 @@ public class FronteggApp {
         }
 
         debugConfigurationChecker.runChecks()
+        
+        SentryHelper.initialize()
 
         guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
             fatalError(FronteggError.configError(.couldNotGetBundleID(Bundle.main.bundlePath)).localizedDescription)
@@ -103,6 +105,7 @@ public class FronteggApp {
                 self.applicationId = config.applicationId
                 self.auth.reinitWithRegion(config: config)
 
+                SentryHelper.setBaseUrl(self.baseUrl)
                 logger.info("Frontegg Initialized succcessfully (region: \(config.key))")
                 return;
             } else {
@@ -129,6 +132,7 @@ public class FronteggApp {
                 embeddedMode: self.embeddedMode
             )
 
+            SentryHelper.setBaseUrl(self.baseUrl)
             logger.info("Frontegg Initialized succcessfully")
         }
     }
@@ -151,6 +155,8 @@ public class FronteggApp {
         self.baseUrl = baseUrl
         self.clientId = cliendId
         self.applicationId = applicationId
+
+        SentryHelper.setBaseUrl(self.baseUrl)
         
         self.handleLoginWithSocialLogin = handleLoginWithSocialLogin
         self.handleLoginWithSSO = handleLoginWithSSO
@@ -174,6 +180,8 @@ public class FronteggApp {
         self.baseUrl = self.auth.baseUrl
         self.clientId = self.auth.clientId
         self.applicationId = self.auth.applicationId
+
+        SentryHelper.setBaseUrl(self.baseUrl)
     }
 
     public func initWithRegion(regionKey: String){
@@ -197,6 +205,8 @@ public class FronteggApp {
         self.clientId = config.clientId
         self.applicationId = config.applicationId
         self.auth.reinitWithRegion(config: config)
+
+        SentryHelper.setBaseUrl(self.baseUrl)
         
         logger.info("Frontegg Initialized succcessfully (region: \(regionKey))")
     }

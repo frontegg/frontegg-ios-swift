@@ -86,16 +86,18 @@ class TraceIdLogger {
     /// Extracts and logs the frontegg-trace-id from an HTTP response
     /// - Parameter response: The URLResponse to extract trace ID from
     func extractAndLogTraceId(from response: URLResponse) {
-        // Check if trace ID logging is enabled in config
-        guard let config = try? PlistHelper.fronteggConfig(), config.enableTraceIdLogging else {
-            return
-        }
-        
         guard let httpResponse = response as? HTTPURLResponse else {
             return
         }
         
         if let traceId = httpResponse.value(forHTTPHeaderField: "frontegg-trace-id") {
+            SentryHelper.addBreadcrumb(
+                "frontegg-trace-id received",
+                category: "network",
+                level: .info,
+                data: ["frontegg_trace_id": traceId]
+            )
+
             logTraceId(traceId)
         }
     }

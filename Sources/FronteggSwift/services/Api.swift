@@ -296,10 +296,40 @@ public class Api {
                 if res.statusCode == 401 {
                     let responseString = String(data: data, encoding: .utf8) ?? "no response body"
                     self.logger.error("failed to refresh token with tenantId (401), error: \(responseString)")
+                    
+                    SentryHelper.logMessage("Api: failed to refresh token, error: \(responseString)", level: .error, context: [
+                        "api": [
+                            "endpoint": "identity/resources/auth/v1/user/token/refresh",
+                            "method": "POST",
+                            "statusCode": res.statusCode,
+                            "hasTenantId": tenantId != nil,
+                            "tenantId": tenantId ?? "none"
+                        ],
+                        "error": [
+                            "type": "refresh_token_failed",
+                            "response": responseString
+                        ]
+                    ])
+                    
                     throw FronteggError.authError(.failedToRefreshToken)
                 } else if res.statusCode != 200 {
                     let responseString = String(data: data, encoding: .utf8) ?? "no response body"
                     self.logger.error("failed to refresh token with tenantId, status: \(res.statusCode), error: \(responseString)")
+                    
+                    SentryHelper.logMessage("Api: failed to refresh token, status: \(res.statusCode), error: \(responseString)", level: .error, context: [
+                        "api": [
+                            "endpoint": "identity/resources/auth/v1/user/token/refresh",
+                            "method": "POST",
+                            "statusCode": res.statusCode,
+                            "hasTenantId": tenantId != nil,
+                            "tenantId": tenantId ?? "none"
+                        ],
+                        "error": [
+                            "type": "refresh_token_failed",
+                            "response": responseString
+                        ]
+                    ])
+                    
                     throw FronteggError.authError(.failedToRefreshToken)
                 } else {
                     self.logger.info("Refresh with tenantId response: status=\(res.statusCode)")
@@ -312,6 +342,20 @@ public class Api {
                 return authResponse
             } catch {
                 self.logger.error("Failed to decode AuthResponse from refresh with tenantId: \(error)")
+                
+                SentryHelper.logError(error, context: [
+                    "api": [
+                        "endpoint": "identity/resources/auth/v1/user/token/refresh",
+                        "method": "POST",
+                        "hasTenantId": tenantId != nil,
+                        "tenantId": tenantId ?? "none"
+                    ],
+                    "error": [
+                        "type": "decode_error",
+                        "stage": "refresh_token_response"
+                    ]
+                ])
+                
                 throw error
             }
         } else {
@@ -324,10 +368,38 @@ public class Api {
                 if res.statusCode == 401 {
                     let responseString = String(data: data, encoding: .utf8) ?? "no response body"
                     self.logger.error("failed to refresh token (401), error: \(responseString)")
+                    
+                    SentryHelper.logMessage("Api: failed to refresh token, error: \(responseString)", level: .error, context: [
+                        "api": [
+                            "endpoint": "oauth/token",
+                            "method": "POST",
+                            "statusCode": res.statusCode,
+                            "grantType": "refresh_token"
+                        ],
+                        "error": [
+                            "type": "refresh_token_failed",
+                            "response": responseString
+                        ]
+                    ])
+                    
                     throw FronteggError.authError(.failedToRefreshToken)
                 } else if res.statusCode != 200 {
                     let responseString = String(data: data, encoding: .utf8) ?? "no response body"
                     self.logger.error("failed to refresh token, status: \(res.statusCode), error: \(responseString)")
+                    
+                    SentryHelper.logMessage("Api: failed to refresh token, status: \(res.statusCode), error: \(responseString)", level: .error, context: [
+                        "api": [
+                            "endpoint": "oauth/token",
+                            "method": "POST",
+                            "statusCode": res.statusCode,
+                            "grantType": "refresh_token"
+                        ],
+                        "error": [
+                            "type": "refresh_token_failed",
+                            "response": responseString
+                        ]
+                    ])
+                    
                     throw FronteggError.authError(.failedToRefreshToken)
                 } else {
                     self.logger.info("OAuth refresh response: status=\(res.statusCode)")
@@ -340,6 +412,19 @@ public class Api {
                 return authResponse
             } catch {
                 self.logger.error("Failed to decode AuthResponse: \(error)")
+                
+                SentryHelper.logError(error, context: [
+                    "api": [
+                        "endpoint": "oauth/token",
+                        "method": "POST",
+                        "grantType": "refresh_token"
+                    ],
+                    "error": [
+                        "type": "decode_error",
+                        "stage": "refresh_token_response"
+                    ]
+                ])
+                
                 throw error
             }
         }
