@@ -11,20 +11,19 @@ public class SentryHelper {
     private static var isInitialized = false
     private static let configuredDSN = "https://7f13156fe85003ccf1b968a476787bb1@o362363.ingest.us.sentry.io/4510708685471744"
     private static let sdkName = "FronteggSwift"
-    private static let sdkVersion = "1.2.67"
     
     private static func configureGlobalMetadata() {
         let bundleId = Bundle.main.bundleIdentifier ?? "unknown"
 
         SentrySDK.configureScope { scope in
             scope.setTag(value: sdkName, key: "sdk.name")
-            scope.setTag(value: sdkVersion, key: "sdk.version")
+            scope.setTag(value: SDKVersion.value, key: "sdk.version")
             scope.setTag(value: "ios", key: "platform")
             scope.setTag(value: bundleId, key: "bundle_id")
 
             scope.setContext(value: [
                 "name": sdkName,
-                "version": sdkVersion
+                "version": SDKVersion.value
             ], key: "sdk")
 
             scope.setContext(value: [
@@ -79,7 +78,7 @@ public class SentryHelper {
                let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
                 releaseName = "\(Bundle.main.bundleIdentifier ?? "frontegg-ios")@\(appVersion)+\(appBuild)"
             }
-            releaseName += " (SDK: \(sdkVersion))"
+            releaseName += " (SDK: \(SDKVersion.value))"
             
             options.releaseName = releaseName
         }
