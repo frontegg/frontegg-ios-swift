@@ -39,6 +39,17 @@ jobs:
             
             content = content.replace(/s\.version[ ]+=[ ]+'([^']+)'/g, `s.version          = '${newVersion}'`);
             fs.writeFileSync('./FronteggSwift.podspec', content);
+
+            // Keep SDKVersion.swift in sync with podspec version
+            const sdkVersionPath = './Sources/FronteggSwift/utils/SDKVersion.swift';
+            if (fs.existsSync(sdkVersionPath)) {
+              let sdkVersionContent = fs.readFileSync(sdkVersionPath, {encoding: "utf-8"});
+              sdkVersionContent = sdkVersionContent.replace(
+                /static let value = "([^"]+)"/g,
+                `static let value = "${newVersion}"`
+              );
+              fs.writeFileSync(sdkVersionPath, sdkVersionContent);
+            }
             return newVersion;
             
 
