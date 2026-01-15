@@ -1,3 +1,39 @@
+## v1.2.68
+Fix: Improved token refresh reliability when enableSessionPerTenant is enabled
+- Added migration-safe logic that falls back to legacy global tokens if tenant-specific tokens or lastActiveTenantId are not yet available (e.g. right after upgrading from a version without per-tenant sessions)
+- This prevents one-time refresh failures on the first app launch after upgrade while still using existing tokens, and ensures a smoother transition to per-tenant token storage
+
+Fix: Social login PKCE flow
+ - Hardened the OAuth callback handler to be more defensive (better error checks, weak self, more logging).
+  - Improved tenant-specific token refresh behavior, including safe fallback to legacy tokens for migration scenarios – making refresh failures less likely to log out existing users.
+  - Added rich PKCE debug logging around token exchange so that future customer logs immediately reveal whether the verifier is present, its length, and the redirect URI used.
+  - Ensured `WebAuthenticator` is always created with the correct presentation anchor and, for Microsoft, uses a non-ephemeral session while still using ephemeral sessions for other providers
+### Sentry Error Tracking
+
+- **Feature Flag**: Added `enableSentryLogging` in `Frontegg.plist` to enable/disable Sentry logging
+- **Offline Support**: Configurable `sentryMaxQueueSize` (default: 30) for event queuing during offline periods
+- **Comprehensive Breadcrumbs**: Automatic tracking of social login flows, OAuth callbacks, token refresh attempts, and associated domains configuration
+- **Trace ID Correlation**: Trace IDs from API responses logged to Sentry breadcrumbs and local files
+
+### Enhanced Logging
+
+- **Social Login Visibility**: Detailed logging for `ASWebAuthenticationSession` flows including callback URLs, query parameters, and redirect success/failure
+- **Associated Domains Verification**: Startup logging to verify associated domains configuration
+- **Improved Error Messages**: Refresh token errors now include detailed API error messages
+
+## Migration Notes
+
+If you were using `enableTraceIdLogging`:
+
+1. Remove `enableTraceIdLogging` from your `Frontegg.plist`
+2. Add `enableSentryLogging`:
+   
+   <key>enableSentryLogging</key>
+   <true/>
+   ## Dependencies
+
+- Added Sentry SDK dependency (`~> 8.46.0`)
+
 ## v1.2.67
 - updated logout api 
 
