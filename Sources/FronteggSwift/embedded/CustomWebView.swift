@@ -827,10 +827,10 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     // and is NOT saved to CredentialManager (to avoid conflicts with main OAuth flow)
                     do {
                         let verifier = try await SocialLoginUrlGenerator.getCodeVerifierFromWebview()
-                        logger.info("🔵 [Social Login Debug] Retrieved code_verifier from webview localStorage for social login (length: \(verifier.count))")
+                        self.logger.info("🔵 [Social Login Debug] Retrieved code_verifier from webview localStorage for social login (length: \(verifier.count))")
                         codeVerifier = verifier
                     } catch {
-                        logger.warning("⚠️ [Social Login Debug] Failed to get code_verifier from webview for social login: \(error). Falling back to CredentialManager.")
+                        self.logger.warning("⚠️ [Social Login Debug] Failed to get code_verifier from webview for social login: \(error). Falling back to CredentialManager.")
                         codeVerifier = CredentialManager.getCodeVerifier()
                     }
                 } else {
@@ -838,8 +838,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     codeVerifier = CredentialManager.getCodeVerifier()
                 }
                 
-                logger.info("🔵 [Social Login Debug] Code verifier present: \(codeVerifier != nil ? "yes" : "no")")
-                logger.trace("Using redirect_uri: \(redirectUri), isMagicLink: \(isMagicLink), codeVerifier: \(codeVerifier != nil ? "provided" : "nil")")
+                self.logger.info("🔵 [Social Login Debug] Code verifier present: \(codeVerifier != nil ? "yes" : "no")")
+                self.logger.trace("Using redirect_uri: \(redirectUri), isMagicLink: \(isMagicLink), codeVerifier: \(codeVerifier != nil ? "provided" : "nil")")
                 
                 FronteggAuth.shared.handleHostedLoginCallback(code, codeVerifier, redirectUri: redirectUri) { res in
                     switch (res) {
