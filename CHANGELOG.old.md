@@ -1,3 +1,6 @@
+## v1.2.67
+- updated logout api 
+
 ## v1.2.66
 - microsoft verification callback support
 
