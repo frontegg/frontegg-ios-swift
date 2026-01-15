@@ -1199,7 +1199,7 @@ public class FronteggAuth: FronteggState {
             
         } catch let error as FronteggError {
             // Auth failure → logout (unchanged)
-            if case .authError(FronteggError.Authentication.failedToRefreshToken) = error {
+            if case .authError(FronteggError.Authentication.failedToRefreshToken(let message)) = error {
                 // Before clearing, preserve the tenant ID if we have one
                 if enableSessionPerTenant, let preserved = preservedTenantId {
                     self.logger.warning("Token refresh failed, but preserving tenant ID: \(preserved)")
@@ -1214,7 +1214,7 @@ public class FronteggAuth: FronteggState {
                     ],
                     "error": [
                         "type": "failed_to_refresh_token",
-                        "description": "Refresh token is not valid"
+                        "message": message
                     ]
                 ]
                 
@@ -1225,7 +1225,7 @@ public class FronteggAuth: FronteggState {
                 }
                 
                 SentryHelper.logMessage(
-                    "Api: failed to refresh token, error: {\"errors\":[\"Refresh token is not valid\"]}",
+                    "Api: failed to refresh token, error: \(message)",
                     level: .error,
                     context: context
                 )
@@ -1479,9 +1479,9 @@ public class FronteggAuth: FronteggState {
                 self.logger.info("Token refreshed successfully")
                 return self.accessToken
             } catch let error as FronteggError {
-                if case .authError(FronteggError.Authentication.failedToRefreshToken) = error {
+                if case .authError(FronteggError.Authentication.failedToRefreshToken(let message)) = error {
                     SentryHelper.logMessage(
-                        "Api: failed to refresh token, error: {\"errors\":[\"Refresh token is not valid\"]}",
+                        "Api: failed to refresh token, error: \(message)",
                         level: .error,
                         context: [
                             "auth": [
@@ -1491,7 +1491,7 @@ public class FronteggAuth: FronteggState {
                             ],
                             "error": [
                                 "type": "failed_to_refresh_token",
-                                "description": "Refresh token is not valid"
+                                "message": message
                             ]
                         ]
                     )

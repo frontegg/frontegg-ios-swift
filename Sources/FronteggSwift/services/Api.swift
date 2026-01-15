@@ -504,7 +504,7 @@ public class Api {
                         ]
                     ])
                     
-                    throw FronteggError.authError(.failedToRefreshToken)
+                    throw FronteggError.authError(.failedToRefreshToken(responseString))
                 } else if res.statusCode != 200 {
                     let responseString = String(data: data, encoding: .utf8) ?? "no response body"
                     self.logger.error("failed to refresh token with tenantId, status: \(res.statusCode), error: \(responseString)")
@@ -523,7 +523,7 @@ public class Api {
                         ]
                     ])
                     
-                    throw FronteggError.authError(.failedToRefreshToken)
+                    throw FronteggError.authError(.failedToRefreshToken(responseString))
                 } else {
                     self.logger.info("Refresh with tenantId response: status=\(res.statusCode)")
                 }
@@ -575,7 +575,7 @@ public class Api {
                         ]
                     ])
                     
-                    throw FronteggError.authError(.failedToRefreshToken)
+                    throw FronteggError.authError(.failedToRefreshToken(responseString))
                 } else if res.statusCode != 200 {
                     let responseString = String(data: data, encoding: .utf8) ?? "no response body"
                     self.logger.error("failed to refresh token, status: \(res.statusCode), error: \(responseString)")
@@ -593,7 +593,7 @@ public class Api {
                         ]
                     ])
                     
-                    throw FronteggError.authError(.failedToRefreshToken)
+                    throw FronteggError.authError(.failedToRefreshToken(responseString))
                 } else {
                     self.logger.info("OAuth refresh response: status=\(res.statusCode)")
                 }

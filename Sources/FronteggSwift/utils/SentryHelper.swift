@@ -44,6 +44,30 @@ public class SentryHelper {
             ]
         }
     }
+
+    private static func payloadContext(_ payload: FronteggPlist.Payload) -> [String: Any] {
+        switch payload {
+        case .singleRegion(let config):
+            return [
+                "type": "singleRegion",
+                "baseUrl": config.baseUrl,
+                "clientId": config.clientId,
+                "applicationId": config.applicationId ?? "nil"
+            ]
+        case .multiRegion(let config):
+            return [
+                "type": "multiRegion",
+                "regions": config.regions.map { region in
+                    [
+                        "key": region.key,
+                        "baseUrl": region.baseUrl,
+                        "clientId": region.clientId,
+                        "applicationId": region.applicationId ?? "nil"
+                    ]
+                }
+            ]
+        }
+    }
     
     private static func configureGlobalMetadata() {
         let bundleId = Bundle.main.bundleIdentifier ?? "unknown"
@@ -73,19 +97,54 @@ public class SentryHelper {
             }
 
             if let config = try? PlistHelper.fronteggConfig() {
+                // Tags (easy filtering)
+                scope.setTag(value: config.keychainService, key: "keychainService")
                 scope.setTag(value: String(config.embeddedMode), key: "embeddedMode")
+                scope.setTag(value: String(config.loginWithSocialLogin), key: "loginWithSocialLogin")
+                scope.setTag(value: String(config.handleLoginWithCustomSocialLoginProvider), key: "handleLoginWithCustomSocialLoginProvider")
+                scope.setTag(value: String(config.handleLoginWithSocialProvider), key: "handleLoginWithSocialProvider")
+                scope.setTag(value: String(config.loginWithSSO), key: "loginWithSSO")
+                scope.setTag(value: String(config.loginWithCustomSSO), key: "loginWithCustomSSO")
+                scope.setTag(value: String(config.lateInit), key: "lateInit")
+                scope.setTag(value: String(config.keepUserLoggedInAfterReinstall), key: "keepUserLoggedInAfterReinstall")
+                scope.setTag(value: String(config.useAsWebAuthenticationForAppleLogin), key: "useAsWebAuthenticationForAppleLogin")
+                scope.setTag(value: String(config.shouldSuggestSavePassword), key: "shouldSuggestSavePassword")
+                scope.setTag(value: String(config.deleteCookieForHostOnly), key: "deleteCookieForHostOnly")
                 scope.setTag(value: String(config.enableOfflineMode), key: "enableOfflineMode")
+                scope.setTag(value: String(config.useLegacySocialLoginFlow), key: "useLegacySocialLoginFlow")
                 scope.setTag(value: String(config.enableSessionPerTenant), key: "enableSessionPerTenant")
                 scope.setTag(value: String(config.enableTraceIdLogging), key: "enableTraceIdLogging")
                 scope.setTag(value: config.logLevel.rawValue, key: "logLevel")
+                scope.setTag(value: String(config.networkMonitoringInterval), key: "networkMonitoringInterval")
+                if let backgroundColor = config.backgroundColor {
+                    scope.setTag(value: backgroundColor, key: "backgroundColor")
+                }
+                if let cookieRegex = config.cookieRegex {
+                    scope.setTag(value: cookieRegex, key: "cookieRegex")
+                }
 
                 scope.setContext(value: [
+                    "keychainService": config.keychainService,
                     "embeddedMode": config.embeddedMode,
+                    "loginWithSocialLogin": config.loginWithSocialLogin,
+                    "handleLoginWithCustomSocialLoginProvider": config.handleLoginWithCustomSocialLoginProvider,
+                    "handleLoginWithSocialProvider": config.handleLoginWithSocialProvider,
+                    "loginWithSSO": config.loginWithSSO,
+                    "loginWithCustomSSO": config.loginWithCustomSSO,
+                    "lateInit": config.lateInit,
                     "enableOfflineMode": config.enableOfflineMode,
+                    "useLegacySocialLoginFlow": config.useLegacySocialLoginFlow,
                     "enableSessionPerTenant": config.enableSessionPerTenant,
                     "enableTraceIdLogging": config.enableTraceIdLogging,
                     "networkMonitoringInterval": config.networkMonitoringInterval,
-                    "logLevel": config.logLevel.rawValue
+                    "logLevel": config.logLevel.rawValue,
+                    "keepUserLoggedInAfterReinstall": config.keepUserLoggedInAfterReinstall,
+                    "useAsWebAuthenticationForAppleLogin": config.useAsWebAuthenticationForAppleLogin,
+                    "shouldSuggestSavePassword": config.shouldSuggestSavePassword,
+                    "backgroundColor": config.backgroundColor ?? "nil",
+                    "cookieRegex": config.cookieRegex ?? "nil",
+                    "deleteCookieForHostOnly": config.deleteCookieForHostOnly,
+                    "payload": payloadContext(config.payload)
                 ], key: "frontegg_config")
             }
         }

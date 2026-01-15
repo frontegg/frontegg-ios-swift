@@ -13,7 +13,7 @@ extension FronteggError {
     public enum Authentication: LocalizedError {
         case couldNotExchangeToken(_ message: String)
         case failedToAuthenticate
-        case failedToRefreshToken
+        case failedToRefreshToken(_ message: String)
         case failedToLoadUserData(_ message: String)
         case failedToExtractCode
         case failedToSwitchTenant
@@ -39,7 +39,8 @@ extension FronteggError.Authentication {
         switch self {
             case let .couldNotExchangeToken(message): message
             case .failedToAuthenticate: "Failed to authenticate with frontegg"
-            case .failedToRefreshToken: "Failed to refresh token"
+            case let .failedToRefreshToken(message):
+                message.isEmpty ? "Failed to refresh token" : message
             case let .failedToLoadUserData(message): "Failed to load user data: \(message)"
             case .failedToExtractCode: "Failed to get extract code from hostedLoginCallback url"
             case .failedToSwitchTenant: "Failed to switch tenant"
