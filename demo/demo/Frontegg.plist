@@ -7,13 +7,13 @@
 	<key>clientId</key>
 	<string>b6adfe4c-d695-4c04-b95f-3ec9fd0c6cca</string>
 	<key>enableOfflineMode</key>
-	<true/>
+	<false/>
 	<key>logLevel</key>
 	<string>trace</string>
 	<key>keepUserLoggedInAfterReinstall</key>
 	<true/>
 	<key>embeddedMode</key>
-	<true/>
+	<false/>
 	<key>enableSessionPerTenant</key>
 	<true/>
 	<key>networkMonitoringInterval</key>
