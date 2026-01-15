@@ -169,6 +169,64 @@ To force logout when a user reinstalls the app, update your `Frontegg.plist` fil
 
 By default `keepUserLoggedInAfterReinstall` is `true`.
 
+## Logging
+
+The SDK includes built-in logging capabilities to help you debug and monitor your application.
+
+### Log Levels
+
+The SDK supports the following log levels (from most verbose to least):
+
+- `trace` - Detailed tracing information
+- `debug` - Debug information for development
+- `info` - General informational messages
+- `warn` - Warning messages (default)
+- `error` - Error conditions
+- `critical` - Critical error conditions
+
+### What is the difference between `trace` and `debug` (and others)?
+
+In this SDK, the configured `logLevel` acts as a threshold. Selecting a level enables logs at that level **and all more severe levels**:
+
+- `trace`: trace + debug + info + warn + error + critical
+- `debug`: debug + info + warn + error + critical
+- `info`: info + warn + error + critical
+- `warn`: warn + error + critical
+- `error`: error + critical
+- `critical`: critical only
+
+Practical guidance:
+- Use `debug` for most troubleshooting sessions.
+- Use `trace` only when you need very detailed step-by-step flow tracing (it can be noisy).
+
+### Default Log Level
+
+By default, the SDK uses **`warn`** log level, which means only warnings, errors, and critical messages will be logged.
+
+### Configuring Log Level
+
+You can configure the log level in your `Frontegg.plist` file:
+
+```xml
+<key>logLevel</key>
+<string>debug</string>
+```
+
+Available values: `trace`, `debug`, `info`, `warn`, `error`, `critical`
+
+### Trace ID Logging
+
+The SDK can also log trace IDs from API responses to help with debugging. This is a separate feature from the log level.
+
+To enable trace ID logging:
+
+```xml
+<key>enableTraceIdLogging</key>
+<true/>
+```
+
+When enabled, trace IDs from API responses (in the `frontegg-trace-id` header) will be saved to a file `frontegg-trace-ids.log` in your project directory (or Documents directory in the simulator).
+
 
 ## Passkeys authentication (iOS 15+)
 

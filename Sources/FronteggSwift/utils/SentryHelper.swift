@@ -6,6 +6,21 @@
 
 import Foundation
 import Sentry
+#if canImport(Security)
+import Security
+
+private typealias SecTaskRef = CFTypeRef
+
+@_silgen_name("SecTaskCreateFromSelf")
+private func SecTaskCreateFromSelf(_ allocator: CFAllocator?) -> SecTaskRef?
+
+@_silgen_name("SecTaskCopyValueForEntitlement")
+private func SecTaskCopyValueForEntitlement(
+    _ task: SecTaskRef,
+    _ entitlement: CFString,
+    _ error: UnsafeMutablePointer<Unmanaged<CFError>?>?
+) -> CFTypeRef?
+#endif
 
 public class SentryHelper {
     private static var isInitialized = false
@@ -30,6 +45,13 @@ public class SentryHelper {
                 "bundle_id": bundleId
             ], key: "app")
 
+            if let associatedDomains = getAssociatedDomainsEntitlement() {
+                scope.setTag(value: String(associatedDomains.count), key: "associated_domains_count")
+                scope.setContext(value: [
+                    "values": associatedDomains
+                ], key: "associated_domains")
+            }
+
             if let config = try? PlistHelper.fronteggConfig() {
                 scope.setTag(value: String(config.embeddedMode), key: "embeddedMode")
                 scope.setTag(value: String(config.enableOfflineMode), key: "enableOfflineMode")
@@ -47,6 +69,18 @@ public class SentryHelper {
                 ], key: "frontegg_config")
             }
         }
+    }
+
+    private static func getAssociatedDomainsEntitlement() -> [String]? {
+#if canImport(Security)
+        guard let task = SecTaskCreateFromSelf(nil) else { return nil }
+        let key = "com.apple.developer.associated-domains" as CFString
+        var err: Unmanaged<CFError>? = nil
+        guard let value = SecTaskCopyValueForEntitlement(task, key, &err) else { return nil }
+        return (value as? [String])?.filter { !$0.isEmpty }
+#else
+        return nil
+#endif
     }
 
     public static func setBaseUrl(_ baseUrl: String) {
