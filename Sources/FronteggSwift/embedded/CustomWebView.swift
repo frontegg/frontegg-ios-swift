@@ -167,15 +167,14 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             // EXCEPT for OIDC callback - we need to let the server redirect to custom scheme first
             if url.path.hasPrefix("/oauth/account/") {
                 logger.info("🔵 [Social Login Debug] OAuth account path detected: \(url.path)")
+                if url.path.contains("/oauth/account/oidc/callback") {
+                    logger.info("🔵 [Social Login Debug] OIDC callback URL detected, allowing server to redirect to custom scheme")
+                    logger.info("🔵 [Social Login Debug] OIDC callback URL: \(url.absoluteString)")
+                    isSocialLoginFlow = true
+                    return .allow
+                }
+                
                 if let queryItems = getQueryItems(url.absoluteString), queryItems["code"] != nil {
-                    // Check if it's an OIDC callback - let the server redirect to custom scheme first
-                    if url.path.contains("/oauth/account/oidc/callback") {
-                        logger.info("🔵 [Social Login Debug] OIDC callback URL detected, allowing server to redirect to custom scheme")
-                        logger.info("🔵 [Social Login Debug] OIDC callback URL: \(url.absoluteString)")
-                        // Allow the server to process the OIDC callback and redirect to custom scheme
-                        // The custom scheme redirect will be caught by the custom scheme check above
-                        return .allow
-                    }
                     // For other callback URLs (not OIDC), handle them directly
                     if url.path.contains("/callback") || url.path.contains("/redirect/") {
                         logger.info("✅ [Social Login Debug] OAuth callback URL with code in /oauth/account/ path, handling as HostedLoginCallback")
@@ -230,7 +229,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             if isSocialLoginFlow || 
                (previousUrl != nil && (
                    previousUrl!.path.contains("/oauth/account/social/success") ||
-                   previousUrl!.path.contains("/oauth/account/redirect/ios/")
+                   previousUrl!.path.contains("/oauth/account/redirect/ios/") ||
+                   previousUrl!.path.contains("/oauth/account/oidc/callback")
                )) {
                 // Check if current URL is a dashboard/tenant selection page
                 let isDashboardOrTenantSelection = url.path.contains("/dashboard") ||
@@ -822,12 +822,15 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         
         // For magic link flow, the server generates code without PKCE, so we shouldn't send code_verifier
         // For regular OAuth flow, we need code_verifier for PKCE
-        let codeVerifier: String? = isMagicLink ? nil : CredentialManager.getCodeVerifier()
+        // For social SSO flows, the verifier is stored in webview localStorage, not CredentialManager
+        // Note: We check isMagicLink first (line 819), so magic link flows won't be misidentified as social login
+        // Social login is detected by: isSocialLoginFlow flag OR OIDC callback path
+        // We don't check for general /oauth/account/ paths to avoid false positives with magic link flows
+        let isSocialLogin = isSocialLoginFlow || url.path.contains("/oauth/account/oidc/callback")
         
         logger.info("🔵 [Social Login Debug] Final redirect_uri for token exchange: \(redirectUri)")
         logger.info("🔵 [Social Login Debug] Is magic link flow: \(isMagicLink)")
-        logger.info("🔵 [Social Login Debug] Code verifier present: \(codeVerifier != nil ? "yes" : "no")")
-        logger.trace("Using redirect_uri: \(redirectUri), isMagicLink: \(isMagicLink), codeVerifier: \(codeVerifier != nil ? "provided" : "nil")")
+        logger.info("🔵 [Social Login Debug] Is social login flow: \(isSocialLogin)")
         
         // Clear the magic link redirect_uri after using it
         magicLinkRedirectUri = nil
@@ -835,6 +838,30 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         self.fronteggAuth.setWebLoading(true)
         DispatchQueue.global(qos: .userInitiated).async {
             Task { @MainActor in
+                // Retrieve code_verifier based on flow type
+                let codeVerifier: String?
+                if isMagicLink {
+                    codeVerifier = nil
+                } else if isSocialLogin {
+                    // For social SSO flows, read verifier from webview localStorage
+                    // The verifier is generated and stored by the hosted login page in localStorage
+                    // and is NOT saved to CredentialManager (to avoid conflicts with main OAuth flow)
+                    do {
+                        let verifier = try await SocialLoginUrlGenerator.getCodeVerifierFromWebview()
+                        self.logger.info("🔵 [Social Login Debug] Retrieved code_verifier from webview localStorage for social login (length: \(verifier.count))")
+                        codeVerifier = verifier
+                    } catch {
+                        self.logger.warning("⚠️ [Social Login Debug] Failed to get code_verifier from webview for social login: \(error). Falling back to CredentialManager.")
+                        codeVerifier = CredentialManager.getCodeVerifier()
+                    }
+                } else {
+                    // For regular OAuth flow, use CredentialManager
+                    codeVerifier = CredentialManager.getCodeVerifier()
+                }
+                
+                self.logger.info("🔵 [Social Login Debug] Code verifier present: \(codeVerifier != nil ? "yes" : "no")")
+                self.logger.trace("Using redirect_uri: \(redirectUri), isMagicLink: \(isMagicLink), codeVerifier: \(codeVerifier != nil ? "provided" : "nil")")
+                
                 FronteggAuth.shared.handleHostedLoginCallback(code, codeVerifier, redirectUri: redirectUri) { res in
                     switch (res) {
                     case .success(_):

@@ -305,6 +305,17 @@ public class FronteggAuth: FronteggState {
                 refreshToken = try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .refreshToken)
                 accessToken = try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .accessToken)
             }
+            
+            // Only fall back to legacy tokens if BOTH tenant-specific tokens are nil
+            // This prevents discarding valid tenant-specific tokens during partial migration scenarios
+            if refreshToken == nil && accessToken == nil {
+                if let legacyRefreshToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue),
+                   let legacyAccessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
+                    logger.warning("No tenant-specific tokens found, falling back to legacy tokens (migration scenario)")
+                    refreshToken = legacyRefreshToken
+                    accessToken = legacyAccessToken
+                }
+            }
         } else {
             // Legacy behavior: load global tokens
             refreshToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue)
@@ -535,22 +546,34 @@ public class FronteggAuth: FronteggState {
             
             // Store tokens per tenant if enableSessionPerTenant is enabled
             if enableSessionPerTenant {
+                logger.info("🔵 [SessionPerTenant] setCredentials called with enableSessionPerTenant=true")
+                logger.info("🔵 [SessionPerTenant] Server's active tenant: \(userToUse.activeTenant.id)")
+                
                 if let localTenantId = credentialManager.getLastActiveTenantId() {
-                    tenantIdToUse = localTenantId
-                    logger.info("Using LOCAL tenant ID: \(tenantIdToUse!) (ignoring server's active tenant: \(userToUse.activeTenant.id))")
-                    
-                    if !userToUse.tenants.contains(where: { $0.id == localTenantId }) {
-                        logger.error("CRITICAL: Local tenant ID (\(localTenantId)) not found in user's tenants list! Available: \(userToUse.tenants.map { $0.id }). This should not happen.")
+                    logger.info("🔵 [SessionPerTenant] Found preserved local tenant ID: \(localTenantId)")
+                    // Validate that the preserved tenant is still valid for this user
+                    if userToUse.tenants.contains(where: { $0.id == localTenantId }) {
+                        tenantIdToUse = localTenantId
+                        logger.info("✅ [SessionPerTenant] Using LOCAL tenant ID: \(tenantIdToUse!) (ignoring server's active tenant: \(userToUse.activeTenant.id))")
+                    } else {
+                        // Preserved tenant is not valid for this user (e.g., logged in with different account)
+                        // Fall back to server's active tenant
+                        logger.warning("⚠️ [SessionPerTenant] Preserved tenant ID (\(localTenantId)) not found in user's tenants list. Available: \(userToUse.tenants.map { $0.id }). Falling back to server's active tenant.")
+                        tenantIdToUse = userToUse.activeTenant.id
+                        self.credentialManager.saveLastActiveTenantId(tenantIdToUse!)
+                        logger.info("🔵 [SessionPerTenant] Using server's active tenant: \(tenantIdToUse!) (saved as local tenant)")
                     }
                 } else {
+                    logger.warning("⚠️ [SessionPerTenant] No local tenant stored, using server's active tenant: \(userToUse.activeTenant.id)")
                     tenantIdToUse = userToUse.activeTenant.id
                     self.credentialManager.saveLastActiveTenantId(tenantIdToUse!)
-                    logger.info("No local tenant stored, using server's active tenant: \(tenantIdToUse!) (saved as local tenant)")
+                    logger.info("🔵 [SessionPerTenant] Saved server's active tenant: \(tenantIdToUse!) as local tenant")
                 }
             }
             
             var finalUserToUse = userToUse
             if enableSessionPerTenant, let localTenantId = tenantIdToUse {
+                logger.info("🔵 [SessionPerTenant] Attempting to modify user object to use local tenant: \(localTenantId)")
                 if let matchingTenant = userToUse.tenants.first(where: { $0.id == localTenantId }) {
                     do {
                         var userDict = try JSONEncoder().encode(userToUse)
@@ -565,16 +588,19 @@ public class FronteggAuth: FronteggState {
                             finalUserToUse = try JSONDecoder().decode(User.self, from: modifiedUserData)
                             
                             if localTenantId != userToUse.activeTenant.id {
-                                logger.info("Modified user to use local tenant (\(localTenantId)) instead of server's active tenant (\(userToUse.activeTenant.id))")
+                                logger.info("✅ [SessionPerTenant] Modified user to use local tenant (\(localTenantId)) instead of server's active tenant (\(userToUse.activeTenant.id))")
+                                logger.info("🔵 [SessionPerTenant] Modified user activeTenant.id: \(finalUserToUse.activeTenant.id)")
                             } else {
-                                logger.info("User already matches local tenant (\(localTenantId))")
+                                logger.info("🔵 [SessionPerTenant] User already matches local tenant (\(localTenantId))")
                             }
+                        } else {
+                            logger.warning("⚠️ [SessionPerTenant] Failed to encode matching tenant data")
                         }
                     } catch {
-                        logger.warning("Failed to modify user for local tenant: \(error). Using server's active tenant.")
+                        logger.warning("⚠️ [SessionPerTenant] Failed to modify user for local tenant: \(error). Using server's active tenant.")
                     }
                 } else {
-                    logger.error("Local tenant ID (\(localTenantId)) not found in user's tenants list. This should not happen. Available tenants: \(userToUse.tenants.map { $0.id })")
+                    logger.error("❌ [SessionPerTenant] Local tenant ID (\(localTenantId)) not found in user's tenants list. This should not happen. Available tenants: \(userToUse.tenants.map { $0.id })")
                 }
             }
             
@@ -794,8 +820,22 @@ public class FronteggAuth: FronteggState {
             
             await self.api.logout(accessToken: self.accessToken, refreshToken: refreshToken)
             
-            self.credentialManager.deleteLastActiveTenantId()
-            self.credentialManager.clear()
+            // Preserve lastActiveTenantId when enableSessionPerTenant is enabled
+            // This ensures each device maintains its own tenant context even after logout
+            let config = try? PlistHelper.fronteggConfig()
+            let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
+            
+            if enableSessionPerTenant {
+                let preservedTenantId = credentialManager.getLastActiveTenantId()
+                self.logger.info("🔵 [SessionPerTenant] Preserving lastActiveTenantId (\(preservedTenantId ?? "nil")) for per-tenant session isolation")
+                // Clear all items except lastActiveTenantId
+                self.credentialManager.clear(excludingKeys: [KeychainKeys.lastActiveTenantId.rawValue])
+                self.logger.info("🔵 [SessionPerTenant] Cleared keychain while preserving lastActiveTenantId")
+            } else {
+                self.credentialManager.deleteLastActiveTenantId()
+                self.credentialManager.clear()
+            }
+            
             if clearCookie {
                 await self.clearCookie()
             }
@@ -1061,6 +1101,24 @@ public class FronteggAuth: FronteggState {
                             setRefreshToken(tenantToken)
                         }
                         refreshToken = tenantToken
+                    } else {
+                        if let legacyToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+                            self.logger.warning("No tenant-specific token found for tenant \(tenantId), falling back to legacy token (migration scenario)")
+                            await MainActor.run {
+                                setRefreshToken(legacyToken)
+                            }
+                            refreshToken = legacyToken
+                        }
+                    }
+                }
+            } else {
+                if refreshToken == nil {
+                    if let legacyToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+                        self.logger.warning("No tenant ID available, falling back to legacy token (migration scenario)")
+                        await MainActor.run {
+                            setRefreshToken(legacyToken)
+                        }
+                        refreshToken = legacyToken
                     }
                 }
             }
@@ -1129,7 +1187,14 @@ public class FronteggAuth: FronteggState {
             self.logger.info("Refreshing after network reconnect, offline mode enabled")
         } else if attempts > 10 {
             self.logger.info("Refresh token attempts exceeded, logging out")
-            self.credentialManager.clear()
+            // Preserve lastActiveTenantId when enableSessionPerTenant is enabled
+            if enableSessionPerTenant {
+                let preservedTenantId = credentialManager.getLastActiveTenantId()
+                self.logger.info("🔵 [SessionPerTenant] Preserving lastActiveTenantId (\(preservedTenantId ?? "nil")) after refresh attempts exceeded")
+                self.credentialManager.clear(excludingKeys: [KeychainKeys.lastActiveTenantId.rawValue])
+            } else {
+                self.credentialManager.clear()
+            }
             await MainActor.run {
                 self.setInitializing(false)
                 self.setIsAuthenticated(false)
@@ -1198,13 +1263,17 @@ public class FronteggAuth: FronteggState {
             return true
             
         } catch let error as FronteggError {
-            // Auth failure → logout (unchanged)
             if case .authError(FronteggError.Authentication.failedToRefreshToken(let message)) = error {
-                // Before clearing, preserve the tenant ID if we have one
-                if enableSessionPerTenant, let preserved = preservedTenantId {
-                    self.logger.warning("Token refresh failed, but preserving tenant ID: \(preserved)")
+                let tenantIdToPreserve: String?
+                if enableSessionPerTenant {
+                    tenantIdToPreserve = preservedTenantId ?? credentialManager.getLastActiveTenantId()
+                    self.logger.warning(
+                        "🔵 [SessionPerTenant] Token refresh failed, but preserving tenant ID: \(tenantIdToPreserve ?? "nil")"
+                    )
+                } else {
+                    tenantIdToPreserve = nil
                 }
-                
+
                 var context: [String: [String: Any]] = [
                     "auth": [
                         "method": "refreshTokenIfNeeded",
@@ -1214,23 +1283,31 @@ public class FronteggAuth: FronteggState {
                     ],
                     "error": [
                         "type": "failed_to_refresh_token",
-                        "message": message
+                         "message": message
                     ]
                 ]
-                
-                if enableSessionPerTenant, let preserved = preservedTenantId {
-                    context["auth"] = (context["auth"] ?? [:]).merging([
-                        "preservedTenantId": preserved
-                    ]) { _, new in new }
-                }
-                
-                SentryHelper.logMessage(
-                    "Api: failed to refresh token, error: \(message)",
-                    level: .error,
-                    context: context
-                )
-                
-                self.credentialManager.clear()
+
+            if enableSessionPerTenant {
+                context["auth"] = (context["auth"] ?? [:]).merging([
+                    "preservedTenantId": preservedTenantId as Any,
+                    "tenantIdToPreserve": tenantIdToPreserve as Any
+                ]) { _, new in new }
+            }
+
+        SentryHelper.logMessage(
+            "Api: failed to refresh token, error: \(message)",
+            level: .error,
+            context: context
+        )
+
+        if enableSessionPerTenant {
+            self.credentialManager.clear(
+                excludingKeys: [KeychainKeys.lastActiveTenantId.rawValue]
+            )
+        } else {
+            self.credentialManager.clear()
+        }
+    }
                 await MainActor.run {
                     self.setInitializing(false)
                     self.setIsAuthenticated(false)
@@ -1283,6 +1360,13 @@ public class FronteggAuth: FronteggState {
         logger.info("🔵 [Social Login Debug] Code verifier: \(codeVerifier != nil ? "provided" : "nil")")
         logger.info("🔵 [Social Login Debug] Code length: \(code.count) characters")
         
+        if let verifier = codeVerifier {
+            logger.info("🔵 [PKCE Debug] Token exchange - code_verifier length: \(verifier.count)")
+            logger.info("🔵 [PKCE Debug] Token exchange - code_verifier first 10 chars: \(String(verifier.prefix(10)))")
+        } else {
+            logger.warning("🔵 [PKCE Debug] Token exchange - code_verifier is nil (this may cause PKCE mismatch)")
+        }
+        
         Task {
             
             logger.info("Going to exchange token with redirectUri: \(redirectUri), codeVerifier: \(codeVerifier != nil ? "provided" : "nil")")
@@ -1331,9 +1415,15 @@ public class FronteggAuth: FronteggState {
                 
                 // Call completion on main thread to avoid race conditions
                 // This ensures the completion handler always runs on the main thread
+                // Use the user from memory state (which may have been modified to use local tenant)
                 DispatchQueue.main.async {
                     self.setWebLoading(false)
-                    completion(.success(user))
+                    // Return the user from memory state, which may have been modified to use local tenant
+                    if let modifiedUser = self.user {
+                        completion(.success(modifiedUser))
+                    } else {
+                        completion(.success(user))
+                    }
                 }
             } catch {
                 logger.error("Failed to load user data: \(error.localizedDescription)")
@@ -2085,12 +2175,19 @@ public class FronteggAuth: FronteggState {
         }
     }
     public func handleOpenUrl(_ url: URL, _ useAppRootVC: Bool = false, internalHandleUrl:Bool = false) -> Bool {
+        logger.info("🔵 [handleOpenUrl] Received URL: \(url.absoluteString)")
+        logger.info("🔵 [handleOpenUrl] Base URL: \(self.baseUrl)")
+        logger.info("🔵 [handleOpenUrl] URL has prefix baseUrl: \(url.absoluteString.hasPrefix(self.baseUrl))")
+        logger.info("🔵 [handleOpenUrl] internalHandleUrl: \(internalHandleUrl)")
+        
         if(!url.absoluteString.hasPrefix(self.baseUrl) && !internalHandleUrl){
+            logger.warning("⚠️ [handleOpenUrl] URL doesn't match baseUrl and internalHandleUrl is false, returning false")
             setAppLink(false)
             return false
         }
         
         if url.path.contains("/postlogin/verify") {
+            logger.info("✅ [handleOpenUrl] Detected /postlogin/verify URL, processing verification")
             var verificationUrl = url
             if var urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false) {
                 var queryItems = urlComponents.queryItems ?? []

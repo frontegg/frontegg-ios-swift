@@ -130,15 +130,58 @@ public class CredentialManager {
     }
     
     func clear() {
+        clear(excludingKeys: [])
+    }
+    
+    func clear(excludingKeys: [String]) {
         logger.trace("Clearing keychain frontegg data")
-        let query = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: serviceKey ?? "frontegg"
-        ] as [CFString : Any] as CFDictionary
-        let status = SecItemDelete(query)
         
-        if status != errSecSuccess {
-            logger.error("Failed to logout from Frontegg Services, errSec: \(status)")
+        if excludingKeys.isEmpty {
+            // Fast path: delete all items with service key
+            let query = [
+                kSecClass: kSecClassGenericPassword,
+                kSecAttrService: serviceKey ?? "frontegg"
+            ] as [CFString : Any] as CFDictionary
+            let status = SecItemDelete(query)
+            
+            if status != errSecSuccess {
+                logger.error("Failed to logout from Frontegg Services, errSec: \(status)")
+            }
+        } else {
+            // Slow path: delete items one by one, excluding specified keys
+            // This is needed when we want to preserve certain keys (e.g., lastActiveTenantId)
+            logger.trace("Clearing keychain while excluding keys: \(excludingKeys)")
+            
+            // Get all items with the service key
+            let query: [CFString: Any] = [
+                kSecClass: kSecClassGenericPassword,
+                kSecAttrService: serviceKey ?? "frontegg",
+                kSecReturnAttributes: true,
+                kSecMatchLimit: kSecMatchLimitAll
+            ]
+            
+            var result: AnyObject?
+            let status = SecItemCopyMatching(query as CFDictionary, &result)
+            
+            if status == errSecSuccess {
+                // SecItemCopyMatching returns an array of dictionaries with CFString keys
+                // Swift bridges CFString to String, but we should use kSecAttrAccount directly
+                // as the key lookup to ensure proper matching
+                if let items = result as? [[AnyHashable: Any]] {
+                    for item in items {
+                        // Use kSecAttrAccount directly as the key (it's a CFString constant)
+                        // Swift's AnyHashable will handle the CFString/String bridging
+                        if let accountValue = item[kSecAttrAccount] as? String,
+                           !excludingKeys.contains(accountValue) {
+                            delete(key: accountValue)
+                        }
+                    }
+                } else {
+                    logger.warning("Unexpected result type from SecItemCopyMatching: \(type(of: result))")
+                }
+            } else if status != errSecItemNotFound {
+                logger.warning("Failed to enumerate keychain items for selective deletion, errSec: \(status)")
+            }
         }
     }
     

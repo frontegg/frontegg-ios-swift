@@ -9,6 +9,7 @@
 //
 
 import Foundation
+import WebKit
 import CryptoKit
 
 
@@ -262,8 +263,20 @@ private extension SocialLoginUrlGenerator {
         }
         
         if details.requiresPKCE && FronteggAuth.shared.featureFlags.isOn("identity-sso-force-pkce") {
+            // IMPORTANT: For SSO providers (Google, Microsoft, etc.) the canonical PKCE verifier
+            // is generated and stored by the hosted login page in window.localStorage
+            // under FRONTEGG_CODE_VERIFIER. The same value is then used by the backend
+            // in /user/sso/{provider}/postlogin via code_verifier_pkce.
+            //
+            // To avoid mismatches between the code_challenge we send to the IdP
+            // and the verifier used on the backend, we MUST always read the verifier
+            // from the webview (localStorage) here.
             let verifier: String = try await Self.getCodeVerifierFromWebview()
+            
             let codeChallenge = verifier.s256CodeChallenge()
+            logger.info("🔵 [PKCE Debug] Generated code_challenge for \(provider.rawValue) (first 20 chars): \(String(codeChallenge.prefix(20)))")
+            logger.info("🔵 [PKCE Debug] Code verifier used (first 10 chars): \(String(verifier.prefix(10)))")
+            
             queryItems.append(contentsOf: [
                 URLQueryItem(name: "code_challenge", value: codeChallenge),
                 URLQueryItem(name: "code_challenge_method", value: "S256")
@@ -318,12 +331,18 @@ private extension SocialLoginUrlGenerator {
             
             if matchedDetails.requiresPKCE && FronteggAuth.shared.featureFlags.isOn("identity-sso-force-pkce") {
                 do {
+                    // IMPORTANT: For SSO providers configured as custom providers, the canonical PKCE verifier
+                    // is generated in the hosted login page (FRONTEGG_CODE_VERIFIER). Read it from webview to
+                    // ensure the same verifier is used both for the IdP code_challenge and backend postlogin.
                     let verifier: String = try await Self.getCodeVerifierFromWebview()
                     let codeChallenge = verifier.s256CodeChallenge()
+                    logger.info("🔵 [PKCE Debug] Generated code_challenge for custom provider \(provider.displayName) (first 20 chars): \(String(codeChallenge.prefix(20)))")
+                    logger.info("🔵 [PKCE Debug] Code verifier used (first 10 chars): \(String(verifier.prefix(10)))")
+                    
                     comps.addOrReplaceQueryItem(name: "code_challenge", value: codeChallenge)
                     comps.addOrReplaceQueryItem(name: "code_challenge_method", value: "S256")
                 } catch {
-                    logger.warning("Failed to get code verifier from webview for custom provider \(provider.displayName): \(error)")
+                    logger.warning("Failed to get code verifier for custom provider \(provider.displayName): \(error)")
                 }
             }
         }
@@ -362,16 +381,30 @@ public extension SocialLoginUrlGenerator {
         return String(data: data, encoding: .utf8) ?? ""
     }
 
+    // Helper that must run on the main actor because WKWebView APIs are UI-bound.
+    @MainActor
+    private static func readCodeVerifierFromWebview(_ webview: WKWebView) async throws -> String {
+        guard let codeVerifier = try? await webview.evaluateJavaScript("window.localStorage['FRONTEGG_CODE_VERIFIER']") as? String else {
+            throw FronteggError.configError(.failedToGenerateAuthorizeURL)
+        }
+        return codeVerifier
+    }
+    
     static func getCodeVerifierFromWebview() async throws -> String {
         guard let webview = FronteggAuth.shared.webview else {
             throw FronteggError.configError(.failedToGenerateAuthorizeURL)
         }
         
-        guard let codeVerifier = try? await webview.evaluateJavaScript("window.localStorage['FRONTEGG_CODE_VERIFIER']") as? String else {
-            throw FronteggError.configError(.failedToGenerateAuthorizeURL)
-        }
+        let logger = getLogger("SocialLoginUrlGenerator")
         
-        CredentialManager.saveCodeVerifier(codeVerifier)
+        // Ensure the JS evaluation happens on the main actor, but keep this API async/await.
+        let codeVerifier = try await readCodeVerifierFromWebview(webview)
+        
+        // For social SSO, the canonical PKCE verifier lives in web localStorage and is used
+        // by the backend /user/sso/.../postlogin flows. We deliberately DO NOT overwrite
+        // the native CredentialManager verifier here, because that verifier belongs to the
+        // main /oauth/authorize flow and is needed later for the hosted login callback.
+        logger.debug("🔵 [PKCE Debug] Read code_verifier from localStorage (length: \(codeVerifier.count))")
         
         return codeVerifier
     }
