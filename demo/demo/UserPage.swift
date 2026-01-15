@@ -88,7 +88,6 @@ struct UserPage: View {
             
             let (data, _) = try await fronteggAuth.api.silentAuthorize(refreshToken: refreshToken)
             
-            let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
             
             showMessage("Silent authorize successful! Access token received.", isSuccess: true)
         } catch {
