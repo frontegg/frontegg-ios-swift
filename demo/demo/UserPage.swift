@@ -86,8 +86,7 @@ struct UserPage: View {
             
             showMessage("Calling silentAuthorize...", isSuccess: true)
             
-            let (data, _) = try await fronteggAuth.api.silentAuthorize(refreshToken: refreshToken)
-            
+            let (data, _) = try await fronteggAuth.api.silentAuthorize(refreshToken: refreshToken)        
             
             showMessage("Silent authorize successful! Access token received.", isSuccess: true)
         } catch {

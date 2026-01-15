@@ -1991,8 +1991,7 @@ public class FronteggAuth: FronteggState {
                 return self.getRootVC()?.view.window
             }
             
-            let isMicrosoft = providerString.lowercased() == "microsoft" || authURL.absoluteString.contains("microsoft") || authURL.absoluteString.contains("login.microsoftonline.com")
-            let useEphemeral = !isMicrosoft
+            let useEphemeral = false
             
             await MainActor.run {
                 WebAuthenticator.shared.start(
@@ -2193,7 +2192,8 @@ public class FronteggAuth: FronteggState {
         
         // Log social login initiation
         let isMicrosoft = socialLoginUrl.contains("microsoft") || socialLoginUrl.contains("login.microsoftonline.com")
-        let useEphemeral = !isMicrosoft
+        // Use shared session (non-ephemeral) for all providers to show saved accounts
+        let useEphemeral = false
         
         SentryHelper.addBreadcrumb(
             "Social login initiated (loginWithSocialLogin)",
