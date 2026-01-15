@@ -824,23 +824,20 @@ public class FronteggAuth: FronteggState {
             // This ensures each device maintains its own tenant context even after logout
             let config = try? PlistHelper.fronteggConfig()
             let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
-            let preservedTenantId = enableSessionPerTenant ? credentialManager.getLastActiveTenantId() : nil
             
-            if !enableSessionPerTenant {
-                self.credentialManager.deleteLastActiveTenantId()
+            if enableSessionPerTenant {
+                let preservedTenantId = credentialManager.getLastActiveTenantId()
+                self.logger.info("🔵 [SessionPerTenant] Preserving lastActiveTenantId (\(preservedTenantId ?? "nil")) for per-tenant session isolation")
+                // Clear all items except lastActiveTenantId
+                self.credentialManager.clear(excludingKeys: [KeychainKeys.lastActiveTenantId.rawValue])
+                self.logger.info("🔵 [SessionPerTenant] Cleared keychain while preserving lastActiveTenantId")
             } else {
-                self.logger.info("Preserving lastActiveTenantId (\(preservedTenantId ?? "nil")) for per-tenant session isolation")
+                self.credentialManager.deleteLastActiveTenantId()
+                self.credentialManager.clear()
             }
             
-            self.credentialManager.clear()
             if clearCookie {
                 await self.clearCookie()
-            }
-            
-            // Restore lastActiveTenantId after clear() if it was preserved
-            if enableSessionPerTenant, let tenantId = preservedTenantId {
-                self.credentialManager.saveLastActiveTenantId(tenantId)
-                self.logger.info("Restored lastActiveTenantId (\(tenantId)) after logout")
             }
             
             setIsAuthenticated(false)
@@ -1191,12 +1188,12 @@ public class FronteggAuth: FronteggState {
         } else if attempts > 10 {
             self.logger.info("Refresh token attempts exceeded, logging out")
             // Preserve lastActiveTenantId when enableSessionPerTenant is enabled
-            let preservedTenantId = enableSessionPerTenant ? credentialManager.getLastActiveTenantId() : nil
-            self.credentialManager.clear()
-            // Restore lastActiveTenantId after clear() if it was preserved
-            if enableSessionPerTenant, let tenantId = preservedTenantId {
-                self.credentialManager.saveLastActiveTenantId(tenantId)
-                self.logger.info("Preserved lastActiveTenantId (\(tenantId)) after refresh attempts exceeded")
+            if enableSessionPerTenant {
+                let preservedTenantId = credentialManager.getLastActiveTenantId()
+                self.logger.info("🔵 [SessionPerTenant] Preserving lastActiveTenantId (\(preservedTenantId ?? "nil")) after refresh attempts exceeded")
+                self.credentialManager.clear(excludingKeys: [KeychainKeys.lastActiveTenantId.rawValue])
+            } else {
+                self.credentialManager.clear()
             }
             await MainActor.run {
                 self.setInitializing(false)
@@ -1268,16 +1265,13 @@ public class FronteggAuth: FronteggState {
         } catch let error as FronteggError {
             // Auth failure → logout (unchanged)
             if case .authError(FronteggError.Authentication.failedToRefreshToken) = error {
-                // Before clearing, preserve the tenant ID if we have one
-                let tenantIdToPreserve = enableSessionPerTenant ? (preservedTenantId ?? credentialManager.getLastActiveTenantId()) : nil
-                if enableSessionPerTenant, let preserved = tenantIdToPreserve {
-                    self.logger.warning("Token refresh failed, but preserving tenant ID: \(preserved)")
-                }
-                self.credentialManager.clear()
-                // Restore lastActiveTenantId after clear() if it was preserved
-                if enableSessionPerTenant, let tenantId = tenantIdToPreserve {
-                    self.credentialManager.saveLastActiveTenantId(tenantId)
-                    self.logger.info("Preserved lastActiveTenantId (\(tenantId)) after token refresh failure")
+                // Preserve lastActiveTenantId when enableSessionPerTenant is enabled
+                if enableSessionPerTenant {
+                    let tenantIdToPreserve = preservedTenantId ?? credentialManager.getLastActiveTenantId()
+                    self.logger.warning("🔵 [SessionPerTenant] Token refresh failed, but preserving tenant ID: \(tenantIdToPreserve ?? "nil")")
+                    self.credentialManager.clear(excludingKeys: [KeychainKeys.lastActiveTenantId.rawValue])
+                } else {
+                    self.credentialManager.clear()
                 }
                 await MainActor.run {
                     self.setInitializing(false)
