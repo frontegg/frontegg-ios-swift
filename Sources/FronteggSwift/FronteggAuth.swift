@@ -297,8 +297,8 @@ public class FronteggAuth: FronteggState {
                 } else {
                     logger.info("No local tenant stored and no offline user available")
                 }
-            } else {
-                logger.info("Using LOCAL tenant ID from storage: \(tenantId!)")
+            } else if let tenantId = tenantId {
+                logger.info("Using LOCAL tenant ID from storage: \(tenantId)")
             }
             
             if let tenantId = tenantId {
@@ -396,7 +396,7 @@ public class FronteggAuth: FronteggState {
                 }
             }
             
-            if let refreshToken = refreshToken, let accessToken = accessToken {
+            if let _ = refreshToken, let _ = accessToken {
                 // Clear initialization flag - tokens will be set after this block
                 self.isInitializingWithTokens = true
             } else {
@@ -429,20 +429,43 @@ public class FronteggAuth: FronteggState {
                 DispatchQueue.global(qos: .userInitiated).async {
                     Task {
                         // Use NWPathMonitor to check network path without making HTTP calls
-                        let monitor = NWPathMonitor()
-                        let queue = DispatchQueue(label: "NetworkPathCheck")
-                        let semaphore = DispatchSemaphore(value: 0)
-                        var isNetworkAvailable = false
-                        
-                        monitor.pathUpdateHandler = { path in
-                            isNetworkAvailable = (path.status == .satisfied)
-                            semaphore.signal()
-                            monitor.cancel()
+                        let isNetworkAvailable = await withCheckedContinuation { continuation in
+                            let monitor = NWPathMonitor()
+                            let queue = DispatchQueue(label: "NetworkPathCheck")
+                            // Use a class to hold state to avoid captured var concurrency issues
+                            final class ResumeState {
+                                private let lock = NSLock()
+                                private var hasResumed = false
+                                
+                                func tryResume() -> Bool {
+                                    return lock.withLock {
+                                        guard !hasResumed else { return false }
+                                        hasResumed = true
+                                        return true
+                                    }
+                                }
+                            }
+                            let resumeState = ResumeState()
+                            
+                            monitor.pathUpdateHandler = { path in
+                                guard resumeState.tryResume() else { return }
+                                
+                                let available = (path.status == .satisfied)
+                                monitor.cancel()
+                                continuation.resume(returning: available)
+                            }
+                            
+                            monitor.start(queue: queue)
+                            
+                            // Timeout after 0.5 seconds
+                            Task {
+                                try? await Task.sleep(nanoseconds: 500_000_000)
+                                guard resumeState.tryResume() else { return }
+                                
+                                monitor.cancel()
+                                continuation.resume(returning: false)
+                            }
                         }
-                        
-                        monitor.start(queue: queue)
-                        _ = semaphore.wait(timeout: .now() + 0.5) // Wait max 0.5s for path status
-                        monitor.cancel()
                         
                         if !isNetworkAvailable {
                             // Network unavailable - keep user logged in offline
@@ -554,20 +577,22 @@ public class FronteggAuth: FronteggState {
                     // Validate that the preserved tenant is still valid for this user
                     if userToUse.tenants.contains(where: { $0.id == localTenantId }) {
                         tenantIdToUse = localTenantId
-                        logger.info("✅ [SessionPerTenant] Using LOCAL tenant ID: \(tenantIdToUse!) (ignoring server's active tenant: \(userToUse.activeTenant.id))")
+                        logger.info("✅ [SessionPerTenant] Using LOCAL tenant ID: \(localTenantId) (ignoring server's active tenant: \(userToUse.activeTenant.id))")
                     } else {
                         // Preserved tenant is not valid for this user (e.g., logged in with different account)
                         // Fall back to server's active tenant
                         logger.warning("⚠️ [SessionPerTenant] Preserved tenant ID (\(localTenantId)) not found in user's tenants list. Available: \(userToUse.tenants.map { $0.id }). Falling back to server's active tenant.")
                         tenantIdToUse = userToUse.activeTenant.id
-                        self.credentialManager.saveLastActiveTenantId(tenantIdToUse!)
-                        logger.info("🔵 [SessionPerTenant] Using server's active tenant: \(tenantIdToUse!) (saved as local tenant)")
+                        let savedTenantId = userToUse.activeTenant.id
+                        self.credentialManager.saveLastActiveTenantId(savedTenantId)
+                        logger.info("🔵 [SessionPerTenant] Using server's active tenant: \(savedTenantId) (saved as local tenant)")
                     }
                 } else {
-                    logger.warning("⚠️ [SessionPerTenant] No local tenant stored, using server's active tenant: \(userToUse.activeTenant.id)")
-                    tenantIdToUse = userToUse.activeTenant.id
-                    self.credentialManager.saveLastActiveTenantId(tenantIdToUse!)
-                    logger.info("🔵 [SessionPerTenant] Saved server's active tenant: \(tenantIdToUse!) as local tenant")
+                    let serverTenantId = userToUse.activeTenant.id
+                    logger.warning("⚠️ [SessionPerTenant] No local tenant stored, using server's active tenant: \(serverTenantId)")
+                    tenantIdToUse = serverTenantId
+                    self.credentialManager.saveLastActiveTenantId(serverTenantId)
+                    logger.info("🔵 [SessionPerTenant] Saved server's active tenant: \(serverTenantId) as local tenant")
                 }
             }
             
@@ -576,7 +601,7 @@ public class FronteggAuth: FronteggState {
                 logger.info("🔵 [SessionPerTenant] Attempting to modify user object to use local tenant: \(localTenantId)")
                 if let matchingTenant = userToUse.tenants.first(where: { $0.id == localTenantId }) {
                     do {
-                        var userDict = try JSONEncoder().encode(userToUse)
+                        let userDict = try JSONEncoder().encode(userToUse)
                         var userJson = try JSONSerialization.jsonObject(with: userDict) as! [String: Any]
                         
                         if let matchingTenantData = try? JSONEncoder().encode(matchingTenant),
@@ -606,10 +631,12 @@ public class FronteggAuth: FronteggState {
             
             // Set in-memory state FIRST before saving to keychain
             // This ensures user stays logged in even if keychain save fails
+            // Capture finalUserToUse before the closure to avoid concurrency issues
+            let userToSet = finalUserToUse
             await MainActor.run {
                 setRefreshToken(refreshToken)
                 setAccessToken(accessToken)
-                setUser(finalUserToUse)
+                setUser(userToSet)
                 setIsAuthenticated(true)
                 setIsOfflineMode(false)
                 setAppLink(false)
@@ -1144,20 +1171,43 @@ public class FronteggAuth: FronteggState {
         // IMPORTANT: When offline mode is enabled and we have tokens, we should NOT make /test calls
         // Use NWPathMonitor to check network path without making HTTP calls
         if enableOfflineMode {
-            let monitor = NWPathMonitor()
-            let queue = DispatchQueue(label: "NetworkPathCheckRefresh")
-            let semaphore = DispatchSemaphore(value: 0)
-            var isNetworkAvailable = false
-            
-            monitor.pathUpdateHandler = { path in
-                isNetworkAvailable = (path.status == .satisfied)
-                semaphore.signal()
-                monitor.cancel()
+            let isNetworkAvailable = await withCheckedContinuation { continuation in
+                let monitor = NWPathMonitor()
+                let queue = DispatchQueue(label: "NetworkPathCheckRefresh")
+                // Use a class to hold state to avoid captured var concurrency issues
+                final class ResumeState {
+                    private let lock = NSLock()
+                    private var hasResumed = false
+                    
+                    func tryResume() -> Bool {
+                        return lock.withLock {
+                            guard !hasResumed else { return false }
+                            hasResumed = true
+                            return true
+                        }
+                    }
+                }
+                let resumeState = ResumeState()
+                
+                monitor.pathUpdateHandler = { path in
+                    guard resumeState.tryResume() else { return }
+                    
+                    let available = (path.status == .satisfied)
+                    monitor.cancel()
+                    continuation.resume(returning: available)
+                }
+                
+                monitor.start(queue: queue)
+                
+                // Timeout after 0.3 seconds
+                Task {
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    guard resumeState.tryResume() else { return }
+                    
+                    monitor.cancel()
+                    continuation.resume(returning: false)
+                }
             }
-            
-            monitor.start(queue: queue)
-            _ = semaphore.wait(timeout: .now() + 0.3) // Quick check, max 0.3s
-            monitor.cancel()
             
             guard isNetworkAvailable else {
                 self.logger.info("Refresh rescheduled due to inactive internet (path check, no /test call)")
@@ -1219,12 +1269,41 @@ public class FronteggAuth: FronteggState {
         
         let preservedTenantId = enableSessionPerTenant ? credentialManager.getLastActiveTenantId() : nil
         
+        // Log token refresh attempt details
+        SentryHelper.addBreadcrumb(
+            "Token refresh attempt started",
+            category: "auth",
+            level: .info,
+            data: [
+                "attempts": attempts,
+                "enableSessionPerTenant": enableSessionPerTenant,
+                "preservedTenantId": preservedTenantId ?? "nil",
+                "hasRefreshToken": true,
+                "refreshTokenLength": refreshToken.count,
+                "hasAccessToken": accessToken != nil
+            ]
+        )
+        
         do {
             if enableSessionPerTenant {
                 if let preserved = preservedTenantId {
                     self.logger.info("Refreshing token with preserved tenant ID: \(preserved)")
                 } else {
                     self.logger.warning("WARNING: No tenant ID stored before token refresh! This should not happen.")
+                    SentryHelper.logMessage(
+                        "Token refresh attempted without preserved tenant ID",
+                        level: .warning,
+                        context: [
+                            "auth": [
+                                "method": "refreshTokenIfNeeded",
+                                "attempts": attempts,
+                                "enableSessionPerTenant": true
+                            ],
+                            "error": [
+                                "type": "missing_tenant_id"
+                            ]
+                        ]
+                    )
                 }
             }
             
@@ -1236,6 +1315,16 @@ public class FronteggAuth: FronteggState {
                 let currentAccessToken = self.accessToken
                 do {
                     self.logger.info("Attempting tenant-specific refresh with tenantId: \(tenantId)")
+                    SentryHelper.addBreadcrumb(
+                        "Attempting tenant-specific token refresh",
+                        category: "auth",
+                        level: .info,
+                        data: [
+                            "tenantId": tenantId,
+                            "hasAccessToken": currentAccessToken != nil,
+                            "refreshTokenLength": refreshToken.count
+                        ]
+                    )
                     data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: tenantId, accessToken: currentAccessToken)
                     self.logger.info("Tenant-specific refresh successful")
                 } catch {
@@ -1243,11 +1332,35 @@ public class FronteggAuth: FronteggState {
                     // This can happen if the refresh token isn't valid for the tenant-specific endpoint
                     // (e.g., after a server-side tenant switch)
                     self.logger.warning("Tenant-specific refresh failed: \(error). Falling back to standard OAuth refresh.")
+                    SentryHelper.logMessage(
+                        "Tenant-specific refresh failed, falling back to standard refresh",
+                        level: .warning,
+                        context: [
+                            "auth": [
+                                "method": "refreshTokenIfNeeded",
+                                "tenantId": tenantId,
+                                "attempts": attempts
+                            ],
+                            "error": [
+                                "type": "tenant_specific_refresh_failed",
+                                "message": error.localizedDescription
+                            ]
+                        ]
+                    )
                     data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: nil)
                     self.logger.info("Standard OAuth refresh successful (fallback)")
                 }
             } else {
                 // Standard OAuth refresh for non-per-tenant sessions
+                SentryHelper.addBreadcrumb(
+                    "Attempting standard OAuth token refresh",
+                    category: "auth",
+                    level: .info,
+                    data: [
+                        "refreshTokenLength": refreshToken.count,
+                        "enableSessionPerTenant": enableSessionPerTenant
+                    ]
+                )
                 data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: nil)
             }
             
@@ -1260,19 +1373,65 @@ public class FronteggAuth: FronteggState {
             
             await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
             self.logger.info("Token refreshed successfully")
+            
+            // Log successful token refresh
+            SentryHelper.addBreadcrumb(
+                "Token refresh successful",
+                category: "auth",
+                level: .info,
+                data: [
+                    "attempts": attempts,
+                    "enableSessionPerTenant": enableSessionPerTenant,
+                    "preservedTenantId": preservedTenantId ?? "nil",
+                    "newAccessTokenLength": data.access_token.count,
+                    "newRefreshTokenLength": data.refresh_token.count
+                ]
+            )
+            
             return true
             
         } catch let error as FronteggError {
-            // Auth failure → logout (unchanged)
-            if case .authError(FronteggError.Authentication.failedToRefreshToken) = error {
-                // Preserve lastActiveTenantId when enableSessionPerTenant is enabled
+            if case .authError(FronteggError.Authentication.failedToRefreshToken(let message)) = error {
+                let tenantIdToPreserve: String? = enableSessionPerTenant
+                    ? (preservedTenantId ?? credentialManager.getLastActiveTenantId())
+                    : nil
+
                 if enableSessionPerTenant {
-                    let tenantIdToPreserve = preservedTenantId ?? credentialManager.getLastActiveTenantId()
                     self.logger.warning("🔵 [SessionPerTenant] Token refresh failed, but preserving tenant ID: \(tenantIdToPreserve ?? "nil")")
+                }
+
+                var context: [String: [String: Any]] = [
+                    "auth": [
+                        "method": "refreshTokenIfNeeded",
+                        "attempts": attempts,
+                        "enableSessionPerTenant": enableSessionPerTenant,
+                        "hasPreservedTenantId": enableSessionPerTenant && preservedTenantId != nil
+                    ],
+                    "error": [
+                        "type": "failed_to_refresh_token",
+                        "message": message
+                    ]
+                ]
+
+                if enableSessionPerTenant {
+                    context["auth"] = (context["auth"] ?? [:]).merging([
+                        "preservedTenantId": preservedTenantId as Any,
+                        "tenantIdToPreserve": tenantIdToPreserve as Any
+                    ]) { _, new in new }
+                }
+
+                SentryHelper.logMessage(
+                    "Api: failed to refresh token, error: \(message)",
+                    level: .error,
+                    context: context
+                )
+
+                if enableSessionPerTenant {
                     self.credentialManager.clear(excludingKeys: [KeychainKeys.lastActiveTenantId.rawValue])
                 } else {
                     self.credentialManager.clear()
                 }
+
                 await MainActor.run {
                     self.setInitializing(false)
                     self.setIsAuthenticated(false)
@@ -1534,14 +1693,53 @@ public class FronteggAuth: FronteggState {
                 self.logger.info("Token refreshed successfully")
                 return self.accessToken
             } catch let error as FronteggError {
-                if case .authError(FronteggError.Authentication.failedToRefreshToken) = error {
+                if case .authError(FronteggError.Authentication.failedToRefreshToken(let message)) = error {
+                    SentryHelper.logMessage(
+                        "Api: failed to refresh token, error: \(message)",
+                        level: .error,
+                        context: [
+                            "auth": [
+                                "method": "getOrRefreshAccessTokenAsync",
+                                "attempts": attempts + 1,
+                                "enableSessionPerTenant": enableSessionPerTenant
+                            ],
+                            "error": [
+                                "type": "failed_to_refresh_token",
+                                "message": message
+                            ]
+                        ]
+                    )
                     return nil
                 }
                 self.logger.error("Failed to refresh token: \(error.localizedDescription), retrying... (\(attempts + 1) attempts)")
+                
+                SentryHelper.logError(error, context: [
+                    "auth": [
+                        "method": "getOrRefreshAccessTokenAsync",
+                        "attempts": attempts + 1,
+                        "enableSessionPerTenant": enableSessionPerTenant
+                    ],
+                    "error": [
+                        "type": "token_refresh_error"
+                    ]
+                ])
+                
                 attempts += 1
                 try await Task.sleep(nanoseconds: 1_000_000_000) // Sleep for 1 second before retrying
             } catch {
                 self.logger.error("Unknown error while refreshing token: \(error.localizedDescription), retrying... (\(attempts + 1) attempts)")
+                
+                SentryHelper.logError(error, context: [
+                    "auth": [
+                        "method": "getOrRefreshAccessTokenAsync",
+                        "attempts": attempts + 1,
+                        "enableSessionPerTenant": enableSessionPerTenant
+                    ],
+                    "error": [
+                        "type": "unknown_token_refresh_error"
+                    ]
+                ])
+                
                 attempts += 1
                 try await Task.sleep(nanoseconds: 1_000_000_000) // Sleep for 1 second before retrying
             }
@@ -1608,6 +1806,21 @@ public class FronteggAuth: FronteggState {
             }
             
             guard let code = queryItems["code"] else {
+                let keys = Array(queryItems.keys).sorted()
+                SentryHelper.logMessage(
+                    "OAuth callback missing code (hosted)",
+                    level: .warning,
+                    context: [
+                        "oauth": [
+                            "stage": "createOauthCallbackHandler",
+                            "url": url.absoluteString,
+                            "queryKeys": keys
+                        ],
+                        "error": [
+                            "type": "oauth_missing_code"
+                        ]
+                    ]
+                )
                 // If this is a verification callback and there's no code, the verification might have succeeded
                 // but the redirect didn't include the code. In this case, we should inform the user
                 // that verification succeeded but they need to try logging in again.
@@ -1723,7 +1936,23 @@ public class FronteggAuth: FronteggState {
                 guard
                     let self,
                     let finalURL = self.handleSocialLoginCallback(callbackURL)
-                else { return }
+                else {
+                    SentryHelper.logMessage(
+                        "Social login callback could not be parsed (hosted)",
+                        level: .warning,
+                        context: [
+                            "social_login": [
+                                "provider": providerString,
+                                "callbackUrl": callbackURL.absoluteString,
+                                "baseUrl": FronteggAuth.shared.baseUrl
+                            ],
+                            "error": [
+                                "type": "social_login_callback_unhandled"
+                            ]
+                        ]
+                    )
+                    return
+                }
                 self.loadInWebView(finalURL)
             }
         }
@@ -1962,6 +2191,23 @@ public class FronteggAuth: FronteggState {
             
         }
         
+        // Log social login initiation
+        let isMicrosoft = socialLoginUrl.contains("microsoft") || socialLoginUrl.contains("login.microsoftonline.com")
+        let useEphemeral = !isMicrosoft
+        
+        SentryHelper.addBreadcrumb(
+            "Social login initiated (loginWithSocialLogin)",
+            category: "social_login",
+            level: .info,
+            data: [
+                "socialLoginUrl": socialLoginUrl,
+                "isMicrosoft": isMicrosoft,
+                "useEphemeral": useEphemeral,
+                "embeddedMode": self.embeddedMode,
+                "baseUrl": self.baseUrl
+            ]
+        )
+        
         let oauthCallback = createOauthCallbackHandler(completion)
         
         
@@ -1980,6 +2226,10 @@ public class FronteggAuth: FronteggState {
         let (authorizeUrl, codeVerifier) = generatedUrl
         CredentialManager.saveCodeVerifier(codeVerifier)
         
+        logger.info("🔵 [Social Login] Starting social login flow")
+        logger.info("🔵 [Social Login] Authorize URL: \(authorizeUrl.absoluteString)")
+        logger.info("🔵 [Social Login] Use ephemeral session: \(useEphemeral)")
+        
        let window: UIWindow?
         if Thread.isMainThread {
             window = getRootVC()?.view.window
@@ -1990,9 +2240,6 @@ public class FronteggAuth: FronteggState {
             }
             window = mainWindow
         }
-        
-        let isMicrosoft = socialLoginUrl.contains("microsoft") || socialLoginUrl.contains("login.microsoftonline.com")
-        let useEphemeral = !isMicrosoft
         
          if Thread.isMainThread {
             WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: useEphemeral, window: window, completionHandler: oauthCallback)
@@ -2075,14 +2322,57 @@ public class FronteggAuth: FronteggState {
         logger.info("🔵 [handleOpenUrl] URL has prefix baseUrl: \(url.absoluteString.hasPrefix(self.baseUrl))")
         logger.info("🔵 [handleOpenUrl] internalHandleUrl: \(internalHandleUrl)")
         
+        // Log app redirect handling
+        SentryHelper.addBreadcrumb(
+            "App redirect received (handleOpenUrl)",
+            category: "app_redirect",
+            level: .info,
+            data: [
+                "url": url.absoluteString,
+                "scheme": url.scheme ?? "nil",
+                "host": url.host ?? "nil",
+                "path": url.path,
+                "query": url.query ?? "nil",
+                "baseUrl": self.baseUrl,
+                "matchesBaseUrl": url.absoluteString.hasPrefix(self.baseUrl),
+                "internalHandleUrl": internalHandleUrl,
+                "embeddedMode": self.embeddedMode
+            ]
+        )
+        
         if(!url.absoluteString.hasPrefix(self.baseUrl) && !internalHandleUrl){
             logger.warning("⚠️ [handleOpenUrl] URL doesn't match baseUrl and internalHandleUrl is false, returning false")
+            SentryHelper.logMessage(
+                "App redirect URL rejected - doesn't match baseUrl",
+                level: .warning,
+                context: [
+                    "app_redirect": [
+                        "url": url.absoluteString,
+                        "baseUrl": self.baseUrl,
+                        "internalHandleUrl": internalHandleUrl,
+                        "scheme": url.scheme ?? "nil",
+                        "host": url.host ?? "nil"
+                    ],
+                    "error": [
+                        "type": "redirect_url_mismatch"
+                    ]
+                ]
+            )
             setAppLink(false)
             return false
         }
         
         if url.path.contains("/postlogin/verify") {
             logger.info("✅ [handleOpenUrl] Detected /postlogin/verify URL, processing verification")
+            SentryHelper.addBreadcrumb(
+                "Processing /postlogin/verify URL",
+                category: "app_redirect",
+                level: .info,
+                data: [
+                    "url": url.absoluteString,
+                    "hasToken": url.query?.contains("token") ?? false
+                ]
+            )
             var verificationUrl = url
             if var urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false) {
                 var queryItems = urlComponents.queryItems ?? []
@@ -2115,7 +2405,7 @@ public class FronteggAuth: FronteggState {
                     guard let self = self else { return }
                     switch result {
                     case .success(let user):
-                        self.logger.info("✅ Email verification completed successfully. User logged in: \(user.email ?? "unknown")")
+                        self.logger.info("✅ Email verification completed successfully. User logged in: \(user.email)")
                         // Login is complete, no need to do anything else
                     case .failure(let error):
                         self.logger.error("❌ Email verification failed: \(error.localizedDescription)")

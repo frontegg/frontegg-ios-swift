@@ -11,4 +11,5 @@ Pod::Spec.new do |s|
   s.platforms    = { :ios => '14.0' }
   s.source_files     = 'Sources/**/*.swift'
   s.ios.deployment_target = '14.0'
+  s.dependency 'Sentry', '~> 8.46.0'
 end

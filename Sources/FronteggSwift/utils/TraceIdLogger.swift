@@ -16,11 +16,11 @@ class TraceIdLogger {
     
     private init() {}
     
-    /// Logs a trace ID to the debug log file (only if enabled in config)
+    /// Logs a trace ID to the debug log file (only if Sentry logging is enabled in config)
     /// - Parameter traceId: The trace ID to log
     func logTraceId(_ traceId: String) {
-        // Check if trace ID logging is enabled in config
-        guard let config = try? PlistHelper.fronteggConfig(), config.enableTraceIdLogging else {
+        // Check if Sentry logging is enabled in config (trace ID logging is part of Sentry logging)
+        guard let config = try? PlistHelper.fronteggConfig(), config.enableSentryLogging else {
             return
         }
         
@@ -86,18 +86,30 @@ class TraceIdLogger {
     /// Extracts and logs the frontegg-trace-id from an HTTP response
     /// - Parameter response: The URLResponse to extract trace ID from
     func extractAndLogTraceId(from response: URLResponse) {
-        // Check if trace ID logging is enabled in config
-        guard let config = try? PlistHelper.fronteggConfig(), config.enableTraceIdLogging else {
-            return
-        }
-        
         guard let httpResponse = response as? HTTPURLResponse else {
             return
         }
         
-        if let traceId = httpResponse.value(forHTTPHeaderField: "frontegg-trace-id") {
-            logTraceId(traceId)
+        guard let traceId = httpResponse.value(forHTTPHeaderField: "frontegg-trace-id") else {
+            return
         }
+        
+        // Check if Sentry logging is enabled - if so, log trace IDs to both Sentry and file
+        guard let config = try? PlistHelper.fronteggConfig(), config.enableSentryLogging else {
+            return
+        }
+        
+        // Send trace IDs to Sentry as breadcrumbs
+        // This is useful for correlating client issues with server logs
+        SentryHelper.addBreadcrumb(
+            "frontegg-trace-id received",
+            category: "network",
+            level: .info,
+            data: ["frontegg_trace_id": traceId]
+        )
+        
+        // Also save to local file for debugging
+        logTraceId(traceId)
     }
 }
 

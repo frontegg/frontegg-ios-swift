@@ -46,6 +46,43 @@ public class FronteggApp {
         }
 
         debugConfigurationChecker.runChecks()
+        
+        // Initialize Sentry if enabled in config
+        SentryHelper.initialize()
+        
+        // Log associated domains configuration for debugging redirect issues
+        // Always log to console, but only send to Sentry if enabled
+        if let associatedDomains = SentryHelper.getAssociatedDomainsEntitlement() {
+            logger.info("✅ Associated domains configured: \(associatedDomains.count) domain(s)")
+            for domain in associatedDomains {
+                logger.info("  - \(domain)")
+            }
+            SentryHelper.addBreadcrumb(
+                "Associated domains verified at startup",
+                category: "config",
+                level: .info,
+                data: [
+                    "count": associatedDomains.count,
+                    "domains": associatedDomains
+                ]
+            )
+        } else {
+            logger.warning("⚠️ No associated domains found in entitlements - this may cause redirect issues")
+            SentryHelper.logMessage(
+                "No associated domains configured in entitlements",
+                level: .warning,
+                context: [
+                    "config": [
+                        "embeddedMode": config.embeddedMode,
+                        "bundleId": Bundle.main.bundleIdentifier ?? "unknown"
+                    ],
+                    "error": [
+                        "type": "missing_associated_domains",
+                        "description": "Associated domains are required for proper app redirects, especially in embedded mode"
+                    ]
+                ]
+            )
+        }
 
         guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
             fatalError(FronteggError.configError(.couldNotGetBundleID(Bundle.main.bundlePath)).localizedDescription)
@@ -103,6 +140,7 @@ public class FronteggApp {
                 self.applicationId = config.applicationId
                 self.auth.reinitWithRegion(config: config)
 
+                SentryHelper.setBaseUrl(self.baseUrl)
                 logger.info("Frontegg Initialized succcessfully (region: \(config.key))")
                 return;
             } else {
@@ -129,6 +167,7 @@ public class FronteggApp {
                 embeddedMode: self.embeddedMode
             )
 
+            SentryHelper.setBaseUrl(self.baseUrl)
             logger.info("Frontegg Initialized succcessfully")
         }
     }
@@ -151,6 +190,8 @@ public class FronteggApp {
         self.baseUrl = baseUrl
         self.clientId = cliendId
         self.applicationId = applicationId
+
+        SentryHelper.setBaseUrl(self.baseUrl)
         
         self.handleLoginWithSocialLogin = handleLoginWithSocialLogin
         self.handleLoginWithSSO = handleLoginWithSSO
@@ -174,6 +215,8 @@ public class FronteggApp {
         self.baseUrl = self.auth.baseUrl
         self.clientId = self.auth.clientId
         self.applicationId = self.auth.applicationId
+
+        SentryHelper.setBaseUrl(self.baseUrl)
     }
 
     public func initWithRegion(regionKey: String){
@@ -197,6 +240,8 @@ public class FronteggApp {
         self.clientId = config.clientId
         self.applicationId = config.applicationId
         self.auth.reinitWithRegion(config: config)
+
+        SentryHelper.setBaseUrl(self.baseUrl)
         
         logger.info("Frontegg Initialized succcessfully (region: \(regionKey))")
     }

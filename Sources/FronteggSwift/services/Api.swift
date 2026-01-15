@@ -5,6 +5,7 @@
 //
 
 import Foundation
+import Sentry
 
 
 enum ApiError: Error {
@@ -22,7 +23,7 @@ class RedirectHandler: NSObject, URLSessionTaskDelegate {
 
 
 public class Api {
-    internal static let DEAFULT_TIMEOUT: Int = 10
+    internal static let DEFAULT_TIMEOUT: Int = 10
     private let logger = getLogger("Api")
     private let baseUrl: String
     private let clientId: String
@@ -42,11 +43,60 @@ public class Api {
         }
         self.cookieName = "fe_refresh_\(clientIdWithoutFirstDash)"
     }
+
+    private func addHttpBreadcrumb(
+        method: String,
+        url: URL?,
+        statusCode: Int?,
+        traceId: String?,
+        durationMs: Int?,
+        requestBodySize: Int?,
+        responseBodySize: Int?,
+        followRedirect: Bool,
+        error: Error? = nil
+    ) {
+        guard let url else { return }
+
+        let host = url.host ?? "unknown"
+        let path = url.path.isEmpty ? "/" : url.path
+
+        var data: [String: Any] = [
+            "method": method,
+            "host": host,
+            "path": path,
+            "followRedirect": followRedirect,
+            "request_body_size": requestBodySize ?? 0,
+            "response_body_size": responseBodySize ?? 0
+        ]
+
+        if let statusCode {
+            data["status_code"] = statusCode
+            data["status_reason"] = HTTPURLResponse.localizedString(forStatusCode: statusCode)
+        }
+        if let traceId, !traceId.isEmpty {
+            data["frontegg_trace_id"] = traceId
+        }
+        if let durationMs {
+            data["duration_ms"] = durationMs
+        }
+        if let error {
+            let nsError = error as NSError
+            data["error_domain"] = nsError.domain
+            data["error_code"] = nsError.code
+            // Prefer a non-localized description (type + domain/code/userInfo where available).
+            data["error_description"] = String(reflecting: error)
+        }
+
+        // Breadcrumb message intentionally avoids full URL (queries may contain PII).
+        let message = "HTTP \(method) \(path)"
+        let level: SentryLevel = (statusCode != nil && !(200...299).contains(statusCode!)) || error != nil ? .warning : .info
+        SentryHelper.addBreadcrumb(message, category: "http", level: level, data: data)
+    }
     
     internal func putRequest(
         path: String,
         body: [String: Any?],
-        timeout: Int = Api.DEAFULT_TIMEOUT
+        timeout: Int = Api.DEFAULT_TIMEOUT
     ) async throws -> (Data, URLResponse) {
         let urlStr = "\(self.baseUrl)/\(path)"
         guard let url = URL(string: urlStr) else {
@@ -65,6 +115,7 @@ public class Api {
             request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let requestBodySize = request.httpBody?.count
         
         // per-task timeout
         request.timeoutInterval = TimeInterval(timeout)
@@ -76,9 +127,44 @@ public class Api {
         config.waitsForConnectivity = false
         
         let session = URLSession(configuration: config)
-        let (data, response) = try await session.data(for: request)
-        TraceIdLogger.shared.extractAndLogTraceId(from: response)
-        return (data, response)
+        let start = Date()
+        do {
+            let (data, response) = try await session.data(for: request)
+            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
+            TraceIdLogger.shared.extractAndLogTraceId(from: response)
+            addHttpBreadcrumb(
+                method: "PUT",
+                url: request.url,
+                statusCode: statusCode,
+                traceId: (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "frontegg-trace-id"),
+                durationMs: durationMs,
+                requestBodySize: requestBodySize,
+                responseBodySize: data.count,
+                followRedirect: true
+            )
+            return (data, response)
+        } catch {
+            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+            addHttpBreadcrumb(
+                method: "PUT",
+                url: request.url,
+                statusCode: nil,
+                traceId: nil,
+                durationMs: durationMs,
+                requestBodySize: requestBodySize,
+                responseBodySize: nil,
+                followRedirect: true,
+                error: error
+            )
+            SentryHelper.logError(error, context: [
+                "http": [
+                    "method": "PUT",
+                    "path": path
+                ]
+            ])
+            throw error
+        }
     }
     
     internal func postRequest(
@@ -86,7 +172,7 @@ public class Api {
         body: [String: Any?],
         additionalHeaders: [String: String] = [:],
         followRedirect: Bool = true,
-        timeout: Int = Api.DEAFULT_TIMEOUT
+        timeout: Int = Api.DEFAULT_TIMEOUT
     ) async throws -> (Data, URLResponse) {
         // Build URL
         let urlStr = path.starts(with: self.baseUrl)
@@ -121,6 +207,7 @@ public class Api {
         }
         
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let requestBodySize = request.httpBody?.count
         
         // Apply per-task timeout (covers the whole transfer for this request)
         request.timeoutInterval = TimeInterval(timeout)
@@ -140,10 +227,45 @@ public class Api {
             session = URLSession(configuration: config, delegate: redirectHandler, delegateQueue: nil)
         }
         
-        // Make the call
-        let (data, response) = try await session.data(for: request)
-        TraceIdLogger.shared.extractAndLogTraceId(from: response)
-        return (data, response)
+        let start = Date()
+        do {
+            let (data, response) = try await session.data(for: request)
+            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
+            TraceIdLogger.shared.extractAndLogTraceId(from: response)
+            addHttpBreadcrumb(
+                method: "POST",
+                url: request.url,
+                statusCode: statusCode,
+                traceId: (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "frontegg-trace-id"),
+                durationMs: durationMs,
+                requestBodySize: requestBodySize,
+                responseBodySize: data.count,
+                followRedirect: followRedirect
+            )
+            return (data, response)
+        } catch {
+            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+            addHttpBreadcrumb(
+                method: "POST",
+                url: request.url,
+                statusCode: nil,
+                traceId: nil,
+                durationMs: durationMs,
+                requestBodySize: requestBodySize,
+                responseBodySize: nil,
+                followRedirect: followRedirect,
+                error: error
+            )
+            SentryHelper.logError(error, context: [
+                "http": [
+                    "method": "POST",
+                    "path": path,
+                    "followRedirect": followRedirect
+                ]
+            ])
+            throw error
+        }
     }
     
     internal func getRequest(
@@ -152,7 +274,7 @@ public class Api {
         refreshToken: String? = nil,
         additionalHeaders: [String: String] = [:],
         followRedirect: Bool = true,
-        timeout: Int = Api.DEAFULT_TIMEOUT
+        timeout: Int = Api.DEFAULT_TIMEOUT
     ) async throws -> (Data, URLResponse) {
         let urlStr = path.starts(with: self.baseUrl)
             ? path
@@ -194,9 +316,45 @@ public class Api {
             session = URLSession(configuration: config, delegate: redirectHandler, delegateQueue: nil)
         }
 
-        let (data, response) = try await session.data(for: request)
-        TraceIdLogger.shared.extractAndLogTraceId(from: response)
-        return (data, response)
+        let start = Date()
+        do {
+            let (data, response) = try await session.data(for: request)
+            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
+            TraceIdLogger.shared.extractAndLogTraceId(from: response)
+            addHttpBreadcrumb(
+                method: "GET",
+                url: request.url,
+                statusCode: statusCode,
+                traceId: (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "frontegg-trace-id"),
+                durationMs: durationMs,
+                requestBodySize: nil,
+                responseBodySize: data.count,
+                followRedirect: followRedirect
+            )
+            return (data, response)
+        } catch {
+            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+            addHttpBreadcrumb(
+                method: "GET",
+                url: request.url,
+                statusCode: nil,
+                traceId: nil,
+                durationMs: durationMs,
+                requestBodySize: nil,
+                responseBodySize: nil,
+                followRedirect: followRedirect,
+                error: error
+            )
+            SentryHelper.logError(error, context: [
+                "http": [
+                    "method": "GET",
+                    "path": path,
+                    "followRedirect": followRedirect
+                ]
+            ])
+            throw error
+        }
     }
 
     
@@ -227,6 +385,7 @@ public class Api {
         
         // Empty body for POST request
         request.httpBody = try JSONSerialization.data(withJSONObject: [:])
+        let requestBodySize = request.httpBody?.count
         
         // per-task timeout
         request.timeoutInterval = TimeInterval(timeout)
@@ -238,15 +397,49 @@ public class Api {
         config.waitsForConnectivity = false
         
         let session = URLSession(configuration: config)
-        let (data, response) = try await session.data(for: request)
-        
-        TraceIdLogger.shared.extractAndLogTraceId(from: response)
-        return (data, response)
+        let start = Date()
+        do {
+            let (data, response) = try await session.data(for: request)
+            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
+            TraceIdLogger.shared.extractAndLogTraceId(from: response)
+            addHttpBreadcrumb(
+                method: "POST",
+                url: request.url,
+                statusCode: statusCode,
+                traceId: (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "frontegg-trace-id"),
+                durationMs: durationMs,
+                requestBodySize: requestBodySize,
+                responseBodySize: data.count,
+                followRedirect: true
+            )
+            return (data, response)
+        } catch {
+            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+            addHttpBreadcrumb(
+                method: "POST",
+                url: request.url,
+                statusCode: nil,
+                traceId: nil,
+                durationMs: durationMs,
+                requestBodySize: requestBodySize,
+                responseBodySize: nil,
+                followRedirect: true,
+                error: error
+            )
+            SentryHelper.logError(error, context: [
+                "http": [
+                    "method": "POST",
+                    "path": "/frontegg/oauth/authorize/silent"
+                ]
+            ])
+            throw error
+        }
     }
     
     internal func silentAuthorizeWithToken(
         refreshToken: String,
-        timeout: Int = Api.DEAFULT_TIMEOUT
+        timeout: Int = Api.DEFAULT_TIMEOUT
     ) async throws -> (Data, URLResponse) {
         // Use POST /oauth/token with grant_type=refresh_token
         let (data, response) = try await postRequest(path: "oauth/token", body: [
@@ -269,8 +462,8 @@ public class Api {
     
     internal func refreshToken(refreshToken: String, tenantId: String? = nil, accessToken: String? = nil) async throws -> AuthResponse {
         // If tenantId is provided, use the new refresh endpoint that supports per-tenant sessions
-        if let tenantId = tenantId {
-            self.logger.info("Refreshing token with tenantId: \(tenantId) (refresh token length: \(refreshToken.count))")
+        if let unwrappedTenantId = tenantId {
+            self.logger.info("Refreshing token with tenantId: \(unwrappedTenantId) (refresh token length: \(refreshToken.count))")
             let refreshTokenCookie = "\(self.cookieName)=\(refreshToken)"
             
             var headers: [String: String] = [
@@ -287,7 +480,7 @@ public class Api {
             
             let (data, response) = try await postRequest(
                 path: "identity/resources/auth/v1/user/token/refresh",
-                body: ["tenantId": tenantId],
+                body: ["tenantId": unwrappedTenantId],
                 additionalHeaders: headers,
                 timeout: 5
             )
@@ -296,11 +489,41 @@ public class Api {
                 if res.statusCode == 401 {
                     let responseString = String(data: data, encoding: .utf8) ?? "no response body"
                     self.logger.error("failed to refresh token with tenantId (401), error: \(responseString)")
-                    throw FronteggError.authError(.failedToRefreshToken)
+                    
+                    SentryHelper.logMessage("Api: failed to refresh token, error: \(responseString)", level: .error, context: [
+                        "api": [
+                            "endpoint": "identity/resources/auth/v1/user/token/refresh",
+                            "method": "POST",
+                            "statusCode": res.statusCode,
+                            "hasTenantId": true,
+                            "tenantId": unwrappedTenantId
+                        ],
+                        "error": [
+                            "type": "refresh_token_failed",
+                            "response": responseString
+                        ]
+                    ])
+                    
+                    throw FronteggError.authError(.failedToRefreshToken(responseString))
                 } else if res.statusCode != 200 {
                     let responseString = String(data: data, encoding: .utf8) ?? "no response body"
                     self.logger.error("failed to refresh token with tenantId, status: \(res.statusCode), error: \(responseString)")
-                    throw FronteggError.authError(.failedToRefreshToken)
+                    
+                    SentryHelper.logMessage("Api: failed to refresh token, status: \(res.statusCode), error: \(responseString)", level: .error, context: [
+                        "api": [
+                            "endpoint": "identity/resources/auth/v1/user/token/refresh",
+                            "method": "POST",
+                            "statusCode": res.statusCode,
+                            "hasTenantId": true,
+                            "tenantId": unwrappedTenantId
+                        ],
+                        "error": [
+                            "type": "refresh_token_failed",
+                            "response": responseString
+                        ]
+                    ])
+                    
+                    throw FronteggError.authError(.failedToRefreshToken(responseString))
                 } else {
                     self.logger.info("Refresh with tenantId response: status=\(res.statusCode)")
                 }
@@ -312,6 +535,20 @@ public class Api {
                 return authResponse
             } catch {
                 self.logger.error("Failed to decode AuthResponse from refresh with tenantId: \(error)")
+                
+                SentryHelper.logError(error, context: [
+                    "api": [
+                        "endpoint": "identity/resources/auth/v1/user/token/refresh",
+                        "method": "POST",
+                        "hasTenantId": true,
+                        "tenantId": unwrappedTenantId
+                    ],
+                    "error": [
+                        "type": "decode_error",
+                        "stage": "refresh_token_response"
+                    ]
+                ])
+                
                 throw error
             }
         } else {
@@ -324,11 +561,39 @@ public class Api {
                 if res.statusCode == 401 {
                     let responseString = String(data: data, encoding: .utf8) ?? "no response body"
                     self.logger.error("failed to refresh token (401), error: \(responseString)")
-                    throw FronteggError.authError(.failedToRefreshToken)
+                    
+                    SentryHelper.logMessage("Api: failed to refresh token, error: \(responseString)", level: .error, context: [
+                        "api": [
+                            "endpoint": "oauth/token",
+                            "method": "POST",
+                            "statusCode": res.statusCode,
+                            "grantType": "refresh_token"
+                        ],
+                        "error": [
+                            "type": "refresh_token_failed",
+                            "response": responseString
+                        ]
+                    ])
+                    
+                    throw FronteggError.authError(.failedToRefreshToken(responseString))
                 } else if res.statusCode != 200 {
                     let responseString = String(data: data, encoding: .utf8) ?? "no response body"
                     self.logger.error("failed to refresh token, status: \(res.statusCode), error: \(responseString)")
-                    throw FronteggError.authError(.failedToRefreshToken)
+                    
+                    SentryHelper.logMessage("Api: failed to refresh token, status: \(res.statusCode), error: \(responseString)", level: .error, context: [
+                        "api": [
+                            "endpoint": "oauth/token",
+                            "method": "POST",
+                            "statusCode": res.statusCode,
+                            "grantType": "refresh_token"
+                        ],
+                        "error": [
+                            "type": "refresh_token_failed",
+                            "response": responseString
+                        ]
+                    ])
+                    
+                    throw FronteggError.authError(.failedToRefreshToken(responseString))
                 } else {
                     self.logger.info("OAuth refresh response: status=\(res.statusCode)")
                 }
@@ -340,6 +605,19 @@ public class Api {
                 return authResponse
             } catch {
                 self.logger.error("Failed to decode AuthResponse: \(error)")
+                
+                SentryHelper.logError(error, context: [
+                    "api": [
+                        "endpoint": "oauth/token",
+                        "method": "POST",
+                        "grantType": "refresh_token"
+                    ],
+                    "error": [
+                        "type": "decode_error",
+                        "stage": "refresh_token_response"
+                    ]
+                ])
+                
                 throw error
             }
         }

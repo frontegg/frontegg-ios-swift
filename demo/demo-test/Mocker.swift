@@ -7,6 +7,11 @@
 
 import Foundation
 
+enum MockServerError: Error {
+    case serverUnavailable(String)
+    case invalidResponse(String)
+    case networkError(Error)
+}
 
 enum MockMethod: String {
     case mockEmbeddedRefreshToken
@@ -65,20 +70,38 @@ struct Mocker {
         return (clientId: clientId, baseUrl: baseUrl)
     }
     
-    static func getNgrokUrl() async -> String {
+    static func getNgrokUrl() async throws -> String {
         let urlStr = "\(Mocker.baseUrl!)/ngrok"
-        let url = URL(string: urlStr)
-        var request = URLRequest(url: url!)
+        guard let url = URL(string: urlStr) else {
+            throw MockServerError.invalidResponse("Invalid URL: \(urlStr)")
+        }
+        var request = URLRequest(url: url)
         request.setValue(Mocker.baseUrl!, forHTTPHeaderField: "Origin")
         request.httpMethod = "GET"
-        let (data, _) :(Data, URLResponse) = try! await URLSession.shared.data(for: request)
-        return String(data: data, encoding: .utf8)!
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+                throw MockServerError.serverUnavailable("Mock server returned status \(httpResponse.statusCode) for \(urlStr)")
+            }
+            guard let result = String(data: data, encoding: .utf8) else {
+                throw MockServerError.invalidResponse("Failed to decode response from \(urlStr)")
+            }
+            return result
+        } catch let error as MockServerError {
+            // Re-throw MockServerError cases to preserve type information
+            throw error
+        } catch {
+            // Wrap other errors (network errors, etc.) as networkError
+            throw MockServerError.networkError(error)
+        }
     }
     
-    static func mockWithId(name: MockMethod, body: [String: Any?]) async -> String {
+    static func mockWithId(name: MockMethod, body: [String: Any?]) async throws -> String {
         let urlStr = "\(Mocker.baseUrl!)/mock/\(name.rawValue)"
-        let url = URL(string: urlStr)
-        var request = URLRequest(url: url!)
+        guard let url = URL(string: urlStr) else {
+            throw MockServerError.invalidResponse("Invalid URL: \(urlStr)")
+        }
+        var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(Mocker.baseUrl!, forHTTPHeaderField: "Origin")
@@ -87,26 +110,41 @@ struct Mocker {
         let json = try? JSONSerialization.data(withJSONObject: body)
         request.httpBody = json
         
-        let (data, _) :(Data, URLResponse) = try! await URLSession.shared.data(for: request)
-        
-        return String(data: data, encoding: .utf8)!
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+                throw MockServerError.serverUnavailable("Mock server returned status \(httpResponse.statusCode) for \(urlStr)")
+            }
+            guard let result = String(data: data, encoding: .utf8) else {
+                throw MockServerError.invalidResponse("Failed to decode response from \(urlStr)")
+            }
+            return result
+        } catch let error as MockServerError {
+            // Re-throw MockServerError cases to preserve type information
+            throw error
+        } catch {
+            // Wrap other errors (network errors, etc.) as networkError
+            throw MockServerError.networkError(error)
+        }
     }
-    static func mock(name: MockMethod, body: [String: Any?]) async {
-        let id = await mockWithId(name: name, body: body)
+    static func mock(name: MockMethod, body: [String: Any?]) async throws {
+        let id = try await mockWithId(name: name, body: body)
         print("Mock(\(name.rawValue)) => \(id)")
     }
     
-    static func mockData(name: MockDataMethod, body: [Any]) async -> Any {
+    static func mockData(name: MockDataMethod, body: [Any]) async throws -> Any {
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body),
+              let jsonStr = String(data: jsonData, encoding: .utf8),
+              let query = jsonStr.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            throw MockServerError.invalidResponse("Failed to encode request body")
+        }
         
-        let jsonData = try? JSONSerialization.data(withJSONObject: body)
-        let jsonStr = String(data:jsonData!, encoding: .utf8)
-        
-        let query = jsonStr!.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
-        
-        let urlStr = "\(Mocker.baseUrl!)/faker/\(name.rawValue)?options=\(query!)";
-        
+        let urlStr = "\(Mocker.baseUrl!)/faker/\(name.rawValue)?options=\(query)"
         print(urlStr)
-        let url = URL(string: urlStr)!
+        
+        guard let url = URL(string: urlStr) else {
+            throw MockServerError.invalidResponse("Invalid URL: \(urlStr)")
+        }
         
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -114,165 +152,191 @@ struct Mocker {
         request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
         request.httpMethod = "GET"
         
-        
-        
-        let (data, _) :(Data, URLResponse) = try! await URLSession.shared.data(for: request)
-        
-        
-        return (try! JSONSerialization.jsonObject(with: data, options: []) as! [String: Any])["data"] ?? nil
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+                throw MockServerError.serverUnavailable("Mock server returned status \(httpResponse.statusCode) for \(urlStr)")
+            }
+            guard let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                  let result = json["data"] else {
+                throw MockServerError.invalidResponse("Failed to parse response from \(urlStr)")
+            }
+            return result
+        } catch let error as MockServerError {
+            // Re-throw MockServerError cases to preserve type information
+            throw error
+        } catch {
+            // Wrap other errors (network errors, etc.) as networkError
+            throw MockServerError.networkError(error)
+        }
     }
     
-    static  func mockClearMocks() async {
+    static func mockClearMocks() async throws {
         let urlStr = "\(Mocker.baseUrl!)/clear-mock"
-        let url = URL(string: urlStr)
-        var request = URLRequest(url: url!)
+        guard let url = URL(string: urlStr) else {
+            throw MockServerError.invalidResponse("Invalid URL: \(urlStr)")
+        }
+        var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
         request.httpMethod = "POST"
-        _ = try! await URLSession.shared.data(for: request)
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+                throw MockServerError.serverUnavailable("Mock server returned status \(httpResponse.statusCode) for \(urlStr)")
+            }
+        } catch let error as MockServerError {
+            // Re-throw MockServerError cases to preserve type information
+            throw error
+        } catch {
+            // Wrap other errors (network errors, etc.) as networkError
+            throw MockServerError.networkError(error)
+        }
     }
     
     
-    static  func mockSuccessPasswordLogin(_ oauthCode:String) async {
-        
-        let mockedUser = await Mocker.mockData(name: .generateUser, body: [Mocker.clientId!, ["email":"test@frontegg.com"]])
-        as! [String: Any]
+    static func mockSuccessPasswordLogin(_ oauthCode:String) async throws {
+        guard let mockedUser = try await Mocker.mockData(name: .generateUser, body: [Mocker.clientId!, ["email":"test@frontegg.com"]]) as? [String: Any] else {
+            throw MockServerError.invalidResponse("Failed to generate mock user")
+        }
         
         let authUserOptions: [String: Any] = [
             "success":true,
             "user": mockedUser
         ]
-        await Mocker.mock(name: .mockAuthUser, body: ["options": authUserOptions])
-        await Mocker.mock(name: .mockHostedLoginRefreshToken, body: [
+        try await Mocker.mock(name: .mockAuthUser, body: ["options": authUserOptions])
+        try await Mocker.mock(name: .mockHostedLoginRefreshToken, body: [
             "partialRequestBody": [:],
             "options":[
                 "success":true,
                 "refreshTokenResponse": mockedUser["refreshTokenResponse"],
                 "refreshTokenCookie": mockedUser["refreshTokenCookie"],
             ]])
-        await Mocker.mock(name: .mockEmbeddedRefreshToken, body: [
+        try await Mocker.mock(name: .mockEmbeddedRefreshToken, body: [
             "options":[
                 "success":true,
                 "refreshTokenResponse": mockedUser["refreshTokenResponse"],
                 "refreshTokenCookie": mockedUser["refreshTokenCookie"],
             ]])
         
-        await Mocker.mock(name: .mockGetMeTenants, body: ["options":mockedUser])
-        await Mocker.mock(name: .mockGetMe, body: ["options":mockedUser])
-        await Mocker.mock(name: .mockSessionsConfigurations, body: [:])
+        try await Mocker.mock(name: .mockGetMeTenants, body: ["options":mockedUser])
+        try await Mocker.mock(name: .mockGetMe, body: ["options":mockedUser])
+        try await Mocker.mock(name: .mockSessionsConfigurations, body: [:])
         
-        await Mocker.mock(name: .mockOauthPostlogin, body:[ "options": ["redirectUrl": "\(Mocker.baseUrl!)/oauth/mobile/callback?code=\(oauthCode)" ]])
-        await Mocker.mock(name: .mockLogout, body: [:])
+        try await Mocker.mock(name: .mockOauthPostlogin, body:[ "options": ["redirectUrl": "\(Mocker.baseUrl!)/oauth/mobile/callback?code=\(oauthCode)" ]])
+        try await Mocker.mock(name: .mockLogout, body: [:])
     }
     
     
     
-    static  func mockSuccessSamlLogin(_ oauthCode:String) async {
-        let mockedUser = await Mocker.mockData(name: .generateUser, body: [Mocker.clientId!, ["email":"test@saml-domain.com"]])
-        as! [String: Any]
+    static func mockSuccessSamlLogin(_ oauthCode:String) async throws {
+        guard let mockedUser = try await Mocker.mockData(name: .generateUser, body: [Mocker.clientId!, ["email":"test@saml-domain.com"]]) as? [String: Any] else {
+            throw MockServerError.invalidResponse("Failed to generate mock user")
+        }
         
-        await Mocker.mock(name: .mockGetMeTenants, body: ["options":mockedUser])
-        await Mocker.mock(name: .mockGetMe, body: ["options":mockedUser])
-        await Mocker.mock(name: .mockSessionsConfigurations, body: [:])
+        try await Mocker.mock(name: .mockGetMeTenants, body: ["options":mockedUser])
+        try await Mocker.mock(name: .mockGetMe, body: ["options":mockedUser])
+        try await Mocker.mock(name: .mockSessionsConfigurations, body: [:])
         
         
-        await Mocker.mock(name: .mockSSOAuthSamlCallback, body: ["options":[
+        try await Mocker.mock(name: .mockSSOAuthSamlCallback, body: ["options":[
             "success": true,
             "baseUrl": Mocker.baseUrl!,
             "refreshTokenCookie": mockedUser["refreshTokenCookie"],
         ]])
         
         
-        await Mocker.mock(name: .mockEmbeddedRefreshToken, body: [
+        try await Mocker.mock(name: .mockEmbeddedRefreshToken, body: [
             "options":[
                 "success":true,
                 "refreshTokenResponse": mockedUser["refreshTokenResponse"],
                 "refreshTokenCookie": mockedUser["refreshTokenCookie"],
             ]])
-        await Mocker.mock(name: .mockHostedLoginRefreshToken, body: [
+        try await Mocker.mock(name: .mockHostedLoginRefreshToken, body: [
             "partialRequestBody": [:],
             "options":[
                 "success":true,
                 "refreshTokenResponse": mockedUser["refreshTokenResponse"],
                 "refreshTokenCookie": mockedUser["refreshTokenCookie"],
             ]])
-        await Mocker.mock(name: .mockOauthPostlogin, body:[ "options": ["redirectUrl": "\(Mocker.baseUrl!)/oauth/mobile/callback?code=\(oauthCode)" ]])
-        await Mocker.mock(name: .mockLogout, body: [:])
+        try await Mocker.mock(name: .mockOauthPostlogin, body:[ "options": ["redirectUrl": "\(Mocker.baseUrl!)/oauth/mobile/callback?code=\(oauthCode)" ]])
+        try await Mocker.mock(name: .mockLogout, body: [:])
     }
     
     
-    static  func mockSuccessOidcLogin(_ oauthCode:String) async {
-        let mockedUser = await Mocker.mockData(name: .generateUser, body: [Mocker.clientId!, ["email":"test@oidc-domain.com"]])
-        as! [String: Any]
+    static func mockSuccessOidcLogin(_ oauthCode:String) async throws {
+        guard let mockedUser = try await Mocker.mockData(name: .generateUser, body: [Mocker.clientId!, ["email":"test@oidc-domain.com"]]) as? [String: Any] else {
+            throw MockServerError.invalidResponse("Failed to generate mock user")
+        }
         
-        await Mocker.mock(name: .mockGetMeTenants, body: ["options":mockedUser])
-        await Mocker.mock(name: .mockGetMe, body: ["options":mockedUser])
-        await Mocker.mock(name: .mockSessionsConfigurations, body: [:])
+        try await Mocker.mock(name: .mockGetMeTenants, body: ["options":mockedUser])
+        try await Mocker.mock(name: .mockGetMe, body: ["options":mockedUser])
+        try await Mocker.mock(name: .mockSessionsConfigurations, body: [:])
         
-        await Mocker.mock(name: .mockSSOAuthOIDCCallback, body: ["options":[
+        try await Mocker.mock(name: .mockSSOAuthOIDCCallback, body: ["options":[
             "success": true,
             "baseUrl": Mocker.baseUrl!,
             "refreshTokenCookie": mockedUser["refreshTokenCookie"],
         ]])
         
-        await Mocker.mock(name: .mockEmbeddedRefreshToken, body: [
+        try await Mocker.mock(name: .mockEmbeddedRefreshToken, body: [
             "options":[
                 "success":true,
                 "refreshTokenResponse": mockedUser["refreshTokenResponse"],
                 "refreshTokenCookie": mockedUser["refreshTokenCookie"],
             ]])
-        await Mocker.mock(name: .mockHostedLoginRefreshToken, body: [
+        try await Mocker.mock(name: .mockHostedLoginRefreshToken, body: [
             "partialRequestBody": [:],
             "options":[
                 "success":true,
                 "refreshTokenResponse": mockedUser["refreshTokenResponse"],
                 "refreshTokenCookie": mockedUser["refreshTokenCookie"],
             ]])
-        await Mocker.mock(name: .mockOauthPostlogin, body:[ "options": ["redirectUrl": "\(Mocker.baseUrl!)/oauth/mobile/callback?code=\(oauthCode)" ]])
-        await Mocker.mock(name: .mockLogout, body: [:])
+        try await Mocker.mock(name: .mockOauthPostlogin, body:[ "options": ["redirectUrl": "\(Mocker.baseUrl!)/oauth/mobile/callback?code=\(oauthCode)" ]])
+        try await Mocker.mock(name: .mockLogout, body: [:])
     }
     
     
-    static  func mockSuccessMagicLink(_ oauthCode:String) async -> String {
-        
+    static func mockSuccessMagicLink(_ oauthCode:String) async throws -> String {
         let token = UUID().uuidString
-        let ngrokUrl = await Mocker.getNgrokUrl()
+        let ngrokUrl = try await Mocker.getNgrokUrl()
         
-        let mockedUser = await Mocker.mockData(name: .generateUser, body: [Mocker.clientId!, ["email":"test@frontegg.com"]])
-        as! [String: Any]
+        guard let mockedUser = try await Mocker.mockData(name: .generateUser, body: [Mocker.clientId!, ["email":"test@frontegg.com"]]) as? [String: Any] else {
+            throw MockServerError.invalidResponse("Failed to generate mock user")
+        }
         
         let authUserOptions: [String: Any] = [
             "success":true,
             "user": mockedUser
         ]
         
-        await Mocker.mock(name: .mockPostLoginWithMagicLink, body: [
+        try await Mocker.mock(name: .mockPostLoginWithMagicLink, body: [
             "options": authUserOptions,
             "requestParitalBody":["token": token]
         ])
         
-        await Mocker.mock(name: .mockGetMeTenants, body: ["options":mockedUser])
-        await Mocker.mock(name: .mockGetMe, body: ["options":mockedUser])
-        await Mocker.mock(name: .mockSessionsConfigurations, body: [:])
+        try await Mocker.mock(name: .mockGetMeTenants, body: ["options":mockedUser])
+        try await Mocker.mock(name: .mockGetMe, body: ["options":mockedUser])
+        try await Mocker.mock(name: .mockSessionsConfigurations, body: [:])
         
         
-        await Mocker.mock(name: .mockEmbeddedRefreshToken, body: [
+        try await Mocker.mock(name: .mockEmbeddedRefreshToken, body: [
             "options":[
                 "success":true,
                 "refreshTokenResponse": mockedUser["refreshTokenResponse"],
                 "refreshTokenCookie": mockedUser["refreshTokenCookie"],
             ]])
         
-        await Mocker.mock(name: .mockHostedLoginRefreshToken, body: [
+        try await Mocker.mock(name: .mockHostedLoginRefreshToken, body: [
             "partialRequestBody": [:],
             "options":[
                 "success":true,
                 "refreshTokenResponse": mockedUser["refreshTokenResponse"],
                 "refreshTokenCookie": mockedUser["refreshTokenCookie"],
             ]])
-        await Mocker.mock(name: .mockOauthPostlogin, body:[ "options": ["redirectUrl": "\(Mocker.baseUrl!)/oauth/mobile/callback?code=\(oauthCode)" ]])
-        await Mocker.mock(name: .mockLogout, body: [:])
+        try await Mocker.mock(name: .mockOauthPostlogin, body:[ "options": ["redirectUrl": "\(Mocker.baseUrl!)/oauth/mobile/callback?code=\(oauthCode)" ]])
+        try await Mocker.mock(name: .mockLogout, body: [:])
         
         
         let magicLinkUrl = "http://localhost:3003/magic-link?ngrokUrl=\(ngrokUrl)&token=\(token)&redirectUrl=\(Mocker.baseUrl!)/oauth/"
@@ -281,35 +345,35 @@ struct Mocker {
     
     
     
-    static  func mockRefreshToken() async {
-        
-        let mockedUser = await Mocker.mockData(name: .generateUser, body: [Mocker.clientId!, ["email":"test@frontegg.com"]])
-        as! [String: Any]
+    static func mockRefreshToken() async throws {
+        guard let mockedUser = try await Mocker.mockData(name: .generateUser, body: [Mocker.clientId!, ["email":"test@frontegg.com"]]) as? [String: Any] else {
+            throw MockServerError.invalidResponse("Failed to generate mock user")
+        }
         
         let authUserOptions: [String: Any] = [
             "success":true,
             "user": mockedUser
         ]
-        await Mocker.mock(name: .mockAuthUser, body: ["options": authUserOptions])
-        await Mocker.mock(name: .mockHostedLoginRefreshToken, body: [
+        try await Mocker.mock(name: .mockAuthUser, body: ["options": authUserOptions])
+        try await Mocker.mock(name: .mockHostedLoginRefreshToken, body: [
             "partialRequestBody": [:],
             "options":[
                 "success":true,
                 "refreshTokenResponse": mockedUser["refreshTokenResponse"],
                 "refreshTokenCookie": mockedUser["refreshTokenCookie"],
             ]])
-        await Mocker.mock(name: .mockEmbeddedRefreshToken, body: [
+        try await Mocker.mock(name: .mockEmbeddedRefreshToken, body: [
             "options":[
                 "success":true,
                 "refreshTokenResponse": mockedUser["refreshTokenResponse"],
                 "refreshTokenCookie": mockedUser["refreshTokenCookie"],
             ]])
         
-        await Mocker.mock(name: .mockGetMeTenants, body: ["options":mockedUser])
-        await Mocker.mock(name: .mockGetMe, body: ["options":mockedUser])
-        await Mocker.mock(name: .mockSessionsConfigurations, body: [:])
+        try await Mocker.mock(name: .mockGetMeTenants, body: ["options":mockedUser])
+        try await Mocker.mock(name: .mockGetMe, body: ["options":mockedUser])
+        try await Mocker.mock(name: .mockSessionsConfigurations, body: [:])
         
-        await Mocker.mock(name: .mockLogout, body: [:])
+        try await Mocker.mock(name: .mockLogout, body: [:])
     }
     
 }

@@ -21,7 +21,6 @@ This section walks you through configuring the Frontegg Swift SDK, including set
 - Replace `{{FRONTEGG_BASE_URL}}` with your Frontegg domain, i.e `app-xxxx.frontegg.com` 
 - Replace `{{FRONTEGG_CLIENT_ID}}` with your Frontegg client ID.
 
-
 ## Register your domain with Frontegg
 
 To enable domain-based features, you must register your associated domain with Frontegg for each environment. To do this:

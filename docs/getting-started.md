@@ -57,34 +57,7 @@ iOS 14+ is required for this integration
 - Replace `{{FRONTEGG_CLIENT_ID}}` with your Frontegg client ID.
 
 ## Additional Frontegg.plist Keys
-You can extend your configuration with the following optional keys:
-
-🔍 cookieRegex (String, optional)
-Default: nil
-A regular expression used to match cookies that should be deleted or handled differently during authentication or logout.
-
- ```xml
-<key>cookieRegex</key>
-<string>^_fe.*|^session.*</string>
-```
-
-🧹 deleteCookieForHostOnly (Bool)
-Default: true
-Controls whether cookies are deleted only for the host (excluding subdomains).
-
- ```xml
-<key>deleteCookieForHostOnly</key>
-<false/>
-```
-
-✅ enableOfflineMode (Bool)
-Default: false
-Enables offline mode support, allowing the SDK to reuse the last known authenticated user if the network is unavailable during token refresh.
-
- ```xml
-<key>enableOfflineMode</key>
-<true/>
-```
+For a complete list of all available configuration options, see the [Advanced Configuration Reference](../docs/advanced.md#complete-fronteggplist-configuration-reference).
 
 ## SwiftUI integration
 
