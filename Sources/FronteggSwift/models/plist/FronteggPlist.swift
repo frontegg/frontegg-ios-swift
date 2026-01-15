@@ -32,7 +32,8 @@ struct FronteggPlist: Decodable, Equatable {
     let useLegacySocialLoginFlow: Bool
     let enableSessionPerTenant: Bool
     var networkMonitoringInterval: TimeInterval
-    let enableTraceIdLogging: Bool
+    let enableSentryLogging: Bool
+    let sentryMaxQueueSize: Int
 
     enum CodingKeys: CodingKey {
         case keychainService
@@ -54,7 +55,8 @@ struct FronteggPlist: Decodable, Equatable {
         case useLegacySocialLoginFlow
         case enableSessionPerTenant
         case networkMonitoringInterval
-        case enableTraceIdLogging
+        case enableSentryLogging
+        case sentryMaxQueueSize
     }
 
     init(
@@ -78,7 +80,8 @@ struct FronteggPlist: Decodable, Equatable {
         useLegacySocialLoginFlow: Bool = false,
         enableSessionPerTenant: Bool = false,
         networkMonitoringInterval: TimeInterval = 10,
-        enableTraceIdLogging: Bool = false
+        enableSentryLogging: Bool = false,
+        sentryMaxQueueSize: Int = 30
     ) {
         self.keychainService = keychainService
         self.embeddedMode = embeddedMode
@@ -100,7 +103,8 @@ struct FronteggPlist: Decodable, Equatable {
         self.useLegacySocialLoginFlow = useLegacySocialLoginFlow
         self.enableSessionPerTenant = enableSessionPerTenant
         self.networkMonitoringInterval = networkMonitoringInterval
-        self.enableTraceIdLogging = enableTraceIdLogging
+        self.enableSentryLogging = enableSentryLogging
+        self.sentryMaxQueueSize = sentryMaxQueueSize
     }
 
     init(from decoder: any Decoder) throws {
@@ -163,13 +167,16 @@ struct FronteggPlist: Decodable, Equatable {
         let networkMonitoringInterval = try container.decodeIfPresent(TimeInterval.self, forKey: .networkMonitoringInterval)
         self.networkMonitoringInterval = networkMonitoringInterval ?? 10
         
-        let enableTraceIdLogging = try container.decodeIfPresent(Bool.self, forKey: .enableTraceIdLogging)
-        self.enableTraceIdLogging = enableTraceIdLogging ?? false
+        let enableSentryLogging = try container.decodeIfPresent(Bool.self, forKey: .enableSentryLogging)
+        self.enableSentryLogging = enableSentryLogging ?? false
+        
+        let sentryMaxQueueSize = try container.decodeIfPresent(Int.self, forKey: .sentryMaxQueueSize)
+        self.sentryMaxQueueSize = sentryMaxQueueSize ?? 30
         
         do {
             self.payload = try Payload(from: decoder)
         } catch {
-            if lateInit != true {
+            if !self.lateInit {
                 throw error
             }
             

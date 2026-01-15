@@ -87,7 +87,11 @@ struct Mocker {
                 throw MockServerError.invalidResponse("Failed to decode response from \(urlStr)")
             }
             return result
+        } catch let error as MockServerError {
+            // Re-throw MockServerError cases to preserve type information
+            throw error
         } catch {
+            // Wrap other errors (network errors, etc.) as networkError
             throw MockServerError.networkError(error)
         }
     }
@@ -115,7 +119,11 @@ struct Mocker {
                 throw MockServerError.invalidResponse("Failed to decode response from \(urlStr)")
             }
             return result
+        } catch let error as MockServerError {
+            // Re-throw MockServerError cases to preserve type information
+            throw error
         } catch {
+            // Wrap other errors (network errors, etc.) as networkError
             throw MockServerError.networkError(error)
         }
     }
@@ -154,7 +162,11 @@ struct Mocker {
                 throw MockServerError.invalidResponse("Failed to parse response from \(urlStr)")
             }
             return result
+        } catch let error as MockServerError {
+            // Re-throw MockServerError cases to preserve type information
+            throw error
         } catch {
+            // Wrap other errors (network errors, etc.) as networkError
             throw MockServerError.networkError(error)
         }
     }
@@ -174,7 +186,11 @@ struct Mocker {
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
                 throw MockServerError.serverUnavailable("Mock server returned status \(httpResponse.statusCode) for \(urlStr)")
             }
+        } catch let error as MockServerError {
+            // Re-throw MockServerError cases to preserve type information
+            throw error
         } catch {
+            // Wrap other errors (network errors, etc.) as networkError
             throw MockServerError.networkError(error)
         }
     }

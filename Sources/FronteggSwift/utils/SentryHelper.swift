@@ -24,8 +24,18 @@ private func SecTaskCopyValueForEntitlement(
 
 public class SentryHelper {
     private static var isInitialized = false
+    private static var isEnabled = false
     private static let configuredDSN = "https://7f13156fe85003ccf1b968a476787bb1@o362363.ingest.us.sentry.io/4510708685471744"
     private static let sdkName = "FronteggSwift"
+    // Thread-safe initialization queue (serial to ensure atomic initialization)
+    private static let initQueue = DispatchQueue(label: "com.frontegg.sentry.init")
+    
+    /// Checks if Sentry logging is enabled in the configuration
+    private static func isSentryEnabled() -> Bool {
+        return initQueue.sync {
+            return isEnabled && isInitialized
+        }
+    }
 
     private static func parseAssociatedDomains(_ values: [String]) -> [[String: Any]] {
         values.map { raw in
@@ -87,7 +97,7 @@ public class SentryHelper {
                 "bundle_id": bundleId
             ], key: "app")
 
-            if let associatedDomains = getAssociatedDomainsEntitlement() {
+            if let associatedDomains = getAssociatedDomainsEntitlementInternal() {
                 scope.setTag(value: String(associatedDomains.count), key: "associated_domains_count")
                 scope.setContext(value: [
                     // Some Sentry projects scrub URL-like strings (e.g., "applinks:...") into [Filtered].
@@ -113,7 +123,8 @@ public class SentryHelper {
                 scope.setTag(value: String(config.enableOfflineMode), key: "enableOfflineMode")
                 scope.setTag(value: String(config.useLegacySocialLoginFlow), key: "useLegacySocialLoginFlow")
                 scope.setTag(value: String(config.enableSessionPerTenant), key: "enableSessionPerTenant")
-                scope.setTag(value: String(config.enableTraceIdLogging), key: "enableTraceIdLogging")
+                scope.setTag(value: String(config.enableSentryLogging), key: "enableSentryLogging")
+                scope.setTag(value: String(config.sentryMaxQueueSize), key: "sentryMaxQueueSize")
                 scope.setTag(value: config.logLevel.rawValue, key: "logLevel")
                 scope.setTag(value: String(config.networkMonitoringInterval), key: "networkMonitoringInterval")
                 if let backgroundColor = config.backgroundColor {
@@ -135,7 +146,8 @@ public class SentryHelper {
                     "enableOfflineMode": config.enableOfflineMode,
                     "useLegacySocialLoginFlow": config.useLegacySocialLoginFlow,
                     "enableSessionPerTenant": config.enableSessionPerTenant,
-                    "enableTraceIdLogging": config.enableTraceIdLogging,
+                    "enableSentryLogging": config.enableSentryLogging,
+                    "sentryMaxQueueSize": config.sentryMaxQueueSize,
                     "networkMonitoringInterval": config.networkMonitoringInterval,
                     "logLevel": config.logLevel.rawValue,
                     "keepUserLoggedInAfterReinstall": config.keepUserLoggedInAfterReinstall,
@@ -150,7 +162,7 @@ public class SentryHelper {
         }
     }
 
-    private static func getAssociatedDomainsEntitlement() -> [String]? {
+    private static func getAssociatedDomainsEntitlementInternal() -> [String]? {
 #if canImport(Security)
         guard let task = SecTaskCreateFromSelf(nil) else { return nil }
         let key = "com.apple.developer.associated-domains" as CFString
@@ -161,9 +173,14 @@ public class SentryHelper {
         return nil
 #endif
     }
+    
+    // Public method to check associated domains (for logging)
+    public static func getAssociatedDomainsEntitlement() -> [String]? {
+        return getAssociatedDomainsEntitlementInternal()
+    }
 
     public static func setBaseUrl(_ baseUrl: String) {
-        guard isInitialized else { return }
+        guard isSentryEnabled() else { return }
         SentrySDK.configureScope { scope in
             scope.setTag(value: baseUrl, key: "baseUrl")
             scope.setContext(value: ["baseUrl": baseUrl], key: "frontegg")
@@ -171,40 +188,77 @@ public class SentryHelper {
     }
     
     public static func initialize() {
-        guard !isInitialized else {
-            return
-        }
-
-        SentrySDK.start { options in
-            options.dsn = configuredDSN
-            options.debug = false
-            // Attach a stacktrace to captured messages / errors where possible,
-            // so we can see where in the SDK the event originated.
-            options.attachStacktrace = true
-            options.enableAutoSessionTracking = true
-            options.tracesSampleRate = 1.0
-            options.sessionTrackingIntervalMillis = 30000
-            
-            if let bundleId = Bundle.main.bundleIdentifier {
-                options.environment = bundleId
+        // Use synchronous queue to ensure thread-safe initialization and completion
+        initQueue.sync {
+            // Check if already initialized
+            guard !isInitialized else {
+                return
             }
             
-            var releaseName = "frontegg-ios-sdk"
-            if let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
-               let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
-                releaseName = "\(Bundle.main.bundleIdentifier ?? "frontegg-ios")@\(appVersion)+\(appBuild)"
-            }
-            releaseName += " (SDK: \(SDKVersion.value))"
+            // Check if Sentry logging is enabled in config
+            let config = try? PlistHelper.fronteggConfig()
+            let enabled = config?.enableSentryLogging ?? false
             
-            options.releaseName = releaseName
-        }
+            guard enabled else {
+                // Sentry logging is disabled, don't initialize
+                return
+            }
 
-        isInitialized = true
+            // Initialize Sentry SDK (synchronous call)
+            SentrySDK.start { options in
+                options.dsn = configuredDSN
+                options.debug = false
+                // Attach a stacktrace to captured messages / errors where possible,
+                // so we can see where in the SDK the event originated.
+                options.attachStacktrace = true
+                options.enableAutoSessionTracking = true
+                options.tracesSampleRate = 1.0
+                options.sessionTrackingIntervalMillis = 30000
+                
+                // Sentry SDK has built-in offline support - it automatically queues events when offline
+                // and sends them when back online. We just configure it to work well with our offline mode:
+                let config = try? PlistHelper.fronteggConfig()
+                let maxCacheItems = UInt(config?.sentryMaxQueueSize ?? 30)
+                options.maxCacheItems = maxCacheItems // Configurable cache limit to prevent memory abuse during extended offline periods
+                options.enableAutoBreadcrumbTracking = true
+                
+                // Disable Sentry's automatic network request tracking to avoid:
+                // 1. Interfering with our NetworkStatusMonitor offline detection
+                // 2. Creating network calls that could trigger false offline detection
+                // 3. Consuming bandwidth when our offline mode is active
+                // Note: Sentry still handles offline queuing automatically - we're just preventing it from making its own network calls
+                options.enableNetworkTracking = false
+                
+                if let bundleId = Bundle.main.bundleIdentifier {
+                    options.environment = bundleId
+                }
+                
+                var releaseName = "frontegg-ios-sdk"
+                if let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+                   let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
+                    releaseName = "\(Bundle.main.bundleIdentifier ?? "frontegg-ios")@\(appVersion)+\(appBuild)"
+                }
+                releaseName += " (SDK: \(SDKVersion.value))"
+                
+                options.releaseName = releaseName
+            }
+
+            // Set both flags atomically after SentrySDK.start completes
+            // This ensures isSentryEnabled() will return true immediately
+            // and prevents race conditions where isEnabled=true but isInitialized=false
+            isEnabled = true
+            isInitialized = true
+        }
+        
+        // Configure global metadata (can be async since initialization is complete)
         configureGlobalMetadata()
     }
     
+    /// Logs an error to Sentry
+    /// Note: Sentry SDK automatically queues events when offline and sends them when back online.
+    /// The maxQueueSize limit (30) prevents memory abuse during extended offline periods.
     public static func logError(_ error: Error, context: [String: [String: Any]] = [:]) {
-        guard isInitialized else { return }
+        guard isSentryEnabled() else { return }
         SentrySDK.capture(error: error) { scope in
             for (key, value) in context {
                 scope.setContext(value: value, key: key)
@@ -212,8 +266,11 @@ public class SentryHelper {
         }
     }
     
+    /// Logs a message to Sentry
+    /// Note: Sentry SDK automatically queues events when offline and sends them when back online.
+    /// The maxQueueSize limit (30) prevents memory abuse during extended offline periods.
     public static func logMessage(_ message: String, level: SentryLevel = .error, context: [String: [String: Any]] = [:]) {
-        guard isInitialized else { return }
+        guard isSentryEnabled() else { return }
         SentrySDK.capture(message: message) { scope in
             scope.setLevel(level)
             for (key, value) in context {
@@ -222,8 +279,11 @@ public class SentryHelper {
         }
     }
     
+    /// Adds a breadcrumb to Sentry
+    /// Note: Sentry SDK automatically queues breadcrumbs when offline and sends them when back online.
+    /// The maxQueueSize limit (30) prevents memory abuse during extended offline periods.
     public static func addBreadcrumb(_ message: String, category: String = "default", level: SentryLevel = .info, data: [String: Any] = [:]) {
-        guard isInitialized else { return }
+        guard isSentryEnabled() else { return }
         let breadcrumb = Breadcrumb(level: level, category: category)
         breadcrumb.message = message
         breadcrumb.data = data
@@ -231,7 +291,7 @@ public class SentryHelper {
     }
     
     public static func setUser(_ userId: String?, email: String? = nil, username: String? = nil) {
-        guard isInitialized else { return }
+        guard isSentryEnabled() else { return }
         let user = Sentry.User()
         user.userId = userId
         user.email = email
@@ -240,19 +300,19 @@ public class SentryHelper {
     }
     
     public static func clearUser() {
-        guard isInitialized else { return }
+        guard isSentryEnabled() else { return }
         SentrySDK.setUser(nil)
     }
     
     public static func setTag(_ key: String, value: String) {
-        guard isInitialized else { return }
+        guard isSentryEnabled() else { return }
         SentrySDK.configureScope { scope in
             scope.setTag(value: value, key: key)
         }
     }
     
     public static func setContext(_ key: String, value: [String: Any]) {
-        guard isInitialized else { return }
+        guard isSentryEnabled() else { return }
         SentrySDK.configureScope { scope in
             scope.setContext(value: value, key: key)
         }

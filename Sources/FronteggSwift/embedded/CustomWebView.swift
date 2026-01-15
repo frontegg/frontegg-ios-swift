@@ -4,7 +4,7 @@
 //
 
 import Foundation
-import WebKit
+@preconcurrency import WebKit
 import SwiftUI
 import AuthenticationServices
 
@@ -59,6 +59,35 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         logger.trace("navigationAction check for \(urlString)")
 
         if let url = url {
+            // Log all navigation attempts with full details for debugging
+            let queryItems = getQueryItems(url.absoluteString)
+            let queryKeys = Array((queryItems ?? [:]).keys).sorted()
+            let hasCode = queryItems?["code"] != nil
+            let hasError = queryItems?["error"] != nil
+            
+            logger.info("🔍 [Navigation] URL: \(url.absoluteString)")
+            logger.info("🔍 [Navigation] Scheme: \(url.scheme ?? "nil"), Host: \(url.host ?? "nil"), Path: \(url.path)")
+            logger.info("🔍 [Navigation] Query params: \(queryKeys.isEmpty ? "none" : queryKeys.joined(separator: ", "))")
+            logger.info("🔍 [Navigation] Has code: \(hasCode), Has error: \(hasError)")
+            logger.info("🔍 [Navigation] Previous URL: \(previousUrl?.absoluteString ?? "nil")")
+            
+            // Add Sentry breadcrumb for all navigation attempts (not just errors)
+            SentryHelper.addBreadcrumb(
+                "WebView navigation decision",
+                category: "webview_navigation",
+                level: .info,
+                data: [
+                    "url": url.absoluteString,
+                    "scheme": url.scheme ?? "nil",
+                    "host": url.host ?? "nil",
+                    "path": url.path,
+                    "queryKeys": queryKeys,
+                    "hasCode": hasCode,
+                    "hasError": hasError,
+                    "previousUrl": previousUrl?.absoluteString ?? "nil",
+                    "isSocialLoginFlow": isSocialLoginFlow
+                ]
+            )
             // Save current URL as previousUrl BEFORE processing, but only if it's not the same as the new URL
             // This ensures we track the URL we came FROM, not the URL we're going TO
             if let currentUrl = webView?.url, currentUrl.absoluteString != url.absoluteString {
@@ -76,7 +105,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                        let queryItems = urlComponents.queryItems,
                        let type = queryItems.first(where: { $0.name == "type" })?.value {
                         logger.info("Retrying social login with provider: \(type) to avoid localhost redirect")
-                        DispatchQueue.main.async { [weak self, weak webView] in
+                        DispatchQueue.main.async { [weak self] in
                             guard let self = self else { return }
                             self.fronteggAuth.handleSocialLogin(providerString: type, custom: false, action: .login) { result in
                                 switch result {
@@ -112,7 +141,18 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                (urlString.contains("/authorize") || urlString.contains("/oauth/authorize") || 
                 urlString.contains("auth0.com") || urlString.contains("okta.com") || 
                 urlString.contains("login.microsoftonline.com") || urlString.contains("accounts.google.com")) {
-                logger.info("Detected external OIDC provider redirect, allowing navigation: \(urlString)")
+                logger.info("✅ [Navigation] Detected external OIDC provider redirect, allowing navigation: \(urlString)")
+                SentryHelper.addBreadcrumb(
+                    "External OIDC provider redirect detected",
+                    category: "social_login",
+                    level: .info,
+                    data: [
+                        "url": urlString,
+                        "host": url.host ?? "nil",
+                        "path": url.path,
+                        "queryKeys": queryKeys
+                    ]
+                )
                 return .allow
             }
             
@@ -122,14 +162,62 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 logger.info("🔵 [Social Login Debug] All app URL schemes: \(appSchemes)")
                 logger.info("🔵 [Social Login Debug] Custom scheme URL: \(url.absoluteString)")
                 
+                // Log custom scheme detection
+                let queryItems = getQueryItems(url.absoluteString)
+                let hasCode = queryItems?["code"] != nil
+                SentryHelper.addBreadcrumb(
+                    "Custom scheme detected in WebView",
+                    category: "webview_navigation",
+                    level: .info,
+                    data: [
+                        "scheme": scheme,
+                        "url": url.absoluteString,
+                        "hasCode": hasCode,
+                        "appSchemes": appSchemes,
+                        "isSocialLoginFlow": isSocialLoginFlow,
+                        "previousUrl": previousUrl?.absoluteString ?? "nil"
+                    ]
+                )
+                
                 // Check if this is an OAuth callback with code - handle it directly instead of opening externally
-                if let queryItems = getQueryItems(url.absoluteString), queryItems["code"] != nil {
+                if hasCode {
                     logger.info("✅ [Social Login Debug] Detected custom scheme OAuth callback URL with code, handling as HostedLoginCallback")
                     logger.info("✅ [Social Login Debug] This is the expected redirect flow for social login")
+                    logger.info("✅ [Social Login Debug] Callback URL parameters: \(queryKeys.joined(separator: ", "))")
+                    if let codeValue = queryItems?["code"] {
+                        logger.info("✅ [Social Login Debug] Code parameter length: \(codeValue.count) characters")
+                    }
+                    SentryHelper.addBreadcrumb(
+                        "Custom scheme OAuth callback with code - handling",
+                        category: "social_login",
+                        level: .info,
+                        data: [
+                            "url": url.absoluteString,
+                            "scheme": scheme,
+                            "queryKeys": queryKeys,
+                            "codeLength": queryItems?["code"]?.count ?? 0
+                        ]
+                    )
                     return self.handleHostedLoginCallback(webView, url)
                 } else {
                     logger.warning("⚠️ [Social Login Debug] Custom scheme URL detected but no code parameter found")
                     logger.warning("⚠️ [Social Login Debug] URL: \(url.absoluteString)")
+                    SentryHelper.logMessage(
+                        "Custom scheme URL without code parameter",
+                        level: .warning,
+                        context: [
+                            "webview_navigation": [
+                                "url": url.absoluteString,
+                                "scheme": scheme,
+                                "queryKeys": Array((queryItems ?? [:]).keys).sorted(),
+                                "isSocialLoginFlow": isSocialLoginFlow,
+                                "previousUrl": previousUrl?.absoluteString ?? "nil"
+                            ],
+                            "error": [
+                                "type": "custom_scheme_missing_code"
+                            ]
+                        ]
+                    )
                 }
                 
                 // For other custom scheme URLs (without code), open externally
@@ -153,11 +241,35 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             // This URL is detected as .loginRoutes but should be handled as HostedLoginCallback
             if url.path.contains("/oauth/account/redirect/iOS/") {
                 logger.info("🔵 [Social Login Debug] Intermediate redirect URL detected: \(url.absoluteString)")
-                if let queryItems = getQueryItems(url.absoluteString), queryItems["code"] != nil {
+                let queryItems = getQueryItems(url.absoluteString)
+                let queryKeys = Array((queryItems ?? [:]).keys).sorted()
+                logger.info("🔵 [Social Login Debug] Intermediate redirect query params: \(queryKeys.joined(separator: ", "))")
+                
+                if let queryItems = queryItems, queryItems["code"] != nil {
                     logger.info("✅ [Social Login Debug] Intermediate redirect callback URL with code, handling as HostedLoginCallback")
+                    SentryHelper.addBreadcrumb(
+                        "Intermediate redirect callback with code detected",
+                        category: "webview_navigation",
+                        level: .info,
+                        data: [
+                            "url": url.absoluteString,
+                            "path": url.path,
+                            "queryKeys": queryKeys
+                        ]
+                    )
                     return self.handleHostedLoginCallback(webView, url)
                 } else {
                     logger.warning("⚠️ [Social Login Debug] Intermediate redirect URL detected but no code parameter found")
+                    SentryHelper.addBreadcrumb(
+                        "Intermediate redirect without code",
+                        category: "webview_navigation",
+                        level: .warning,
+                        data: [
+                            "url": url.absoluteString,
+                            "path": url.path,
+                            "queryKeys": queryKeys
+                        ]
+                    )
                 }
             }
             
@@ -167,21 +279,55 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             // EXCEPT for OIDC callback - we need to let the server redirect to custom scheme first
             if url.path.hasPrefix("/oauth/account/") {
                 logger.info("🔵 [Social Login Debug] OAuth account path detected: \(url.path)")
+                let queryItems = getQueryItems(url.absoluteString)
+                let queryKeys = Array((queryItems ?? [:]).keys).sorted()
+                logger.info("🔵 [Social Login Debug] OAuth account query params: \(queryKeys.joined(separator: ", "))")
+                
                 if url.path.contains("/oauth/account/oidc/callback") {
                     logger.info("🔵 [Social Login Debug] OIDC callback URL detected, allowing server to redirect to custom scheme")
                     logger.info("🔵 [Social Login Debug] OIDC callback URL: \(url.absoluteString)")
+                    SentryHelper.addBreadcrumb(
+                        "OIDC callback URL detected - allowing server redirect",
+                        category: "social_login",
+                        level: .info,
+                        data: [
+                            "url": url.absoluteString,
+                            "path": url.path,
+                            "queryKeys": queryKeys
+                        ]
+                    )
                     isSocialLoginFlow = true
                     return .allow
                 }
                 
-                if let queryItems = getQueryItems(url.absoluteString), queryItems["code"] != nil {
+                if let queryItems = queryItems, queryItems["code"] != nil {
                     // For other callback URLs (not OIDC), handle them directly
                     if url.path.contains("/callback") || url.path.contains("/redirect/") {
                         logger.info("✅ [Social Login Debug] OAuth callback URL with code in /oauth/account/ path, handling as HostedLoginCallback")
+                        SentryHelper.addBreadcrumb(
+                            "OAuth account callback with code detected",
+                            category: "webview_navigation",
+                            level: .info,
+                            data: [
+                                "url": url.absoluteString,
+                                "path": url.path,
+                                "queryKeys": queryKeys
+                            ]
+                        )
                         return self.handleHostedLoginCallback(webView, url)
                     }
                 } else {
                     logger.warning("⚠️ [Social Login Debug] OAuth account path detected but no code parameter found: \(url.absoluteString)")
+                    SentryHelper.addBreadcrumb(
+                        "OAuth account path without code",
+                        category: "webview_navigation",
+                        level: .warning,
+                        data: [
+                            "url": url.absoluteString,
+                            "path": url.path,
+                            "queryKeys": queryKeys
+                        ]
+                    )
                 }
             }
 
@@ -279,7 +425,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                                         let user = try await self.fronteggAuth.requestAuthorizeAsync(refreshToken: refreshToken, deviceTokenCookie: deviceToken)
                                         // User is authenticated, complete login
                                         self.logger.info("User is authenticated after social login redirect using WebView cookies, completing login flow")
-                                        await MainActor.run {
+                                        _ = await MainActor.run {
                                             self.fronteggAuth.loginCompletion?(.success(user))
                                             // Dismiss the webview
                                             if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
@@ -332,7 +478,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                                     let user = try await self.fronteggAuth.requestAuthorizeAsync(refreshToken: refreshToken)
                                     // User is authenticated, complete login
                                     self.logger.info("User is authenticated after social login redirect using keychain token, completing login flow")
-                                    await MainActor.run {
+                                    _ = await MainActor.run {
                                         self.fronteggAuth.loginCompletion?(.success(user))
                                         // Dismiss the webview
                                         if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
@@ -345,7 +491,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                                     self.logger.warning("Token refresh failed after social login redirect: \(error), reloading login page")
                                     let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
                                     CredentialManager.saveCodeVerifier(codeVerifier)
-                                    await MainActor.run {
+                                    _ = await MainActor.run {
                                         webView?.load(URLRequest(url: loginUrl))
                                     }
                                 }
@@ -354,7 +500,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                                 self.logger.warning("No authentication cookies or refresh token found after social login redirect, reloading login page")
                                 let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
                                 CredentialManager.saveCodeVerifier(codeVerifier)
-                                await MainActor.run {
+                                _ = await MainActor.run {
                                     webView?.load(URLRequest(url: loginUrl))
                                 }
                             }
@@ -470,10 +616,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     /// Extracts authentication cookies (fe_refresh and fe_device) from WebView's cookie store
     /// Returns tuple of (refreshTokenCookie, deviceTokenCookie) where cookies are in format "name=value"
     private func extractAuthCookiesFromWebView() async -> (String?, String?) {
-        guard let webView = self as? WKWebView else {
-            logger.warning("Cannot extract cookies: webView is not available")
-            return (nil, nil)
-        }
+        // CustomWebView extends WKWebView, so self is always a WKWebView
+        let webView = self
         
         let store = webView.configuration.websiteDataStore.httpCookieStore
         let baseUrlHost = URL(string: fronteggAuth.baseUrl)?.host
@@ -739,6 +883,37 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         logger.info("🔵 [Social Login Debug] URL matches expected redirect URI: \(url.absoluteString.starts(with: expectedRedirectUri))")
         
         let queryItems = getQueryItems(url.absoluteString)
+        let queryKeys = Array((queryItems ?? [:]).keys).sorted()
+        let allQueryParams = queryItems?.mapValues { $0 } ?? [:]
+        
+        // Log all query parameters (not just code) for debugging
+        logger.info("🔵 [Social Login Debug] All query parameters: \(queryKeys.joined(separator: ", "))")
+        for (key, value) in allQueryParams {
+            let valueLength = value.count
+            let valuePreview = valueLength > 50 ? String(value.prefix(50)) + "..." : value
+            logger.info("🔵 [Social Login Debug]   - \(key): \(valuePreview) (length: \(valueLength))")
+        }
+        
+        // Add comprehensive Sentry breadcrumb for callback handling
+        SentryHelper.addBreadcrumb(
+            "Handling hosted login callback",
+            category: "oauth_callback",
+            level: .info,
+            data: [
+                "url": url.absoluteString,
+                "scheme": url.scheme ?? "nil",
+                "host": url.host ?? "nil",
+                "path": url.path,
+                "expectedRedirectUri": expectedRedirectUri,
+                "matchesExpected": url.absoluteString.starts(with: expectedRedirectUri),
+                "queryKeys": queryKeys,
+                "queryParamCount": allQueryParams.count,
+                "previousUrl": previousUrl?.absoluteString ?? "nil",
+                "magicLinkRedirectUri": magicLinkRedirectUri ?? "nil",
+                "isSocialLoginFlow": isSocialLoginFlow
+            ]
+        )
+        
         let code = queryItems?["code"]
         guard let code = code else {
             logger.error("❌ [Social Login Debug] Failed to extract code from callback URL")
@@ -864,14 +1039,53 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 
                 FronteggAuth.shared.handleHostedLoginCallback(code, codeVerifier, redirectUri: redirectUri) { res in
                     switch (res) {
-                    case .success(_):
+                    case .success(let user):
                         let logger = getLogger("CustomWebView")
-                        logger.info("Authentication succeeded")
+                        logger.info("✅ Authentication succeeded")
+                        logger.info("✅ [Token Exchange] User ID: \(user.id), Email: \(user.email)")
+                        logger.info("✅ [Token Exchange] Redirect URI used: \(redirectUri)")
+                        logger.info("✅ [Token Exchange] Code length: \(code.count), Code verifier used: \(codeVerifier != nil ? "yes" : "no")")
                         self.isSocialLoginFlow = false
                         
+                        // Log successful token exchange to Sentry
+                        SentryHelper.addBreadcrumb(
+                            "Token exchange successful",
+                            category: "oauth_callback",
+                            level: .info,
+                            data: [
+                                "redirectUri": redirectUri,
+                                "codeLength": code.count,
+                                "codeVerifierUsed": codeVerifier != nil,
+                                "isMagicLink": isMagicLink,
+                                "isSocialLogin": isSocialLogin,
+                                "userId": user.id,
+                                "userEmail": user.email
+                            ]
+                        )
+                        
                     case .failure(let error):
+                        let logger = getLogger("CustomWebView")
+                        logger.error("❌ Token exchange failed: \(error.localizedDescription)")
+                        logger.error("❌ [Token Exchange] Redirect URI used: \(redirectUri)")
+                        logger.error("❌ [Token Exchange] Code length: \(code.count), Code verifier used: \(codeVerifier != nil ? "yes" : "no")")
+                        logger.error("❌ [Token Exchange] Is magic link: \(isMagicLink), Is social login: \(isSocialLogin)")
                         print("Error \(error)")
                         self.isSocialLoginFlow = false
+                        
+                        // Log failed token exchange to Sentry
+                        SentryHelper.logError(error, context: [
+                            "token_exchange": [
+                                "redirectUri": redirectUri,
+                                "codeLength": code.count,
+                                "codeVerifierUsed": codeVerifier != nil,
+                                "isMagicLink": isMagicLink,
+                                "isSocialLogin": isSocialLogin
+                            ],
+                            "error": [
+                                "type": "token_exchange_failed"
+                            ]
+                        ])
+                        
                         let (url, codeVerifier)  = AuthorizeUrlGenerator().generate()
                         CredentialManager.saveCodeVerifier(codeVerifier)
                         DispatchQueue.main.async {
@@ -887,7 +1101,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     
     
     private func setSocialLoginRedirectUri(_ _webView:WKWebView?, _ url:URL) -> WKNavigationActionPolicy {
-        
         weak var webView = _webView
         let expectedRedirectUri = generateRedirectUri()
         logger.info("🔵 [Social Login Debug] setSocialLoginRedirectUri called")
@@ -920,9 +1133,10 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             let noRedirectDelegate = NoRedirectSessionDelegate()
             let noRedirectSession = URLSession(configuration: .default, delegate: noRedirectDelegate, delegateQueue: nil)
             
-            let task = noRedirectSession.dataTask(with: request) { (data, response, error) in
+            let task = noRedirectSession.dataTask(with: request) { [weak self] (data, response, error) in
+                guard let self = self else { return }
                 // Check for errors
-                if let error = error {
+                if error != nil {
                     return
                 }
                 
@@ -959,11 +1173,11 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         weak var webView = _webView
         
         WebAuthenticator.shared.start(url, ephemeralSession: ephemeralSession, window: self.window) { callbackUrl, error  in
-            if(error != nil){
-                if(CustomWebView.isCancelledAsAuthenticationLoginError(error!)){
+            if let error = error {
+                if CustomWebView.isCancelledAsAuthenticationLoginError(error) {
                     // Social login authentication canceled
-                }else {
-                    SentryHelper.logError(error!, context: [
+                } else {
+                    SentryHelper.logError(error, context: [
                         "social_login": [
                             "url": url.absoluteString,
                             "ephemeralSession": ephemeralSession,

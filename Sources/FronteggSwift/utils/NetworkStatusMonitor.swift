@@ -9,6 +9,16 @@
 import Foundation
 import Network
 
+// MARK: - NSLock Extension for async-safe locking (Swift 6 compatibility)
+extension NSLock {
+    /// Async-safe locking method for use in async contexts
+    func withLock<T>(_ body: () throws -> T) rethrows -> T {
+        lock()
+        defer { unlock() }
+        return try body()
+    }
+}
+
 // MARK: - Error classification
 
 /// Walk the NSUnderlyingErrorKey chain to the deepest NSError.
@@ -295,13 +305,14 @@ public enum NetworkStatusMonitor {
                     _monitoringLock.lock()
                     // Double-check that task doesn't exist (race condition protection)
                     if _initialCheckTask == nil {
+                        // Network I/O should run on background thread, not main thread
                         _initialCheckTask = Task {
                             let ok = await checkServerConnectivity(baseURLString: base)
                             updateCached(ok, forceEmit: true)
-                            // Clear the task reference when done
-                            _monitoringLock.lock()
-                            _initialCheckTask = nil
-                            _monitoringLock.unlock()
+                            // Clear the task reference when done (use withLock for async-safe locking)
+                            _monitoringLock.withLock {
+                                _initialCheckTask = nil
+                            }
                         }
                     }
                     _monitoringLock.unlock()
@@ -356,16 +367,16 @@ public enum NetworkStatusMonitor {
         get async {
             // If background monitoring is active, use cached value to avoid duplicate /test calls
             // Background monitoring will keep the cache updated via periodic checks
-            _monitoringLock.lock()
-            let monitoringActive = _isMonitoringActive
-            _monitoringLock.unlock()
+            let monitoringActive = _monitoringLock.withLock {
+                return _isMonitoringActive
+            }
             
             if monitoringActive {
                 // Return cached value when background monitoring is active
                 // This prevents duplicate /test calls during the initial monitoring phase
-                stateLock.lock()
-                let cached = _cachedReachable
-                stateLock.unlock()
+                let cached = stateLock.withLock {
+                    return _cachedReachable
+                }
                 return cached
             }
             

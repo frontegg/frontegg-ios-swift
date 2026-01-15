@@ -23,7 +23,7 @@ class RedirectHandler: NSObject, URLSessionTaskDelegate {
 
 
 public class Api {
-    internal static let DEAFULT_TIMEOUT: Int = 10
+    internal static let DEFAULT_TIMEOUT: Int = 10
     private let logger = getLogger("Api")
     private let baseUrl: String
     private let clientId: String
@@ -96,7 +96,7 @@ public class Api {
     internal func putRequest(
         path: String,
         body: [String: Any?],
-        timeout: Int = Api.DEAFULT_TIMEOUT
+        timeout: Int = Api.DEFAULT_TIMEOUT
     ) async throws -> (Data, URLResponse) {
         let urlStr = "\(self.baseUrl)/\(path)"
         guard let url = URL(string: urlStr) else {
@@ -172,7 +172,7 @@ public class Api {
         body: [String: Any?],
         additionalHeaders: [String: String] = [:],
         followRedirect: Bool = true,
-        timeout: Int = Api.DEAFULT_TIMEOUT
+        timeout: Int = Api.DEFAULT_TIMEOUT
     ) async throws -> (Data, URLResponse) {
         // Build URL
         let urlStr = path.starts(with: self.baseUrl)
@@ -274,7 +274,7 @@ public class Api {
         refreshToken: String? = nil,
         additionalHeaders: [String: String] = [:],
         followRedirect: Bool = true,
-        timeout: Int = Api.DEAFULT_TIMEOUT
+        timeout: Int = Api.DEFAULT_TIMEOUT
     ) async throws -> (Data, URLResponse) {
         let urlStr = path.starts(with: self.baseUrl)
             ? path
@@ -439,7 +439,7 @@ public class Api {
     
     internal func silentAuthorizeWithToken(
         refreshToken: String,
-        timeout: Int = Api.DEAFULT_TIMEOUT
+        timeout: Int = Api.DEFAULT_TIMEOUT
     ) async throws -> (Data, URLResponse) {
         // Use POST /oauth/token with grant_type=refresh_token
         let (data, response) = try await postRequest(path: "oauth/token", body: [
@@ -462,8 +462,8 @@ public class Api {
     
     internal func refreshToken(refreshToken: String, tenantId: String? = nil, accessToken: String? = nil) async throws -> AuthResponse {
         // If tenantId is provided, use the new refresh endpoint that supports per-tenant sessions
-        if let tenantId = tenantId {
-            self.logger.info("Refreshing token with tenantId: \(tenantId) (refresh token length: \(refreshToken.count))")
+        if let unwrappedTenantId = tenantId {
+            self.logger.info("Refreshing token with tenantId: \(unwrappedTenantId) (refresh token length: \(refreshToken.count))")
             let refreshTokenCookie = "\(self.cookieName)=\(refreshToken)"
             
             var headers: [String: String] = [
@@ -480,7 +480,7 @@ public class Api {
             
             let (data, response) = try await postRequest(
                 path: "identity/resources/auth/v1/user/token/refresh",
-                body: ["tenantId": tenantId],
+                body: ["tenantId": unwrappedTenantId],
                 additionalHeaders: headers,
                 timeout: 5
             )
@@ -495,8 +495,8 @@ public class Api {
                             "endpoint": "identity/resources/auth/v1/user/token/refresh",
                             "method": "POST",
                             "statusCode": res.statusCode,
-                            "hasTenantId": tenantId != nil,
-                            "tenantId": tenantId ?? "none"
+                            "hasTenantId": true,
+                            "tenantId": unwrappedTenantId
                         ],
                         "error": [
                             "type": "refresh_token_failed",
@@ -514,8 +514,8 @@ public class Api {
                             "endpoint": "identity/resources/auth/v1/user/token/refresh",
                             "method": "POST",
                             "statusCode": res.statusCode,
-                            "hasTenantId": tenantId != nil,
-                            "tenantId": tenantId ?? "none"
+                            "hasTenantId": true,
+                            "tenantId": unwrappedTenantId
                         ],
                         "error": [
                             "type": "refresh_token_failed",
@@ -540,8 +540,8 @@ public class Api {
                     "api": [
                         "endpoint": "identity/resources/auth/v1/user/token/refresh",
                         "method": "POST",
-                        "hasTenantId": tenantId != nil,
-                        "tenantId": tenantId ?? "none"
+                        "hasTenantId": true,
+                        "tenantId": unwrappedTenantId
                     ],
                     "error": [
                         "type": "decode_error",

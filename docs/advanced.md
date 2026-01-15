@@ -216,17 +216,185 @@ Available values: `trace`, `debug`, `info`, `warn`, `error`, `critical`
 
 ### Trace ID Logging
 
-The SDK can also log trace IDs from API responses to help with debugging. This is a separate feature from the log level.
+When `enableSentryLogging` is enabled, the SDK automatically logs trace IDs from API responses in two ways:
+
+1. **Sentry breadcrumbs**: Sends trace IDs to Sentry for production debugging and correlating client-side issues with server logs
+2. **File-based logging**: Saves trace IDs to a local file `frontegg-trace-ids.log` in your project directory (or Documents directory in the simulator) for local development
+
+Both features are controlled by the `enableSentryLogging` flag. When enabled, trace IDs from API responses (in the `frontegg-trace-id` header) will be:
+- Sent to Sentry as breadcrumbs (useful for production debugging)
+- Saved to a local file (useful for local development)
 
 To enable trace ID logging:
 
 ```xml
-<key>enableTraceIdLogging</key>
+<key>enableSentryLogging</key>
 <true/>
 ```
 
-When enabled, trace IDs from API responses (in the `frontegg-trace-id` header) will be saved to a file `frontegg-trace-ids.log` in your project directory (or Documents directory in the simulator).
+### Sentry Max Queue Size
 
+When `enableSentryLogging` is enabled, you can configure the maximum number of events that Sentry will cache when offline. This prevents memory abuse during extended offline periods.
+
+```xml
+<key>sentryMaxQueueSize</key>
+<integer>30</integer>
+```
+
+- **Default**: `30`
+- **Description**: Maximum number of events (errors, messages, breadcrumbs) that Sentry will cache locally when the device is offline. This maps to Sentry's `maxCacheItems` setting. When the cache is full, older events are dropped to make room for new ones. Sentry automatically sends cached events when the network becomes available.
+- **Recommendation**: For apps with frequent offline periods, consider a lower value (e.g., `20`) to reduce memory usage. For apps that need comprehensive offline logging, you can increase it (e.g., `50`).
+
+## Complete Frontegg.plist Configuration Reference
+
+This section documents all available configuration keys in `Frontegg.plist`.
+
+### Required Keys
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `baseUrl` | String | Your Frontegg domain (e.g., `https://app-xxxx.frontegg.com`) |
+| `clientId` | String | Your Frontegg client ID |
+
+### Optional Authentication Keys
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `applicationId` | String | `nil` | Application ID for multi-app workspaces |
+| `embeddedMode` | Boolean | `true` | Use embedded webview (`true`) or system browser (`false`) for login |
+| `loginWithSocialLogin` | Boolean | `true` | Enable social login (Google, GitHub, etc.) |
+| `handleLoginWithCustomSocialLoginProvider` | Boolean | `true` | Enable custom social login providers |
+| `handleLoginWithSocialProvider` | Boolean | `true` | Enable social provider login handlers |
+| `loginWithSSO` | Boolean | `false` | Enable SSO login |
+| `loginWithCustomSSO` | Boolean | `false` | Enable custom SSO login |
+| `useLegacySocialLoginFlow` | Boolean | `false` | Use legacy social login flow (for backward compatibility) |
+| `useAsWebAuthenticationForAppleLogin` | Boolean | `false` | Use `ASWebAuthenticationSession` for Apple Sign In |
+
+### Session Management Keys
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `keepUserLoggedInAfterReinstall` | Boolean | `true` | Keep user logged in after app reinstall |
+| `enableSessionPerTenant` | Boolean | `false` | Enable separate sessions per tenant (multi-tenancy) |
+| `keychainService` | String | `"frontegg"` | Keychain service name for storing credentials |
+
+### Offline Mode Keys
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enableOfflineMode` | Boolean | `false` | Enable offline mode - keep user logged in when network is unavailable |
+| `networkMonitoringInterval` | Number | `10` | Interval (in seconds) for network status monitoring when offline mode is enabled |
+
+### Logging Keys
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `logLevel` | String | `"warn"` | Log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
+| `enableSentryLogging` | Boolean | `false` | Enable Sentry error tracking and logging |
+| `sentryMaxQueueSize` | Integer | `30` | Maximum number of events to queue when offline (Sentry) |
+
+### UI Customization Keys
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `backgroundColor` | String | `nil` | Background color for login UI (hex format, e.g., `"#FFFFFF"`) |
+| `shouldSuggestSavePassword` | Boolean | `false` | Enable iOS password autofill suggestions |
+
+### Cookie Management Keys
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `cookieRegex` | String | `nil` | Regular expression to match cookies for deletion (e.g., `"^_fe.*\|^session.*"`) |
+| `deleteCookieForHostOnly` | Boolean | `true` | Delete cookies only for the host (excluding subdomains) |
+
+### Advanced Keys
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `lateInit` | Boolean | `false` | Enable late initialization (allows SDK to initialize without full config) |
+
+### Multi-Region Configuration
+
+Instead of `baseUrl` and `clientId`, you can use a `regions` array for multi-region support:
+
+```xml
+<key>regions</key>
+<array>
+  <dict>
+    <key>key</key>
+    <string>us-region</string>
+    <key>baseUrl</key>
+    <string>https://app-us.frontegg.com</string>
+    <key>clientId</key>
+    <string>your-client-id</string>
+    <key>applicationId</key>
+    <string>your-app-id</string>
+  </dict>
+  <dict>
+    <key>key</key>
+    <string>eu-region</string>
+    <key>baseUrl</key>
+    <string>https://app-eu.frontegg.com</string>
+    <key>clientId</key>
+    <string>your-client-id</string>
+  </dict>
+</array>
+```
+
+### Example Complete Configuration
+
+```xml
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Required -->
+  <key>baseUrl</key>
+  <string>https://app-xxxx.frontegg.com</string>
+  <key>clientId</key>
+  <string>your-client-id</string>
+  
+  <!-- Optional: Multi-app -->
+  <key>applicationId</key>
+  <string>your-application-id</string>
+  
+  <!-- Optional: Authentication -->
+  <key>embeddedMode</key>
+  <true/>
+  <key>loginWithSocialLogin</key>
+  <true/>
+  
+  <!-- Optional: Session Management -->
+  <key>keepUserLoggedInAfterReinstall</key>
+  <true/>
+  <key>enableSessionPerTenant</key>
+  <true/>
+  
+  <!-- Optional: Offline Mode -->
+  <key>enableOfflineMode</key>
+  <true/>
+  <key>networkMonitoringInterval</key>
+  <real>10</real>
+  
+  <!-- Optional: Logging -->
+  <key>logLevel</key>
+  <string>debug</string>
+  <key>enableSentryLogging</key>
+  <true/>
+  <key>sentryMaxQueueSize</key>
+  <integer>30</integer>
+  
+  <!-- Optional: UI Customization -->
+  <key>backgroundColor</key>
+  <string>#FFFFFF</string>
+  
+  <!-- Optional: Cookie Management -->
+  <key>cookieRegex</key>
+  <string>^_fe.*|^session.*</string>
+  <key>deleteCookieForHostOnly</key>
+  <true/>
+</dict>
+</plist>
+```
 
 ## Passkeys authentication (iOS 15+)
 
