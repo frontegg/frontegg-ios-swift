@@ -546,28 +546,34 @@ public class FronteggAuth: FronteggState {
             
             // Store tokens per tenant if enableSessionPerTenant is enabled
             if enableSessionPerTenant {
+                logger.info("🔵 [SessionPerTenant] setCredentials called with enableSessionPerTenant=true")
+                logger.info("🔵 [SessionPerTenant] Server's active tenant: \(userToUse.activeTenant.id)")
+                
                 if let localTenantId = credentialManager.getLastActiveTenantId() {
+                    logger.info("🔵 [SessionPerTenant] Found preserved local tenant ID: \(localTenantId)")
                     // Validate that the preserved tenant is still valid for this user
                     if userToUse.tenants.contains(where: { $0.id == localTenantId }) {
                         tenantIdToUse = localTenantId
-                        logger.info("Using LOCAL tenant ID: \(tenantIdToUse!) (ignoring server's active tenant: \(userToUse.activeTenant.id))")
+                        logger.info("✅ [SessionPerTenant] Using LOCAL tenant ID: \(tenantIdToUse!) (ignoring server's active tenant: \(userToUse.activeTenant.id))")
                     } else {
                         // Preserved tenant is not valid for this user (e.g., logged in with different account)
                         // Fall back to server's active tenant
-                        logger.warning("Preserved tenant ID (\(localTenantId)) not found in user's tenants list. Available: \(userToUse.tenants.map { $0.id }). Falling back to server's active tenant.")
+                        logger.warning("⚠️ [SessionPerTenant] Preserved tenant ID (\(localTenantId)) not found in user's tenants list. Available: \(userToUse.tenants.map { $0.id }). Falling back to server's active tenant.")
                         tenantIdToUse = userToUse.activeTenant.id
                         self.credentialManager.saveLastActiveTenantId(tenantIdToUse!)
-                        logger.info("Using server's active tenant: \(tenantIdToUse!) (saved as local tenant)")
+                        logger.info("🔵 [SessionPerTenant] Using server's active tenant: \(tenantIdToUse!) (saved as local tenant)")
                     }
                 } else {
+                    logger.warning("⚠️ [SessionPerTenant] No local tenant stored, using server's active tenant: \(userToUse.activeTenant.id)")
                     tenantIdToUse = userToUse.activeTenant.id
                     self.credentialManager.saveLastActiveTenantId(tenantIdToUse!)
-                    logger.info("No local tenant stored, using server's active tenant: \(tenantIdToUse!) (saved as local tenant)")
+                    logger.info("🔵 [SessionPerTenant] Saved server's active tenant: \(tenantIdToUse!) as local tenant")
                 }
             }
             
             var finalUserToUse = userToUse
             if enableSessionPerTenant, let localTenantId = tenantIdToUse {
+                logger.info("🔵 [SessionPerTenant] Attempting to modify user object to use local tenant: \(localTenantId)")
                 if let matchingTenant = userToUse.tenants.first(where: { $0.id == localTenantId }) {
                     do {
                         var userDict = try JSONEncoder().encode(userToUse)
@@ -582,16 +588,19 @@ public class FronteggAuth: FronteggState {
                             finalUserToUse = try JSONDecoder().decode(User.self, from: modifiedUserData)
                             
                             if localTenantId != userToUse.activeTenant.id {
-                                logger.info("Modified user to use local tenant (\(localTenantId)) instead of server's active tenant (\(userToUse.activeTenant.id))")
+                                logger.info("✅ [SessionPerTenant] Modified user to use local tenant (\(localTenantId)) instead of server's active tenant (\(userToUse.activeTenant.id))")
+                                logger.info("🔵 [SessionPerTenant] Modified user activeTenant.id: \(finalUserToUse.activeTenant.id)")
                             } else {
-                                logger.info("User already matches local tenant (\(localTenantId))")
+                                logger.info("🔵 [SessionPerTenant] User already matches local tenant (\(localTenantId))")
                             }
+                        } else {
+                            logger.warning("⚠️ [SessionPerTenant] Failed to encode matching tenant data")
                         }
                     } catch {
-                        logger.warning("Failed to modify user for local tenant: \(error). Using server's active tenant.")
+                        logger.warning("⚠️ [SessionPerTenant] Failed to modify user for local tenant: \(error). Using server's active tenant.")
                     }
                 } else {
-                    logger.error("Local tenant ID (\(localTenantId)) not found in user's tenants list. This should not happen. Available tenants: \(userToUse.tenants.map { $0.id })")
+                    logger.error("❌ [SessionPerTenant] Local tenant ID (\(localTenantId)) not found in user's tenants list. This should not happen. Available tenants: \(userToUse.tenants.map { $0.id })")
                 }
             }
             
@@ -1377,9 +1386,15 @@ public class FronteggAuth: FronteggState {
                 
                 // Call completion on main thread to avoid race conditions
                 // This ensures the completion handler always runs on the main thread
+                // Use the user from memory state (which may have been modified to use local tenant)
                 DispatchQueue.main.async {
                     self.setWebLoading(false)
-                    completion(.success(user))
+                    // Return the user from memory state, which may have been modified to use local tenant
+                    if let modifiedUser = self.user {
+                        completion(.success(modifiedUser))
+                    } else {
+                        completion(.success(user))
+                    }
                 }
             } catch {
                 logger.error("Failed to load user data: \(error.localizedDescription)")
@@ -2061,12 +2076,19 @@ public class FronteggAuth: FronteggState {
         }
     }
     public func handleOpenUrl(_ url: URL, _ useAppRootVC: Bool = false, internalHandleUrl:Bool = false) -> Bool {
+        logger.info("🔵 [handleOpenUrl] Received URL: \(url.absoluteString)")
+        logger.info("🔵 [handleOpenUrl] Base URL: \(self.baseUrl)")
+        logger.info("🔵 [handleOpenUrl] URL has prefix baseUrl: \(url.absoluteString.hasPrefix(self.baseUrl))")
+        logger.info("🔵 [handleOpenUrl] internalHandleUrl: \(internalHandleUrl)")
+        
         if(!url.absoluteString.hasPrefix(self.baseUrl) && !internalHandleUrl){
+            logger.warning("⚠️ [handleOpenUrl] URL doesn't match baseUrl and internalHandleUrl is false, returning false")
             setAppLink(false)
             return false
         }
         
         if url.path.contains("/postlogin/verify") {
+            logger.info("✅ [handleOpenUrl] Detected /postlogin/verify URL, processing verification")
             var verificationUrl = url
             if var urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false) {
                 var queryItems = urlComponents.queryItems ?? []
