@@ -1264,14 +1264,12 @@ public class FronteggAuth: FronteggState {
             
         } catch let error as FronteggError {
             if case .authError(FronteggError.Authentication.failedToRefreshToken(let message)) = error {
-                let tenantIdToPreserve: String?
+                let tenantIdToPreserve: String? = enableSessionPerTenant
+                    ? (preservedTenantId ?? credentialManager.getLastActiveTenantId())
+                    : nil
+
                 if enableSessionPerTenant {
-                    tenantIdToPreserve = preservedTenantId ?? credentialManager.getLastActiveTenantId()
-                    self.logger.warning(
-                        "🔵 [SessionPerTenant] Token refresh failed, but preserving tenant ID: \(tenantIdToPreserve ?? "nil")"
-                    )
-                } else {
-                    tenantIdToPreserve = nil
+                    self.logger.warning("🔵 [SessionPerTenant] Token refresh failed, but preserving tenant ID: \(tenantIdToPreserve ?? "nil")")
                 }
 
                 var context: [String: [String: Any]] = [
@@ -1283,31 +1281,29 @@ public class FronteggAuth: FronteggState {
                     ],
                     "error": [
                         "type": "failed_to_refresh_token",
-                         "message": message
+                        "message": message
                     ]
                 ]
 
-            if enableSessionPerTenant {
-                context["auth"] = (context["auth"] ?? [:]).merging([
-                    "preservedTenantId": preservedTenantId as Any,
-                    "tenantIdToPreserve": tenantIdToPreserve as Any
-                ]) { _, new in new }
-            }
+                if enableSessionPerTenant {
+                    context["auth"] = (context["auth"] ?? [:]).merging([
+                        "preservedTenantId": preservedTenantId as Any,
+                        "tenantIdToPreserve": tenantIdToPreserve as Any
+                    ]) { _, new in new }
+                }
 
-        SentryHelper.logMessage(
-            "Api: failed to refresh token, error: \(message)",
-            level: .error,
-            context: context
-        )
+                SentryHelper.logMessage(
+                    "Api: failed to refresh token, error: \(message)",
+                    level: .error,
+                    context: context
+                )
 
-        if enableSessionPerTenant {
-            self.credentialManager.clear(
-                excludingKeys: [KeychainKeys.lastActiveTenantId.rawValue]
-            )
-        } else {
-            self.credentialManager.clear()
-        }
-    }
+                if enableSessionPerTenant {
+                    self.credentialManager.clear(excludingKeys: [KeychainKeys.lastActiveTenantId.rawValue])
+                } else {
+                    self.credentialManager.clear()
+                }
+
                 await MainActor.run {
                     self.setInitializing(false)
                     self.setIsAuthenticated(false)
