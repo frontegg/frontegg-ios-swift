@@ -26,6 +26,24 @@ public class SentryHelper {
     private static var isInitialized = false
     private static let configuredDSN = "https://7f13156fe85003ccf1b968a476787bb1@o362363.ingest.us.sentry.io/4510708685471744"
     private static let sdkName = "FronteggSwift"
+
+    private static func parseAssociatedDomains(_ values: [String]) -> [[String: Any]] {
+        values.map { raw in
+            // Typical values: "applinks:example.com", "webcredentials:example.com"
+            if let idx = raw.firstIndex(of: ":") {
+                let type = String(raw[..<idx])
+                let domain = String(raw[raw.index(after: idx)...])
+                return [
+                    "type": type,
+                    "domain": domain
+                ]
+            }
+            return [
+                "type": "unknown",
+                "domain": raw
+            ]
+        }
+    }
     
     private static func configureGlobalMetadata() {
         let bundleId = Bundle.main.bundleIdentifier ?? "unknown"
@@ -48,7 +66,9 @@ public class SentryHelper {
             if let associatedDomains = getAssociatedDomainsEntitlement() {
                 scope.setTag(value: String(associatedDomains.count), key: "associated_domains_count")
                 scope.setContext(value: [
-                    "values": associatedDomains
+                    // Some Sentry projects scrub URL-like strings (e.g., "applinks:...") into [Filtered].
+                    // Keep a parsed representation so the domain/type remain visible even with strict scrubbing.
+                    "items": parseAssociatedDomains(associatedDomains)
                 ], key: "associated_domains")
             }
 
@@ -99,6 +119,9 @@ public class SentryHelper {
         SentrySDK.start { options in
             options.dsn = configuredDSN
             options.debug = false
+            // Attach a stacktrace to captured messages / errors where possible,
+            // so we can see where in the SDK the event originated.
+            options.attachStacktrace = true
             options.enableAutoSessionTracking = true
             options.tracesSampleRate = 1.0
             options.sessionTrackingIntervalMillis = 30000

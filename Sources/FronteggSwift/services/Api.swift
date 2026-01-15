@@ -5,6 +5,7 @@
 //
 
 import Foundation
+import Sentry
 
 
 enum ApiError: Error {
@@ -42,6 +43,55 @@ public class Api {
         }
         self.cookieName = "fe_refresh_\(clientIdWithoutFirstDash)"
     }
+
+    private func addHttpBreadcrumb(
+        method: String,
+        url: URL?,
+        statusCode: Int?,
+        traceId: String?,
+        durationMs: Int?,
+        requestBodySize: Int?,
+        responseBodySize: Int?,
+        followRedirect: Bool,
+        error: Error? = nil
+    ) {
+        guard let url else { return }
+
+        let host = url.host ?? "unknown"
+        let path = url.path.isEmpty ? "/" : url.path
+
+        var data: [String: Any] = [
+            "method": method,
+            "host": host,
+            "path": path,
+            "followRedirect": followRedirect,
+            "request_body_size": requestBodySize ?? 0,
+            "response_body_size": responseBodySize ?? 0
+        ]
+
+        if let statusCode {
+            data["status_code"] = statusCode
+            data["status_reason"] = HTTPURLResponse.localizedString(forStatusCode: statusCode)
+        }
+        if let traceId, !traceId.isEmpty {
+            data["frontegg_trace_id"] = traceId
+        }
+        if let durationMs {
+            data["duration_ms"] = durationMs
+        }
+        if let error {
+            let nsError = error as NSError
+            data["error_domain"] = nsError.domain
+            data["error_code"] = nsError.code
+            // Prefer a non-localized description (type + domain/code/userInfo where available).
+            data["error_description"] = String(reflecting: error)
+        }
+
+        // Breadcrumb message intentionally avoids full URL (queries may contain PII).
+        let message = "HTTP \(method) \(path)"
+        let level: SentryLevel = (statusCode != nil && !(200...299).contains(statusCode!)) || error != nil ? .warning : .info
+        SentryHelper.addBreadcrumb(message, category: "http", level: level, data: data)
+    }
     
     internal func putRequest(
         path: String,
@@ -65,6 +115,7 @@ public class Api {
             request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let requestBodySize = request.httpBody?.count
         
         // per-task timeout
         request.timeoutInterval = TimeInterval(timeout)
@@ -76,9 +127,44 @@ public class Api {
         config.waitsForConnectivity = false
         
         let session = URLSession(configuration: config)
-        let (data, response) = try await session.data(for: request)
-        TraceIdLogger.shared.extractAndLogTraceId(from: response)
-        return (data, response)
+        let start = Date()
+        do {
+            let (data, response) = try await session.data(for: request)
+            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
+            TraceIdLogger.shared.extractAndLogTraceId(from: response)
+            addHttpBreadcrumb(
+                method: "PUT",
+                url: request.url,
+                statusCode: statusCode,
+                traceId: (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "frontegg-trace-id"),
+                durationMs: durationMs,
+                requestBodySize: requestBodySize,
+                responseBodySize: data.count,
+                followRedirect: true
+            )
+            return (data, response)
+        } catch {
+            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+            addHttpBreadcrumb(
+                method: "PUT",
+                url: request.url,
+                statusCode: nil,
+                traceId: nil,
+                durationMs: durationMs,
+                requestBodySize: requestBodySize,
+                responseBodySize: nil,
+                followRedirect: true,
+                error: error
+            )
+            SentryHelper.logError(error, context: [
+                "http": [
+                    "method": "PUT",
+                    "path": path
+                ]
+            ])
+            throw error
+        }
     }
     
     internal func postRequest(
@@ -121,6 +207,7 @@ public class Api {
         }
         
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let requestBodySize = request.httpBody?.count
         
         // Apply per-task timeout (covers the whole transfer for this request)
         request.timeoutInterval = TimeInterval(timeout)
@@ -140,10 +227,45 @@ public class Api {
             session = URLSession(configuration: config, delegate: redirectHandler, delegateQueue: nil)
         }
         
-        // Make the call
-        let (data, response) = try await session.data(for: request)
-        TraceIdLogger.shared.extractAndLogTraceId(from: response)
-        return (data, response)
+        let start = Date()
+        do {
+            let (data, response) = try await session.data(for: request)
+            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
+            TraceIdLogger.shared.extractAndLogTraceId(from: response)
+            addHttpBreadcrumb(
+                method: "POST",
+                url: request.url,
+                statusCode: statusCode,
+                traceId: (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "frontegg-trace-id"),
+                durationMs: durationMs,
+                requestBodySize: requestBodySize,
+                responseBodySize: data.count,
+                followRedirect: followRedirect
+            )
+            return (data, response)
+        } catch {
+            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+            addHttpBreadcrumb(
+                method: "POST",
+                url: request.url,
+                statusCode: nil,
+                traceId: nil,
+                durationMs: durationMs,
+                requestBodySize: requestBodySize,
+                responseBodySize: nil,
+                followRedirect: followRedirect,
+                error: error
+            )
+            SentryHelper.logError(error, context: [
+                "http": [
+                    "method": "POST",
+                    "path": path,
+                    "followRedirect": followRedirect
+                ]
+            ])
+            throw error
+        }
     }
     
     internal func getRequest(
@@ -194,9 +316,45 @@ public class Api {
             session = URLSession(configuration: config, delegate: redirectHandler, delegateQueue: nil)
         }
 
-        let (data, response) = try await session.data(for: request)
-        TraceIdLogger.shared.extractAndLogTraceId(from: response)
-        return (data, response)
+        let start = Date()
+        do {
+            let (data, response) = try await session.data(for: request)
+            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
+            TraceIdLogger.shared.extractAndLogTraceId(from: response)
+            addHttpBreadcrumb(
+                method: "GET",
+                url: request.url,
+                statusCode: statusCode,
+                traceId: (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "frontegg-trace-id"),
+                durationMs: durationMs,
+                requestBodySize: nil,
+                responseBodySize: data.count,
+                followRedirect: followRedirect
+            )
+            return (data, response)
+        } catch {
+            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+            addHttpBreadcrumb(
+                method: "GET",
+                url: request.url,
+                statusCode: nil,
+                traceId: nil,
+                durationMs: durationMs,
+                requestBodySize: nil,
+                responseBodySize: nil,
+                followRedirect: followRedirect,
+                error: error
+            )
+            SentryHelper.logError(error, context: [
+                "http": [
+                    "method": "GET",
+                    "path": path,
+                    "followRedirect": followRedirect
+                ]
+            ])
+            throw error
+        }
     }
 
     
@@ -227,6 +385,7 @@ public class Api {
         
         // Empty body for POST request
         request.httpBody = try JSONSerialization.data(withJSONObject: [:])
+        let requestBodySize = request.httpBody?.count
         
         // per-task timeout
         request.timeoutInterval = TimeInterval(timeout)
@@ -238,10 +397,44 @@ public class Api {
         config.waitsForConnectivity = false
         
         let session = URLSession(configuration: config)
-        let (data, response) = try await session.data(for: request)
-        
-        TraceIdLogger.shared.extractAndLogTraceId(from: response)
-        return (data, response)
+        let start = Date()
+        do {
+            let (data, response) = try await session.data(for: request)
+            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
+            TraceIdLogger.shared.extractAndLogTraceId(from: response)
+            addHttpBreadcrumb(
+                method: "POST",
+                url: request.url,
+                statusCode: statusCode,
+                traceId: (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "frontegg-trace-id"),
+                durationMs: durationMs,
+                requestBodySize: requestBodySize,
+                responseBodySize: data.count,
+                followRedirect: true
+            )
+            return (data, response)
+        } catch {
+            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+            addHttpBreadcrumb(
+                method: "POST",
+                url: request.url,
+                statusCode: nil,
+                traceId: nil,
+                durationMs: durationMs,
+                requestBodySize: requestBodySize,
+                responseBodySize: nil,
+                followRedirect: true,
+                error: error
+            )
+            SentryHelper.logError(error, context: [
+                "http": [
+                    "method": "POST",
+                    "path": "/frontegg/oauth/authorize/silent"
+                ]
+            ])
+            throw error
+        }
     }
     
     internal func silentAuthorizeWithToken(

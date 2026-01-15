@@ -97,6 +97,32 @@ class WebAuthenticator: NSObject, ObservableObject, ASWebAuthenticationPresentat
                         ]
                     )
                 } else if let callbackUrl = callbackUrl {
+                    // Callback happened, but might not contain code/error (can cause silent loop back to login)
+                    let queryItems = getQueryItems(callbackUrl.absoluteString)
+                    let hasCode = queryItems?["code"] != nil
+                    let hasError = queryItems?["error"] != nil
+                    if !hasCode && !hasError {
+                        let keys = Array((queryItems ?? [:]).keys).sorted()
+                        SentryHelper.logMessage(
+                            "OAuth callback received without code (hosted)",
+                            level: .warning,
+                            context: [
+                                "oauth": [
+                                    "stage": "ASWebAuthenticationSession_completion",
+                                    "url": websiteURL.absoluteString,
+                                    "callbackScheme": bundleIdentifier,
+                                    "ephemeralSession": ephemeralSession,
+                                    "embeddedMode": FronteggApp.shared.embeddedMode,
+                                    "callbackUrl": callbackUrl.absoluteString,
+                                    "callbackQueryKeys": keys
+                                ],
+                                "error": [
+                                    "type": "oauth_missing_code"
+                                ]
+                            ]
+                        )
+                    }
+                } else if let callbackUrl = callbackUrl {
                     // Success - add breadcrumb
                     SentryHelper.addBreadcrumb(
                         "Social login redirect successful",

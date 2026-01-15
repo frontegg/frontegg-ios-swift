@@ -738,11 +738,32 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         logger.info("🔵 [Social Login Debug] Is custom scheme match: \(getAppURLSchemes().contains(url.scheme ?? ""))")
         logger.info("🔵 [Social Login Debug] URL matches expected redirect URI: \(url.absoluteString.starts(with: expectedRedirectUri))")
         
-        guard let queryItems = getQueryItems(url.absoluteString),
-              let code = queryItems["code"] else {
+        let queryItems = getQueryItems(url.absoluteString)
+        let code = queryItems?["code"]
+        guard let code = code else {
             logger.error("❌ [Social Login Debug] Failed to extract code from callback URL")
             logger.error("❌ [Social Login Debug] URL without code parameter. Full URL: \(url.absoluteString)")
             logger.warning("URL without code parameter detected. Previous URL: \(previousUrl?.absoluteString ?? "nil"), magicLinkRedirectUri: \(magicLinkRedirectUri ?? "nil")")
+
+            let keys = Array((queryItems ?? [:]).keys).sorted()
+            SentryHelper.logMessage(
+                "OAuth callback without code detected (embedded webview)",
+                level: .warning,
+                context: [
+                    "oauth": [
+                        "stage": "handleHostedLoginCallback",
+                        "url": url.absoluteString,
+                        "expectedRedirectUri": expectedRedirectUri,
+                        "previousUrl": previousUrl?.absoluteString ?? "nil",
+                        "magicLinkRedirectUri": magicLinkRedirectUri ?? "nil",
+                        "queryKeys": keys
+                    ],
+                    "error": [
+                        "type": "oauth_missing_code"
+                    ]
+                ]
+            )
+
             logger.info("Restarting the process by generating a new authorize url")
             let (url, codeVerifier) = AuthorizeUrlGenerator().generate()
             CredentialManager.saveCodeVerifier(codeVerifier)
@@ -956,6 +977,32 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 _ = webView?.load(URLRequest(url: newUrl))
                 
             }else {
+                if let callbackUrl = callbackUrl {
+                    let queryItems = getQueryItems(callbackUrl.absoluteString)
+                    let hasCode = queryItems?["code"] != nil
+                    let hasError = queryItems?["error"] != nil
+                    if !hasCode && !hasError {
+                        let keys = Array((queryItems ?? [:]).keys).sorted()
+                        SentryHelper.logMessage(
+                            "Social login callback returned without code (embedded external browser)",
+                            level: .warning,
+                            context: [
+                                "social_login": [
+                                    "url": url.absoluteString,
+                                    "embeddedMode": FronteggApp.shared.embeddedMode,
+                                    "ephemeralSession": ephemeralSession,
+                                    "stage": "external_browser_callback",
+                                    "callbackUrl": callbackUrl.absoluteString,
+                                    "callbackQueryKeys": keys
+                                ],
+                                "error": [
+                                    "type": "social_login_missing_code"
+                                ]
+                            ]
+                        )
+                    }
+                }
+
                 if let socialLoginUrl = FronteggAuth.shared.handleSocialLoginCallback(callbackUrl!) {
                     _ = webView?.load(URLRequest(url: socialLoginUrl))
                 } else {

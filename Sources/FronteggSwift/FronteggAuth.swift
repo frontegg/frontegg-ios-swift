@@ -1592,6 +1592,21 @@ public class FronteggAuth: FronteggState {
             }
             
             guard let code = queryItems["code"] else {
+                let keys = Array(queryItems.keys).sorted()
+                SentryHelper.logMessage(
+                    "OAuth callback missing code (hosted)",
+                    level: .warning,
+                    context: [
+                        "oauth": [
+                            "stage": "createOauthCallbackHandler",
+                            "url": url.absoluteString,
+                            "queryKeys": keys
+                        ],
+                        "error": [
+                            "type": "oauth_missing_code"
+                        ]
+                    ]
+                )
                 // If this is a verification callback and there's no code, the verification might have succeeded
                 // but the redirect didn't include the code. In this case, we should inform the user
                 // that verification succeeded but they need to try logging in again.
@@ -1707,7 +1722,23 @@ public class FronteggAuth: FronteggState {
                 guard
                     let self,
                     let finalURL = self.handleSocialLoginCallback(callbackURL)
-                else { return }
+                else {
+                    SentryHelper.logMessage(
+                        "Social login callback could not be parsed (hosted)",
+                        level: .warning,
+                        context: [
+                            "social_login": [
+                                "provider": providerString,
+                                "callbackUrl": callbackURL.absoluteString,
+                                "baseUrl": FronteggAuth.shared.baseUrl
+                            ],
+                            "error": [
+                                "type": "social_login_callback_unhandled"
+                            ]
+                        ]
+                    )
+                    return
+                }
                 self.loadInWebView(finalURL)
             }
         }
