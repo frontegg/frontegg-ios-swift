@@ -13,16 +13,10 @@
 	<key>keepUserLoggedInAfterReinstall</key>
 	<true/>
 	<key>embeddedMode</key>
-	<true/>
+	<false/>
 	<key>enableSessionPerTenant</key>
 	<true/>
 	<key>networkMonitoringInterval</key>
 	<integer>40</integer>
 </dict>
 </plist>
-
-<!-- --- staging ---
-<key>baseUrl</key>
-<string>https://app-vn16blhh11fb.stg.frontegg.com</string>
-<key>clientId</key>
-<string>9cfa5020-49bf-4b28-be5c-3a2d5ddfa85d</string> -->
