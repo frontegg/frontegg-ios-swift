@@ -306,7 +306,9 @@ public class FronteggAuth: FronteggState {
                 accessToken = try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .accessToken)
             }
             
-            if refreshToken == nil || accessToken == nil {
+            // Only fall back to legacy tokens if BOTH tenant-specific tokens are nil
+            // This prevents discarding valid tenant-specific tokens during partial migration scenarios
+            if refreshToken == nil && accessToken == nil {
                 if let legacyRefreshToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue),
                    let legacyAccessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
                     logger.warning("No tenant-specific tokens found, falling back to legacy tokens (migration scenario)")
