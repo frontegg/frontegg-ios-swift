@@ -13,7 +13,7 @@
 	<key>keepUserLoggedInAfterReinstall</key>
 	<true/>
 	<key>embeddedMode</key>
-	<false/>
+	<true/>
 	<key>enableSessionPerTenant</key>
 	<true/>
 	<key>networkMonitoringInterval</key>
