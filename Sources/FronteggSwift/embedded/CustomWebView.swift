@@ -302,8 +302,11 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 
                 if let queryItems = queryItems, queryItems["code"] != nil {
                     // For other callback URLs (not OIDC), handle them directly
-                    if url.path.contains("/callback") || url.path.contains("/redirect/") {
+                    if url.path.contains("/callback") || url.path.contains("/redirect/") || url.path.contains("/social/success") {
                         logger.info("✅ [Social Login Debug] OAuth callback URL with code in /oauth/account/ path, handling as HostedLoginCallback")
+                        if url.path.contains("/social/success") {
+                            isSocialLoginFlow = true
+                        }
                         SentryHelper.addBreadcrumb(
                             "OAuth account callback with code detected",
                             category: "webview_navigation",
@@ -987,6 +990,15 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             isMagicLink = false
             redirectUri = generateRedirectUri()
             logger.info("🔵 [Social Login Debug] Using standard redirect_uri for OIDC token exchange: \(redirectUri)")
+        } else if url.path.contains("/oauth/account/social/success") {
+            logger.info("🔵 [Social Login Debug] Detected social login success callback URL (e.g., Microsoft)")
+            // Social login success callback - use standard redirect_uri (custom scheme) for token exchange
+            // In embedded mode, Microsoft and some other providers redirect to /oauth/account/social/success
+            // This is an HTTPS URL, but for token exchange we need to use the original redirect_uri (custom scheme)
+            // that was used in the initial authorize request to Frontegg
+            isMagicLink = false
+            redirectUri = generateRedirectUri()
+            logger.info("🔵 [Social Login Debug] Using standard redirect_uri for social login success token exchange: \(redirectUri)")
         } else {
             logger.info("🔵 [Social Login Debug] Detected regular OAuth callback URL")
             // Regular OAuth callback - use cached magic link redirect_uri if available, otherwise use standard one
@@ -999,9 +1011,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         // For regular OAuth flow, we need code_verifier for PKCE
         // For social SSO flows, the verifier is stored in webview localStorage, not CredentialManager
         // Note: We check isMagicLink first (line 819), so magic link flows won't be misidentified as social login
-        // Social login is detected by: isSocialLoginFlow flag OR OIDC callback path
+        // Social login is detected by: isSocialLoginFlow flag OR OIDC callback path OR /social/success path
         // We don't check for general /oauth/account/ paths to avoid false positives with magic link flows
-        let isSocialLogin = isSocialLoginFlow || url.path.contains("/oauth/account/oidc/callback")
+        let isSocialLogin = isSocialLoginFlow || url.path.contains("/oauth/account/oidc/callback") || url.path.contains("/oauth/account/social/success")
         
         logger.info("🔵 [Social Login Debug] Final redirect_uri for token exchange: \(redirectUri)")
         logger.info("🔵 [Social Login Debug] Is magic link flow: \(isMagicLink)")
