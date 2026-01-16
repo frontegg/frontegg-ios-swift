@@ -1135,6 +1135,9 @@ public class FronteggAuth: FronteggState {
                                 setRefreshToken(legacyToken)
                             }
                             refreshToken = legacyToken
+                        } else {
+                            self.logger.info("No refresh token found for tenant \(tenantId) and no legacy token available. Tenant ID preserved for SessionPerTenant, but cannot refresh without token.")
+                            return false
                         }
                     }
                 }
@@ -1146,18 +1149,24 @@ public class FronteggAuth: FronteggState {
                             setRefreshToken(legacyToken)
                         }
                         refreshToken = legacyToken
+                    } else {
+                        self.logger.info("No refresh token available. Cannot refresh.")
+                        return false
                     }
                 }
             }
         } else {
             // Legacy behavior: load global refresh token
-        if refreshToken == nil {
-            if let keychainToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
-                self.logger.info("Reloaded refresh token from keychain")
-                await MainActor.run {
-                    setRefreshToken(keychainToken)
-                }
-                refreshToken = keychainToken
+            if refreshToken == nil {
+                if let keychainToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+                    self.logger.info("Reloaded refresh token from keychain")
+                    await MainActor.run {
+                        setRefreshToken(keychainToken)
+                    }
+                    refreshToken = keychainToken
+                } else {
+                    self.logger.info("No refresh token available in legacy mode. Cannot refresh.")
+                    return false
                 }
             }
         }
