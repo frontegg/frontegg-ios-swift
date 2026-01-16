@@ -1,3 +1,7 @@
+## v1.2.69
+Google: Uses shared session → shows saved accounts
+Microsoft: Uses shared session → shows saved accounts
+
 ## v1.2.68
 Fix: Improved token refresh reliability when enableSessionPerTenant is enabled
 - Added migration-safe logic that falls back to legacy global tokens if tenant-specific tokens or lastActiveTenantId are not yet available (e.g. right after upgrading from a version without per-tenant sessions)
