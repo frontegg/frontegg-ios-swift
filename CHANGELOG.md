@@ -1,3 +1,6 @@
+## v1.2.70
+- added callback for Microsoft login `/social/success`
+
 ## v1.2.69
 Google: Uses shared session → shows saved accounts
 Microsoft: Uses shared session → shows saved accounts
