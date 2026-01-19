@@ -23,8 +23,10 @@ private func SecTaskCopyValueForEntitlement(
 #endif
 
 public class SentryHelper {
+    private static let logger = getLogger("SentryHelper")
     private static var isInitialized = false
     private static var isEnabled = false
+    private static var didLogInitStatus = false
     private static let configuredDSN = "https://7f13156fe85003ccf1b968a476787bb1@o362363.ingest.us.sentry.io/4510708685471744"
     private static let sdkName = "FronteggSwift"
     // Thread-safe initialization queue (serial to ensure atomic initialization)
@@ -190,8 +192,16 @@ public class SentryHelper {
     public static func initialize() {
         // Use synchronous queue to ensure thread-safe initialization and completion
         initQueue.sync {
+            // Log once per app run to make it easy to see if Sentry is enabled.
+            if !didLogInitStatus {
+                let config = try? PlistHelper.fronteggConfig()
+                logger.info("Sentry logging is \(config?.enableSentryLogging == true ? "ENABLED" : "DISABLED") (enableSentryLogging=\(config?.enableSentryLogging ?? false), sentryMaxQueueSize=\(config?.sentryMaxQueueSize ?? 30))")
+                didLogInitStatus = true
+            }
+
             // Check if already initialized
             guard !isInitialized else {
+                logger.debug("Sentry already initialized, skipping.")
                 return
             }
             
@@ -201,6 +211,7 @@ public class SentryHelper {
             
             guard enabled else {
                 // Sentry logging is disabled, don't initialize
+                logger.info("Sentry initialization skipped (enableSentryLogging=false).")
                 return
             }
 
@@ -248,6 +259,7 @@ public class SentryHelper {
             // and prevents race conditions where isEnabled=true but isInitialized=false
             isEnabled = true
             isInitialized = true
+            logger.info("Sentry initialized successfully.")
         }
         
         // Configure global metadata (can be async since initialization is complete)
