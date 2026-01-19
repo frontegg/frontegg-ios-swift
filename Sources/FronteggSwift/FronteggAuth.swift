@@ -1512,6 +1512,20 @@ public class FronteggAuth: FronteggState {
             guard error == nil else {
                 logger.error("❌ [Social Login Debug] Token exchange failed with error: \(error!.localizedDescription)")
                 logger.error("❌ [Social Login Debug] Redirect URI used: \(redirectUri)")
+                
+                SentryHelper.logError(error!, context: [
+                    "token_exchange": [
+                        "redirectUri": redirectUri,
+                        "codeLength": code.count,
+                        "codeVerifierUsed": codeVerifier != nil,
+                        "method": "handleHostedLoginCallback"
+                    ],
+                    "error": [
+                        "type": "token_exchange_failed",
+                        "stage": "api_exchange"
+                    ]
+                ])
+                
                 DispatchQueue.main.async {
                     completion(.failure(error!))
                     self.setIsLoading(false)
