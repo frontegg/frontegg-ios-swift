@@ -245,10 +245,20 @@ private extension SocialLoginUrlGenerator {
             queryItems.append(URLQueryItem(name: "response_mode", value: responseMode))
         }
 
-        let redirectUri = defaultSocialLoginRedirectUri()
-        let state = try Self.createState(provider: provider.rawValue,
-                                         appId: FronteggAuth.shared.applicationId,
-                                         action: action)
+        // For Microsoft in embedded mode, use the legacy custom-scheme redirect URI
+        // so that the flow behaves exactly like before, without changing other providers
+        let redirectUri: String
+        if provider == .microsoft && FronteggAuth.shared.embeddedMode {
+            redirectUri = generateRedirectUri()
+        } else {
+            redirectUri = defaultSocialLoginRedirectUri()
+        }
+
+        let state = try Self.createState(
+            provider: provider.rawValue,
+            appId: FronteggAuth.shared.applicationId,
+            action: action
+        )
         
         queryItems.append(contentsOf: [
             URLQueryItem(name: "redirect_uri", value: redirectUri),
