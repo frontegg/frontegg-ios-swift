@@ -1,3 +1,7 @@
+## v1.2.71
+Increased logs for sdk.
+- Google redirect callback handling
+
 ## v1.2.70
 - added callback for Microsoft login `/social/success`
 
