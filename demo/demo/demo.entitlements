@@ -11,5 +11,9 @@
 		<string>applinks:app-v686mk10lsu7.stg.frontegg.com</string>
 		<string>webcredentials:app-v686mk10lsu7.stg.frontegg.com</string>
 	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.frontegg.demo</string>
+	</array>
 </dict>
 </plist>
