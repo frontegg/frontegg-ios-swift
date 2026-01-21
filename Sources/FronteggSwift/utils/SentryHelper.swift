@@ -84,15 +84,6 @@ public class SentryHelper {
                 "bundle_id": bundleId
             ], key: "app")
 
-            if let associatedDomains = getAssociatedDomainsEntitlementInternal() {
-                scope.setTag(value: String(associatedDomains.count), key: "associated_domains_count")
-                scope.setContext(value: [
-                    // Some Sentry projects scrub URL-like strings (e.g., "applinks:...") into [Filtered].
-                    // Keep a parsed representation so the domain/type remain visible even with strict scrubbing.
-                    "items": parseAssociatedDomains(associatedDomains)
-                ], key: "associated_domains")
-            }
-
             if let config = try? PlistHelper.fronteggConfig() {
                 // Tags (easy filtering)
                 scope.setTag(value: config.keychainService, key: "keychainService")
@@ -149,18 +140,6 @@ public class SentryHelper {
         }
     }
 
-    private static func getAssociatedDomainsEntitlementInternal() -> [String]? {
-        // Note: Reading entitlements at runtime requires private Security framework APIs
-        // which are not allowed by App Store. This function returns nil to avoid using
-        // private APIs like _SecTaskCopyValueForEntitlement and _SecTaskCreateFromSelf.
-        // The associated domains configuration is still validated at build time by Xcode.
-        return nil
-    }
-    
-    // Public method to check associated domains (for logging)
-    public static func getAssociatedDomainsEntitlement() -> [String]? {
-        return getAssociatedDomainsEntitlementInternal()
-    }
 
     public static func setBaseUrl(_ baseUrl: String) {
         guard isSentryEnabled() else { return }
