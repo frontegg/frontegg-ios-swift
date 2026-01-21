@@ -1,3 +1,6 @@
+## v1.2.72
+- updated url handler for microsoft
+
 ## v1.2.71
 Increased logs for sdk.
 - Google redirect callback handling
