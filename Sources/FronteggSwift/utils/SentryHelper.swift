@@ -6,21 +6,6 @@
 
 import Foundation
 import Sentry
-#if canImport(Security)
-import Security
-
-private typealias SecTaskRef = CFTypeRef
-
-@_silgen_name("SecTaskCreateFromSelf")
-private func SecTaskCreateFromSelf(_ allocator: CFAllocator?) -> SecTaskRef?
-
-@_silgen_name("SecTaskCopyValueForEntitlement")
-private func SecTaskCopyValueForEntitlement(
-    _ task: SecTaskRef,
-    _ entitlement: CFString,
-    _ error: UnsafeMutablePointer<Unmanaged<CFError>?>?
-) -> CFTypeRef?
-#endif
 
 public class SentryHelper {
     private static let logger = getLogger("SentryHelper")
@@ -165,15 +150,11 @@ public class SentryHelper {
     }
 
     private static func getAssociatedDomainsEntitlementInternal() -> [String]? {
-#if canImport(Security)
-        guard let task = SecTaskCreateFromSelf(nil) else { return nil }
-        let key = "com.apple.developer.associated-domains" as CFString
-        var err: Unmanaged<CFError>? = nil
-        guard let value = SecTaskCopyValueForEntitlement(task, key, &err) else { return nil }
-        return (value as? [String])?.filter { !$0.isEmpty }
-#else
+        // Note: Reading entitlements at runtime requires private Security framework APIs
+        // which are not allowed by App Store. This function returns nil to avoid using
+        // private APIs like _SecTaskCopyValueForEntitlement and _SecTaskCreateFromSelf.
+        // The associated domains configuration is still validated at build time by Xcode.
         return nil
-#endif
     }
     
     // Public method to check associated domains (for logging)
