@@ -16,11 +16,19 @@ public class SentryHelper {
     private static let sdkName = "FronteggSwift"
     // Thread-safe initialization queue (serial to ensure atomic initialization)
     private static let initQueue = DispatchQueue(label: "com.frontegg.sentry.init")
-    
-    /// Checks if Sentry logging is enabled in the configuration
+    private static var sentryEnabledByFeatureFlag: Bool? = nil
+
+    public static func setSentryEnabledFromFeatureFlag(_ enabled: Bool) {
+        initQueue.sync {
+            sentryEnabledByFeatureFlag = enabled
+        }
+    }
+
     private static func isSentryEnabled() -> Bool {
         return initQueue.sync {
-            return isEnabled && isInitialized
+            guard isEnabled, isInitialized else { return false }
+            guard sentryEnabledByFeatureFlag == true else { return false }
+            return true
         }
     }
 
