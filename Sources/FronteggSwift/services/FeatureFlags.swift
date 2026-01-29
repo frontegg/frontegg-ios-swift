@@ -8,6 +8,8 @@
 import Foundation
 
 public class FeatureFlags {
+    public static let mobileEnableLoggingKey = "mobile-enable-logging"
+
     public struct Config {
         public let clientId: String
         public let api: Api
@@ -138,8 +140,8 @@ public class FeatureFlags {
         result.reserveCapacity(dict.count)
         for (k,v) in dict {
             switch v.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-            case "on":  result[k] = true
-            case "off": result[k] = false
+            case "on", "true":  result[k] = true
+            case "off", "false": result[k] = false
             default: break
             }
         }

@@ -80,7 +80,7 @@ struct FronteggPlist: Decodable, Equatable {
         useLegacySocialLoginFlow: Bool = false,
         enableSessionPerTenant: Bool = false,
         networkMonitoringInterval: TimeInterval = 10,
-        enableSentryLogging: Bool = false,
+        enableSentryLogging: Bool = true,
         sentryMaxQueueSize: Int = 30
     ) {
         self.keychainService = keychainService
@@ -168,7 +168,7 @@ struct FronteggPlist: Decodable, Equatable {
         self.networkMonitoringInterval = networkMonitoringInterval ?? 10
         
         let enableSentryLogging = try container.decodeIfPresent(Bool.self, forKey: .enableSentryLogging)
-        self.enableSentryLogging = enableSentryLogging ?? false
+        self.enableSentryLogging = enableSentryLogging ?? true
         
         let sentryMaxQueueSize = try container.decodeIfPresent(Int.self, forKey: .sentryMaxQueueSize)
         self.sentryMaxQueueSize = sentryMaxQueueSize ?? 30

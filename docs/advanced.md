@@ -290,7 +290,7 @@ This section documents all available configuration keys in `Frontegg.plist`.
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `logLevel` | String | `"warn"` | Log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
-| `enableSentryLogging` | Boolean | `false` | Enable Sentry error tracking and logging |
+| `enableSentryLogging` | Boolean | `true` | Enable Sentry error tracking and logging |
 | `sentryMaxQueueSize` | Integer | `30` | Maximum number of events to queue when offline (Sentry) |
 
 ### UI Customization Keys
