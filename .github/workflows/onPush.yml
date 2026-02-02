@@ -1,4 +1,4 @@
-name: "onPush( Build & Test )"
+name: "onPush( Build & Lint )"
 
 on:
   push:
@@ -6,46 +6,6 @@ on:
       - master
 
 jobs:
-  unit-tests:
-    name: "Unit Tests"
-    runs-on: 'macos-15-xlarge'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Check macOS and Xcode versions
-        run: |
-          sw_vers
-          xcode-select --print-path
-          xcodebuild -version
-
-      - name: Run Unit Tests
-        run: |
-          # Find an available iPhone simulator
-          SIMULATOR=$(xcrun simctl list devices available | grep "iPhone" | head -1 | sed 's/.*(\([^)]*\)).*/\1/' | head -1)
-          echo "Using simulator: $SIMULATOR"
-          
-          # Run tests
-          set -o pipefail
-          xcodebuild test \
-            -scheme FronteggSwift \
-            -destination "platform=iOS Simulator,id=$SIMULATOR" \
-            -only-testing:FronteggSwiftTests \
-            -resultBundlePath TestResults.xcresult \
-            -enableCodeCoverage YES \
-            2>&1 | tee build.log
-          
-          # Extract test summary
-          grep -E "Test Suite|Executed|TEST SUCCEEDED|TEST FAILED" build.log || true
-
-      - name: Upload Test Results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: test-results
-          path: TestResults.xcresult
-          retention-days: 7
-
   build-and-lint:
     name: "Build & Lint"
     runs-on: 'macos-15-xlarge'

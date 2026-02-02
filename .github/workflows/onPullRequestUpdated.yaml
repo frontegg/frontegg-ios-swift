@@ -48,20 +48,13 @@ jobs:
           xcode-select --print-path
           xcodebuild -version
 
-      - name: List available simulators
-        run: xcrun simctl list devices available | grep -E "iPhone|iPad" | head -20
-
       - name: Run Unit Tests
         run: |
-          # Find an available iPhone simulator
-          SIMULATOR=$(xcrun simctl list devices available | grep "iPhone" | head -1 | sed 's/.*(\([^)]*\)).*/\1/' | head -1)
-          echo "Using simulator: $SIMULATOR"
-          
-          # Run tests
+          # Run tests using iPhone 16 simulator (available on macos-15)
           set -o pipefail
           xcodebuild test \
             -scheme FronteggSwift \
-            -destination "platform=iOS Simulator,id=$SIMULATOR" \
+            -destination "platform=iOS Simulator,name=iPhone 16" \
             -only-testing:FronteggSwiftTests \
             -resultBundlePath TestResults.xcresult \
             -enableCodeCoverage YES \
