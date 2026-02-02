@@ -6,27 +6,70 @@ on:
       - master
 
 jobs:
-  build-and-test:
-    name: "Build & Test"
+  unit-tests:
+    name: "Unit Tests"
     runs-on: 'macos-15-xlarge'
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      - name: Double-check macOS version (macos-latest)
-        run: sw_vers
-      - name: Double-check Xcode.app selected
-        run: xcode-select --print-path
-      - name: Check xcodebuild version
-        run: xcodebuild -project demo/demo.xcodeproj -version
-      - name: Check xcode embedded SDKs
-        run: xcodebuild -project demo/demo.xcodeproj -showsdks
-      - name: Show buildable schemes
-        run: xcodebuild -project demo/demo.xcodeproj -list
-      - name: Show eligible build destinations for the "demo"
-        run: xcodebuild -project demo/demo.xcodeproj -showdestinations -scheme "demo"
-      - name: Build for Testing
-        run: xcodebuild CC=clang CPLUSPLUS=clang++ LD=clang LDPLUSPLUS=clang++ build-for-testing -scheme "demo" -project "demo/demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 16 Pro" -configuration "Debug" -enableCodeCoverage "YES"
-      - name: Validate lint for lib and spec Cocoapods
+
+      - name: Check macOS and Xcode versions
+        run: |
+          sw_vers
+          xcode-select --print-path
+          xcodebuild -version
+
+      - name: Run Unit Tests
+        run: |
+          # Find an available iPhone simulator
+          SIMULATOR=$(xcrun simctl list devices available | grep "iPhone" | head -1 | sed 's/.*(\([^)]*\)).*/\1/' | head -1)
+          echo "Using simulator: $SIMULATOR"
+          
+          # Run tests
+          set -o pipefail
+          xcodebuild test \
+            -scheme FronteggSwift \
+            -destination "platform=iOS Simulator,id=$SIMULATOR" \
+            -only-testing:FronteggSwiftTests \
+            -resultBundlePath TestResults.xcresult \
+            -enableCodeCoverage YES \
+            2>&1 | tee build.log
+          
+          # Extract test summary
+          grep -E "Test Suite|Executed|TEST SUCCEEDED|TEST FAILED" build.log || true
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: TestResults.xcresult
+          retention-days: 7
+
+  build-and-lint:
+    name: "Build & Lint"
+    runs-on: 'macos-15-xlarge'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Check Xcode setup
+        run: |
+          xcodebuild -project demo/demo.xcodeproj -version
+          xcodebuild -project demo/demo.xcodeproj -showsdks
+          xcodebuild -project demo/demo.xcodeproj -list
+
+      - name: Build Demo App
+        run: |
+          xcodebuild CC=clang CPLUSPLUS=clang++ LD=clang LDPLUSPLUS=clang++ \
+            build-for-testing \
+            -scheme "demo" \
+            -project "demo/demo.xcodeproj" \
+            -destination "platform=iOS Simulator,name=iPhone 16 Pro" \
+            -configuration "Debug" \
+            -enableCodeCoverage "YES"
+
+      - name: Validate CocoaPods
         env:
           COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
         run: |
