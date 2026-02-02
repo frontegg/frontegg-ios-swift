@@ -1,4 +1,4 @@
-name: "onPush( Build & Test )"
+name: "onPush( Build & Lint )"
 
 on:
   push:
@@ -6,27 +6,30 @@ on:
       - master
 
 jobs:
-  build-and-test:
-    name: "Build & Test"
+  build-and-lint:
+    name: "Build & Lint"
     runs-on: 'macos-15-xlarge'
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      - name: Double-check macOS version (macos-latest)
-        run: sw_vers
-      - name: Double-check Xcode.app selected
-        run: xcode-select --print-path
-      - name: Check xcodebuild version
-        run: xcodebuild -project demo/demo.xcodeproj -version
-      - name: Check xcode embedded SDKs
-        run: xcodebuild -project demo/demo.xcodeproj -showsdks
-      - name: Show buildable schemes
-        run: xcodebuild -project demo/demo.xcodeproj -list
-      - name: Show eligible build destinations for the "demo"
-        run: xcodebuild -project demo/demo.xcodeproj -showdestinations -scheme "demo"
-      - name: Build for Testing
-        run: xcodebuild CC=clang CPLUSPLUS=clang++ LD=clang LDPLUSPLUS=clang++ build-for-testing -scheme "demo" -project "demo/demo.xcodeproj" -destination "platform=iOS Simulator,name=iPhone 16 Pro" -configuration "Debug" -enableCodeCoverage "YES"
-      - name: Validate lint for lib and spec Cocoapods
+
+      - name: Check Xcode setup
+        run: |
+          xcodebuild -project demo/demo.xcodeproj -version
+          xcodebuild -project demo/demo.xcodeproj -showsdks
+          xcodebuild -project demo/demo.xcodeproj -list
+
+      - name: Build Demo App
+        run: |
+          xcodebuild CC=clang CPLUSPLUS=clang++ LD=clang LDPLUSPLUS=clang++ \
+            build-for-testing \
+            -scheme "demo" \
+            -project "demo/demo.xcodeproj" \
+            -destination "platform=iOS Simulator,name=iPhone 16 Pro" \
+            -configuration "Debug" \
+            -enableCodeCoverage "YES"
+
+      - name: Validate CocoaPods
         env:
           COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
         run: |
