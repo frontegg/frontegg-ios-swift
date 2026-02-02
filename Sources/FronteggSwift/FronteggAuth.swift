@@ -162,7 +162,7 @@ public class FronteggAuth: FronteggState {
     @objc private func applicationDidEnterBackground(){
         logger.info("application enter background")
     }
-    
+
     public func reinitWithRegion(config:RegionConfig) {
         self.baseUrl = config.baseUrl
         self.clientId = config.clientId
@@ -253,6 +253,7 @@ public class FronteggAuth: FronteggState {
         DispatchQueue.global(qos: .background).async {
             Task {
                 await self.featureFlags.start();
+                SentryHelper.setSentryEnabledFromFeatureFlag(self.featureFlags.isOn(FeatureFlags.mobileEnableLoggingKey))
                 await SocialLoginUrlGenerator.shared.reloadConfigs()
             }
         }
@@ -499,6 +500,7 @@ public class FronteggAuth: FronteggState {
                             }
                             
                             await self.featureFlags.start();
+                            SentryHelper.setSentryEnabledFromFeatureFlag(self.featureFlags.isOn(FeatureFlags.mobileEnableLoggingKey))
                             await SocialLoginUrlGenerator.shared.reloadConfigs()
                             self.warmingWebViewAsync()
                             
@@ -514,6 +516,7 @@ public class FronteggAuth: FronteggState {
                     Task {
                         if await NetworkStatusMonitor.isActive {
                             await self.featureFlags.start();
+                            SentryHelper.setSentryEnabledFromFeatureFlag(self.featureFlags.isOn(FeatureFlags.mobileEnableLoggingKey))
                             await SocialLoginUrlGenerator.shared.reloadConfigs()
                             self.warmingWebViewAsync()
                         }
@@ -529,6 +532,7 @@ public class FronteggAuth: FronteggState {
                     if networkAvailable {
                         self.setIsOfflineMode(false)
                         await self.featureFlags.start();
+                        SentryHelper.setSentryEnabledFromFeatureFlag(self.featureFlags.isOn(FeatureFlags.mobileEnableLoggingKey))
                         await SocialLoginUrlGenerator.shared.reloadConfigs()
                     }else {
                         self.setIsOfflineMode(true)
