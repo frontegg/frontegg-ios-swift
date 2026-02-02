@@ -37,6 +37,9 @@ public class JWTHelper {
         }
         
         let segments = jwt.components(separatedBy: ".")
+        guard segments.count >= 3 else {
+            throw DecodeErrors.badToken
+        }
         return try decodeJWTPart(segments[1])
     }
 }
