@@ -1,9 +1,6 @@
 ## v1.2.74
-Added feature flag for sentry logging.
-Changed default value for sentry logging from false to true.
-The project’s test coverage has been increased.
 - covered bigger area with unit tests
-Removed local sentry flag
+- removed local sentry flag
 
 ## v1.2.73
 Fixed regression in Microsoft URL handling for 1.2.72. Need to upgrade to 1.2.73.
