@@ -216,25 +216,16 @@ Available values: `trace`, `debug`, `info`, `warn`, `error`, `critical`
 
 ### Trace ID Logging
 
-When `enableSentryLogging` is enabled, the SDK automatically logs trace IDs from API responses in two ways:
+The SDK logs trace IDs from API responses (in the `frontegg-trace-id` header) in two ways:
 
-1. **Sentry breadcrumbs**: Sends trace IDs to Sentry for production debugging and correlating client-side issues with server logs
-2. **File-based logging**: Saves trace IDs to a local file `frontegg-trace-ids.log` in your project directory (or Documents directory in the simulator) for local development
+1. **File-based logging**: Saves trace IDs to a local file `frontegg-trace-ids.log` in your project directory (or Documents directory in the simulator) for local development
+2. **Sentry breadcrumbs**: When the feature flag `mobile-enable-logging` is on, trace IDs are also sent to Sentry for production debugging and correlating client-side issues with server logs
 
-Both features are controlled by the `enableSentryLogging` flag. When enabled, trace IDs from API responses (in the `frontegg-trace-id` header) will be:
-- Sent to Sentry as breadcrumbs (useful for production debugging)
-- Saved to a local file (useful for local development)
-
-To enable trace ID logging:
-
-```xml
-<key>enableSentryLogging</key>
-<true/>
-```
+Sentry reporting (including trace ID breadcrumbs) is controlled only by the remote feature flag `mobile-enable-logging`, not by plist.
 
 ### Sentry Max Queue Size
 
-When `enableSentryLogging` is enabled, you can configure the maximum number of events that Sentry will cache when offline. This prevents memory abuse during extended offline periods.
+You can configure the maximum number of events that Sentry will cache when offline. This prevents memory abuse during extended offline periods.
 
 ```xml
 <key>sentryMaxQueueSize</key>
@@ -290,7 +281,6 @@ This section documents all available configuration keys in `Frontegg.plist`.
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `logLevel` | String | `"warn"` | Log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
-| `enableSentryLogging` | Boolean | `true` | Enable Sentry error tracking and logging |
 | `sentryMaxQueueSize` | Integer | `30` | Maximum number of events to queue when offline (Sentry) |
 
 ### UI Customization Keys
@@ -378,8 +368,6 @@ Instead of `baseUrl` and `clientId`, you can use a `regions` array for multi-reg
   <!-- Optional: Logging -->
   <key>logLevel</key>
   <string>debug</string>
-  <key>enableSentryLogging</key>
-  <true/>
   <key>sentryMaxQueueSize</key>
   <integer>30</integer>
   
