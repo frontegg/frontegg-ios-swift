@@ -1,3 +1,7 @@
+## v1.2.73
+Fixed regression in Microsoft URL handling for 1.2.72. Need to upgrade to 1.2.73.
+Removed security package
+
 ## v1.2.72
 - updated url handler for microsoft
 
