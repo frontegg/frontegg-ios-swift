@@ -16,14 +16,9 @@ class TraceIdLogger {
     
     private init() {}
     
-    /// Logs a trace ID to the debug log file (only if Sentry logging is enabled in config)
+    /// Logs a trace ID to the debug log file
     /// - Parameter traceId: The trace ID to log
     func logTraceId(_ traceId: String) {
-        // Check if Sentry logging is enabled in config (trace ID logging is part of Sentry logging)
-        guard let config = try? PlistHelper.fronteggConfig(), config.enableSentryLogging else {
-            return
-        }
-        
         queue.async(flags: .barrier) {
             self._logTraceId(traceId)
         }
@@ -94,12 +89,7 @@ class TraceIdLogger {
             return
         }
         
-        // Check if Sentry logging is enabled - if so, log trace IDs to both Sentry and file
-        guard let config = try? PlistHelper.fronteggConfig(), config.enableSentryLogging else {
-            return
-        }
-        
-        // Send trace IDs to Sentry as breadcrumbs
+        // Send trace IDs to Sentry as breadcrumbs (no-op when feature flag mobile-enable-logging is off)
         // This is useful for correlating client issues with server logs
         SentryHelper.addBreadcrumb(
             "frontegg-trace-id received",
