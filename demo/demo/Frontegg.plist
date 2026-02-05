@@ -20,5 +20,7 @@
 	<true/>
 	<key>networkMonitoringInterval</key>
 	<integer>40</integer>
+	<key>loginOrganizationAlias</key>
+	<string></string>
 </dict>
 </plist>

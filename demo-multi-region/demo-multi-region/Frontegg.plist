@@ -26,5 +26,7 @@
 	<true/>
 	<key>logLevel</key>
 	<string>trace</string>
+	<key>loginOrganizationAlias</key>
+	<string></string>
 </dict>
 </plist>

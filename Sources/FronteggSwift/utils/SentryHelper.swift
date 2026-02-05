@@ -23,6 +23,12 @@ public class SentryHelper {
         }
     }
 
+    internal static func sentryEnabledByFeatureFlagForTesting() -> Bool? {
+        initQueue.sync {
+            sentryEnabledByFeatureFlag
+        }
+    }
+
     private static func isSentryEnabled() -> Bool {
         return initQueue.sync {
             guard isInitialized else { return false }
