@@ -1,3 +1,6 @@
+## v1.2.75
+- added login for account support
+
 ## v1.2.74
 - covered bigger area with unit tests
 - removed local sentry flag
