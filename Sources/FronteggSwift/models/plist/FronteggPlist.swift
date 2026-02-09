@@ -34,6 +34,8 @@ struct FronteggPlist: Decodable, Equatable {
     var networkMonitoringInterval: TimeInterval
     let enableSentryLogging: Bool
     let sentryMaxQueueSize: Int
+    /// Account (tenant) alias for login-per-account (custom login box). When set, authorize URL includes organization=<alias>. Omit or leave empty for standard login.
+    var loginOrganizationAlias: String? = nil
 
     enum CodingKeys: CodingKey {
         case keychainService
@@ -57,6 +59,7 @@ struct FronteggPlist: Decodable, Equatable {
         case networkMonitoringInterval
         case enableSentryLogging
         case sentryMaxQueueSize
+        case loginOrganizationAlias
     }
 
     init(
@@ -81,7 +84,8 @@ struct FronteggPlist: Decodable, Equatable {
         enableSessionPerTenant: Bool = false,
         networkMonitoringInterval: TimeInterval = 10,
         enableSentryLogging: Bool = true,
-        sentryMaxQueueSize: Int = 30
+        sentryMaxQueueSize: Int = 30,
+        loginOrganizationAlias: String? = nil
     ) {
         self.keychainService = keychainService
         self.embeddedMode = embeddedMode
@@ -105,6 +109,7 @@ struct FronteggPlist: Decodable, Equatable {
         self.networkMonitoringInterval = networkMonitoringInterval
         self.enableSentryLogging = enableSentryLogging
         self.sentryMaxQueueSize = sentryMaxQueueSize
+        self.loginOrganizationAlias = loginOrganizationAlias
     }
 
     init(from decoder: any Decoder) throws {
@@ -172,6 +177,9 @@ struct FronteggPlist: Decodable, Equatable {
         
         let sentryMaxQueueSize = try container.decodeIfPresent(Int.self, forKey: .sentryMaxQueueSize)
         self.sentryMaxQueueSize = sentryMaxQueueSize ?? 30
+
+        let loginOrganizationAlias = try container.decodeIfPresent(String.self, forKey: .loginOrganizationAlias)
+        self.loginOrganizationAlias = loginOrganizationAlias.flatMap { $0.isEmpty ? nil : $0 }
         
         do {
             self.payload = try Payload(from: decoder)

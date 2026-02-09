@@ -11,9 +11,12 @@ import CommonCrypto
 
 
 public class AuthorizeUrlGenerator {
-    
+
+    /// Query parameter name for login-per-account (custom login box). When present on the authorize URL, Frontegg routes to that account's login experience.
+    public static let organizationQueryParameterName = "organization"
+
     public static let shared = AuthorizeUrlGenerator()
-    
+
     private let logger = getLogger("AuthorizeUrlGenerator")
     
     private func digest(_ input : NSData) -> NSData {
@@ -40,7 +43,8 @@ public class AuthorizeUrlGenerator {
         loginAction: String? = nil,
         remainCodeVerifier: Bool = false,
         stepUp:Bool = false,
-        maxAge: TimeInterval? = nil
+        maxAge: TimeInterval? = nil,
+        organization: String? = nil
     ) -> (URL, String) {
         
         let nonce = createRandomString()
@@ -49,7 +53,7 @@ public class AuthorizeUrlGenerator {
         
         let baseUrl = FronteggApp.shared.baseUrl
         let redirectUri = generateRedirectUri();
-        
+        let organizationAlias = organization ?? FronteggApp.shared.loginOrganizationAlias
         
         var authorizeUrl = URLComponents(string: baseUrl)!
         
@@ -76,6 +80,10 @@ public class AuthorizeUrlGenerator {
         
         if (loginHint != nil) {
             queryParams.append(URLQueryItem(name: "login_hint", value: loginHint))
+        }
+        
+        if let alias = organizationAlias, !alias.isEmpty {
+            queryParams.append(URLQueryItem(name: Self.organizationQueryParameterName, value: alias))
         }
         
         if (loginAction != nil) {

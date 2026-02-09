@@ -13,6 +13,8 @@
 	<key>logLevel</key>
 	<string>trace</string>
 	<key>embeddedMode</key>
-    <true/>
+	<true/>
+	<key>loginOrganizationAlias</key>
+	<string></string>
 </dict>
 </plist>

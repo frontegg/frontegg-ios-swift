@@ -43,7 +43,11 @@ struct LoginPage: View {
 
 struct LoginBody: View {
     @EnvironmentObject var fronteggAuth: FronteggAuth
-    
+    /// Refresh token from `POST /frontegg/identity/resources/users/v1/signUp` (response body `authResponse.refreshToken` or Set-Cookie). Used by Request Authorize.
+    @State private var signUpRefreshToken: String = ""
+    @State private var requestAuthorizeMessage: String?
+    @State private var requestAuthorizeSuccess: Bool = false
+
     var body: some View {
         VStack {
             Spacer()
@@ -52,7 +56,7 @@ struct LoginBody: View {
                     Text("🤗")
                         .font(.system(size: 40))
                         .padding(.bottom, 16)
-                    
+
                     Text("Welcome!")
                         .font(.headlineMedium)
                         .foregroundColor(.textColor)
@@ -61,8 +65,7 @@ struct LoginBody: View {
                         .foregroundColor(.gray600)
                         .padding(.top, 8)
                         .padding(.bottom, 16)
-                        
-                    
+
                     VStack(spacing: 0) {
                         Button("Sign in") {
                             fronteggAuth.login()
@@ -85,17 +88,29 @@ struct LoginBody: View {
                             )
                         }
                         .buttonStyle(PrimaryButtonStyle())
-                        Button("Request Authorize With Tokens") {
-                            Task {
-                                do {
-                                    let user = try await fronteggAuth.requestAuthorizeAsync(refreshToken: "e3994bf8-e3f5-44d7-a3ba-d467d5b9a4f2")
-                                    print("Logged in user, \(user.email)")
-                                } catch {
-                                    print("Failed to authenticate, \(error.localizedDescription)")
-                                }
-                            }
+                        TextField("Refresh token (from signUp)", text: $signUpRefreshToken)
+                            .textFieldStyle(.roundedBorder)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                        Text("Use refresh token from POST /frontegg/identity/resources/users/v1/signUp (authResponse.refreshToken or Set-Cookie).")
+                            .font(.caption)
+                            .foregroundColor(.gray600)
+                        Button("Request Authorize") {
+                            requestAuthorizeWithSignUpToken()
                         }
                         .buttonStyle(PrimaryButtonStyle())
+                        .disabled(signUpRefreshToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        if let msg = requestAuthorizeMessage {
+                            Text(msg)
+                                .font(.caption)
+                                .foregroundColor(requestAuthorizeSuccess ? .green : .red)
+                        }
+                        Button("Login with Organization") {
+                            FronteggApp.shared.loginOrganizationAlias = "test"
+                            fronteggAuth.login()
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .accessibilityIdentifier("Login with Organization")
                         Button("Login with Passkeys") {
                             fronteggAuth.loginWithPasskeys()
                         }
@@ -103,10 +118,31 @@ struct LoginBody: View {
                     }
                 }
                 .padding(24)
-                
+
             }
             .padding(.horizontal, 24)
             Spacer()
+        }
+    }
+
+    /// Authorize using refresh token from `POST /frontegg/identity/resources/users/v1/signUp`.
+    private func requestAuthorizeWithSignUpToken() {
+        let token = signUpRefreshToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else {
+            requestAuthorizeMessage = "Enter a refresh token from signUp"
+            requestAuthorizeSuccess = false
+            return
+        }
+        requestAuthorizeMessage = nil
+        Task {
+            do {
+                let user = try await fronteggAuth.requestAuthorizeAsync(refreshToken: token)
+                requestAuthorizeMessage = "Logged in: \(user.email)"
+                requestAuthorizeSuccess = true
+            } catch {
+                requestAuthorizeMessage = "Failed: \(error.localizedDescription)"
+                requestAuthorizeSuccess = false
+            }
         }
     }
 }

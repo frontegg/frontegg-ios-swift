@@ -2848,6 +2848,9 @@ public class FronteggAuth: FronteggState {
     
     
     
+    /// Authorizes the session using a refresh token (and optional device token cookie).
+    /// The refresh token must come from identity-server APIs, e.g. sign-up:
+    /// `POST /frontegg/identity/resources/users/v1/signUp`.
     public func requestAuthorizeAsync(refreshToken: String, deviceTokenCookie: String? = nil) async throws -> User {
         FronteggAuth.shared.setIsLoading(true)
         
@@ -2869,6 +2872,8 @@ public class FronteggAuth: FronteggState {
         }
     }
     
+    /// Callback-based variant of `requestAuthorizeAsync`. Use with tokens from identity-server APIs
+    /// (e.g. `POST /frontegg/identity/resources/users/v1/signUp`).
     public func requestAuthorize(refreshToken: String, deviceTokenCookie: String? = nil, _ completion: @escaping FronteggAuth.CompletionHandler) {
         DispatchQueue.global(qos: .userInitiated).async {
             Task {

@@ -27,6 +27,49 @@ To enable this feature, add `applicationId` to `Frontegg.plist` as follows:
 - Replace `{{FRONTEGG_BASE_URL}}` with the domain name from your Frontegg Portal.
 - Replace `{{FRONTEGG_CLIENT_ID}}` with your Frontegg client ID.
 
+## Login per account (custom login box)
+
+When your Frontegg workspace uses **login per account**, each account (tenant) has its own login URL and branded login experience. To route users to a specific account’s login from the iOS app, set the account alias via config or in code.
+
+### Enable via config (Frontegg.plist)
+
+Add `loginOrganizationAlias` to your `Frontegg.plist` and set it to the account’s **alias** (the identifier configured in Frontegg for that account). Leave the key out or set it to an empty string for standard (non–login-per-account) login.
+
+```xml
+<key>loginOrganizationAlias</key>
+<string>acme</string>
+```
+
+The SDK reads this at startup and adds `organization=<alias>` to the authorize URL for all login flows. No code changes are required.
+
+### Set the account alias in code
+
+You can also set `loginOrganizationAlias` on `FronteggApp` at runtime (e.g. from a deep link or tenant context). This overrides the plist value. Set it to the account’s **alias** so the SDK adds `organization=<alias>` to the authorize URL.
+
+**Query parameter (recommended)**  
+If your app knows the account from a URL or deep link (e.g. `?organization=acme`), set the alias before presenting login:
+
+```swift
+// Before showing login (e.g. when user opens a tenant-specific link)
+FronteggApp.shared.loginOrganizationAlias = "acme"  // account alias from your URL/context
+// Then call your usual login flow (hosted or embedded)
+```
+
+**Subdomain**  
+If you use subdomains per account (e.g. `acme.yourdomain.com`), derive the alias from the host and set it the same way before login.
+
+### Hosted vs embedded
+
+- **Hosted login**: The authorize URL becomes `https://[YOUR_DOMAIN]/oauth/authorize?organization=[ALIAS]&...`.
+- **Embedded login**: The same `organization` query parameter is included when loading the login page in the WebView.
+
+All login entry points (hosted, embedded, social, magic link, etc.) use `FronteggApp.shared.loginOrganizationAlias` when generating the authorize URL, so you only need to set it once before starting the flow.
+
+### Limitations
+
+- **Switching tenants**: `switchTenant` is not supported between accounts that have custom login boxes. Users who need to use another such account must log in again (with that account’s alias set).
+- If you only need different app URLs per account and not different login experiences, use [Application URL](https://developers.frontegg.com/api/tenants/accounts/tenantcontrollerv1_createtenant#applicationurl) configuration instead of custom login boxes.
+
 ## Multi-region support
 
 If you operate across multiple regions, you can dynamically switch between environments at runtime.

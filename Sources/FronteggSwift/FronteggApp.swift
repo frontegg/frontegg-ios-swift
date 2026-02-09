@@ -25,7 +25,9 @@ public class FronteggApp {
     public var handleLoginWithSocialProvider:Bool = true
     public var backgroundColor: UIColor? = nil
 
-    
+    /// Account (tenant) alias for login-per-account (custom login box). When set, the authorize URL includes `organization=<alias>` so Frontegg routes the user to that account's login experience. Set from your app (e.g. from subdomain or query param) before calling login. Note: `switchTenant` is not supported between accounts that use custom login boxes.
+    public var loginOrganizationAlias: String? = nil
+
     /* force consent when authenticate with social login */
     public var shouldPromptSocialLoginConsent:Bool = true
     
@@ -64,6 +66,7 @@ public class FronteggApp {
         self.handleLoginWithSocialProvider = config.handleLoginWithCustomSocialLoginProvider
         self.handleLoginWithCustomSocialLoginProvider = config.handleLoginWithSocialProvider
         self.backgroundColor = UIColor(named: config.backgroundColor ?? "#FFFFFF") ?? .white
+        self.loginOrganizationAlias = config.loginOrganizationAlias
         
         if FronteggApp.clearKeychain(config: config) {
             self.credentialManager.clear()
