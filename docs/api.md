@@ -91,10 +91,12 @@ Checks whether the user has already completed a step-up authentication and is al
 
 ### Authorization requests
 
+Use these methods with tokens obtained from identity-server APIs (e.g. `POST /frontegg/identity/resources/users/v1/signUp`).
+
 #### `suspend fun requestAuthorizeAsync(refreshToken: String, deviceTokenCookie: String? = nil) -> User`
 Async method to authorize silently using a refresh token.
 
-- `refreshToken`: Token to validate.
+- `refreshToken`: Token to validate (from identity-server, e.g. sign-up response).
 - `deviceTokenCookie`: Optional device identifier.
 - **Returns**: `User` on success.
 - **Throws**: `FronteggError` on failure.
@@ -103,7 +105,7 @@ Async method to authorize silently using a refresh token.
 #### `fun requestAuthorize(refreshToken: String, deviceTokenCookie: String? = nil, _ completion: @escaping FronteggAuth.CompletionHandler)`
 Requests authorization for the current user session.
 
-- `refreshToken`: Token to validate.
+- `refreshToken`: Token to validate (from identity-server, e.g. sign-up response).
 - `deviceTokenCookie`: Optional device ID.
 - `completion`: Callback with result.
 
