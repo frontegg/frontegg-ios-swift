@@ -2041,7 +2041,7 @@ public class FronteggAuth: FronteggState {
         window: UIWindow?,
         type: String,
         data: String,
-        ephemeralSession: Bool? = true,
+        ephemeralSession: Bool? = false,
         _completion: FronteggAuth.CompletionHandler? = nil,
         additionalQueryParams: [String: Any]? = nil,
         remainCodeVerifier: Bool = false,
@@ -2080,7 +2080,7 @@ public class FronteggAuth: FronteggState {
         let (authorizeUrl, codeVerifier) = generatedUrl
         CredentialManager.saveCodeVerifier(codeVerifier)
         
-        WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: ephemeralSession ?? true, window: window ?? getRootVC()?.view.window, completionHandler: oauthCallback)
+        WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: ephemeralSession ?? false, window: window ?? getRootVC()?.view.window, completionHandler: oauthCallback)
     }
     
     
