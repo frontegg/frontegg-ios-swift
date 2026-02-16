@@ -85,7 +85,7 @@ public class FeatureFlags {
     private var hasAnyFlags: Bool { q.sync { !_flags.isEmpty } }
 
     private func setFlags(_ new: [String: Bool]) {
-        q.async(flags: .barrier) { self._flags = new }
+        q.sync(flags: .barrier) { self._flags = new }
     }
 
     private func refreshOnceAndSave() async throws {
