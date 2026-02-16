@@ -110,6 +110,7 @@ public class FronteggApp {
                 self.auth.reinitWithRegion(config: config)
 
                 SentryHelper.setBaseUrl(self.baseUrl)
+                SentryHelper.setClientId(self.clientId)
                 logger.info("Frontegg Initialized succcessfully (region: \(config.key))")
                 return;
             } else {
@@ -137,6 +138,7 @@ public class FronteggApp {
             )
 
             SentryHelper.setBaseUrl(self.baseUrl)
+            SentryHelper.setClientId(self.clientId)
             logger.info("Frontegg Initialized succcessfully")
         }
     }
@@ -161,7 +163,8 @@ public class FronteggApp {
         self.applicationId = applicationId
 
         SentryHelper.setBaseUrl(self.baseUrl)
-        
+        SentryHelper.setClientId(self.clientId)
+
         self.handleLoginWithSocialLogin = handleLoginWithSocialLogin
         self.handleLoginWithSSO = handleLoginWithSSO
         self.handleLoginWithCustomSSO = handleLoginWithCustomSSO
@@ -186,6 +189,7 @@ public class FronteggApp {
         self.applicationId = self.auth.applicationId
 
         SentryHelper.setBaseUrl(self.baseUrl)
+        SentryHelper.setClientId(self.clientId)
     }
 
     public func initWithRegion(regionKey: String){
@@ -211,7 +215,8 @@ public class FronteggApp {
         self.auth.reinitWithRegion(config: config)
 
         SentryHelper.setBaseUrl(self.baseUrl)
-        
+        SentryHelper.setClientId(self.clientId)
+
         logger.info("Frontegg Initialized succcessfully (region: \(regionKey))")
     }
     

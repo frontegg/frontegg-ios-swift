@@ -161,7 +161,14 @@ public class SentryHelper {
             scope.setContext(value: ["baseUrl": baseUrl], key: "frontegg")
         }
     }
-    
+
+    public static func setClientId(_ clientId: String) {
+        guard isSentryEnabled() else { return }
+        SentrySDK.configureScope { scope in
+            scope.setTag(value: clientId, key: "clientId")
+        }
+    }
+
     public static func initialize() {
         initQueue.sync {
             if !didLogInitStatus {
