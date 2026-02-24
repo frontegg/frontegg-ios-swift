@@ -9,13 +9,13 @@
 	<key>shouldSuggestSavePassword</key>
 	<false/>
 	<key>baseUrl</key>
-	<string>https://autheu.davidantoon.me</string>
+	<string>https://app-x4gr8g28fxr5.frontegg.com</string>
 	<key>clientId</key>
-	<string>b6adfe4c-d695-4c04-b95f-3ec9fd0c6cca</string>
+	<string>5f493de4-01c5-4a61-8642-fca650a6a9dc</string>
 	<key>logLevel</key>
 	<string>trace</string>
 	<key>applicationId</key>
-	<string>51e9b0d6-6f07-4989-9ce1-2c0b0ad0791f</string>
+	<string>910a4f81-788a-4184-8ad0-acf355afc66f</string>
 	<key>enableOfflineMode</key>
 	<true/>
 </dict>

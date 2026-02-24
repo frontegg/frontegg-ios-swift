@@ -27,7 +27,7 @@ struct MyApp: View {
                     VStack{
                         /// A button that allows the user to select EU region
                         Button("EU") {
-                            FronteggApp.shared.manualInit(baseUrl: "https://autheu.davidantoon.me", cliendId: "b6adfe4c-d695-4c04-b95f-3ec9fd0c6cca")
+                            FronteggApp.shared.manualInit(baseUrl: "https://app-x4gr8g28fxr5.frontegg.com", cliendId: "5f493de4-01c5-4a61-8642-fca650a6a9dc")
                         }.padding(.bottom, 40)
                         /// A button that allows the user to select US region
                         Button("US") {
