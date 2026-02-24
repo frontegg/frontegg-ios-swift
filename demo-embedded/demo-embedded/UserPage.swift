@@ -96,7 +96,7 @@ struct UserPage: View {
     private var footerContent: some View {
         VStack {
             Spacer()
-            Footer(showSignUpBanner: fronteggAuth.baseUrl == "https://autheu.davidantoon.me")
+            Footer(showSignUpBanner: fronteggAuth.baseUrl == "https://app-x4gr8g28fxr5.frontegg.com")
         }
     }
     
