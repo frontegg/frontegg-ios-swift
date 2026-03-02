@@ -8,6 +8,10 @@ inputs:
   sha:
     description: 'Commit SHA'
     required: true
+  client_framework:
+    description: 'E2E framework (swift-sdk)'
+    required: false
+    default: 'swift-sdk'
   bot_app_id:
     description: 'Bot App Id'
     required: true
@@ -34,10 +38,11 @@ runs:
       env:
         version: ${{ inputs.version }}
         sha: ${{ inputs.sha }}
+        client_framework: ${{ inputs.client_framework }}
       with:
         github-token: ${{ steps.create_bot_token.outputs.token }}
         script: |
-          const {sha, version} = process.env;
+          const {sha, version, client_framework} = process.env;
           const repo = 'frontegg-ios-swift'
           const owner = 'frontegg'
           const e2eRepo = 'e2e-system-tests'
@@ -50,7 +55,7 @@ runs:
             workflow_id,
             ref: 'master',
             inputs: {
-              client_framework: 'native-ios',
+              client_framework: client_framework || 'swift-sdk',
               version,
               dispatch_id,
             }
