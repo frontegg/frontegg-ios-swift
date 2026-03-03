@@ -145,7 +145,7 @@ final class PackageConfigurationTests: XCTestCase {
     func test_sentryDependency_configuration() {
         // Sentry version requirement: >= 8.46.0
         // Specified in Package.swift: .package(url: "...", from: "8.46.0")
-        // Specified in podspec: s.dependency 'Sentry', '~> 8.46.0'
+        // Specified in Package.swift: Sentry from "8.46.0"
         
         // Key Sentry features used:
         // - Breadcrumbs for debugging
