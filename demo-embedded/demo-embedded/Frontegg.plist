@@ -2,21 +2,21 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>useAsWebAuthenticationForAppleLogin</key>
-	<true/>
-	<key>embeddedMode</key>
-	<true/>
-	<key>shouldSuggestSavePassword</key>
-	<false/>
+	<key>applicationId</key>
+	<string>910a4f81-788a-4184-8ad0-acf355afc66f</string>
 	<key>baseUrl</key>
 	<string>https://app-x4gr8g28fxr5.frontegg.com</string>
 	<key>clientId</key>
 	<string>5f493de4-01c5-4a61-8642-fca650a6a9dc</string>
+	<key>embeddedMode</key>
+	<true/>
+	<key>enableOfflineMode</key>
+	<false/>
 	<key>logLevel</key>
 	<string>trace</string>
-	<key>applicationId</key>
-	<string>910a4f81-788a-4184-8ad0-acf355afc66f</string>
-	<key>enableOfflineMode</key>
+	<key>shouldSuggestSavePassword</key>
+	<false/>
+	<key>useAsWebAuthenticationForAppleLogin</key>
 	<true/>
 </dict>
 </plist>
