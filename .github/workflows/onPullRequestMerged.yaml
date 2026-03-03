@@ -32,23 +32,15 @@ jobs:
           result-encoding: string
           script: |
             const {default: fs} = await import('fs');
-            let content = fs.readFileSync('./FronteggSwift.podspec', {encoding: "utf-8"});
-            const currentVersion = /s\.version[ ]+=[ ]+'([^']+)'/g.exec(content)[1];
+            const sdkVersionPath = './Sources/FronteggSwift/utils/SDKVersion.swift';
+            let content = fs.readFileSync(sdkVersionPath, {encoding: "utf-8"});
+            const match = /static let value = "([^"]+)"/.exec(content);
+            const currentVersion = match[1];
             const version = currentVersion.split('.');
             const newVersion = `${version[0]}.${version[1]}.${parseInt(version[2]) + 1}`;
             
-            content = content.replace(/s\.version[ ]+=[ ]+'([^']+)'/g, `s.version          = '${newVersion}'`);
-            fs.writeFileSync('./FronteggSwift.podspec', content);
-
-            const sdkVersionPath = './Sources/FronteggSwift/utils/SDKVersion.swift';
-            if (fs.existsSync(sdkVersionPath)) {
-              let sdkVersionContent = fs.readFileSync(sdkVersionPath, {encoding: "utf-8"});
-              sdkVersionContent = sdkVersionContent.replace(
-                /static let value = "([^"]+)"/g,
-                `static let value = "${newVersion}"`
-              );
-              fs.writeFileSync(sdkVersionPath, sdkVersionContent);
-            }
+            content = content.replace(/static let value = "([^"]+)"/g, `static let value = "${newVersion}"`);
+            fs.writeFileSync(sdkVersionPath, content);
             return newVersion;
             
 

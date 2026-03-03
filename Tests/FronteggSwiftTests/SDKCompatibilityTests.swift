@@ -41,7 +41,7 @@ final class SDKCompatibilityTests: XCTestCase {
     /// Verifies minimum iOS version requirement
     func test_minimumIOSVersion_is14() {
         // The SDK requires iOS 14.0+
-        // This is documented in Package.swift and podspec
+        // This is documented in Package.swift
         
         if #available(iOS 14.0, *) {
             XCTAssertTrue(true, "Running on iOS 14.0+")

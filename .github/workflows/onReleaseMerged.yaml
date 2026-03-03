@@ -9,7 +9,7 @@ env:
 jobs:
   publish:
     if: "contains(join(github.event.pull_request.labels.*.name, ','), 'Release') && github.event.pull_request.merged == true"
-    name: 'Publish to Cocoapods'
+    name: 'Publish Release (Swift Package Manager)'
     runs-on: 'macos-15-xlarge'
     steps:
       - name: Checkout
@@ -27,17 +27,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Cocoapods
-        run: gem install cocoapods
-
       - name: Set Current Version
         id: set_current_version
         if: startsWith(github.event.pull_request.title, 'v')
         shell: bash -ex {0}
         run: |
-          PODSPEC_FILE='./FronteggSwift.podspec'
-          CURRENT_VERSION=$(grep -o "s.version.*= '.*'" $PODSPEC_FILE | grep -o "'.*'" | sed "s/'//g")
-          
+          SDK_VERSION_FILE='./Sources/FronteggSwift/utils/SDKVersion.swift'
+          CURRENT_VERSION=$(grep -o 'static let value = "[^"]*"' $SDK_VERSION_FILE | grep -o '"[^"]*"' | tr -d '"')
           echo "::set-output name=CURRENT_VERSION::${CURRENT_VERSION}"
       - name: Tag Check
         id: tag_check
@@ -75,18 +71,10 @@ jobs:
             ${{ github.event.pull_request.body }}
           draft: false
           prerelease: false
-      - name: Validate to Cocoapods
-        env:
-          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+      - name: Validate Swift Package
         run: |
-          pod lib lint --verbose --allow-warnings
-          pod spec lint  --verbose --allow-warnings
-
-      - name: Publish to Trunk to Cocoapods
-        env:
-          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
-        run: |
-          pod trunk push --allow-warnings FronteggSwift.podspec 
+          swift package resolve
+          xcodebuild build -scheme FronteggSwift -destination "platform=iOS Simulator,name=iPhone 16 Pro"
 
       - uses: actions/github-script@0.8.0
         with:
@@ -96,7 +84,7 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: 'https://github.com/${{ github.repository }}/releases/tag/v${{ steps.set_current_version.outputs.CURRENT_VERSION }} is released 🎉'
+              body: 'https://github.com/${{ github.repository }}/releases/tag/${{ steps.set_current_version.outputs.CURRENT_VERSION }} is released 🎉'
             })
 #      - name: Notify Slack on deployment
 #        uses: rtCamp/action-slack-notify@v2
