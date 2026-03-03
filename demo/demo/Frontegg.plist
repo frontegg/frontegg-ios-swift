@@ -2,25 +2,17 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>enableSentryLogging</key>
-	<true/>
+	<key>applicationId</key>
+	<string>910a4f81-788a-4184-8ad0-acf355afc66f</string>
 	<key>baseUrl</key>
 	<string>https://app-x4gr8g28fxr5.frontegg.com</string>
 	<key>clientId</key>
 	<string>5f493de4-01c5-4a61-8642-fca650a6a9dc</string>
-	<key>enableOfflineMode</key>
-	<false/>
-	<key>logLevel</key>
-	<string>trace</string>
-	<key>keepUserLoggedInAfterReinstall</key>
-	<true/>
-	<key>embeddedMode</key>
-	<true/>
 	<key>enableSessionPerTenant</key>
 	<true/>
-	<key>networkMonitoringInterval</key>
-	<integer>40</integer>
-	<key>loginOrganizationAlias</key>
-	<string></string>
+	<key>keepUserLoggedInAfterReinstall</key>
+	<true/>
+	<key>logLevel</key>
+	<string>trace</string>
 </dict>
 </plist>

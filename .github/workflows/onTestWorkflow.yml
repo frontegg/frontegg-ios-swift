@@ -1,32 +1,45 @@
+# Manual trigger only. For PR-to-master E2E gating, use swift-sdk-e2e-on-release-pr.yml (reusable workflow); do not duplicate with pull_request here.
 name: "(▶) Trigger E2E tests Workflow"
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version'
-        required: true
+        description: "Version (e.g. release/next). Leave empty to use the branch you select below."
+        required: false
       sha:
-        description: 'Commit SHA'
-        required: true
+        description: "Commit SHA to test. Leave empty to use the selected branch's latest commit."
+        required: false
 
 jobs:
-  trigger_e2e_tests:
-    name: "Trigger E2E tests Workflow"
+  trigger_e2e_tests_manual:
+    name: "Trigger E2E tests (manual)"
     runs-on: 'ubuntu-latest'
     steps:
       - uses: actions/checkout@v4
 
+      - name: "Resolve version and SHA (use branch head when inputs empty)"
+        id: resolve
+        run: |
+          VERSION="${{ inputs.version }}"
+          SHA="${{ inputs.sha }}"
+          if [ -z "$VERSION" ]; then VERSION="${{ github.ref_name }}"; fi
+          if [ -z "$SHA" ]; then SHA="${{ github.sha }}"; fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "Using version=$VERSION sha=$SHA"
+
       - name: "Print inputs"
         run: |
-          echo "Received test request for FronteggSwift @${{ inputs.version }}"
-          echo "From: ${{ inputs.dispatch_id }}"
+          echo "Received test request for FronteggSwift @${{ steps.resolve.outputs.version }}"
+          echo "SHA: ${{ steps.resolve.outputs.sha }}"
 
       - name: "Call trigger-e2e-test action"
         uses: ./.github/actions/trigger-e2e-test
         with:
-          version: ${{ inputs.version }}
-          sha: ${{ inputs.sha }}
+          version: ${{ steps.resolve.outputs.version }}
+          sha: ${{ steps.resolve.outputs.sha }}
+          client_framework: 'swift-sdk'
           bot_app_id: ${{ secrets.GH_FRONTEGG_BOT_APP_ID }}
           bot_app_key: ${{ secrets.GH_FRONTEGG_BOT_APP_SECRET }}
 

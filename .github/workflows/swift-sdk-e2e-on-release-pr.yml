@@ -1,0 +1,19 @@
+# Runs Swift SDK E2E tests (from e2e-system-tests) on every push to a PR targeting master.
+# Used to gate the release PR (e.g. release/next → master): block merge if E2E fails.
+# In Settings → Branches → branch protection for master, add required status check "Swift SDK E2E".
+
+name: Swift SDK E2E on release PR
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [master]
+
+jobs:
+  swift-sdk-e2e:
+    name: Swift SDK E2E
+    uses: frontegg/e2e-system-tests/.github/workflows/swift-sdk-e2e-reusable.yml@main
+    with:
+      swift_repo_ref: ${{ github.event.pull_request.head.sha }}
+      test_suite: hosted:no-social
+    secrets: inherit
