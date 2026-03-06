@@ -1,3 +1,6 @@
+## v1.2.76
+Fixed: "Remember MFA Device" Setting Ignored
+
 ## v1.2.75
 - added login for account support
 
