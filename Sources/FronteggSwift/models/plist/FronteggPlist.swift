@@ -34,8 +34,8 @@ struct FronteggPlist: Decodable, Equatable {
     var networkMonitoringInterval: TimeInterval
     let enableSentryLogging: Bool
     let sentryMaxQueueSize: Int
-    /// Account (tenant) alias for login-per-account (custom login box). When set, authorize URL includes organization=<alias>. Omit or leave empty for standard login.
     var loginOrganizationAlias: String? = nil
+    let entitlementsEnabled: Bool
 
     enum CodingKeys: CodingKey {
         case keychainService
@@ -60,6 +60,7 @@ struct FronteggPlist: Decodable, Equatable {
         case enableSentryLogging
         case sentryMaxQueueSize
         case loginOrganizationAlias
+        case entitlementsEnabled
     }
 
     init(
@@ -85,7 +86,8 @@ struct FronteggPlist: Decodable, Equatable {
         networkMonitoringInterval: TimeInterval = 10,
         enableSentryLogging: Bool = true,
         sentryMaxQueueSize: Int = 30,
-        loginOrganizationAlias: String? = nil
+        loginOrganizationAlias: String? = nil,
+        entitlementsEnabled: Bool = false
     ) {
         self.keychainService = keychainService
         self.embeddedMode = embeddedMode
@@ -110,6 +112,7 @@ struct FronteggPlist: Decodable, Equatable {
         self.enableSentryLogging = enableSentryLogging
         self.sentryMaxQueueSize = sentryMaxQueueSize
         self.loginOrganizationAlias = loginOrganizationAlias
+        self.entitlementsEnabled = entitlementsEnabled
     }
 
     init(from decoder: any Decoder) throws {
@@ -180,7 +183,10 @@ struct FronteggPlist: Decodable, Equatable {
 
         let loginOrganizationAlias = try container.decodeIfPresent(String.self, forKey: .loginOrganizationAlias)
         self.loginOrganizationAlias = loginOrganizationAlias.flatMap { $0.isEmpty ? nil : $0 }
-        
+
+        let entitlementsEnabled = try container.decodeIfPresent(Bool.self, forKey: .entitlementsEnabled)
+        self.entitlementsEnabled = entitlementsEnabled ?? false
+
         do {
             self.payload = try Payload(from: decoder)
         } catch {

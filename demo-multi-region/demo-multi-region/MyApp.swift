@@ -27,11 +27,11 @@ struct MyApp: View {
                     VStack{
                         /// A button that allows the user to select EU region
                         Button("EU") {
-                            FronteggApp.shared.manualInit(baseUrl: "https://app-x4gr8g28fxr5.frontegg.com", cliendId: "5f493de4-01c5-4a61-8642-fca650a6a9dc")
+                            FronteggApp.shared.manualInit(baseUrl: "https://app-x4gr8g28fxr5.frontegg.com", cliendId: "5f493de4-01c5-4a61-8642-fca650a6a9dc", entitlementsEnabled: true)
                         }.padding(.bottom, 40)
                         /// A button that allows the user to select US region
                         Button("US") {
-                            FronteggApp.shared.manualInit(baseUrl: "https://authus.davidantoon.me", cliendId: "d7d07347-2c57-4450-8418-0ec7ee6e096b")
+                            FronteggApp.shared.manualInit(baseUrl: "https://authus.davidantoon.me", cliendId: "d7d07347-2c57-4450-8418-0ec7ee6e096b", entitlementsEnabled: true)
                         }
                     }
                 } else {

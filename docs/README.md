@@ -23,6 +23,22 @@ For full documentation, visit the Frontegg Developer Portal:
 
 ---
 
+## Advanced
+
+### Entitlements
+
+The SDK can load and check user entitlements (features and permissions) from the Frontegg Entitlements API. Enable entitlements in `Frontegg.plist` with `entitlementsEnabled: true`, then:
+
+1. Entitlements are fetched automatically on login. You can also call `FronteggApp.shared.auth.loadEntitlements(forceRefresh:completion:)` yourself: by default (`forceRefresh: false`) the SDK uses cached entitlements when available (no network call). Pass `forceRefresh: true` to always fetch from the API (`GET .../frontegg/entitlements/api/v2/user-entitlements`).
+2. Use the cached state for local checks:
+   - `getFeatureEntitlements(featureKey:)` — check by feature key
+   - `getPermissionEntitlements(permissionKey:)` — check by permission key
+   - `getEntitlements(options:)` — unified check with `EntitledToOptions.featureKey(_)` or `.permissionKey(_)`
+
+All checks after `loadEntitlements` use in-memory state only (no extra network calls). Cache is cleared on logout. Access the raw cached set of keys via `FronteggApp.shared.auth.entitlements.state` (`EntitlementState`: `featureKeys`, `permissionKeys`).
+
+---
+
 ## 🧑‍💻 Getting Started with Frontegg
 
 Don't have a Frontegg account yet?  
