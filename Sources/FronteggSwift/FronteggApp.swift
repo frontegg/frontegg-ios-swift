@@ -64,8 +64,8 @@ public class FronteggApp {
         self.handleLoginWithSSO = config.loginWithSSO
         self.handleLoginWithCustomSSO = config.loginWithCustomSSO
         self.shouldSuggestSavePassword = config.shouldSuggestSavePassword
-        self.handleLoginWithSocialProvider = config.handleLoginWithCustomSocialLoginProvider
-        self.handleLoginWithCustomSocialLoginProvider = config.handleLoginWithSocialProvider
+        self.handleLoginWithSocialProvider = config.handleLoginWithSocialProvider
+        self.handleLoginWithCustomSocialLoginProvider = config.handleLoginWithCustomSocialLoginProvider
         self.backgroundColor = UIColor(named: config.backgroundColor ?? "#FFFFFF") ?? .white
         self.loginOrganizationAlias = config.loginOrganizationAlias
         self.entitlementsEnabled = config.entitlementsEnabled
