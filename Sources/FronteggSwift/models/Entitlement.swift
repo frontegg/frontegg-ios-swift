@@ -15,8 +15,6 @@ public struct Entitlement: Equatable {
     }
 }
 
-public typealias CustomAttributes = [String: Any]
-
 public enum EntitledToOptions {
     case featureKey(String)
     case permissionKey(String)

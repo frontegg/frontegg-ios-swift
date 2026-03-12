@@ -37,13 +37,22 @@ public final class Entitlements {
 
     private let q = DispatchQueue(label: "entitlements.state", attributes: .concurrent)
     private var _state: EntitlementState = .empty
+    private var _hasLoaded: Bool = false
 
     public var state: EntitlementState {
         q.sync { _state }
     }
 
-    private func setState(_ new: EntitlementState) {
-        q.sync(flags: .barrier) { _state = new }
+    /// True if entitlements have been successfully loaded at least once (even if empty).
+    public var hasLoaded: Bool {
+        q.sync { _hasLoaded }
+    }
+
+    private func setState(_ new: EntitlementState, hasLoaded: Bool = true) {
+        q.sync(flags: .barrier) {
+            _state = new
+            _hasLoaded = hasLoaded
+        }
     }
 
     public init(_ config: Config) {
@@ -89,7 +98,7 @@ public final class Entitlements {
     }
 
     public func clear() {
-        setState(.empty)
+        setState(.empty, hasLoaded: false)
     }
 
     public func checkFeature(featureKey: String) -> Entitlement {

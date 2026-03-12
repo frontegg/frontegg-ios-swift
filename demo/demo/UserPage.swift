@@ -10,8 +10,6 @@ struct UserPage: View {
     @State private var entitlementPermission: Entitlement?
     @State private var entitlementUnifiedFeature: Entitlement?
     @State private var entitlementUnifiedPermission: Entitlement?
-    @State private var entitlementFeatureWithAttrs: Entitlement?
-    @State private var entitlementPermissionWithAttrs: Entitlement?
     @State private var entitlementsLoading = false
     
     struct Message: Identifiable {
@@ -112,20 +110,14 @@ struct UserPage: View {
             if let e = entitlementFeature {
                 entitlementRow(label: "getFeatureEntitlements(\"sso\")", entitlement: e)
             }
-            if let e = entitlementFeatureWithAttrs {
-                entitlementRow(label: "getFeatureEntitlements(\"sso\", customAttributes: [\"env\": \"dev\"])", entitlement: e)
-            }
             if let e = entitlementUnifiedFeature {
-                entitlementRow(label: "getEntitlements(.featureKey(\"proteins.*\"), customAttributes: [\"pro\": \"20gr\"])", entitlement: e)
+                entitlementRow(label: "getEntitlements(.featureKey(\"proteins.*\"))", entitlement: e)
             }
             if let e = entitlementPermission {
                 entitlementRow(label: "getPermissionEntitlements(\"dora.protein.*\")", entitlement: e)
             }
             if let e = entitlementUnifiedPermission {
                 entitlementRow(label: "getEntitlements(.permissionKey(\"fe.secure.*\"))", entitlement: e)
-            }
-            if let e = entitlementPermissionWithAttrs {
-                entitlementRow(label: "getPermissionEntitlements(\"fe.secure.*\", customAttributes: [\"env\": \"dev\"])", entitlement: e)
             }
         }
     }
@@ -162,23 +154,17 @@ struct UserPage: View {
         entitlementPermission = nil
         entitlementUnifiedFeature = nil
         entitlementUnifiedPermission = nil
-        entitlementFeatureWithAttrs = nil
-        entitlementPermissionWithAttrs = nil
         fronteggAuth.loadEntitlements { success in
             let feature = fronteggAuth.getFeatureEntitlements(featureKey: "sso")
-            let featureWithAttrs = fronteggAuth.getFeatureEntitlements(featureKey: "sso", customAttributes: ["env": "dev"])
-            let unifiedFeature = fronteggAuth.getEntitlements(options: .featureKey("proteins.*"), customAttributes: ["pro": "20gr"])
+            let unifiedFeature = fronteggAuth.getEntitlements(options: .featureKey("proteins.*"))
             let permission = fronteggAuth.getPermissionEntitlements(permissionKey: "dora.protein.*")
             let unifiedPermission = fronteggAuth.getEntitlements(options: .permissionKey("fe.secure.*"))
-            let permissionWithAttrs = fronteggAuth.getPermissionEntitlements(permissionKey: "fe.secure.*", customAttributes: ["env": "dev"])
             DispatchQueue.main.async {
                 loadSuccess = success
                 entitlementFeature = feature
                 entitlementPermission = permission
                 entitlementUnifiedFeature = unifiedFeature
                 entitlementUnifiedPermission = unifiedPermission
-                entitlementFeatureWithAttrs = featureWithAttrs
-                entitlementPermissionWithAttrs = permissionWithAttrs
                 entitlementsLoading = false
             }
         }
