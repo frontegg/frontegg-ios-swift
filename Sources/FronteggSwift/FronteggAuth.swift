@@ -168,21 +168,28 @@ public class FronteggAuth: FronteggState {
     }
 
     public func loadEntitlements(forceRefresh: Bool = false, completion: ((Bool) -> Void)? = nil) {
+        func invokeCompletion(_ success: Bool) {
+            if Thread.isMainThread {
+                completion?(success)
+            } else {
+                DispatchQueue.main.async { completion?(success) }
+            }
+        }
         if !forceRefresh {
             let state = entitlements.state
             if !state.featureKeys.isEmpty || !state.permissionKeys.isEmpty {
-                completion?(true)
+                invokeCompletion(true)
                 return
             }
         }
         Task {
             guard let token = resolveAccessTokenForCurrentUser() else {
                 logger.warning("loadEntitlements: no access token available")
-                completion?(false)
+                invokeCompletion(false)
                 return
             }
             let success = await entitlements.load(accessToken: token)
-            completion?(success)
+            invokeCompletion(success)
         }
     }
 
