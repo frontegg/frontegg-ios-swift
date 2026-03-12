@@ -12,6 +12,8 @@
 	<true/>
 	<key>enableOfflineMode</key>
 	<false/>
+	<key>entitlementsEnabled</key>
+	<true/>
 	<key>logLevel</key>
 	<string>trace</string>
 	<key>shouldSuggestSavePassword</key>

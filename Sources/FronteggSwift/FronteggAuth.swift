@@ -54,6 +54,7 @@ public class FronteggAuth: FronteggState {
     private var stepUpAuthenticator: StepUpAuthenticator
     public var api: Api
     public var featureFlags: FeatureFlags
+    public var entitlements: Entitlements
     private var subscribers = Set<AnyCancellable>()
     private var refreshTokenDispatch: DispatchWorkItem?
     private var offlineDebounceWork: DispatchWorkItem?
@@ -61,6 +62,10 @@ public class FronteggAuth: FronteggState {
     var loginCompletion: CompletionHandler? = nil
     private var networkMonitoringToken: NetworkStatusMonitor.OnChangeToken?
     private var isInitializingWithTokens: Bool = false
+    private let entitlementsLoadLock = NSLock()
+    private var entitlementsLoadInProgress: Bool = false
+    private var entitlementsLoadPendingCompletions: [((Bool) -> Void)] = []
+    private var entitlementsLoadForceRefreshPending: Bool = false
     
     init (
         baseUrl:String,
@@ -70,18 +75,20 @@ public class FronteggAuth: FronteggState {
         isRegional: Bool,
         regionData: [RegionConfig],
         embeddedMode: Bool,
-        isLateInit: Bool? = false
+        isLateInit: Bool? = false,
+        entitlementsEnabled: Bool = false
     ) {
         self.isRegional = isRegional
         self.regionData = regionData
         self.credentialManager = credentialManager
-        
+
         self.embeddedMode = embeddedMode
         self.baseUrl = baseUrl
         self.clientId = clientId
         self.applicationId = applicationId
         self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
-        self.featureFlags = FeatureFlags(.init(clientId:self.clientId, api:self.api))
+        self.featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self.api))
+        self.entitlements = Entitlements(.init(api: self.api, enabled: entitlementsEnabled))
         self.multiFactorAuthenticator = MultiFactorAuthenticator(api: api, baseUrl: baseUrl)
         self.stepUpAuthenticator = StepUpAuthenticator(credentialManager: credentialManager)
         
@@ -121,7 +128,7 @@ public class FronteggAuth: FronteggState {
     }
     
     
-    public func manualInit(baseUrl:String, clientId:String, applicationId: String?) {
+    public func manualInit(baseUrl:String, clientId:String, applicationId: String?, entitlementsEnabled: Bool = false) {
         setLateInit(false)
         self.baseUrl = baseUrl
         self.clientId = clientId
@@ -129,27 +136,155 @@ public class FronteggAuth: FronteggState {
         self.isRegional = false
         self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
         self.featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self.api))
+        self.entitlements = Entitlements(.init(api: self.api, enabled: entitlementsEnabled))
+        resetEntitlementsLoadState()
         self.initializeSubscriptions()
     }
     
-    public func manualInitRegions(regions:[RegionConfig]) {
-        
+    public func manualInitRegions(regions:[RegionConfig], entitlementsEnabled: Bool = false) {
         setLateInit(false)
         self.isRegional = true
         self.regionData = regions
         setSelectedRegion(self.getSelectedRegion())
-        
+
         if let config = self.selectedRegion {
             self.baseUrl = config.baseUrl
             self.clientId = config.clientId
             self.applicationId = config.applicationId
             self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
             self.featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self.api))
+            self.entitlements = Entitlements(.init(api: self.api, enabled: entitlementsEnabled))
+            resetEntitlementsLoadState()
             self.initializeSubscriptions()
+        } else {
+            // selectedRegion is nil (e.g. no saved region or invalid selection) – use first region as
+            // fallback so api/credentials are valid. When regions is empty, skip reinit and subscriptions
+            // to avoid using stale api/featureFlags/entitlements.
+            if let fallback = regions.first {
+                self.baseUrl = fallback.baseUrl
+                self.clientId = fallback.clientId
+                self.applicationId = fallback.applicationId
+                self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
+                self.featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self.api))
+                self.entitlements = Entitlements(.init(api: self.api, enabled: entitlementsEnabled))
+                resetEntitlementsLoadState()
+                self.initializeSubscriptions()
+            }
         }
     }
-    
-    
+
+    /// Resets entitlements load state when entitlements instance is replaced (e.g. manualInit, region switch).
+    /// Invokes any pending completions with false to indicate the load was aborted.
+    private func resetEntitlementsLoadState() {
+        entitlementsLoadLock.lock()
+        entitlementsLoadInProgress = false
+        entitlementsLoadForceRefreshPending = false
+        let pending = entitlementsLoadPendingCompletions
+        entitlementsLoadPendingCompletions.removeAll()
+        entitlementsLoadLock.unlock()
+        pending.forEach { c in
+            if Thread.isMainThread {
+                c(false)
+            } else {
+                DispatchQueue.main.async { c(false) }
+            }
+        }
+    }
+
+    private func resolveAccessTokenForCurrentUser() -> String? {
+        if let token = self.accessToken, !token.isEmpty { return token }
+        let config = try? PlistHelper.fronteggConfig()
+        let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
+        if enableSessionPerTenant, let tenantId = self.user?.activeTenant.id {
+            return try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .accessToken)
+        }
+        return try? credentialManager.get(key: KeychainKeys.accessToken.rawValue)
+    }
+
+    public func loadEntitlements(forceRefresh: Bool = false, completion: ((Bool) -> Void)? = nil) {
+        func wrapCompletion(_ c: @escaping (Bool) -> Void) -> (Bool) -> Void {
+            return { success in
+                if Thread.isMainThread {
+                    c(success)
+                } else {
+                    DispatchQueue.main.async { c(success) }
+                }
+            }
+        }
+        entitlementsLoadLock.lock()
+        if !forceRefresh && entitlements.hasLoaded {
+            entitlementsLoadLock.unlock()
+            if let c = completion {
+                wrapCompletion(c)(true)
+            }
+            return
+        }
+        if entitlementsLoadInProgress {
+            if forceRefresh {
+                entitlementsLoadForceRefreshPending = true
+            }
+            if let c = completion {
+                entitlementsLoadPendingCompletions.append(wrapCompletion(c))
+            }
+            entitlementsLoadLock.unlock()
+            return
+        }
+        entitlementsLoadInProgress = true
+        if let c = completion {
+            entitlementsLoadPendingCompletions.append(wrapCompletion(c))
+        }
+        entitlementsLoadLock.unlock()
+        performEntitlementsLoad()
+    }
+
+    private func performEntitlementsLoad() {
+        Task {
+            let success: Bool
+            if let token = resolveAccessTokenForCurrentUser() {
+                success = await entitlements.load(accessToken: token)
+            } else {
+                logger.warning("loadEntitlements: no access token available")
+                success = false
+            }
+            entitlementsLoadLock.lock()
+            entitlementsLoadInProgress = false
+            if entitlementsLoadForceRefreshPending {
+                entitlementsLoadForceRefreshPending = false
+                entitlementsLoadInProgress = true
+                entitlementsLoadLock.unlock()
+                performEntitlementsLoad()
+            } else {
+                let toInvoke = entitlementsLoadPendingCompletions
+                entitlementsLoadPendingCompletions.removeAll()
+                entitlementsLoadLock.unlock()
+                toInvoke.forEach { $0(success) }
+            }
+        }
+    }
+
+    public func getFeatureEntitlements(featureKey: String) -> Entitlement {
+        guard self.user != nil else {
+            return Entitlement(isEntitled: false, justification: "NOT_AUTHENTICATED")
+        }
+        return entitlements.checkFeature(featureKey: featureKey)
+    }
+
+    public func getPermissionEntitlements(permissionKey: String) -> Entitlement {
+        guard self.user != nil else {
+            return Entitlement(isEntitled: false, justification: "NOT_AUTHENTICATED")
+        }
+        return entitlements.checkPermission(permissionKey: permissionKey)
+    }
+
+    public func getEntitlements(options: EntitledToOptions) -> Entitlement {
+        switch options {
+        case .featureKey(let key):
+            return getFeatureEntitlements(featureKey: key)
+        case .permissionKey(let key):
+            return getPermissionEntitlements(permissionKey: key)
+        }
+    }
+
     @objc private func applicationDidBecomeActive() {
         logger.info("application become active")
         
@@ -170,6 +305,9 @@ public class FronteggAuth: FronteggState {
         setSelectedRegion(config)
         self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
         self.featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self.api))
+        self.entitlements = Entitlements(.init(api: self.api, enabled: FronteggApp.shared.entitlementsEnabled))
+        resetEntitlementsLoadState()
+        loadEntitlements(forceRefresh: true)
         self.initializeSubscriptions()
     }
     
@@ -653,6 +791,7 @@ public class FronteggAuth: FronteggState {
                 
                 let offset = calculateOffset(expirationTime: decode["exp"] as! Int)
                 scheduleTokenRefresh(offset: offset)
+                loadEntitlements(forceRefresh: true)
             }
             
             // Now try to save to keychain (non-critical - user is already logged in)
@@ -877,6 +1016,7 @@ public class FronteggAuth: FronteggState {
             setRefreshToken(nil)
             setInitializing(false)
             setAppLink(false)
+            entitlements.clear()
             
             completion?(.success(true))
         }

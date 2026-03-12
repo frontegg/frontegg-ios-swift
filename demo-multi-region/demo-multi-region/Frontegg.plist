@@ -24,6 +24,8 @@
 	</array>
 	<key>embeddedMode</key>
 	<true/>
+	<key>entitlementsEnabled</key>
+	<true/>
 	<key>logLevel</key>
 	<string>trace</string>
 	<key>loginOrganizationAlias</key>

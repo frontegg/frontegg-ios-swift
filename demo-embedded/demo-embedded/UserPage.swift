@@ -6,6 +6,12 @@ struct UserPage: View {
     @EnvironmentObject private var fronteggAuth: FronteggAuth
     @State private var message: Message?
     @State private var messageTimer: Timer?
+    @State private var loadSuccess: Bool?
+    @State private var entitlementFeature: Entitlement?
+    @State private var entitlementPermission: Entitlement?
+    @State private var entitlementUnifiedFeature: Entitlement?
+    @State private var entitlementUnifiedPermission: Entitlement?
+    @State private var entitlementsLoading = false
     
     struct Message: Identifiable {
         let id = UUID()
@@ -58,6 +64,8 @@ struct UserPage: View {
                     sensitiveActionButton
                     Spacer().frame(height: 12)
                     getAccessTokenButton
+                    Spacer().frame(height: 16)
+                    entitlementsSection
                     Spacer().frame(height: 24)
                 }
             }
@@ -92,7 +100,97 @@ struct UserPage: View {
         .buttonStyle(PrimaryButtonStyle())
         .padding(.horizontal, 8)
     }
-    
+
+    private var entitlementsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Entitlements")
+                .font(.bodyMedium)
+                .fontWeight(.semibold)
+                .foregroundColor(.gray800)
+            Button("Load entitlements") {
+                loadEntitlements()
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .padding(.horizontal, 8)
+            .disabled(entitlementsLoading)
+            if entitlementsLoading {
+                Text("Loading…")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            if let success = loadSuccess {
+                Text(success ? "Load succeeded" : "Load failed")
+                    .font(.caption)
+                    .foregroundColor(success ? .greenForeground : .redForeground)
+            }
+            if let state = entitlementStateSummary {
+                Text(state)
+                    .font(.caption2)
+                    .foregroundColor(.gray)
+            }
+            if let e = entitlementFeature {
+                entitlementRow(label: "getFeatureEntitlements(\"sso\")", entitlement: e)
+            }
+            if let e = entitlementUnifiedFeature {
+                entitlementRow(label: "getEntitlements(.featureKey(\"proteins.*\"))", entitlement: e)
+            }
+            if let e = entitlementPermission {
+                entitlementRow(label: "getPermissionEntitlements(\"dora.protein.*\")", entitlement: e)
+            }
+            if let e = entitlementUnifiedPermission {
+                entitlementRow(label: "getEntitlements(.permissionKey(\"fe.secure.*\"))", entitlement: e)
+            }
+        }
+    }
+
+    private var entitlementStateSummary: String? {
+        let state = fronteggAuth.entitlements.state
+        guard !state.featureKeys.isEmpty || !state.permissionKeys.isEmpty else { return nil }
+        return "Cached: \(state.featureKeys.count) feature(s), \(state.permissionKeys.count) permission(s)"
+    }
+
+    private func entitlementRow(label: String, entitlement: Entitlement) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: entitlement.isEntitled ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundColor(entitlement.isEntitled ? .greenForeground : .redForeground)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.caption)
+                    .foregroundColor(.gray800)
+                Text(entitlement.isEntitled ? "Entitled" : "Not entitled\(entitlement.justification.map { " (\($0))" } ?? "")")
+                    .font(.caption2)
+                    .foregroundColor(entitlement.isEntitled ? .greenForeground : .redForeground)
+            }
+            Spacer()
+        }
+        .padding(8)
+        .background(Color.white)
+        .cornerRadius(8)
+    }
+
+    private func loadEntitlements() {
+        entitlementsLoading = true
+        loadSuccess = nil
+        entitlementFeature = nil
+        entitlementPermission = nil
+        entitlementUnifiedFeature = nil
+        entitlementUnifiedPermission = nil
+        fronteggAuth.loadEntitlements { success in
+            let feature = fronteggAuth.getFeatureEntitlements(featureKey: "sso")
+            let unifiedFeature = fronteggAuth.getEntitlements(options: .featureKey("proteins.*"))
+            let permission = fronteggAuth.getPermissionEntitlements(permissionKey: "dora.protein.*")
+            let unifiedPermission = fronteggAuth.getEntitlements(options: .permissionKey("fe.secure.*"))
+            DispatchQueue.main.async {
+                loadSuccess = success
+                entitlementFeature = feature
+                entitlementPermission = permission
+                entitlementUnifiedFeature = unifiedFeature
+                entitlementUnifiedPermission = unifiedPermission
+                entitlementsLoading = false
+            }
+        }
+    }
+
     private var footerContent: some View {
         VStack {
             Spacer()

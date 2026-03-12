@@ -24,6 +24,7 @@ public class FronteggApp {
     public var handleLoginWithCustomSocialLoginProvider:Bool = true
     public var handleLoginWithSocialProvider:Bool = true
     public var backgroundColor: UIColor? = nil
+    public var entitlementsEnabled: Bool = false
 
     /// Account (tenant) alias for login-per-account (custom login box). When set, the authorize URL includes `organization=<alias>` so Frontegg routes the user to that account's login experience. Set from your app (e.g. from subdomain or query param) before calling login. Note: `switchTenant` is not supported between accounts that use custom login boxes.
     public var loginOrganizationAlias: String? = nil
@@ -63,11 +64,12 @@ public class FronteggApp {
         self.handleLoginWithSSO = config.loginWithSSO
         self.handleLoginWithCustomSSO = config.loginWithCustomSSO
         self.shouldSuggestSavePassword = config.shouldSuggestSavePassword
-        self.handleLoginWithSocialProvider = config.handleLoginWithCustomSocialLoginProvider
-        self.handleLoginWithCustomSocialLoginProvider = config.handleLoginWithSocialProvider
+        self.handleLoginWithSocialProvider = config.handleLoginWithSocialProvider
+        self.handleLoginWithCustomSocialLoginProvider = config.handleLoginWithCustomSocialLoginProvider
         self.backgroundColor = UIColor(named: config.backgroundColor ?? "#FFFFFF") ?? .white
         self.loginOrganizationAlias = config.loginOrganizationAlias
-        
+        self.entitlementsEnabled = config.entitlementsEnabled
+
         if FronteggApp.clearKeychain(config: config) {
             self.credentialManager.clear()
         }
@@ -83,7 +85,8 @@ public class FronteggApp {
                 isRegional: false,
                 regionData: self.regionData,
                 embeddedMode: self.embeddedMode,
-                isLateInit: true
+                isLateInit: true,
+                entitlementsEnabled: self.entitlementsEnabled
             )
             return
         }
@@ -100,7 +103,8 @@ public class FronteggApp {
                 credentialManager: self.credentialManager,
                 isRegional: true,
                 regionData: self.regionData,
-                embeddedMode: self.embeddedMode
+                embeddedMode: self.embeddedMode,
+                entitlementsEnabled: self.entitlementsEnabled
             )
 
             if let config = self.auth.selectedRegion {
@@ -134,7 +138,8 @@ public class FronteggApp {
                 credentialManager: self.credentialManager,
                 isRegional: false,
                 regionData: [],
-                embeddedMode: self.embeddedMode
+                embeddedMode: self.embeddedMode,
+                entitlementsEnabled: self.entitlementsEnabled
             )
 
             SentryHelper.setBaseUrl(self.baseUrl)
@@ -155,8 +160,8 @@ public class FronteggApp {
             handleLoginWithSSO:Bool = false,
             handleLoginWithCustomSSO:Bool = false,
             handleLoginWithCustomSocialLoginProvider:Bool = true,
-            handleLoginWithSocialProvider:Bool = true
-
+            handleLoginWithSocialProvider:Bool = true,
+            entitlementsEnabled: Bool = false
     ) {
         self.baseUrl = baseUrl
         self.clientId = cliendId
@@ -170,20 +175,23 @@ public class FronteggApp {
         self.handleLoginWithCustomSSO = handleLoginWithCustomSSO
         self.handleLoginWithCustomSocialLoginProvider = handleLoginWithCustomSocialLoginProvider
         self.handleLoginWithSocialProvider = handleLoginWithSocialProvider
-        
-        self.auth.manualInit(baseUrl: baseUrl, clientId: cliendId, applicationId: applicationId)
+        self.entitlementsEnabled = entitlementsEnabled
+
+        self.auth.manualInit(baseUrl: baseUrl, clientId: cliendId, applicationId: applicationId, entitlementsEnabled: entitlementsEnabled)
     }
     public func manualInitRegions(
         regions: [RegionConfig],
         handleLoginWithSocialLogin: Bool = true,
         handleLoginWithSSO:Bool = false,
-        handleLoginWithCustomSSO:Bool = false
+        handleLoginWithCustomSSO:Bool = false,
+        entitlementsEnabled: Bool = false
     ) {
         self.regionData = regions
         self.handleLoginWithSocialLogin = handleLoginWithSocialLogin
         self.handleLoginWithSSO = handleLoginWithSSO
         self.handleLoginWithCustomSSO = handleLoginWithCustomSSO
-        self.auth.manualInitRegions(regions: regions)
+        self.entitlementsEnabled = entitlementsEnabled
+        self.auth.manualInitRegions(regions: regions, entitlementsEnabled: entitlementsEnabled)
         self.baseUrl = self.auth.baseUrl
         self.clientId = self.auth.clientId
         self.applicationId = self.auth.applicationId

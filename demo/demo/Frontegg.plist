@@ -12,6 +12,8 @@
 	<true/>
 	<key>keepUserLoggedInAfterReinstall</key>
 	<true/>
+	<key>entitlementsEnabled</key>
+	<true/>
 	<key>logLevel</key>
 	<string>trace</string>
 </dict>
