@@ -1,3 +1,16 @@
+## v1.2.78
+**Entitlements support**
+- Adds support for Frontegg Entitlements so apps can load and check user features and permissions.
+- What’s new
+- Load entitlements from the Frontegg API and cache them locally
+- Check feature and permission access with `getFeatureEntitlements`, `getPermissionEntitlements`, and `getEntitlements`
+- Entitlements load automatically on login and refresh; cache is cleared on logout
+- Enable via `entitlementsEnabled: true` in Frontegg.plist
+
+**Docs & demos**
+- Entitlements section in README
+- Entitlements UI in demo apps
+
 ## v1.2.77
 Changed baseUrl and clientId for test and demo projects.
 - Replace Cocao deprecated swift dependency manager

@@ -1,3 +1,8 @@
+## v1.2.77
+Changed baseUrl and clientId for test and demo projects.
+- Replace Cocao deprecated swift dependency manager
+ephemeralSession fix
+
 ## v1.2.76
 Fixed: "Remember MFA Device" Setting Ignored
 
