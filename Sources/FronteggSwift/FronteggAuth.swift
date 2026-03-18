@@ -491,8 +491,9 @@ public class FronteggAuth: FronteggState {
             }
             
             // Set up subscription to handle future accessToken changes
-            // When tokens exist initially, we skip the initial emissions to prevent monitoring from starting
-            let dropCount = hasTokensInKeychain ? 2 : 1
+            // dropCount = 1 (initial nil emission) + 1 if we're about to call setAccessToken
+            // Only accessToken changes produce $accessToken emissions; setRefreshToken doesn't.
+            let dropCount = (accessToken != nil) ? 2 : 1
             self.$accessToken
                 .removeDuplicates()
                 .dropFirst(dropCount)
@@ -856,6 +857,7 @@ public class FronteggAuth: FronteggState {
             // In refresh path with connectivity error, preserve the session instead of clearing
             if hydrationMode == .refreshPreserveCachedUser && enableOfflineMode && isConnectivityError(error) {
                 self.logger.warning("Refresh: /me failed due to connectivity. Preserving session with tokens.")
+                let enableSessionPerTenant = (try? PlistHelper.fronteggConfig())?.enableSessionPerTenant ?? false
                 await MainActor.run {
                     setRefreshToken(refreshToken)
                     setAccessToken(accessToken)
@@ -866,6 +868,19 @@ public class FronteggAuth: FronteggState {
                     setIsOfflineMode(true)
                     setInitializing(false)
                     setIsLoading(false)
+                }
+                // Persist refreshed tokens to keychain so they survive app crash/kill
+                do {
+                    if enableSessionPerTenant, let tenantId = credentialManager.getLastActiveTenantId() {
+                        try credentialManager.saveTokenForTenant(refreshToken, tenantId: tenantId, tokenType: .refreshToken)
+                        try credentialManager.saveTokenForTenant(accessToken, tenantId: tenantId, tokenType: .accessToken)
+                    } else {
+                        try credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: refreshToken)
+                        try credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: accessToken)
+                    }
+                    self.logger.info("Persisted refreshed tokens to keychain (post-/me connectivity failure)")
+                } catch {
+                    self.logger.warning("Failed to persist refreshed tokens to keychain: \(error)")
                 }
             } else {
                 await MainActor.run {
