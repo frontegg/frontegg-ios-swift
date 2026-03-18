@@ -477,7 +477,6 @@ public class FronteggAuth: FronteggState {
         let hasAnySessionArtifacts = (refreshToken != nil || accessToken != nil)
         let canRestoreOfflineAuthenticatedState = (accessToken != nil) ||
             (refreshToken != nil && credentialManager.getOfflineUser() != nil)
-        let canAttemptOnlineRefresh = (refreshToken != nil)
         // Legacy alias for monitoring setup compatibility
         let hasTokensInKeychain = hasAnySessionArtifacts
         
@@ -605,17 +604,11 @@ public class FronteggAuth: FronteggState {
                                     self.setIsLoading(false)
                                     self.setInitializing(false)
                                 }
-                            } else if hasAnySessionArtifacts {
+                            } else {
                                 // refresh-token-only, no offlineUser — preserve artifacts for reconnect
                                 // but do NOT show logged-in UI (not enough cached state for meaningful offline access)
+                                // Note: this is the only remaining case since we're inside `if hasAnySessionArtifacts`
                                 self.logger.warning("Offline: refresh-token only, no offlineUser. Preserving artifacts, not offline-authenticated.")
-                                await MainActor.run {
-                                    self.setIsAuthenticated(false)
-                                    self.setIsOfflineMode(true)
-                                    self.setIsLoading(false)
-                                    self.setInitializing(false)
-                                }
-                            } else {
                                 await MainActor.run {
                                     self.setIsAuthenticated(false)
                                     self.setIsOfflineMode(true)
@@ -1298,12 +1291,10 @@ public class FronteggAuth: FronteggState {
         error: Error?,
         enableOfflineMode: Bool,
         attempts: Int,
-        preferredOffset: TimeInterval? = nil,
         skipNetworkCheck: Bool = false
     ) {
-        // Classify + choose offset once
+        // Classify error type
         let isConn = error.map { isConnectivityError($0) } ?? true // treat nil as connectivity (e.g., no active internet path)
-        let offset = preferredOffset ?? (isConn ? 2 : 1)
         
         if isConn {
             self.logger.info("Refresh rescheduled due to network error \(error?.localizedDescription ?? "(no error)")")
@@ -1358,7 +1349,7 @@ public class FronteggAuth: FronteggState {
         if isConn {
             retryOffset = min(TimeInterval(pow(2.0, Double(min(attempts + 2, 6)))), 60)
         } else {
-            retryOffset = offset
+            retryOffset = 1 // non-connectivity errors retry quickly
         }
         self.logger.info("Scheduling retry in \(retryOffset)s (attempt \(attempts + 1), isConn: \(isConn))")
         scheduleTokenRefresh(offset: retryOffset, attempts: attempts + 1, skipNetworkCheck: skipNetworkCheck)
@@ -1469,10 +1460,9 @@ public class FronteggAuth: FronteggState {
             guard isNetworkAvailable else {
                 self.logger.info("Refresh rescheduled due to inactive internet (path check, no /test call)")
                 handleOfflineLikeFailure(
-                    error: nil,                      // nil → treat as connectivity
+                    error: nil,
                     enableOfflineMode: enableOfflineMode,
-                    attempts: attempts,
-                    preferredOffset: 2               // keep your existing offset
+                    attempts: attempts
                 )
                 return false
             }
@@ -1481,10 +1471,9 @@ public class FronteggAuth: FronteggState {
             guard await NetworkStatusMonitor.isActive else {
                 self.logger.info("Refresh rescheduled due to inactive internet")
                 handleOfflineLikeFailure(
-                    error: nil,                      // nil → treat as connectivity
+                    error: nil,
                     enableOfflineMode: enableOfflineMode,
-                    attempts: attempts,
-                    preferredOffset: 2               // keep your existing offset
+                    attempts: attempts
                 )
                 return false
             }
