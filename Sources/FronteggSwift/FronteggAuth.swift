@@ -1261,13 +1261,13 @@ public class FronteggAuth: FronteggState {
 
     /// Shared state update for connectivity loss. Used by handleOfflineLikeFailure() and getOrRefreshAccessTokenAsync()
     /// so both paths update auth/offline state consistently. Does NOT enqueue retries — only scheduled refresh paths do that.
-    private func applyConnectivityLossState(enableOfflineMode: Bool) {
+    private func applyConnectivityLossState(enableOfflineMode: Bool) async {
         let hasTokens = (self.refreshToken != nil || self.accessToken != nil)
         guard hasTokens else { return }
 
         if enableOfflineMode {
             let offlineUser = self.credentialManager.getOfflineUser()
-            DispatchQueue.main.async {
+            await MainActor.run {
                 self.setUser(self.user ?? offlineUser)
                 self.setInitializing(false)
                 self.setIsAuthenticated(true)
@@ -1275,7 +1275,7 @@ public class FronteggAuth: FronteggState {
                 self.setIsLoading(false)
             }
         } else {
-            DispatchQueue.main.async {
+            await MainActor.run {
                 self.setInitializing(false)
                 self.setIsLoading(false)
                 // Keep isOfflineMode=false — app didn't opt into offline UX
@@ -1891,7 +1891,7 @@ public class FronteggAuth: FronteggState {
             let isNetworkAvailable = await checkNetworkPath(timeout: 300_000_000)
             if !isNetworkAvailable {
                 self.logger.info("getOrRefreshAccessTokenAsync: offline, returning cached token if available")
-                applyConnectivityLossState(enableOfflineMode: enableOfflineMode)
+                await applyConnectivityLossState(enableOfflineMode: enableOfflineMode)
                 if let cachedToken = self.accessToken {
                     self.logger.info("Returning cached access token while offline (token source: in-memory)")
                     return cachedToken
@@ -1984,13 +1984,8 @@ public class FronteggAuth: FronteggState {
                     ]
                 ])
                 
-                // On connectivity error while offline, return cached token instead of retrying
-                if enableOfflineMode && isConnectivityError(error) {
-                    self.logger.info("Connectivity error in getOrRefreshAccessTokenAsync (FronteggError), returning cached token")
-                    applyConnectivityLossState(enableOfflineMode: enableOfflineMode)
-                    return self.accessToken
-                }
-
+                // Note: FronteggError is a custom enum, not a URL/POSIX error.
+                // Real connectivity errors (URLError) are caught by the generic catch below.
                 attempts += 1
                 try await Task.sleep(nanoseconds: 1_000_000_000) // Sleep for 1 second before retrying
             } catch {
@@ -2010,7 +2005,7 @@ public class FronteggAuth: FronteggState {
                 // On connectivity error while offline, return cached token instead of retrying
                 if enableOfflineMode && isConnectivityError(error) {
                     self.logger.info("Connectivity error in getOrRefreshAccessTokenAsync, returning cached token")
-                    applyConnectivityLossState(enableOfflineMode: enableOfflineMode)
+                    await applyConnectivityLossState(enableOfflineMode: enableOfflineMode)
                     return self.accessToken
                 }
 
