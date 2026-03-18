@@ -1273,13 +1273,13 @@ public class FronteggAuth: FronteggState {
 
         if enableSessionPerTenant {
             tenantId = credentialManager.getLastActiveTenantId()
+            if tenantId == nil, let user = self.user {
+                tenantId = user.activeTenant.id
+            }
             if tenantId == nil {
                 if let offlineUser = credentialManager.getOfflineUser() {
                     tenantId = offlineUser.activeTenant.id
                 }
-            }
-            if tenantId == nil, let user = self.user {
-                tenantId = user.activeTenant.id
             }
 
             if let tid = tenantId {
