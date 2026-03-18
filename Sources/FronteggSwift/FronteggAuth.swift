@@ -609,6 +609,21 @@ public class FronteggAuth: FronteggState {
                                 // but do NOT show logged-in UI (not enough cached state for meaningful offline access)
                                 // Note: this is the only remaining case since we're inside `if hasAnySessionArtifacts`
                                 self.logger.warning("Offline: refresh-token only, no offlineUser. Preserving artifacts, not offline-authenticated.")
+
+                                // Restart monitoring so reconnectedToInternet() can trigger a refresh when network returns.
+                                // Monitoring was stopped earlier because hasAnySessionArtifacts was true.
+                                let token = NetworkStatusMonitor.addOnChangeReturningToken { [weak self] reachable in
+                                    guard let self = self else { return }
+                                    if reachable {
+                                        self.reconnectedToInternet()
+                                    } else {
+                                        self.disconnectedFromInternet()
+                                    }
+                                }
+                                self.networkMonitoringToken = token
+                                let interval = (try? PlistHelper.fronteggConfig())?.networkMonitoringInterval ?? 10
+                                NetworkStatusMonitor.startBackgroundMonitoring(interval: interval, onChange: nil)
+
                                 await MainActor.run {
                                     self.setIsAuthenticated(false)
                                     self.setIsOfflineMode(true)
