@@ -622,7 +622,15 @@ public class FronteggAuth: FronteggState {
                                 self.setIsLoading(true)
                             }
 
-                            await self.refreshTokenIfNeeded()
+                            let refreshed = await self.refreshTokenIfNeeded()
+
+                            // If refresh returned early (e.g., no refresh token), ensure loading/initializing are reset
+                            if !refreshed {
+                                await MainActor.run {
+                                    if self.isLoading { self.setIsLoading(false) }
+                                    if self.initializing { self.setInitializing(false) }
+                                }
+                            }
 
                             // Then run optional network tasks (non-blocking for auth)
                             await self.featureFlags.start()
@@ -644,7 +652,15 @@ public class FronteggAuth: FronteggState {
                             await SocialLoginUrlGenerator.shared.reloadConfigs()
                             self.warmingWebViewAsync()
                         }
-                        await self.refreshTokenIfNeeded()
+                        let refreshed = await self.refreshTokenIfNeeded()
+
+                        // If refresh returned early (e.g., no refresh token), ensure loading/initializing are reset
+                        if !refreshed {
+                            await MainActor.run {
+                                if self.isLoading { self.setIsLoading(false) }
+                                if self.initializing { self.setInitializing(false) }
+                            }
+                        }
                     }
                 }
             }
