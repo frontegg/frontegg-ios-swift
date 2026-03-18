@@ -1301,11 +1301,11 @@ public class FronteggAuth: FronteggState {
             }
 
             // Fallback to legacy tokens if both tenant-specific tokens are nil
+            // Require BOTH legacy tokens to exist (matching initializeSubscriptions behavior)
             if refreshToken == nil && accessToken == nil {
-                if let legacyRefresh = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+                if let legacyRefresh = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue),
+                   let legacyAccess = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
                     refreshToken = legacyRefresh
-                }
-                if let legacyAccess = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
                     accessToken = legacyAccess
                 }
             }
@@ -1538,11 +1538,18 @@ public class FronteggAuth: FronteggState {
             }
         }
         
+        // Reset effective attempts when transitioning from offline back to online.
+        // Connectivity-inflated counters should not cause premature credential wipe
+        // on the first non-connectivity error after reconnection.
+        let effectiveAttempts: Int
         if self.lastAttemptReason == .noNetwork {
-            // Connectivity loss is never evidence that credentials are invalid.
-            // Bypass the attempts > 10 credential wipe for network failures.
-            self.logger.info("Network unavailable (attempt \(attempts)), preserving session. lastAttemptReason: .noNetwork")
-        } else if attempts > 10 {
+            self.logger.info("Network was unavailable (accumulated attempts: \(attempts)), resetting counter for online retry.")
+            effectiveAttempts = 0
+        } else {
+            effectiveAttempts = attempts
+        }
+
+        if effectiveAttempts > 10 {
             self.logger.info("Refresh token attempts exceeded, logging out")
             // Preserve lastActiveTenantId when enableSessionPerTenant is enabled
             if enableSessionPerTenant {
@@ -1755,16 +1762,16 @@ public class FronteggAuth: FronteggState {
             handleOfflineLikeFailure(
                 error: error,
                 enableOfflineMode: enableOfflineMode,
-                attempts: attempts,
+                attempts: effectiveAttempts,
                 skipNetworkCheck: skipNetworkCheck
             )
             return false
-            
+
         } catch {
             handleOfflineLikeFailure(
                 error: error,
                 enableOfflineMode: enableOfflineMode,
-                attempts: attempts,
+                attempts: effectiveAttempts,
                 skipNetworkCheck: skipNetworkCheck
             )
             return false
