@@ -1,0 +1,20 @@
+# Runs Swift SDK E2E tests (from e2e-system-tests) on every PR.
+# The reusable workflow checks out the PR head commit, builds the demo apps, and runs Appium tests.
+# Results appear as the "Swift SDK E2E" status check on the PR.
+# To require this check before merging, add "Swift SDK E2E" as a required status check
+# in Settings → Branches → branch protection rules for the target branch.
+
+name: Swift SDK E2E
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  swift-sdk-e2e:
+    name: Swift SDK E2E
+    uses: frontegg/e2e-system-tests/.github/workflows/swift-sdk-e2e-reusable.yml@main
+    with:
+      swift_repo_ref: ${{ github.event.pull_request.head.sha }}
+      test_suite: hosted:no-social
+    secrets: inherit
