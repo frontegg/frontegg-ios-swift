@@ -882,6 +882,19 @@ public class FronteggAuth: FronteggState {
                 } catch {
                     self.logger.warning("Failed to persist refreshed tokens to keychain: \(error)")
                 }
+                // Schedule token refresh so fresh tokens don't silently expire
+                let refreshOffset: TimeInterval
+                if let decode = try? JWTHelper.decode(jwtToken: accessToken),
+                   let exp = decode["exp"] as? Int {
+                    refreshOffset = calculateOffset(expirationTime: exp)
+                } else {
+                    // JWT decode failed — schedule a default refresh in 30 seconds
+                    self.logger.warning("Could not decode access token JWT for refresh scheduling, using 30s fallback")
+                    refreshOffset = 30
+                }
+                await MainActor.run {
+                    scheduleTokenRefresh(offset: refreshOffset)
+                }
             } else {
                 await MainActor.run {
                     logger.error("Failed to set credentials (hydrationMode: \(hydrationMode == .authoritative ? "authoritative" : "refresh"), error: \(error))")
