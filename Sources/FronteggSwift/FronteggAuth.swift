@@ -477,7 +477,6 @@ public class FronteggAuth: FronteggState {
         let hasAnySessionArtifacts = (refreshToken != nil || accessToken != nil)
         let canRestoreOfflineAuthenticatedState = (accessToken != nil) ||
             (refreshToken != nil && credentialManager.getOfflineUser() != nil)
-        let canAttemptOnlineRefresh = (refreshToken != nil)
         // Legacy alias for monitoring setup compatibility
         let hasTokensInKeychain = hasAnySessionArtifacts
         
@@ -605,17 +604,10 @@ public class FronteggAuth: FronteggState {
                                     self.setIsLoading(false)
                                     self.setInitializing(false)
                                 }
-                            } else if hasAnySessionArtifacts {
+                            } else {
                                 // refresh-token-only, no offlineUser — preserve artifacts for reconnect
                                 // but do NOT show logged-in UI (not enough cached state for meaningful offline access)
                                 self.logger.warning("Offline: refresh-token only, no offlineUser. Preserving artifacts, not offline-authenticated.")
-                                await MainActor.run {
-                                    self.setIsAuthenticated(false)
-                                    self.setIsOfflineMode(true)
-                                    self.setIsLoading(false)
-                                    self.setInitializing(false)
-                                }
-                            } else {
                                 await MainActor.run {
                                     self.setIsAuthenticated(false)
                                     self.setIsOfflineMode(true)
@@ -1356,7 +1348,7 @@ public class FronteggAuth: FronteggState {
         // Exponential backoff for connectivity errors instead of fixed 2s intervals
         let retryOffset: TimeInterval
         if isConn {
-            retryOffset = min(TimeInterval(pow(2.0, Double(min(attempts + 2, 6)))), 60)
+            retryOffset = min(offset * TimeInterval(pow(2.0, Double(min(attempts, 5)))), 60)
         } else {
             retryOffset = offset
         }
