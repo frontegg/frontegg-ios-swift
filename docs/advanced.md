@@ -319,6 +319,85 @@ This section documents all available configuration keys in `Frontegg.plist`.
 | `enableOfflineMode` | Boolean | `false` | Enable offline mode - keep user logged in when network is unavailable |
 | `networkMonitoringInterval` | Number | `10` | Interval (in seconds) for network status monitoring when offline mode is enabled |
 
+### Offline Mode Usage
+
+When `enableOfflineMode` is set to `true`, the SDK preserves the user's authenticated session when the device loses connectivity. This is critical for apps that must remain accessible without network (e.g., aviation, field service, industrial).
+
+#### How it works
+
+- On successful login, the SDK caches the user profile (`offlineUser`) and tokens in the keychain.
+- When the device goes offline, `isAuthenticated` remains `true` and `isOfflineMode` is set to `true`.
+- Token refresh is paused until connectivity returns. `getOrRefreshAccessTokenAsync()` returns the cached access token instead of attempting a network call.
+- When connectivity is restored, the SDK automatically refreshes tokens and resumes normal operation.
+- Logout only happens on explicit `logout()` call or a confirmed server rejection (HTTP 401).
+
+#### Important: use `isAuthenticated` as the session source of truth
+
+Always gate your logged-in UI on `isAuthenticated`, **not** on `user != nil`. In offline scenarios, `isAuthenticated` may be `true` while `user` is `nil` (e.g., when the user's profile data was not cached before going offline). If you gate on `user != nil`, your app will incorrectly show the login screen to authenticated offline users.
+
+#### Recommended UI routing pattern
+
+```swift
+struct MyApp: View {
+    @EnvironmentObject var fronteggAuth: FronteggAuth
+
+    var body: some View {
+        ZStack {
+            if fronteggAuth.isLoading {
+                LoaderView()
+            } else if fronteggAuth.isAuthenticated {
+                if fronteggAuth.user != nil {
+                    // Full experience — user data available
+                    UserPage()
+                } else {
+                    // Authenticated but user data unavailable (offline, no cached profile)
+                    // Show a degraded but functional UI
+                    OfflinePlaceholderView()
+                }
+            } else {
+                if fronteggAuth.isOfflineMode {
+                    // Not authenticated and no network — cannot log in
+                    NoConnectionPage()
+                } else {
+                    // Not authenticated, network available — show login
+                    LoginPage()
+                }
+            }
+        }
+    }
+}
+```
+
+#### Obtaining access tokens offline
+
+When offline, `getOrRefreshAccessTokenAsync()` returns the cached access token without attempting a network refresh. This allows your app to include the token in local operations or queue requests for when connectivity returns.
+
+```swift
+do {
+    let token = try await fronteggAuth.getOrRefreshAccessTokenAsync()
+    if let token = token {
+        // Use cached token — note: it may be expired, but no backend call can succeed offline anyway
+        headers["Authorization"] = "Bearer \(token)"
+    } else {
+        // No cached token available
+    }
+} catch {
+    // Only thrown for non-connectivity errors when online
+}
+```
+
+#### Offline restore on app restart
+
+When the app is reopened without network, the SDK restores the session from keychain if sufficient artifacts exist:
+
+| Cached state | Offline behavior |
+|-------------|-----------------|
+| Access token + refresh token | Authenticated offline, full restore |
+| Access token only | Authenticated offline, no refresh capability until reconnect |
+| Refresh token + cached user profile | Authenticated offline, can refresh when reconnect |
+| Refresh token only (no cached profile) | Not authenticated offline — artifacts preserved for reconnect |
+| No tokens | Not authenticated |
+
 ### Logging Keys
 
 | Key | Type | Default | Description |

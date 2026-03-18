@@ -22,15 +22,26 @@ struct MyApp: View {
             if fronteggAuth.isLoading {
                 // Loading
                 LoaderView()
-            } else if fronteggAuth.user != nil {
-                // User is logged in you can check if isOffline or not also here
-                UserPage()
+            } else if fronteggAuth.isAuthenticated {
+                if fronteggAuth.user != nil {
+                    // User is logged in with full user data
+                    UserPage()
+                } else {
+                    // Authenticated but user data unavailable (offline with cached token, no offlineUser)
+                    VStack {
+                        Text("Authenticated (offline)")
+                            .font(.headline)
+                        Text("User details will load when connectivity is restored.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                }
             } else {
                 // User is NOT logged in
                 if fronteggAuth.isOfflineMode {
                     // disable authentication process if no internet
                     NoConnectionPage()
-                }else {
+                } else {
                     // display login page if NOT logged in and connected to internet
                     LoginPage()
                 }

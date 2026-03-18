@@ -14,3 +14,4 @@ test.xcresult
 TestResults.xcresult
 TestResults
 demo-embedded/build
+.claude/settings.local.json

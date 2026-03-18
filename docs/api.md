@@ -17,6 +17,8 @@ The `FronteggAuth` interface provides all the core authentication functionalitie
 | `initializing` | `ReadOnlyObservableValue<Bool>` – `true` while SDK is initializing. |
 | `showLoader` | `ReadOnlyObservableValue<Bool>` – Indicates whether loading UI should be shown. |
 | `refreshingToken` | `ReadOnlyObservableValue<Bool>` – Indicates whether a token refresh is ongoing. |
+| `isOfflineMode` | `ReadOnlyObservableValue<Bool>` – `true` when the device has no connectivity to Frontegg servers. |
+| `lastAttemptReason` | `AttemptReasonType?` – The reason for the last token refresh attempt result: `.noNetwork` (connectivity error) or `.unknown` (other error). `nil` after a successful refresh. |
 
 ## Configuration properties
 
@@ -66,6 +68,19 @@ Refreshes the access token if needed.
 
 - `attempts`: Retry count. Defaults to 0.
 - **Returns**: `true` if refresh was successful, `false` otherwise.
+
+#### `getOrRefreshAccessTokenAsync() async throws -> String?`
+Returns a valid access token for use in API calls. If the current token is near expiry, attempts to refresh it.
+
+When `enableOfflineMode` is `true` and the device is offline, returns the cached access token without attempting a network refresh. Returns `nil` if no cached token is available.
+
+- **Returns**: A valid access token string, or `nil` if unavailable.
+- **Throws**: `FronteggError.authError(.failedToAuthenticate)` after exhausting retries (online only).
+
+#### `getOrRefreshAccessToken(_ completion: @escaping FronteggAuth.AccessTokenHandler)`
+Callback-based version of `getOrRefreshAccessTokenAsync()`.
+
+- `completion`: Called with `.success(token)` or `.failure(error)`.
 
 
 ### Passkeys authentication
