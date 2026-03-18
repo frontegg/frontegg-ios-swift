@@ -25,6 +25,18 @@ public enum AttemptReasonType {
     case noNetwork
 }
 
+private enum CredentialHydrationMode {
+    case authoritative              // login, tenant-switch, passkey, apple auth — fetch /me
+    case refreshPreserveCachedUser  // token refresh — prefer cached user
+}
+
+private struct StoredSessionArtifacts {
+    let accessToken: String?
+    let refreshToken: String?
+    let offlineUser: User?
+    let tenantId: String?
+}
+
 
 public class FronteggAuth: FronteggState {
     
@@ -461,8 +473,13 @@ public class FronteggAuth: FronteggState {
             accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue)
         }
         
-        // Check if tokens exist BEFORE setting up monitoring
-        let hasTokensInKeychain = (refreshToken != nil && accessToken != nil)
+        // Explicit state categories for startup restore
+        let hasAnySessionArtifacts = (refreshToken != nil || accessToken != nil)
+        let canRestoreOfflineAuthenticatedState = (accessToken != nil) ||
+            (refreshToken != nil && credentialManager.getOfflineUser() != nil)
+        let canAttemptOnlineRefresh = (refreshToken != nil)
+        // Legacy alias for monitoring setup compatibility
+        let hasTokensInKeychain = hasAnySessionArtifacts
         
         if enableOfflineMode {
             NetworkStatusMonitor.configure(baseURLString: "\(self.baseUrl)/test")
@@ -547,113 +564,89 @@ public class FronteggAuth: FronteggState {
             self.isInitializingWithTokens = false
         }
         
-        if let refreshToken = refreshToken, let accessToken = accessToken {
+        if hasAnySessionArtifacts {
             // Explicitly stop any existing monitoring before setting tokens
             NetworkStatusMonitor.stopBackgroundMonitoring()
             if let token = self.networkMonitoringToken {
                 NetworkStatusMonitor.removeOnChange(token)
                 self.networkMonitoringToken = nil
             }
-            
-            // Set tokens - the subscription will see tokens exist and won't start monitoring
-            setRefreshToken(refreshToken)
-            setAccessToken(accessToken)
-            
+
+            // Set whichever tokens we have
+            if let rt = refreshToken { setRefreshToken(rt) }
+            if let at = accessToken { setAccessToken(at) }
+
             // Clear initialization flag after tokens are set
             self.isInitializingWithTokens = false
-            
+
             // For offline mode, check network path status without making /test calls
-            // If offline and we have tokens, keep user logged in without attempting refresh
             if enableOfflineMode {
                 DispatchQueue.global(qos: .userInitiated).async {
                     Task {
-                        // Use NWPathMonitor to check network path without making HTTP calls
-                        let isNetworkAvailable = await withCheckedContinuation { continuation in
-                            let monitor = NWPathMonitor()
-                            let queue = DispatchQueue(label: "NetworkPathCheck")
-                            // Use a class to hold state to avoid captured var concurrency issues
-                            final class ResumeState {
-                                private let lock = NSLock()
-                                private var hasResumed = false
-                                
-                                func tryResume() -> Bool {
-                                    return lock.withLock {
-                                        guard !hasResumed else { return false }
-                                        hasResumed = true
-                                        return true
-                                    }
-                                }
-                            }
-                            let resumeState = ResumeState()
-                            
-                            monitor.pathUpdateHandler = { path in
-                                guard resumeState.tryResume() else { return }
-                                
-                                let available = (path.status == .satisfied)
-                                monitor.cancel()
-                                continuation.resume(returning: available)
-                            }
-                            
-                            monitor.start(queue: queue)
-                            
-                            // Timeout after 0.5 seconds
-                            Task {
-                                try? await Task.sleep(nanoseconds: 500_000_000)
-                                guard resumeState.tryResume() else { return }
-                                
-                                monitor.cancel()
-                                continuation.resume(returning: false)
-                            }
-                        }
-                        
+                        let isNetworkAvailable = await self.checkNetworkPath(timeout: 500_000_000)
+
                         if !isNetworkAvailable {
-                            // Network unavailable - keep user logged in offline
-                            self.logger.info("Network path unavailable on startup, keeping user logged in offline")
-                            
-                            // Cancel any scheduled token refreshes to prevent network abuse
                             self.cancelScheduledTokenRefresh()
-                            
-                            // Load offline user data if available
-                            if let offlineUser = self.credentialManager.getOfflineUser() {
+                            let offlineUser = self.credentialManager.getOfflineUser()
+
+                            if canRestoreOfflineAuthenticatedState {
+                                // Log which restore branch was taken
+                                if refreshToken != nil && accessToken != nil {
+                                    self.logger.info("Offline restore: full token pair")
+                                } else if accessToken != nil {
+                                    self.logger.info("Offline restore: access-token-only (no refresh capability)")
+                                } else {
+                                    self.logger.info("Offline restore: refresh-token + offlineUser")
+                                }
                                 await MainActor.run {
-                                    self.setUser(offlineUser)
+                                    self.setUser(self.user ?? offlineUser)
                                     self.setIsAuthenticated(true)
                                     self.setIsOfflineMode(true)
                                     self.setIsLoading(false)
                                     self.setInitializing(false)
                                 }
-                            } else {
-                                // No offline user data, but still keep authenticated with tokens
+                            } else if hasAnySessionArtifacts {
+                                // refresh-token-only, no offlineUser — preserve artifacts for reconnect
+                                // but do NOT show logged-in UI (not enough cached state for meaningful offline access)
+                                self.logger.warning("Offline: refresh-token only, no offlineUser. Preserving artifacts, not offline-authenticated.")
                                 await MainActor.run {
-                                    self.setIsAuthenticated(true)
+                                    self.setIsAuthenticated(false)
+                                    self.setIsOfflineMode(true)
+                                    self.setIsLoading(false)
+                                    self.setInitializing(false)
+                                }
+                            } else {
+                                await MainActor.run {
+                                    self.setIsAuthenticated(false)
                                     self.setIsOfflineMode(true)
                                     self.setIsLoading(false)
                                     self.setInitializing(false)
                                 }
                             }
                         } else {
-                            // Network available - proceed with normal initialization and token refresh
+                            // Network available — stabilize auth first, then run optional tasks
                             await MainActor.run {
                                 self.setIsLoading(true)
                             }
-                            
-                            await self.featureFlags.start();
+
+                            await self.refreshTokenIfNeeded()
+
+                            // Then run optional network tasks (non-blocking for auth)
+                            await self.featureFlags.start()
                             SentryHelper.setSentryEnabledFromFeatureFlag(self.featureFlags.isOn(FeatureFlags.mobileEnableLoggingKey))
                             await SocialLoginUrlGenerator.shared.reloadConfigs()
                             self.warmingWebViewAsync()
-                            
-                            await self.refreshTokenIfNeeded()
                         }
                     }
                 }
             } else {
                 // Offline mode not enabled - proceed with normal initialization
                 setIsLoading(true)
-                
+
                 DispatchQueue.global(qos: .userInitiated).async {
                     Task {
                         if await NetworkStatusMonitor.isActive {
-                            await self.featureFlags.start();
+                            await self.featureFlags.start()
                             SentryHelper.setSentryEnabledFromFeatureFlag(self.featureFlags.isOn(FeatureFlags.mobileEnableLoggingKey))
                             await SocialLoginUrlGenerator.shared.reloadConfigs()
                             self.warmingWebViewAsync()
@@ -687,93 +680,103 @@ public class FronteggAuth: FronteggState {
     
     
     public func setCredentials(accessToken: String, refreshToken: String, user: User? = nil) async {
-        self.logger.info("Setting credentials (refresh token length: \(refreshToken.count))")
-        
+        await setCredentialsInternal(accessToken: accessToken, refreshToken: refreshToken, user: user, hydrationMode: .authoritative)
+    }
+
+    private func setCredentialsInternal(accessToken: String, refreshToken: String, user: User? = nil, hydrationMode: CredentialHydrationMode) async {
+        self.logger.info("Setting credentials (refresh token length: \(refreshToken.count), hydrationMode: \(hydrationMode == .authoritative ? "authoritative" : "refreshPreserveCachedUser"))")
+
         do {
             let config = try? PlistHelper.fronteggConfig()
             let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
-            
+
             // Decode token to get tenantId
             let decode = try JWTHelper.decode(jwtToken: accessToken)
-            
-            // Use provided user if available, otherwise fetch from API
+
+            // Resolve user: refresh paths prefer cached user, authoritative paths fetch from /me
             let userToUse: User
             if let providedUser = user {
                 userToUse = providedUser
+            } else if hydrationMode == .refreshPreserveCachedUser, let existingUser = self.user {
+                self.logger.info("Refresh path: using existing in-memory user")
+                userToUse = existingUser
+            } else if hydrationMode == .refreshPreserveCachedUser,
+                      let config = config, config.enableOfflineMode,
+                      let offlineUser = self.credentialManager.getOfflineUser() {
+                self.logger.info("Refresh path: using cached offline user")
+                userToUse = offlineUser
             } else {
                 guard let fetchedUser = try await self.api.me(accessToken: accessToken) else {
                     throw FronteggError.authError(.failedToLoadUserData("User data is nil"))
                 }
                 userToUse = fetchedUser
             }
-            
+
             var tenantIdToUse: String? = nil
-            
+
             // Store tokens per tenant if enableSessionPerTenant is enabled
             if enableSessionPerTenant {
-                logger.info("🔵 [SessionPerTenant] setCredentials called with enableSessionPerTenant=true")
-                logger.info("🔵 [SessionPerTenant] Server's active tenant: \(userToUse.activeTenant.id)")
-                
+                logger.info("[SessionPerTenant] setCredentials called with enableSessionPerTenant=true")
+                logger.info("[SessionPerTenant] Server's active tenant: \(userToUse.activeTenant.id)")
+
                 if let localTenantId = credentialManager.getLastActiveTenantId() {
-                    logger.info("🔵 [SessionPerTenant] Found preserved local tenant ID: \(localTenantId)")
+                    logger.info("[SessionPerTenant] Found preserved local tenant ID: \(localTenantId)")
                     // Validate that the preserved tenant is still valid for this user
                     if userToUse.tenants.contains(where: { $0.id == localTenantId }) {
                         tenantIdToUse = localTenantId
-                        logger.info("✅ [SessionPerTenant] Using LOCAL tenant ID: \(localTenantId) (ignoring server's active tenant: \(userToUse.activeTenant.id))")
+                        logger.info("[SessionPerTenant] Using LOCAL tenant ID: \(localTenantId) (ignoring server's active tenant: \(userToUse.activeTenant.id))")
                     } else {
                         // Preserved tenant is not valid for this user (e.g., logged in with different account)
                         // Fall back to server's active tenant
-                        logger.warning("⚠️ [SessionPerTenant] Preserved tenant ID (\(localTenantId)) not found in user's tenants list. Available: \(userToUse.tenants.map { $0.id }). Falling back to server's active tenant.")
+                        logger.warning("[SessionPerTenant] Preserved tenant ID (\(localTenantId)) not found in user's tenants list. Available: \(userToUse.tenants.map { $0.id }). Falling back to server's active tenant.")
                         tenantIdToUse = userToUse.activeTenant.id
                         let savedTenantId = userToUse.activeTenant.id
                         self.credentialManager.saveLastActiveTenantId(savedTenantId)
-                        logger.info("🔵 [SessionPerTenant] Using server's active tenant: \(savedTenantId) (saved as local tenant)")
+                        logger.info("[SessionPerTenant] Using server's active tenant: \(savedTenantId) (saved as local tenant)")
                     }
                 } else {
                     let serverTenantId = userToUse.activeTenant.id
-                    logger.warning("⚠️ [SessionPerTenant] No local tenant stored, using server's active tenant: \(serverTenantId)")
+                    logger.warning("[SessionPerTenant] No local tenant stored, using server's active tenant: \(serverTenantId)")
                     tenantIdToUse = serverTenantId
                     self.credentialManager.saveLastActiveTenantId(serverTenantId)
-                    logger.info("🔵 [SessionPerTenant] Saved server's active tenant: \(serverTenantId) as local tenant")
+                    logger.info("[SessionPerTenant] Saved server's active tenant: \(serverTenantId) as local tenant")
                 }
             }
-            
+
             var finalUserToUse = userToUse
             if enableSessionPerTenant, let localTenantId = tenantIdToUse {
-                logger.info("🔵 [SessionPerTenant] Attempting to modify user object to use local tenant: \(localTenantId)")
+                logger.info("[SessionPerTenant] Attempting to modify user object to use local tenant: \(localTenantId)")
                 if let matchingTenant = userToUse.tenants.first(where: { $0.id == localTenantId }) {
                     do {
                         let userDict = try JSONEncoder().encode(userToUse)
                         var userJson = try JSONSerialization.jsonObject(with: userDict) as! [String: Any]
-                        
+
                         if let matchingTenantData = try? JSONEncoder().encode(matchingTenant),
                            let matchingTenantDict = try? JSONSerialization.jsonObject(with: matchingTenantData) as? [String: Any] {
                             userJson["activeTenant"] = matchingTenantDict
                             userJson["tenantId"] = matchingTenant.tenantId
-                            
+
                             let modifiedUserData = try JSONSerialization.data(withJSONObject: userJson)
                             finalUserToUse = try JSONDecoder().decode(User.self, from: modifiedUserData)
-                            
+
                             if localTenantId != userToUse.activeTenant.id {
-                                logger.info("✅ [SessionPerTenant] Modified user to use local tenant (\(localTenantId)) instead of server's active tenant (\(userToUse.activeTenant.id))")
-                                logger.info("🔵 [SessionPerTenant] Modified user activeTenant.id: \(finalUserToUse.activeTenant.id)")
+                                logger.info("[SessionPerTenant] Modified user to use local tenant (\(localTenantId)) instead of server's active tenant (\(userToUse.activeTenant.id))")
                             } else {
-                                logger.info("🔵 [SessionPerTenant] User already matches local tenant (\(localTenantId))")
+                                logger.info("[SessionPerTenant] User already matches local tenant (\(localTenantId))")
                             }
                         } else {
-                            logger.warning("⚠️ [SessionPerTenant] Failed to encode matching tenant data")
+                            logger.warning("[SessionPerTenant] Failed to encode matching tenant data")
                         }
                     } catch {
-                        logger.warning("⚠️ [SessionPerTenant] Failed to modify user for local tenant: \(error). Using server's active tenant.")
+                        logger.warning("[SessionPerTenant] Failed to modify user for local tenant: \(error). Using server's active tenant.")
                     }
                 } else {
-                    logger.error("❌ [SessionPerTenant] Local tenant ID (\(localTenantId)) not found in user's tenants list. This should not happen. Available tenants: \(userToUse.tenants.map { $0.id })")
+                    logger.error("[SessionPerTenant] Local tenant ID (\(localTenantId)) not found in user's tenants list. This should not happen. Available tenants: \(userToUse.tenants.map { $0.id })")
                 }
             }
-            
+
             // Set in-memory state FIRST before saving to keychain
             // This ensures user stays logged in even if keychain save fails
-            // Capture finalUserToUse before the closure to avoid concurrency issues
             let userToSet = finalUserToUse
             await MainActor.run {
                 setRefreshToken(refreshToken)
@@ -785,54 +788,72 @@ public class FronteggAuth: FronteggState {
                 setInitializing(false)
                 setAppLink(false)
                 setIsStepUpAuthorization(false)
-                
+
                 // isLoading must be at the bottom
                 setIsLoading(false)
-                
+
                 let offset = calculateOffset(expirationTime: decode["exp"] as! Int)
                 scheduleTokenRefresh(offset: offset)
                 loadEntitlements(forceRefresh: true)
             }
-            
+
             // Now try to save to keychain (non-critical - user is already logged in)
-            // If this fails, we log a warning but don't fail the login
             do {
                 if enableSessionPerTenant, let tenantId = tenantIdToUse {
                     try self.credentialManager.saveTokenForTenant(refreshToken, tenantId: tenantId, tokenType: .refreshToken)
                     try self.credentialManager.saveTokenForTenant(accessToken, tenantId: tenantId, tokenType: .accessToken)
                     logger.info("Saved tokens for tenant: \(tenantId)")
                 } else {
-                    // Store tokens globally (legacy behavior)
                     try self.credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: refreshToken)
                     try self.credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: accessToken)
                     logger.info("Saved tokens to keychain")
                 }
-                
+
                 if let config = config, config.enableOfflineMode {
                     self.credentialManager.saveOfflineUser(user: finalUserToUse)
+                    logger.info("Saved offline user data")
                 }
             } catch {
-                // Keychain save failed, but user is already logged in
-                // Log warning but don't fail the login - tokens are in memory
                 logger.warning("Failed to save credentials to keychain (user will remain logged in for this session): \(error)")
-                // Try to save offline user anyway (might work even if token save failed)
                 if let config = config, config.enableOfflineMode {
                     self.credentialManager.saveOfflineUser(user: finalUserToUse)
                 }
             }
-            
+
+            // Diagnostic: warn if offline mode is enabled but offline artifacts are missing
+            if let config = config, config.enableOfflineMode {
+                if self.credentialManager.getOfflineUser() == nil {
+                    logger.error("DIAGNOSTIC: enableOfflineMode=true but offline user data was NOT persisted after setCredentials. Offline restore will be degraded.")
+                }
+            }
+
         } catch {
-            await MainActor.run {
-                logger.error("Failed to set credentials: \(error)")
-                setRefreshToken(nil)
-                setAccessToken(nil)
-                setUser(nil)
-                setIsAuthenticated(false)
-                setInitializing(false)
-                setAppLink(false)
-                
-                // isLoading must be at the last bottom
-                setIsLoading(false)
+            let enableOfflineMode = (try? PlistHelper.fronteggConfig())?.enableOfflineMode ?? false
+            // In refresh path with connectivity error, preserve the session instead of clearing
+            if hydrationMode == .refreshPreserveCachedUser && enableOfflineMode && isConnectivityError(error) {
+                self.logger.warning("Refresh: /me failed due to connectivity. Preserving session with tokens.")
+                await MainActor.run {
+                    setRefreshToken(refreshToken)
+                    setAccessToken(accessToken)
+                    if self.user == nil, let offlineUser = self.credentialManager.getOfflineUser() {
+                        setUser(offlineUser)
+                    }
+                    setIsAuthenticated(true)
+                    setIsOfflineMode(true)
+                    setInitializing(false)
+                    setIsLoading(false)
+                }
+            } else {
+                await MainActor.run {
+                    logger.error("Failed to set credentials (hydrationMode: \(hydrationMode == .authoritative ? "authoritative" : "refresh"), error: \(error))")
+                    setRefreshToken(nil)
+                    setAccessToken(nil)
+                    setUser(nil)
+                    setIsAuthenticated(false)
+                    setInitializing(false)
+                    setAppLink(false)
+                    setIsLoading(false)
+                }
             }
         }
     }
@@ -1164,8 +1185,113 @@ public class FronteggAuth: FronteggState {
     
     
     
+    // MARK: - Offline helpers
+
+    /// Checks network path availability using NWPathMonitor with a timeout.
+    /// Path checks are advisory only in restricted-network environments (e.g., aircraft with whitelisted domains).
+    /// Actual HTTP request failures remain the authoritative source of truth.
+    private func checkNetworkPath(timeout: UInt64 = 500_000_000) async -> Bool {
+        await withCheckedContinuation { continuation in
+            let monitor = NWPathMonitor()
+            let queue = DispatchQueue(label: "NetworkPathCheck.\(UUID().uuidString)")
+            final class ResumeState: @unchecked Sendable {
+                private let lock = NSLock()
+                private var hasResumed = false
+                func tryResume() -> Bool {
+                    return lock.withLock {
+                        guard !hasResumed else { return false }
+                        hasResumed = true
+                        return true
+                    }
+                }
+            }
+            let resumeState = ResumeState()
+
+            monitor.pathUpdateHandler = { path in
+                guard resumeState.tryResume() else { return }
+                let available = (path.status == .satisfied)
+                monitor.cancel()
+                continuation.resume(returning: available)
+            }
+            monitor.start(queue: queue)
+
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: timeout)
+                guard resumeState.tryResume() else { return }
+                monitor.cancel()
+                self?.logger.info("NWPathMonitor timed out after \(timeout / 1_000_000)ms — treating as offline (advisory)")
+                continuation.resume(returning: false)
+            }
+        }
+    }
+
+    /// Resolves stored session artifacts (tokens, offline user, tenant) using consistent precedence:
+    /// lastActiveTenantId → user.activeTenant → offlineUser.activeTenant → legacy global tokens.
+    private func resolveStoredSessionArtifacts(enableSessionPerTenant: Bool) -> StoredSessionArtifacts {
+        var refreshToken: String? = nil
+        var accessToken: String? = nil
+        var tenantId: String? = nil
+
+        if enableSessionPerTenant {
+            tenantId = credentialManager.getLastActiveTenantId()
+            if tenantId == nil {
+                if let offlineUser = credentialManager.getOfflineUser() {
+                    tenantId = offlineUser.activeTenant.id
+                }
+            }
+            if tenantId == nil, let user = self.user {
+                tenantId = user.activeTenant.id
+            }
+
+            if let tid = tenantId {
+                refreshToken = try? credentialManager.getTokenForTenant(tenantId: tid, tokenType: .refreshToken)
+                accessToken = try? credentialManager.getTokenForTenant(tenantId: tid, tokenType: .accessToken)
+            }
+
+            // Fallback to legacy tokens if both tenant-specific tokens are nil
+            if refreshToken == nil && accessToken == nil {
+                if let legacyRefresh = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+                    refreshToken = legacyRefresh
+                }
+                if let legacyAccess = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
+                    accessToken = legacyAccess
+                }
+            }
+        } else {
+            refreshToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue)
+            accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue)
+        }
+
+        let offlineUser = credentialManager.getOfflineUser()
+        return StoredSessionArtifacts(accessToken: accessToken, refreshToken: refreshToken, offlineUser: offlineUser, tenantId: tenantId)
+    }
+
+    /// Shared state update for connectivity loss. Used by handleOfflineLikeFailure() and getOrRefreshAccessTokenAsync()
+    /// so both paths update auth/offline state consistently. Does NOT enqueue retries — only scheduled refresh paths do that.
+    private func applyConnectivityLossState(enableOfflineMode: Bool) {
+        let hasTokens = (self.refreshToken != nil || self.accessToken != nil)
+        guard hasTokens else { return }
+
+        if enableOfflineMode {
+            let offlineUser = self.credentialManager.getOfflineUser()
+            DispatchQueue.main.async {
+                self.setUser(self.user ?? offlineUser)
+                self.setInitializing(false)
+                self.setIsAuthenticated(true)
+                self.setIsOfflineMode(true)
+                self.setIsLoading(false)
+            }
+        } else {
+            DispatchQueue.main.async {
+                self.setInitializing(false)
+                self.setIsLoading(false)
+                // Keep isOfflineMode=false — app didn't opt into offline UX
+            }
+        }
+    }
+
     // MARK: - Offline-like handler
-    
+
     /// Centralized handler for errors that *behave like* no connectivity.
     /// Decides the backoff offset, updates state (including offline user), and reschedules.
     private func handleOfflineLikeFailure(
@@ -1185,22 +1311,22 @@ public class FronteggAuth: FronteggState {
             self.logger.info("Refresh rescheduled due to unknown error \(error?.localizedDescription ?? "(no error)")")
         }
         
-        self.lastAttemptReason = .noNetwork
-        
+        // Classify lastAttemptReason based on actual error type
+        self.lastAttemptReason = isConn ? .noNetwork : .unknown
+
+        let hasTokens = (self.refreshToken != nil || self.accessToken != nil)
+        self.logger.info("handleOfflineLikeFailure: isConn=\(isConn), enableOfflineMode=\(enableOfflineMode), hasTokens=\(hasTokens), attempts=\(attempts), lastAttemptReason=\(isConn ? ".noNetwork" : ".unknown")")
+
         if enableOfflineMode {
             let offlineUserData = self.credentialManager.getOfflineUser()
-            // If we have tokens, keep user authenticated even when offline
-            let hasTokens = (self.refreshToken != nil || self.accessToken != nil)
             DispatchQueue.main.async {
                 self.setUser(self.user ?? offlineUserData)
                 self.setInitializing(false)
-                // Only set isAuthenticated to false if we don't have tokens
-                // If we have tokens, keep user logged in offline
                 self.setIsAuthenticated(hasTokens)
                 self.setIsOfflineMode(true)
                 self.setIsLoading(false)
             }
-            
+
             // If we have tokens and we're offline, DON'T schedule token refreshes
             // This prevents repeated network calls when offline
             if hasTokens {
@@ -1208,18 +1334,34 @@ public class FronteggAuth: FronteggState {
                 self.cancelScheduledTokenRefresh()
                 return // Don't schedule another refresh
             }
+        } else if isConn {
+            // enableOfflineMode=false but this is a connectivity error with valid tokens.
+            // Preserve isAuthenticated; keep isOfflineMode=false (app didn't opt into offline UX).
+            if hasTokens {
+                self.logger.info("Connectivity error with valid tokens (offline mode not enabled). Preserving auth state, keeping isOfflineMode=false.")
+                DispatchQueue.main.async {
+                    self.setInitializing(false)
+                    self.setIsLoading(false)
+                }
+            }
         }
-        
+
         // When skipNetworkCheck is true and we have tokens, don't schedule refreshes
         // This prevents scheduled refreshes from calling isActive (which triggers /test calls)
-        // In offline mode with tokens, we want the user to stay logged in without network checks
-        if skipNetworkCheck && (self.refreshToken != nil || self.accessToken != nil) {
-            // Don't schedule refresh - user has tokens and we want to avoid /test calls
+        if skipNetworkCheck && hasTokens {
             self.logger.info("Skipping token refresh scheduling to avoid /test calls (offline with tokens)")
             return
         }
-        
-        scheduleTokenRefresh(offset: offset, attempts: attempts + 1, skipNetworkCheck: skipNetworkCheck)
+
+        // Exponential backoff for connectivity errors instead of fixed 2s intervals
+        let retryOffset: TimeInterval
+        if isConn {
+            retryOffset = min(TimeInterval(pow(2.0, Double(min(attempts + 2, 6)))), 60)
+        } else {
+            retryOffset = offset
+        }
+        self.logger.info("Scheduling retry in \(retryOffset)s (attempt \(attempts + 1), isConn: \(isConn))")
+        scheduleTokenRefresh(offset: retryOffset, attempts: attempts + 1, skipNetworkCheck: skipNetworkCheck)
     }
     
     public func recheckConnection() {
@@ -1320,48 +1462,10 @@ public class FronteggAuth: FronteggState {
             return false
         }
         
-        // Hard no-network (quick exit path) → route through the central handler
-        // IMPORTANT: When offline mode is enabled and we have tokens, we should NOT make /test calls
-        // Use NWPathMonitor to check network path without making HTTP calls
+        // Hard no-network (quick exit path) — advisory only; actual request errors remain authoritative
         if enableOfflineMode {
-            let isNetworkAvailable = await withCheckedContinuation { continuation in
-                let monitor = NWPathMonitor()
-                let queue = DispatchQueue(label: "NetworkPathCheckRefresh")
-                // Use a class to hold state to avoid captured var concurrency issues
-                final class ResumeState {
-                    private let lock = NSLock()
-                    private var hasResumed = false
-                    
-                    func tryResume() -> Bool {
-                        return lock.withLock {
-                            guard !hasResumed else { return false }
-                            hasResumed = true
-                            return true
-                        }
-                    }
-                }
-                let resumeState = ResumeState()
-                
-                monitor.pathUpdateHandler = { path in
-                    guard resumeState.tryResume() else { return }
-                    
-                    let available = (path.status == .satisfied)
-                    monitor.cancel()
-                    continuation.resume(returning: available)
-                }
-                
-                monitor.start(queue: queue)
-                
-                // Timeout after 0.3 seconds
-                Task {
-                    try? await Task.sleep(nanoseconds: 300_000_000)
-                    guard resumeState.tryResume() else { return }
-                    
-                    monitor.cancel()
-                    continuation.resume(returning: false)
-                }
-            }
-            
+            let isNetworkAvailable = await checkNetworkPath(timeout: 300_000_000)
+
             guard isNetworkAvailable else {
                 self.logger.info("Refresh rescheduled due to inactive internet (path check, no /test call)")
                 handleOfflineLikeFailure(
@@ -1386,8 +1490,10 @@ public class FronteggAuth: FronteggState {
             }
         }
         
-        if enableOfflineMode && self.lastAttemptReason == .noNetwork {
-            self.logger.info("Refreshing after network reconnect, offline mode enabled")
+        if self.lastAttemptReason == .noNetwork {
+            // Connectivity loss is never evidence that credentials are invalid.
+            // Bypass the attempts > 10 credential wipe for network failures.
+            self.logger.info("Network unavailable (attempt \(attempts)), preserving session. lastAttemptReason: .noNetwork")
         } else if attempts > 10 {
             self.logger.info("Refresh token attempts exceeded, logging out")
             // Preserve lastActiveTenantId when enableSessionPerTenant is enabled
@@ -1524,9 +1630,9 @@ public class FronteggAuth: FronteggState {
                 }
             }
             
-            await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
+            await self.setCredentialsInternal(accessToken: data.access_token, refreshToken: data.refresh_token, hydrationMode: .refreshPreserveCachedUser)
             self.logger.info("Token refreshed successfully")
-            
+
             // Log successful token refresh
             SentryHelper.addBreadcrumb(
                 "Token refresh successful",
@@ -1540,7 +1646,7 @@ public class FronteggAuth: FronteggState {
                     "newRefreshTokenLength": data.refresh_token.count
                 ]
             )
-            
+
             return true
             
         } catch let error as FronteggError {
@@ -1750,55 +1856,38 @@ public class FronteggAuth: FronteggState {
         
         let config = try? PlistHelper.fronteggConfig()
         let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
-        
-        // Try to reload from keychain if in-memory token is nil
+        let enableOfflineMode = config?.enableOfflineMode ?? false
+
+        // Reload both refresh and access tokens from storage using consistent precedence
+        let artifacts = resolveStoredSessionArtifacts(enableSessionPerTenant: enableSessionPerTenant)
+
+        // Reload refresh token
         var refreshToken = self.refreshToken
-        if refreshToken == nil {
-            if enableSessionPerTenant {
-                if let user = self.user {
-                    let tenantId = user.activeTenant.id
-                    if let tenantToken = try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .refreshToken) {
-                        self.logger.info("Reloaded refresh token for tenant \(tenantId) from keychain in getOrRefreshAccessTokenAsync")
-                        await MainActor.run {
-                            setRefreshToken(tenantToken)
-                        }
-                        refreshToken = tenantToken
-                    }
-                } else if let offlineUser = credentialManager.getOfflineUser() {
-                    let tenantId = offlineUser.activeTenant.id
-                    if let tenantToken = try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .refreshToken) {
-                        self.logger.info("Reloaded refresh token for tenant \(tenantId) from keychain in getOrRefreshAccessTokenAsync")
-                        await MainActor.run {
-                            setRefreshToken(tenantToken)
-                        }
-                        refreshToken = tenantToken
-                    }
-                }
-            } else {
-                // Legacy behavior: load global token
-            if let keychainToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
-                self.logger.info("Reloaded refresh token from keychain in getOrRefreshAccessTokenAsync")
-                await MainActor.run {
-                    setRefreshToken(keychainToken)
-                }
-                refreshToken = keychainToken
-                }
-            }
+        if refreshToken == nil, let storedRefresh = artifacts.refreshToken {
+            self.logger.info("Reloaded refresh token from keychain in getOrRefreshAccessTokenAsync")
+            await MainActor.run { setRefreshToken(storedRefresh) }
+            refreshToken = storedRefresh
         }
-        
+
+        // Reload access token from keychain if in-memory is nil
+        if self.accessToken == nil, let storedAccess = artifacts.accessToken {
+            self.logger.info("Reloaded access token from keychain in getOrRefreshAccessTokenAsync")
+            await MainActor.run { setAccessToken(storedAccess) }
+        }
+
         guard let refreshToken = refreshToken else {
             self.logger.info("No refresh token found in memory or keychain")
             return nil
         }
-        
+
         self.logger.info("Check if the access token exists and is still valid")
-        
+
         if let accessToken = self.accessToken {
             do {
                 let decodedToken = try JWTHelper.decode(jwtToken: accessToken)
                 if let exp = decodedToken["exp"] as? Int {
                     let offset = self.calculateOffset(expirationTime: exp)
-                    self.logger.warning("Access token offset: \(offset)")
+                    self.logger.info("Access token offset: \(offset)")
                     if offset > 15 { // Ensure token has more than 15 seconds validity
                         return accessToken
                     }
@@ -1807,7 +1896,22 @@ public class FronteggAuth: FronteggState {
                 self.logger.error("Failed to decode JWT: \(error.localizedDescription)")
             }
         }
-        
+
+        // If offline, return cached access token (even if near expiry) — no backend call can succeed
+        if enableOfflineMode {
+            let isNetworkAvailable = await checkNetworkPath(timeout: 300_000_000)
+            if !isNetworkAvailable {
+                self.logger.info("getOrRefreshAccessTokenAsync: offline, returning cached token if available")
+                applyConnectivityLossState(enableOfflineMode: enableOfflineMode)
+                if let cachedToken = self.accessToken {
+                    self.logger.info("Returning cached access token while offline (token source: in-memory)")
+                    return cachedToken
+                }
+                self.logger.info("No cached access token available offline, returning nil (not throwing)")
+                return nil
+            }
+        }
+
         self.logger.info("Refreshing access token")
         
         setRefreshingToken(true)
@@ -1856,7 +1960,7 @@ public class FronteggAuth: FronteggState {
                     data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: nil)
                 }
                 
-                await self.setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token)
+                await self.setCredentialsInternal(accessToken: data.access_token, refreshToken: data.refresh_token, hydrationMode: .refreshPreserveCachedUser)
                 self.logger.info("Token refreshed successfully")
                 return self.accessToken
             } catch let error as FronteggError {
@@ -1891,11 +1995,18 @@ public class FronteggAuth: FronteggState {
                     ]
                 ])
                 
+                // On connectivity error while offline, return cached token instead of retrying
+                if enableOfflineMode && isConnectivityError(error) {
+                    self.logger.info("Connectivity error in getOrRefreshAccessTokenAsync (FronteggError), returning cached token")
+                    applyConnectivityLossState(enableOfflineMode: enableOfflineMode)
+                    return self.accessToken
+                }
+
                 attempts += 1
                 try await Task.sleep(nanoseconds: 1_000_000_000) // Sleep for 1 second before retrying
             } catch {
                 self.logger.error("Unknown error while refreshing token: \(error.localizedDescription), retrying... (\(attempts + 1) attempts)")
-                
+
                 SentryHelper.logError(error, context: [
                     "auth": [
                         "method": "getOrRefreshAccessTokenAsync",
@@ -1906,12 +2017,19 @@ public class FronteggAuth: FronteggState {
                         "type": "unknown_token_refresh_error"
                     ]
                 ])
-                
+
+                // On connectivity error while offline, return cached token instead of retrying
+                if enableOfflineMode && isConnectivityError(error) {
+                    self.logger.info("Connectivity error in getOrRefreshAccessTokenAsync, returning cached token")
+                    applyConnectivityLossState(enableOfflineMode: enableOfflineMode)
+                    return self.accessToken
+                }
+
                 attempts += 1
                 try await Task.sleep(nanoseconds: 1_000_000_000) // Sleep for 1 second before retrying
             }
         }
-        
+
         throw FronteggError.authError(.failedToAuthenticate)
     }
     

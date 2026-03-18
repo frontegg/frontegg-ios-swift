@@ -221,7 +221,7 @@ public class CredentialManager {
             }
             try save(key: key, value: json)
         } catch {
-            logger.error("Failed to save offline user: \(error)")
+            logger.error("DIAGNOSTIC: Failed to save offline user to keychain. Offline restore will be degraded. Error: \(error)")
         }
     }
     func getOfflineUser() -> User? {
