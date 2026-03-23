@@ -10,6 +10,8 @@ import Sentry
 
 enum ApiError: Error {
     case invalidUrl(String)
+    /// Refresh returned a retryable HTTP status (5xx, 408, 429). Must not clear the session.
+    case refreshEndpointTransient(statusCode: Int, message: String)
 }
 
 
@@ -24,6 +26,13 @@ class RedirectHandler: NSObject, URLSessionTaskDelegate {
 
 public class Api {
     internal static let DEFAULT_TIMEOUT: Int = 10
+
+    /// HTTP statuses where the refresh token may still be valid; callers should retry instead of logging out.
+    private static func isTransientRefreshHTTPStatus(_ statusCode: Int) -> Bool {
+        if statusCode == 408 || statusCode == 429 { return true }
+        return (500...599).contains(statusCode)
+    }
+
     private let logger = getLogger("Api")
     private let baseUrl: String
     private let clientId: String
@@ -505,6 +514,23 @@ public class Api {
                     ])
                     
                     throw FronteggError.authError(.failedToRefreshToken(responseString))
+                } else if Self.isTransientRefreshHTTPStatus(res.statusCode) {
+                    let responseString = String(data: data, encoding: .utf8) ?? "no response body"
+                    self.logger.warning("refresh token with tenantId: transient HTTP \(res.statusCode), will retry — \(responseString)")
+                    SentryHelper.logMessage("Api: transient refresh failure (tenant), status: \(res.statusCode)", level: .warning, context: [
+                        "api": [
+                            "endpoint": "identity/resources/auth/v1/user/token/refresh",
+                            "method": "POST",
+                            "statusCode": res.statusCode,
+                            "hasTenantId": true,
+                            "tenantId": unwrappedTenantId
+                        ],
+                        "error": [
+                            "type": "refresh_token_transient",
+                            "response": responseString
+                        ]
+                    ])
+                    throw ApiError.refreshEndpointTransient(statusCode: res.statusCode, message: responseString)
                 } else if res.statusCode != 200 {
                     let responseString = String(data: data, encoding: .utf8) ?? "no response body"
                     self.logger.error("failed to refresh token with tenantId, status: \(res.statusCode), error: \(responseString)")
@@ -576,6 +602,22 @@ public class Api {
                     ])
                     
                     throw FronteggError.authError(.failedToRefreshToken(responseString))
+                } else if Self.isTransientRefreshHTTPStatus(res.statusCode) {
+                    let responseString = String(data: data, encoding: .utf8) ?? "no response body"
+                    self.logger.warning("oauth/token refresh: transient HTTP \(res.statusCode), will retry — \(responseString)")
+                    SentryHelper.logMessage("Api: transient OAuth refresh failure, status: \(res.statusCode)", level: .warning, context: [
+                        "api": [
+                            "endpoint": "oauth/token",
+                            "method": "POST",
+                            "statusCode": res.statusCode,
+                            "grantType": "refresh_token"
+                        ],
+                        "error": [
+                            "type": "refresh_token_transient",
+                            "response": responseString
+                        ]
+                    ])
+                    throw ApiError.refreshEndpointTransient(statusCode: res.statusCode, message: responseString)
                 } else if res.statusCode != 200 {
                     let responseString = String(data: data, encoding: .utf8) ?? "no response body"
                     self.logger.error("failed to refresh token, status: \(res.statusCode), error: \(responseString)")

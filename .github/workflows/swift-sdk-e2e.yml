@@ -1,5 +1,6 @@
-# Runs Swift SDK E2E tests (from e2e-system-tests) on every PR.
-# The reusable workflow checks out the PR head commit, builds the demo apps, and runs Appium tests.
+# Runs Swift SDK E2E tests (from e2e-system-tests) on PRs whose base branch is not master.
+# PRs targeting master run E2E in onPullRequestUpdated.yaml (after validate, unit tests, and build)
+# so automation matches the rest of the master PR pipeline.
 # Results appear as the "Swift SDK E2E" status check on the PR.
 # To require this check before merging, add "Swift SDK E2E" as a required status check
 # in Settings → Branches → branch protection rules for the target branch.
@@ -9,6 +10,8 @@ name: Swift SDK E2E
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    branches-ignore:
+      - master
 
 jobs:
   swift-sdk-e2e:
