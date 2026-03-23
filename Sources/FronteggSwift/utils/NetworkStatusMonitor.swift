@@ -33,6 +33,10 @@ private func deepestNSError(_ error: Error) -> NSError {
 /// Returns true if the error is very likely due to connectivity / transport problems.
 /// You can optionally pass the URLResponse (if you have it) for extra signals.
 func isConnectivityError(_ error: Error, response: URLResponse? = nil) -> Bool {
+    if let api = error as? ApiError, case .refreshEndpointTransient = api {
+        return true
+    }
+
     let e = deepestNSError(error)
 
     // 1) Classic URL errors
