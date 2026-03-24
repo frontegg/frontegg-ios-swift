@@ -711,12 +711,12 @@ public class FronteggAuth: FronteggState {
     private func setCredentialsInternal(accessToken: String, refreshToken: String, user: User? = nil, hydrationMode: CredentialHydrationMode) async {
         self.logger.info("Setting credentials (refresh token length: \(refreshToken.count), hydrationMode: \(hydrationMode == .authoritative ? "authoritative" : "refreshPreserveCachedUser"))")
 
+        var effectiveAccessToken = accessToken
+        var effectiveRefreshToken = refreshToken
+
         do {
             let config = try? PlistHelper.fronteggConfig()
             let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
-
-            // Decode token to get tenantId
-            let decode = try JWTHelper.decode(jwtToken: accessToken)
 
             // Resolve user: refresh paths prefer cached user, authoritative paths fetch from /me
             let userToUse: User
@@ -731,11 +731,19 @@ public class FronteggAuth: FronteggState {
                 self.logger.info("Refresh path: using cached offline user")
                 userToUse = offlineUser
             } else {
-                guard let fetchedUser = try await self.api.me(accessToken: accessToken) else {
+                let meResponse = try await self.api.me(accessToken: effectiveAccessToken, refreshToken: effectiveRefreshToken)
+                if let refreshedAuth = meResponse.refreshedAuth {
+                    effectiveAccessToken = refreshedAuth.access_token
+                    effectiveRefreshToken = refreshedAuth.refresh_token
+                }
+                guard let fetchedUser = meResponse.user else {
                     throw FronteggError.authError(.failedToLoadUserData("User data is nil"))
                 }
                 userToUse = fetchedUser
             }
+            
+            // Decode token to get tenantId
+            let decode = try JWTHelper.decode(jwtToken: effectiveAccessToken)
 
             var tenantIdToUse: String? = nil
 
@@ -804,8 +812,8 @@ public class FronteggAuth: FronteggState {
             // This ensures user stays logged in even if keychain save fails
             let userToSet = finalUserToUse
             await MainActor.run {
-                setRefreshToken(refreshToken)
-                setAccessToken(accessToken)
+                setRefreshToken(effectiveRefreshToken)
+                setAccessToken(effectiveAccessToken)
                 setUser(userToSet)
                 setIsAuthenticated(true)
                 setIsOfflineMode(false)
@@ -825,12 +833,12 @@ public class FronteggAuth: FronteggState {
             // Now try to save to keychain (non-critical - user is already logged in)
             do {
                 if enableSessionPerTenant, let tenantId = tenantIdToUse {
-                    try self.credentialManager.saveTokenForTenant(refreshToken, tenantId: tenantId, tokenType: .refreshToken)
-                    try self.credentialManager.saveTokenForTenant(accessToken, tenantId: tenantId, tokenType: .accessToken)
+                    try self.credentialManager.saveTokenForTenant(effectiveRefreshToken, tenantId: tenantId, tokenType: .refreshToken)
+                    try self.credentialManager.saveTokenForTenant(effectiveAccessToken, tenantId: tenantId, tokenType: .accessToken)
                     logger.info("Saved tokens for tenant: \(tenantId)")
                 } else {
-                    try self.credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: refreshToken)
-                    try self.credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: accessToken)
+                    try self.credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: effectiveRefreshToken)
+                    try self.credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: effectiveAccessToken)
                     logger.info("Saved tokens to keychain")
                 }
 
@@ -859,8 +867,8 @@ public class FronteggAuth: FronteggState {
                 self.logger.warning("Refresh: /me failed due to connectivity. Preserving session with tokens.")
                 let enableSessionPerTenant = (try? PlistHelper.fronteggConfig())?.enableSessionPerTenant ?? false
                 await MainActor.run {
-                    setRefreshToken(refreshToken)
-                    setAccessToken(accessToken)
+                    setRefreshToken(effectiveRefreshToken)
+                    setAccessToken(effectiveAccessToken)
                     if self.user == nil, let offlineUser = self.credentialManager.getOfflineUser() {
                         setUser(offlineUser)
                     }
@@ -872,11 +880,11 @@ public class FronteggAuth: FronteggState {
                 // Persist refreshed tokens to keychain so they survive app crash/kill
                 do {
                     if enableSessionPerTenant, let tenantId = credentialManager.getLastActiveTenantId() {
-                        try credentialManager.saveTokenForTenant(refreshToken, tenantId: tenantId, tokenType: .refreshToken)
-                        try credentialManager.saveTokenForTenant(accessToken, tenantId: tenantId, tokenType: .accessToken)
+                        try credentialManager.saveTokenForTenant(effectiveRefreshToken, tenantId: tenantId, tokenType: .refreshToken)
+                        try credentialManager.saveTokenForTenant(effectiveAccessToken, tenantId: tenantId, tokenType: .accessToken)
                     } else {
-                        try credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: refreshToken)
-                        try credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: accessToken)
+                        try credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: effectiveRefreshToken)
+                        try credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: effectiveAccessToken)
                     }
                     self.logger.info("Persisted refreshed tokens to keychain (post-/me connectivity failure)")
                 } catch {
@@ -884,7 +892,7 @@ public class FronteggAuth: FronteggState {
                 }
                 // Schedule token refresh so fresh tokens don't silently expire
                 let refreshOffset: TimeInterval
-                if let decode = try? JWTHelper.decode(jwtToken: accessToken),
+                if let decode = try? JWTHelper.decode(jwtToken: effectiveAccessToken),
                    let exp = decode["exp"] as? Int {
                     refreshOffset = calculateOffset(expirationTime: exp)
                 } else {
@@ -1852,9 +1860,11 @@ public class FronteggAuth: FronteggState {
             
             do {
                 logger.info("Going to load user data")
-                let user = try await self.api.me(accessToken: data.access_token)
+                let meResponse = try await self.api.me(accessToken: data.access_token, refreshToken: data.refresh_token)
+                let effectiveAccessToken = meResponse.refreshedAuth?.access_token ?? data.access_token
+                let effectiveRefreshToken = meResponse.refreshedAuth?.refresh_token ?? data.refresh_token
                 
-                guard let user = user else {
+                guard let user = meResponse.user else {
                     DispatchQueue.main.async {
                         completion(.failure(FronteggError.authError(.failedToLoadUserData("User data is nil"))))
                         self.setIsLoading(false)
@@ -1863,7 +1873,7 @@ public class FronteggAuth: FronteggState {
                     return
                 }
                 
-                await setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token, user: user)
+                await setCredentials(accessToken: effectiveAccessToken, refreshToken: effectiveRefreshToken, user: user)
                 
                 // Call completion on main thread to avoid race conditions
                 // This ensures the completion handler always runs on the main thread

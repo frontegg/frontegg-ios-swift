@@ -712,10 +712,11 @@ public class Api {
         }
     }
     
-    internal func me(accessToken: String) async throws -> User? {
+    internal func me(accessToken: String, refreshToken: String? = nil) async throws -> (user: User?, refreshedAuth: AuthResponse?) {
         let (meData, _) = try await getRequest(path: "identity/resources/users/v2/me", accessToken: accessToken)
         
         var meObj = try JSONSerialization.jsonObject(with: meData, options: [])  as! [String: Any]
+        var refreshedAuth: AuthResponse? = nil
         
         // Retry /me/tenants once with 1s delay to handle webhook race conditions where
         // customer prehooks/webhooks change the user's tenant during authentication,
@@ -751,9 +752,13 @@ public class Api {
         // to get a new JWT with the correct tenantId, then retry /me/tenants.
         if !tenantsFetched {
             self.logger.warning("Tenants not fetched after retry with same token. Attempting token re-refresh for corrected JWT.")
-            if let rt = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+            if let rt = refreshToken ?? (try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue)) {
                 do {
-                    let newAuth = try await refreshToken(refreshToken: rt, tenantId: nil)
+                    let newAuth = try await self.refreshToken(refreshToken: rt, tenantId: nil)
+                    refreshedAuth = newAuth
+                    // Persist immediately so rotated tokens are not lost if retry logic fails.
+                    try? credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: newAuth.access_token)
+                    try? credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: newAuth.refresh_token)
                     let (retryTenantsData, _) = try await getRequest(
                         path: "identity/resources/users/v3/me/tenants",
                         accessToken: newAuth.access_token
@@ -763,8 +768,6 @@ public class Api {
                         tenantsObj = retryParsed
                         tenantsFetched = true
                         self.logger.info("Tenants fetched successfully after token re-refresh")
-                        try? credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: newAuth.access_token)
-                        try? credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: newAuth.refresh_token)
                         // Re-fetch /me with the corrected token for consistency
                         let (freshMeData, _) = try await getRequest(
                             path: "identity/resources/users/v2/me",
@@ -795,7 +798,7 @@ public class Api {
         let mergedData = try JSONSerialization.data(withJSONObject: meObj)
         
         
-        return try JSONDecoder().decode(User.self, from: mergedData)
+        return (try JSONDecoder().decode(User.self, from: mergedData), refreshedAuth)
     }
     
     public func switchTenant(tenantId: String, accessToken: String? = nil) async throws -> Void {
