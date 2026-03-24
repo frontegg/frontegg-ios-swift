@@ -726,8 +726,25 @@ public class FronteggAuth: FronteggState {
             if let providedUser = user {
                 userToUse = providedUser
             } else if hydrationMode == .refreshPreserveCachedUser, let existingUser = self.user {
-                self.logger.info("Refresh path: using existing in-memory user")
-                userToUse = existingUser
+                let jwtTenantId = decode["tenantId"] as? String
+                if jwtTenantId != nil && jwtTenantId != existingUser.tenantId {
+                    // Server changed the user's active tenant (e.g. removed from previous tenant).
+                    // Must fetch fresh user data instead of reusing stale cache.
+                    self.logger.info("Refresh path: tenant changed in JWT (\(jwtTenantId!) vs cached \(existingUser.tenantId)), fetching fresh user data")
+                    let meResult = try await self.api.me(accessToken: accessToken, refreshToken: refreshToken)
+                    guard let fetchedUser = meResult.user else {
+                        throw FronteggError.authError(.failedToLoadUserData("User data is nil"))
+                    }
+                    userToUse = fetchedUser
+                    if let newTokens = meResult.refreshedTokens {
+                        accessToken = newTokens.access_token
+                        refreshToken = newTokens.refresh_token
+                        decode = try JWTHelper.decode(jwtToken: accessToken)
+                    }
+                } else {
+                    self.logger.info("Refresh path: using existing in-memory user (tenant unchanged)")
+                    userToUse = existingUser
+                }
             } else if hydrationMode == .refreshPreserveCachedUser,
                       let config = config, config.enableOfflineMode,
                       let offlineUser = self.credentialManager.getOfflineUser() {

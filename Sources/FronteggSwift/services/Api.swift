@@ -808,9 +808,20 @@ public class Api {
         meObj["activeTenant"] = tenantsObj["activeTenant"]
         
         let mergedData = try JSONSerialization.data(withJSONObject: meObj)
-        
-        
-        let user = try JSONDecoder().decode(User.self, from: mergedData)
+
+
+        var user = try JSONDecoder().decode(User.self, from: mergedData)
+
+        // Validate activeTenant is still in the user's tenant list.
+        // The /me/tenants response may return a stale activeTenant based on
+        // the JWT's tenantId if the user was removed from that tenant.
+        if !user.tenants.contains(where: { $0.id == user.activeTenant.id }),
+           let firstTenant = user.tenants.first {
+            self.logger.warning("activeTenant \(user.activeTenant.id) not in tenants list, correcting to \(firstTenant.id)")
+            user.activeTenant = firstTenant
+            user.tenantId = firstTenant.tenantId
+        }
+
         return MeResult(user: user, refreshedTokens: reRefreshedAuth)
     }
     
