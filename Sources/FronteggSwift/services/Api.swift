@@ -14,6 +14,13 @@ enum ApiError: Error {
     case refreshEndpointTransient(statusCode: Int, message: String)
 }
 
+/// Result of `me()`. When a token re-refresh was performed,
+/// `refreshedTokens` carries the new tokens that the caller must adopt.
+internal struct MeResult {
+    let user: User?
+    let refreshedTokens: AuthResponse?
+}
+
 
 class RedirectHandler: NSObject, URLSessionTaskDelegate {
     // This method allows you to control redirect behavior
@@ -712,7 +719,7 @@ public class Api {
         }
     }
     
-    internal func me(accessToken: String) async throws -> User? {
+    internal func me(accessToken: String, refreshToken: String) async throws -> MeResult {
         let (meData, _) = try await getRequest(path: "identity/resources/users/v2/me", accessToken: accessToken)
         
         var meObj = try JSONSerialization.jsonObject(with: meData, options: [])  as! [String: Any]
@@ -749,11 +756,21 @@ public class Api {
         // If tenants still weren't fetched, the JWT's tenantId may not match the user's
         // actual tenant (prehook changed it during JWT generation). Re-refresh the token
         // to get a new JWT with the correct tenantId, then retry /me/tenants.
+        var reRefreshedAuth: AuthResponse? = nil
+
         if !tenantsFetched {
             self.logger.warning("Tenants not fetched after retry with same token. Attempting token re-refresh for corrected JWT.")
-            if let rt = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+            do {
+                let newAuth = try await self.refreshToken(refreshToken: refreshToken, tenantId: nil)
+
+                // Save tokens immediately after refresh succeeds, before retrying tenants.
+                // Under refresh token rotation the old token is consumed — we must persist
+                // the new one regardless of whether the tenant fetch below succeeds.
+                try? credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: newAuth.access_token)
+                try? credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: newAuth.refresh_token)
+                reRefreshedAuth = newAuth
+
                 do {
-                    let newAuth = try await refreshToken(refreshToken: rt, tenantId: nil)
                     let (retryTenantsData, _) = try await getRequest(
                         path: "identity/resources/users/v3/me/tenants",
                         accessToken: newAuth.access_token
@@ -763,8 +780,6 @@ public class Api {
                         tenantsObj = retryParsed
                         tenantsFetched = true
                         self.logger.info("Tenants fetched successfully after token re-refresh")
-                        try? credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: newAuth.access_token)
-                        try? credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: newAuth.refresh_token)
                         // Re-fetch /me with the corrected token for consistency
                         let (freshMeData, _) = try await getRequest(
                             path: "identity/resources/users/v2/me",
@@ -773,8 +788,10 @@ public class Api {
                         meObj = try JSONSerialization.jsonObject(with: freshMeData, options: []) as! [String: Any]
                     }
                 } catch {
-                    self.logger.error("Token re-refresh or tenant retry failed: \(error.localizedDescription)")
+                    self.logger.error("Tenant retry after re-refresh failed: \(error.localizedDescription)")
                 }
+            } catch {
+                self.logger.error("Token re-refresh failed: \(error.localizedDescription)")
             }
         }
 
@@ -795,7 +812,8 @@ public class Api {
         let mergedData = try JSONSerialization.data(withJSONObject: meObj)
         
         
-        return try JSONDecoder().decode(User.self, from: mergedData)
+        let user = try JSONDecoder().decode(User.self, from: mergedData)
+        return MeResult(user: user, refreshedTokens: reRefreshedAuth)
     }
     
     public func switchTenant(tenantId: String, accessToken: String? = nil) async throws -> Void {

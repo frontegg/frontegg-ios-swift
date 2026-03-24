@@ -711,6 +711,9 @@ public class FronteggAuth: FronteggState {
     private func setCredentialsInternal(accessToken: String, refreshToken: String, user: User? = nil, hydrationMode: CredentialHydrationMode) async {
         self.logger.info("Setting credentials (refresh token length: \(refreshToken.count), hydrationMode: \(hydrationMode == .authoritative ? "authoritative" : "refreshPreserveCachedUser"))")
 
+        var accessToken = accessToken
+        var refreshToken = refreshToken
+
         do {
             let config = try? PlistHelper.fronteggConfig()
             let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
@@ -731,10 +734,19 @@ public class FronteggAuth: FronteggState {
                 self.logger.info("Refresh path: using cached offline user")
                 userToUse = offlineUser
             } else {
-                guard let fetchedUser = try await self.api.me(accessToken: accessToken) else {
+                let meResult = try await self.api.me(accessToken: accessToken, refreshToken: refreshToken)
+                guard let fetchedUser = meResult.user else {
                     throw FronteggError.authError(.failedToLoadUserData("User data is nil"))
                 }
                 userToUse = fetchedUser
+
+                // If me() performed a token re-refresh (prehook race condition),
+                // adopt the new tokens — the originals were consumed by rotation.
+                if let newTokens = meResult.refreshedTokens {
+                    accessToken = newTokens.access_token
+                    refreshToken = newTokens.refresh_token
+                    self.logger.info("Adopted re-refreshed tokens from me() call")
+                }
             }
 
             var tenantIdToUse: String? = nil
@@ -1852,9 +1864,9 @@ public class FronteggAuth: FronteggState {
             
             do {
                 logger.info("Going to load user data")
-                let user = try await self.api.me(accessToken: data.access_token)
-                
-                guard let user = user else {
+                let meResult = try await self.api.me(accessToken: data.access_token, refreshToken: data.refresh_token)
+
+                guard let user = meResult.user else {
                     DispatchQueue.main.async {
                         completion(.failure(FronteggError.authError(.failedToLoadUserData("User data is nil"))))
                         self.setIsLoading(false)
@@ -1862,8 +1874,10 @@ public class FronteggAuth: FronteggState {
                     }
                     return
                 }
-                
-                await setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token, user: user)
+
+                let finalAccessToken = meResult.refreshedTokens?.access_token ?? data.access_token
+                let finalRefreshToken = meResult.refreshedTokens?.refresh_token ?? data.refresh_token
+                await setCredentials(accessToken: finalAccessToken, refreshToken: finalRefreshToken, user: user)
                 
                 // Call completion on main thread to avoid race conditions
                 // This ensures the completion handler always runs on the main thread
