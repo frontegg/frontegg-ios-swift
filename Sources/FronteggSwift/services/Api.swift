@@ -14,6 +14,13 @@ enum ApiError: Error {
     case refreshEndpointTransient(statusCode: Int, message: String)
 }
 
+/// Result of `me()`. When a token re-refresh was performed,
+/// `refreshedTokens` carries the new tokens that the caller must adopt.
+internal struct MeResult {
+    let user: User?
+    let refreshedTokens: AuthResponse?
+}
+
 
 class RedirectHandler: NSObject, URLSessionTaskDelegate {
     // This method allows you to control redirect behavior
@@ -712,33 +719,110 @@ public class Api {
         }
     }
     
-    internal func me(accessToken: String) async throws -> User? {
+    internal func me(accessToken: String, refreshToken: String) async throws -> MeResult {
         let (meData, _) = try await getRequest(path: "identity/resources/users/v2/me", accessToken: accessToken)
         
         var meObj = try JSONSerialization.jsonObject(with: meData, options: [])  as! [String: Any]
         
-        let (tenantsData, _) = try await getRequest(path: "identity/resources/users/v3/me/tenants", accessToken: accessToken)
-        
-        let tenantsObj = try JSONSerialization.jsonObject(with: tenantsData, options: [])  as! [String: Any]
-        
-        if let tenants = tenantsObj["tenants"] as? [[String: Any]] {
-            self.logger.info("Found \(tenants.count) tenant(s) from API")
-            for tenant in tenants {
-                if let name = tenant["name"] as? String, let id = tenant["id"] as? String {
-                    self.logger.info("  - Tenant: \(name) (ID: \(id))")
+        // Retry /me/tenants once with 1s delay to handle webhook race conditions where
+        // customer prehooks/webhooks change the user's tenant during authentication,
+        // causing the first /me/tenants call to return an error (e.g., ER-00004).
+        var tenantsObj: [String: Any] = [:]
+        var tenantsFetched = false
+
+        for attempt in 1...2 {
+            do {
+                let (tenantsData, _) = try await getRequest(path: "identity/resources/users/v3/me/tenants", accessToken: accessToken)
+                let parsed = try JSONSerialization.jsonObject(with: tenantsData, options: []) as! [String: Any]
+
+                if parsed["tenants"] != nil {
+                    tenantsObj = parsed
+                    tenantsFetched = true
+                    break
+                } else {
+                    self.logger.warning("No tenants array found in API response (attempt \(attempt)/2): \(parsed)")
+                    if attempt == 1 {
+                        try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                    }
+                }
+            } catch {
+                self.logger.warning("Failed to fetch tenants (attempt \(attempt)/2): \(error.localizedDescription)")
+                if attempt == 1 {
+                    try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
                 }
             }
-        } else {
-            self.logger.warning("No tenants array found in API response: \(tenantsObj)")
         }
-        
+
+        // If tenants still weren't fetched, the JWT's tenantId may not match the user's
+        // actual tenant (prehook changed it during JWT generation). Re-refresh the token
+        // to get a new JWT with the correct tenantId, then retry /me/tenants.
+        var reRefreshedAuth: AuthResponse? = nil
+
+        if !tenantsFetched {
+            self.logger.warning("Tenants not fetched after retry with same token. Attempting token re-refresh for corrected JWT.")
+            do {
+                let newAuth = try await self.refreshToken(refreshToken: refreshToken, tenantId: nil)
+
+                // Token persistence is handled by the caller via MeResult.refreshedTokens.
+                // We do NOT save to keychain here because Api's credentialManager may use
+                // a different service key than the app's configured keychainService.
+                reRefreshedAuth = newAuth
+
+                do {
+                    let (retryTenantsData, _) = try await getRequest(
+                        path: "identity/resources/users/v3/me/tenants",
+                        accessToken: newAuth.access_token
+                    )
+                    let retryParsed = try JSONSerialization.jsonObject(with: retryTenantsData, options: []) as! [String: Any]
+                    if retryParsed["tenants"] != nil {
+                        tenantsObj = retryParsed
+                        tenantsFetched = true
+                        self.logger.info("Tenants fetched successfully after token re-refresh")
+                        // Re-fetch /me with the corrected token for consistency
+                        let (freshMeData, _) = try await getRequest(
+                            path: "identity/resources/users/v2/me",
+                            accessToken: newAuth.access_token
+                        )
+                        meObj = try JSONSerialization.jsonObject(with: freshMeData, options: []) as! [String: Any]
+                    }
+                } catch {
+                    self.logger.error("Tenant retry after re-refresh failed: \(error.localizedDescription)")
+                }
+            } catch {
+                self.logger.error("Token re-refresh failed: \(error.localizedDescription)")
+            }
+        }
+
+        if tenantsFetched {
+            if let tenants = tenantsObj["tenants"] as? [[String: Any]] {
+                self.logger.info("Found \(tenants.count) tenant(s) from API")
+                for tenant in tenants {
+                    if let name = tenant["name"] as? String, let id = tenant["id"] as? String {
+                        self.logger.info("  - Tenant: \(name) (ID: \(id))")
+                    }
+                }
+            }
+        }
+
         meObj["tenants"] = tenantsObj["tenants"]
         meObj["activeTenant"] = tenantsObj["activeTenant"]
         
         let mergedData = try JSONSerialization.data(withJSONObject: meObj)
-        
-        
-        return try JSONDecoder().decode(User.self, from: mergedData)
+
+
+        var user = try JSONDecoder().decode(User.self, from: mergedData)
+
+        // Validate activeTenant is still in the user's tenant list.
+        // The /me/tenants response may return a stale activeTenant based on
+        // the JWT's tenantId if the user was removed from that tenant.
+        if !user.tenants.contains(where: { $0.id == user.activeTenant.id }),
+           let firstTenant = user.tenants.first {
+            self.logger.warning("activeTenant \(user.activeTenant.id) not in tenants list, correcting to \(firstTenant.id)")
+            user.activeTenant = firstTenant
+            user.tenantId = firstTenant.tenantId
+        }
+
+        return MeResult(user: user, refreshedTokens: reRefreshedAuth)
     }
     
     public func switchTenant(tenantId: String, accessToken: String? = nil) async throws -> Void {
