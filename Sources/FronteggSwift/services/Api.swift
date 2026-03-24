@@ -717,21 +717,78 @@ public class Api {
         
         var meObj = try JSONSerialization.jsonObject(with: meData, options: [])  as! [String: Any]
         
-        let (tenantsData, _) = try await getRequest(path: "identity/resources/users/v3/me/tenants", accessToken: accessToken)
-        
-        let tenantsObj = try JSONSerialization.jsonObject(with: tenantsData, options: [])  as! [String: Any]
-        
-        if let tenants = tenantsObj["tenants"] as? [[String: Any]] {
-            self.logger.info("Found \(tenants.count) tenant(s) from API")
-            for tenant in tenants {
-                if let name = tenant["name"] as? String, let id = tenant["id"] as? String {
-                    self.logger.info("  - Tenant: \(name) (ID: \(id))")
+        // Retry /me/tenants once with 1s delay to handle webhook race conditions where
+        // customer prehooks/webhooks change the user's tenant during authentication,
+        // causing the first /me/tenants call to return an error (e.g., ER-00004).
+        var tenantsObj: [String: Any] = [:]
+        var tenantsFetched = false
+
+        for attempt in 1...2 {
+            do {
+                let (tenantsData, _) = try await getRequest(path: "identity/resources/users/v3/me/tenants", accessToken: accessToken)
+                let parsed = try JSONSerialization.jsonObject(with: tenantsData, options: []) as! [String: Any]
+
+                if parsed["tenants"] != nil {
+                    tenantsObj = parsed
+                    tenantsFetched = true
+                    break
+                } else {
+                    self.logger.warning("No tenants array found in API response (attempt \(attempt)/2): \(parsed)")
+                    if attempt == 1 {
+                        try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                    }
+                }
+            } catch {
+                self.logger.warning("Failed to fetch tenants (attempt \(attempt)/2): \(error.localizedDescription)")
+                if attempt == 1 {
+                    try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
                 }
             }
-        } else {
-            self.logger.warning("No tenants array found in API response: \(tenantsObj)")
         }
-        
+
+        // If tenants still weren't fetched, the JWT's tenantId may not match the user's
+        // actual tenant (prehook changed it during JWT generation). Re-refresh the token
+        // to get a new JWT with the correct tenantId, then retry /me/tenants.
+        if !tenantsFetched {
+            self.logger.warning("Tenants not fetched after retry with same token. Attempting token re-refresh for corrected JWT.")
+            if let rt = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue) {
+                do {
+                    let newAuth = try await refreshToken(refreshToken: rt, tenantId: nil)
+                    let (retryTenantsData, _) = try await getRequest(
+                        path: "identity/resources/users/v3/me/tenants",
+                        accessToken: newAuth.access_token
+                    )
+                    let retryParsed = try JSONSerialization.jsonObject(with: retryTenantsData, options: []) as! [String: Any]
+                    if retryParsed["tenants"] != nil {
+                        tenantsObj = retryParsed
+                        tenantsFetched = true
+                        self.logger.info("Tenants fetched successfully after token re-refresh")
+                        try? credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: newAuth.access_token)
+                        try? credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: newAuth.refresh_token)
+                        // Re-fetch /me with the corrected token for consistency
+                        let (freshMeData, _) = try await getRequest(
+                            path: "identity/resources/users/v2/me",
+                            accessToken: newAuth.access_token
+                        )
+                        meObj = try JSONSerialization.jsonObject(with: freshMeData, options: []) as! [String: Any]
+                    }
+                } catch {
+                    self.logger.error("Token re-refresh or tenant retry failed: \(error.localizedDescription)")
+                }
+            }
+        }
+
+        if tenantsFetched {
+            if let tenants = tenantsObj["tenants"] as? [[String: Any]] {
+                self.logger.info("Found \(tenants.count) tenant(s) from API")
+                for tenant in tenants {
+                    if let name = tenant["name"] as? String, let id = tenant["id"] as? String {
+                        self.logger.info("  - Tenant: \(name) (ID: \(id))")
+                    }
+                }
+            }
+        }
+
         meObj["tenants"] = tenantsObj["tenants"]
         meObj["activeTenant"] = tenantsObj["activeTenant"]
         
