@@ -763,11 +763,9 @@ public class Api {
             do {
                 let newAuth = try await self.refreshToken(refreshToken: refreshToken, tenantId: nil)
 
-                // Save tokens immediately after refresh succeeds, before retrying tenants.
-                // Under refresh token rotation the old token is consumed — we must persist
-                // the new one regardless of whether the tenant fetch below succeeds.
-                try? credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: newAuth.access_token)
-                try? credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: newAuth.refresh_token)
+                // Token persistence is handled by the caller via MeResult.refreshedTokens.
+                // We do NOT save to keychain here because Api's credentialManager may use
+                // a different service key than the app's configured keychainService.
                 reRefreshedAuth = newAuth
 
                 do {
