@@ -719,7 +719,7 @@ public class FronteggAuth: FronteggState {
             let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
 
             // Decode token to get tenantId
-            let decode = try JWTHelper.decode(jwtToken: accessToken)
+            var decode = try JWTHelper.decode(jwtToken: accessToken)
 
             // Resolve user: refresh paths prefer cached user, authoritative paths fetch from /me
             let userToUse: User
@@ -745,6 +745,7 @@ public class FronteggAuth: FronteggState {
                 if let newTokens = meResult.refreshedTokens {
                     accessToken = newTokens.access_token
                     refreshToken = newTokens.refresh_token
+                    decode = try JWTHelper.decode(jwtToken: accessToken)
                     self.logger.info("Adopted re-refreshed tokens from me() call")
                 }
             }
