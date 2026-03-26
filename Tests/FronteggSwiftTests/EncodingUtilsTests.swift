@@ -21,7 +21,6 @@ final class EncodingUtilsTests: XCTestCase {
     func test_toDecodedData_handlesBase64URLReplacements() {
         // Base64URL uses - and _ instead of + and /
         let base64URL = "SGVsbG8-" // invalid but tests replacement
-        let normalized = base64URL.replacingOccurrences(of: "-", with: "+")
         let data = base64URL.toDecodedData()
         // After replacement: SGVsbG8+ ; with padding: SGVsbG8+=
         XCTAssertNotNil(data)

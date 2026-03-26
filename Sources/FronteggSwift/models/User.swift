@@ -6,7 +6,7 @@
 
 import Foundation
 
-public struct User: Codable, Equatable {
+public struct User: Codable, Equatable, Sendable {
     
     enum DecodeError: Error {
         case invalidJsonData

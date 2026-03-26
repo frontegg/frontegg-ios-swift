@@ -1019,7 +1019,7 @@ public class Api {
     
     
     internal func getFeatureFlags() async throws -> String {
-        let (stringData, _) = try await FronteggAuth.shared.api.getRequest(path: "/flags", accessToken: nil)
+        let (stringData, _) = try await self.getRequest(path: "/flags", accessToken: nil)
         
         return String(data: stringData, encoding: .utf8) ?? ""
     }

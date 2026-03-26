@@ -197,12 +197,13 @@ public class FronteggAuth: FronteggState {
     /// Resets entitlements load state when entitlements instance is replaced (e.g. manualInit, region switch).
     /// Invokes any pending completions with false to indicate the load was aborted.
     private func resetEntitlementsLoadState() {
-        entitlementsLoadLock.lock()
-        entitlementsLoadInProgress = false
-        entitlementsLoadForceRefreshPending = false
-        let pending = entitlementsLoadPendingCompletions
-        entitlementsLoadPendingCompletions.removeAll()
-        entitlementsLoadLock.unlock()
+        let pending = entitlementsLoadLock.withLock { () -> [((Bool) -> Void)] in
+            entitlementsLoadInProgress = false
+            entitlementsLoadForceRefreshPending = false
+            let pending = entitlementsLoadPendingCompletions
+            entitlementsLoadPendingCompletions.removeAll()
+            return pending
+        }
         pending.forEach { c in
             if Thread.isMainThread {
                 c(false)
@@ -258,6 +259,26 @@ public class FronteggAuth: FronteggState {
         performEntitlementsLoad()
     }
 
+    private enum EntitlementsLoadNextStep {
+        case reload
+        case invoke([((Bool) -> Void)])
+    }
+
+    private func finishEntitlementsLoadCycle() -> EntitlementsLoadNextStep {
+        entitlementsLoadLock.withLock {
+            entitlementsLoadInProgress = false
+            if entitlementsLoadForceRefreshPending {
+                entitlementsLoadForceRefreshPending = false
+                entitlementsLoadInProgress = true
+                return .reload
+            }
+
+            let completions = entitlementsLoadPendingCompletions
+            entitlementsLoadPendingCompletions.removeAll()
+            return .invoke(completions)
+        }
+    }
+
     private func performEntitlementsLoad() {
         Task {
             let success: Bool
@@ -267,18 +288,12 @@ public class FronteggAuth: FronteggState {
                 logger.warning("loadEntitlements: no access token available")
                 success = false
             }
-            entitlementsLoadLock.lock()
-            entitlementsLoadInProgress = false
-            if entitlementsLoadForceRefreshPending {
-                entitlementsLoadForceRefreshPending = false
-                entitlementsLoadInProgress = true
-                entitlementsLoadLock.unlock()
+
+            switch finishEntitlementsLoadCycle() {
+            case .reload:
                 performEntitlementsLoad()
-            } else {
-                let toInvoke = entitlementsLoadPendingCompletions
-                entitlementsLoadPendingCompletions.removeAll()
-                entitlementsLoadLock.unlock()
-                toInvoke.forEach { $0(success) }
+            case .invoke(let completions):
+                completions.forEach { $0(success) }
             }
         }
     }
@@ -415,14 +430,10 @@ public class FronteggAuth: FronteggState {
         // If refreshTokenIfNeeded() succeeds, $accessToken subscription stops monitoring.
         // If it fails, monitoring stays active to detect the next reconnection.
 
-        DispatchQueue.global(qos: .background).async {
-            Task {
-                // Refresh tokens to get fresh tokens + re-fetch /me user data
-                _ = await self.refreshTokenIfNeeded()
-                await self.featureFlags.start()
-                SentryHelper.setSentryEnabledFromFeatureFlag(self.featureFlags.isOn(FeatureFlags.mobileEnableLoggingKey))
-                await SocialLoginUrlGenerator.shared.reloadConfigs()
-            }
+        Task {
+            // Refresh tokens to get fresh tokens + re-fetch /me user data
+            _ = await self.refreshTokenIfNeeded()
+            await self.startPostConnectivityServices()
         }
     }
     public func disconnectedFromInternet() {
@@ -445,12 +456,10 @@ public class FronteggAuth: FronteggState {
         initialNetworkAvailable: Bool,
         debounceDelay: TimeInterval? = nil,
         recoveryProbeCount: Int = 2,
-        connectivityProbe: @escaping () async -> Bool,
-        onConnected: @escaping () async -> Void = {}
+        connectivityProbe: @escaping () async -> Bool
     ) async -> Bool {
         if initialNetworkAvailable {
             self.setIsOfflineMode(false)
-            await onConnected()
             return true
         }
 
@@ -468,13 +477,19 @@ public class FronteggAuth: FronteggState {
                 offlineDebounceWork?.cancel()
                 offlineDebounceWork = nil
                 self.setIsOfflineMode(false)
-                await onConnected()
                 return true
             }
         }
 
         self.setIsOfflineMode(true)
         return false
+    }
+
+    private func startPostConnectivityServices() async {
+        await self.featureFlags.start()
+        SentryHelper.setSentryEnabledFromFeatureFlag(self.featureFlags.isOn(FeatureFlags.mobileEnableLoggingKey))
+        await SocialLoginUrlGenerator.shared.reloadConfigs()
+        self.warmingWebViewAsync()
     }
     
     public func initializeSubscriptions() {
@@ -617,6 +632,9 @@ public class FronteggAuth: FronteggState {
             // Clear flag (initialization complete)
             self.isInitializingWithTokens = false
         }
+
+        let refreshTokenSnapshot = refreshToken
+        let accessTokenSnapshot = accessToken
         
         if hasAnySessionArtifacts {
             // Explicitly stop any existing monitoring before setting tokens
@@ -635,93 +653,62 @@ public class FronteggAuth: FronteggState {
 
             // For offline mode, check network path status without making /test calls
             if enableOfflineMode {
-                DispatchQueue.global(qos: .userInitiated).async {
-                    Task {
-                        let isNetworkAvailable = await self.checkNetworkPath(timeout: 500_000_000)
+                Task { [accessTokenSnapshot, canRestoreOfflineAuthenticatedState, refreshTokenSnapshot] in
+                    let isNetworkAvailable = await self.checkNetworkPath(timeout: 500_000_000)
 
-                        if !isNetworkAvailable {
-                            self.cancelScheduledTokenRefresh()
-                            let offlineUser = self.credentialManager.getOfflineUser()
+                    if !isNetworkAvailable {
+                        self.cancelScheduledTokenRefresh()
+                        let offlineUser = self.credentialManager.getOfflineUser()
 
-                            if canRestoreOfflineAuthenticatedState {
-                                // Log which restore branch was taken
-                                if refreshToken != nil && accessToken != nil {
-                                    self.logger.info("Offline restore: full token pair")
-                                } else if accessToken != nil {
-                                    self.logger.info("Offline restore: access-token-only (no refresh capability)")
-                                } else {
-                                    self.logger.info("Offline restore: refresh-token + offlineUser")
-                                }
-                                await MainActor.run {
-                                    self.setUser(self.user ?? offlineUser)
-                                    self.setIsAuthenticated(true)
-                                    self.setIsOfflineMode(true)
-                                    self.setIsLoading(false)
-                                    self.setInitializing(false)
-                                }
+                        if canRestoreOfflineAuthenticatedState {
+                            // Log which restore branch was taken
+                            if refreshTokenSnapshot != nil && accessTokenSnapshot != nil {
+                                self.logger.info("Offline restore: full token pair")
+                            } else if accessTokenSnapshot != nil {
+                                self.logger.info("Offline restore: access-token-only (no refresh capability)")
                             } else {
-                                // refresh-token-only, no offlineUser — preserve artifacts for reconnect
-                                // but do NOT show logged-in UI (not enough cached state for meaningful offline access)
-                                // Note: this is the only remaining case since we're inside `if hasAnySessionArtifacts`
-                                self.logger.warning("Offline: refresh-token only, no offlineUser. Preserving artifacts, not offline-authenticated.")
-
-                                // Restart monitoring so reconnectedToInternet() can trigger a refresh when network returns.
-                                // Monitoring was stopped earlier because hasAnySessionArtifacts was true.
-                                let token = NetworkStatusMonitor.addOnChangeReturningToken { [weak self] reachable in
-                                    guard let self = self else { return }
-                                    if reachable {
-                                        self.reconnectedToInternet()
-                                    } else {
-                                        self.disconnectedFromInternet()
-                                    }
-                                }
-                                self.networkMonitoringToken = token
-                                let interval = (try? PlistHelper.fronteggConfig())?.networkMonitoringInterval ?? 10
-                                NetworkStatusMonitor.startBackgroundMonitoring(interval: interval, onChange: nil)
-
-                                await MainActor.run {
-                                    self.setIsAuthenticated(false)
-                                    self.setIsOfflineMode(true)
-                                    self.setIsLoading(false)
-                                    self.setInitializing(false)
-                                }
+                                self.logger.info("Offline restore: refresh-token + offlineUser")
+                            }
+                            await MainActor.run {
+                                self.setUser(self.user ?? offlineUser)
+                                self.setIsAuthenticated(true)
+                                self.setIsOfflineMode(true)
+                                self.setIsLoading(false)
+                                self.setInitializing(false)
                             }
                         } else {
-                            // Network available — stabilize auth first, then run optional tasks
-                            await MainActor.run {
-                                self.setIsLoading(true)
-                            }
+                            // refresh-token-only, no offlineUser — preserve artifacts for reconnect
+                            // but do NOT show logged-in UI (not enough cached state for meaningful offline access)
+                            // Note: this is the only remaining case since we're inside `if hasAnySessionArtifacts`
+                            self.logger.warning("Offline: refresh-token only, no offlineUser. Preserving artifacts, not offline-authenticated.")
 
-                            let refreshed = await self.refreshTokenIfNeeded()
-
-                            // If refresh returned early (e.g., no refresh token), ensure loading/initializing are reset
-                            if !refreshed {
-                                await MainActor.run {
-                                    if self.isLoading { self.setIsLoading(false) }
-                                    if self.initializing { self.setInitializing(false) }
+                            // Restart monitoring so reconnectedToInternet() can trigger a refresh when network returns.
+                            // Monitoring was stopped earlier because hasAnySessionArtifacts was true.
+                            let token = NetworkStatusMonitor.addOnChangeReturningToken { [weak self] reachable in
+                                guard let self = self else { return }
+                                if reachable {
+                                    self.reconnectedToInternet()
+                                } else {
+                                    self.disconnectedFromInternet()
                                 }
                             }
+                            self.networkMonitoringToken = token
+                            let interval = (try? PlistHelper.fronteggConfig())?.networkMonitoringInterval ?? 10
+                            NetworkStatusMonitor.startBackgroundMonitoring(interval: interval, onChange: nil)
 
-                            // Then run optional network tasks (non-blocking for auth)
-                            await self.featureFlags.start()
-                            SentryHelper.setSentryEnabledFromFeatureFlag(self.featureFlags.isOn(FeatureFlags.mobileEnableLoggingKey))
-                            await SocialLoginUrlGenerator.shared.reloadConfigs()
-                            self.warmingWebViewAsync()
+                            await MainActor.run {
+                                self.setIsAuthenticated(false)
+                                self.setIsOfflineMode(true)
+                                self.setIsLoading(false)
+                                self.setInitializing(false)
+                            }
                         }
-                    }
-                }
-            } else {
-                // Offline mode not enabled - proceed with normal initialization
-                setIsLoading(true)
+                    } else {
+                        // Network available — stabilize auth first, then run optional tasks
+                        await MainActor.run {
+                            self.setIsLoading(true)
+                        }
 
-                DispatchQueue.global(qos: .userInitiated).async {
-                    Task {
-                        if await NetworkStatusMonitor.isActive {
-                            await self.featureFlags.start()
-                            SentryHelper.setSentryEnabledFromFeatureFlag(self.featureFlags.isOn(FeatureFlags.mobileEnableLoggingKey))
-                            await SocialLoginUrlGenerator.shared.reloadConfigs()
-                            self.warmingWebViewAsync()
-                        }
                         let refreshed = await self.refreshTokenIfNeeded()
 
                         // If refresh returned early (e.g., no refresh token), ensure loading/initializing are reset
@@ -731,29 +718,48 @@ public class FronteggAuth: FronteggState {
                                 if self.initializing { self.setInitializing(false) }
                             }
                         }
+
+                        // Then run optional network tasks (non-blocking for auth)
+                        await self.startPostConnectivityServices()
+                    }
+                }
+            } else {
+                // Offline mode not enabled - proceed with normal initialization
+                setIsLoading(true)
+
+                Task {
+                    if await NetworkStatusMonitor.isActive {
+                        await self.startPostConnectivityServices()
+                    }
+                    let refreshed = await self.refreshTokenIfNeeded()
+
+                    // If refresh returned early (e.g., no refresh token), ensure loading/initializing are reset
+                    if !refreshed {
+                        await MainActor.run {
+                            if self.isLoading { self.setIsLoading(false) }
+                            if self.initializing { self.setInitializing(false) }
+                        }
                     }
                 }
             }
         } else {
             // No tokens found - monitoring already started above if enableOfflineMode
-            DispatchQueue.global(qos: .userInitiated).async {
-                Task {
-                    _ = await self.settleUnauthenticatedStartupConnectivity(
-                        initialNetworkAvailable: await NetworkStatusMonitor.isActive,
-                        connectivityProbe: {
-                            await NetworkStatusMonitor.isActive
-                        },
-                        onConnected: {
-                            await self.featureFlags.start()
-                            SentryHelper.setSentryEnabledFromFeatureFlag(self.featureFlags.isOn(FeatureFlags.mobileEnableLoggingKey))
-                            await SocialLoginUrlGenerator.shared.reloadConfigs()
-                        }
-                    )
-                    
-                    await MainActor.run { [weak self] in
-                        self?.setIsLoading(false)
-                        self?.setInitializing(false)
+            Task {
+                let initialNetworkAvailable = await NetworkStatusMonitor.isActive
+                let settledOnline = await self.settleUnauthenticatedStartupConnectivity(
+                    initialNetworkAvailable: initialNetworkAvailable,
+                    connectivityProbe: {
+                        await NetworkStatusMonitor.isActive
                     }
+                )
+
+                if settledOnline {
+                    await self.startPostConnectivityServices()
+                }
+
+                await MainActor.run { [weak self] in
+                    self?.setIsLoading(false)
+                    self?.setInitializing(false)
                 }
             }
         }
@@ -774,6 +780,7 @@ public class FronteggAuth: FronteggState {
             return "preserveCachedOrDerivedUser"
         }
     }
+                
 
     private func resolveBestEffortUser(accessToken: String, includeInMemory: Bool = true) -> User? {
         if includeInMemory, let currentUser = self.user {
@@ -1045,8 +1052,9 @@ public class FronteggAuth: FronteggState {
                 await MainActor.run {
                     scheduleTokenRefresh(offset: refreshOffset)
                 }
-                // Start monitoring so reconnectedToInternet() can recover from offline mode
-                ensureOfflineMonitoringActive()
+                // Start monitoring without an immediate callback so the preserved offline state
+                // remains observable until a later probe or connectivity transition.
+                ensureOfflineMonitoringActive(emitInitialState: false)
             } else {
                 await clearAuthStateAfterHydrationFailure(error: error, hydrationMode: hydrationMode)
             }
@@ -1666,7 +1674,7 @@ public class FronteggAuth: FronteggState {
     
     /// Starts network monitoring so that `reconnectedToInternet()` fires when connectivity returns.
     /// Safe to call multiple times — stops existing monitoring first to avoid duplicates.
-    private func ensureOfflineMonitoringActive() {
+    private func ensureOfflineMonitoringActive(emitInitialState: Bool = true) {
         let config = try? PlistHelper.fronteggConfig()
         let monitoringInterval = config?.networkMonitoringInterval ?? 10
 
@@ -1686,8 +1694,14 @@ public class FronteggAuth: FronteggState {
             }
         }
         self.networkMonitoringToken = token
-        NetworkStatusMonitor.startBackgroundMonitoring(interval: monitoringInterval, onChange: nil)
-        self.logger.info("Started offline network monitoring (interval: \(monitoringInterval)s)")
+        NetworkStatusMonitor.startBackgroundMonitoring(
+            interval: monitoringInterval,
+            emitInitialState: emitInitialState,
+            onChange: nil
+        )
+        self.logger.info(
+            "Started offline network monitoring (interval: \(monitoringInterval)s, emitInitialState: \(emitInitialState))"
+        )
     }
 
     public func recheckConnection() {
@@ -2154,8 +2168,6 @@ public class FronteggAuth: FronteggState {
         logger.info("Handling hosted login callback (redirectUri: \(redirectUri), hasCodeVerifier: \(codeVerifier != nil))")
         
         Task {
-            defer { self.isLoginInProgress = false }
-
             logger.info("Exchanging hosted login callback token")
             let (responseData, error) = await api.exchangeToken(
                 code: code,
@@ -2185,7 +2197,8 @@ public class FronteggAuth: FronteggState {
                     matchedPendingOAuthState: matchedPendingOAuthState,
                     managePendingOAuthFlow: completePendingFlowOnSuccess
                 )
-                DispatchQueue.main.async {
+                await MainActor.run {
+                    self.isLoginInProgress = false
                     completion(.failure(error))
                     self.setIsLoading(false)
                     self.setWebLoading(false)
@@ -2201,7 +2214,8 @@ public class FronteggAuth: FronteggState {
                     matchedPendingOAuthState: matchedPendingOAuthState,
                     managePendingOAuthFlow: completePendingFlowOnSuccess
                 )
-                DispatchQueue.main.async {
+                await MainActor.run {
+                    self.isLoginInProgress = false
                     completion(.failure(FronteggError.authError(.failedToAuthenticate)))
                     self.setIsLoading(false)
                     self.setWebLoading(false)
@@ -2222,7 +2236,8 @@ public class FronteggAuth: FronteggState {
                         matchedPendingOAuthState: matchedPendingOAuthState,
                         managePendingOAuthFlow: completePendingFlowOnSuccess
                     )
-                    DispatchQueue.main.async {
+                    await MainActor.run {
+                        self.isLoginInProgress = false
                         completion(.failure(FronteggError.authError(.failedToLoadUserData("User data is nil"))))
                         self.setIsLoading(false)
                         self.setWebLoading(false)
@@ -2241,7 +2256,8 @@ public class FronteggAuth: FronteggState {
                 // Call completion on main thread to avoid race conditions
                 // This ensures the completion handler always runs on the main thread
                 // Use the user from memory state (which may have been modified to use local tenant)
-                DispatchQueue.main.async {
+                await MainActor.run {
+                    self.isLoginInProgress = false
                     self.setWebLoading(false)
                     // Return the user from memory state, which may have been modified to use local tenant
                     if let modifiedUser = self.user {
@@ -2275,7 +2291,8 @@ public class FronteggAuth: FronteggState {
                             matchedPendingOAuthState: matchedPendingOAuthState,
                             managePendingOAuthFlow: completePendingFlowOnSuccess
                         )
-                        DispatchQueue.main.async {
+                        await MainActor.run {
+                            self.isLoginInProgress = false
                             completion(.failure(FronteggError.authError(.failedToLoadUserData(error.localizedDescription))))
                             self.setIsLoading(false)
                             self.setWebLoading(false)
@@ -2296,24 +2313,26 @@ public class FronteggAuth: FronteggState {
                             matchedPendingOAuthState: matchedPendingOAuthState,
                             managePendingOAuthFlow: completePendingFlowOnSuccess
                         )
-                        DispatchQueue.main.async {
+                        await MainActor.run {
+                            self.isLoginInProgress = false
                             completion(.failure(FronteggError.authError(.failedToAuthenticate)))
                             self.setIsLoading(false)
                             self.setWebLoading(false)
                         }
                         return
                     }
-                    self.ensureOfflineMonitoringActive()
                     await MainActor.run {
                         self.setIsOfflineMode(true)
                     }
+                    self.ensureOfflineMonitoringActive(emitInitialState: false)
                     self.completePendingOAuthFlowIfNeeded(
                         oauthState: oauthState,
                         codeVerifier: codeVerifier,
                         matchedPendingOAuthState: matchedPendingOAuthState,
                         completePendingFlowOnSuccess: completePendingFlowOnSuccess
                     )
-                    DispatchQueue.main.async {
+                    await MainActor.run {
+                        self.isLoginInProgress = false
                         self.setWebLoading(false)
                         completion(.success(resolvedUser))
                     }
@@ -2324,7 +2343,8 @@ public class FronteggAuth: FronteggState {
                         matchedPendingOAuthState: matchedPendingOAuthState,
                         managePendingOAuthFlow: completePendingFlowOnSuccess
                     )
-                    DispatchQueue.main.async {
+                    await MainActor.run {
+                        self.isLoginInProgress = false
                         completion(.failure(FronteggError.authError(.failedToLoadUserData(error.localizedDescription))))
                         self.setIsLoading(false)
                         self.setWebLoading(false)

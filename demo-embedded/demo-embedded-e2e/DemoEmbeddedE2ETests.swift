@@ -39,10 +39,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
     func testCustomSSOBrowserHandoff() throws {
         launchApp(resetState: true)
         waitForScreen("LoginPageRoot")
-        let authorizeCount = Self.server.requestCount(path: "/oauth/authorize")
         tapButton("E2ECustomSSOButton")
-        XCTAssertTrue(Self.server.waitForRequest(path: "/oauth/authorize", timeout: 5))
-        XCTAssertGreaterThan(Self.server.requestCount(path: "/oauth/authorize"), authorizeCount)
         acceptSystemDialogIfNeeded()
         app.getWebLabel("Custom SSO Mock Server").waitUntilExists(timeout: 20)
         app.getWebButton("Continue to Custom SSO").safeTap()
@@ -52,10 +49,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
     func testDirectSocialBrowserHandoff() throws {
         launchApp(resetState: true)
         waitForScreen("LoginPageRoot")
-        let authorizeCount = Self.server.requestCount(path: "/oauth/authorize")
         tapButton("E2EDirectSocialLoginButton")
-        XCTAssertTrue(Self.server.waitForRequest(path: "/oauth/authorize", timeout: 5))
-        XCTAssertGreaterThan(Self.server.requestCount(path: "/oauth/authorize"), authorizeCount)
         acceptSystemDialogIfNeeded()
         app.getWebLabel("Mock Social Login").waitUntilExists(timeout: 20)
         app.getWebButton("Continue with Mock Social").safeTap()

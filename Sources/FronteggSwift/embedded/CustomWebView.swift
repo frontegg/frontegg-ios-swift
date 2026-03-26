@@ -113,7 +113,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     }
     
     func webView(_ _webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-        weak var webView = _webView
+        let webView = _webView
         let url = navigationAction.request.url
         let urlString = url?.absoluteString ?? "no url"
 
@@ -151,7 +151,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             )
             // Save current URL as previousUrl BEFORE processing, but only if it's not the same as the new URL
             // This ensures we track the URL we came FROM, not the URL we're going TO
-            if let currentUrl = webView?.url, currentUrl.absoluteString != url.absoluteString {
+            if let currentUrl = webView.url, currentUrl.absoluteString != url.absoluteString {
                 previousUrl = currentUrl
                 logger.trace("Updated previousUrl to: \(currentUrl.absoluteString)")
             }
@@ -478,7 +478,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                         if let updatedUrl = urlComponents.url {
                             logger.info("Updating /postlogin/verify URL with required parameters while preserving token: \(updatedUrl.absoluteString)")
                             DispatchQueue.main.async {
-                                webView?.load(URLRequest(url: updatedUrl))
+                                webView.load(URLRequest(url: updatedUrl))
                             }
                             return .cancel
                         }
@@ -676,7 +676,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                             DispatchQueue.main.async {
                                 let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
                                 CredentialManager.saveCodeVerifier(codeVerifier)
-                                webView?.load(URLRequest(url: loginUrl))
+                                webView.load(URLRequest(url: loginUrl))
                             }
                             return .cancel
                         }
@@ -693,7 +693,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                         DispatchQueue.main.async {
                             let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
                             CredentialManager.saveCodeVerifier(codeVerifier)
-                            webView?.load(URLRequest(url: loginUrl))
+                            webView.load(URLRequest(url: loginUrl))
                         }
                         return .cancel
                     }
@@ -1286,7 +1286,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     
     
     private func setSocialLoginRedirectUri(_ _webView:WKWebView?, _ url:URL) -> WKNavigationActionPolicy {
-        weak var webView = _webView
+        let webView = _webView
         let expectedRedirectUri = generateRedirectUri()
         logger.info("🔵 [Social Login Debug] setSocialLoginRedirectUri called")
         logger.info("🔵 [Social Login Debug] Social login pre-auth URL: \(url.absoluteString)")
@@ -1318,7 +1318,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             let noRedirectDelegate = NoRedirectSessionDelegate()
             let noRedirectSession = URLSession(configuration: .default, delegate: noRedirectDelegate, delegateQueue: nil)
             
-            let task = noRedirectSession.dataTask(with: request) { [weak self] (data, response, error) in
+            let task = noRedirectSession.dataTask(with: request) { [weak self, weak webView] (data, response, error) in
                 guard let self = self else { return }
                 // Check for errors
                 if error != nil {
@@ -1355,9 +1355,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     
     private func startExternalBrowser(_ _webView:WKWebView?, _ url:URL, _ ephemeralSession:Bool = true) -> Void {
         
-        weak var webView = _webView
+        let webView = _webView
         
-        WebAuthenticator.shared.start(url, ephemeralSession: ephemeralSession, window: self.window) { callbackUrl, error  in
+        WebAuthenticator.shared.start(url, ephemeralSession: ephemeralSession, window: self.window) { [weak webView] callbackUrl, error  in
             if let error = error {
                 if CustomWebView.isCancelledAsAuthenticationLoginError(error) {
                     // Social login authentication canceled
@@ -1444,7 +1444,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     
     private func handleSocialLoginRedirectToBrowser(_ _webView:WKWebView?, _ socialLoginUrl:URL) -> Void {
         
-        weak var webView = _webView
+        let webView = _webView
         logger.trace("handleSocialLoginRedirectToBrowser()")
         
         let queryItems = [
@@ -1468,7 +1468,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     
     
     private func openExternalBrowser(_ _webView:WKWebView?, _ url:URL) -> WKNavigationActionPolicy {
-        weak var webView = _webView
+        let webView = _webView
         self.startExternalBrowser(webView, url, true)
         return .cancel
     }

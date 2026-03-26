@@ -182,6 +182,7 @@ public enum NetworkStatusMonitor {
     private static var _isMonitoringActive = false
     private static let _monitoringLock = NSLock()
     private static var _probeGeneration: UInt64 = 0
+    private static var _emitInitialState = true
 
     // MARK: Handler storage (token-backed) + stable index mapping
     public struct OnChangeToken: Hashable { fileprivate let id = UUID() }
@@ -258,9 +259,11 @@ public enum NetworkStatusMonitor {
         configuredBaseURLString = baseURLString
     }
 
-    /// Start background monitoring and receive callbacks on changes (and once immediately).
+    /// Start background monitoring and receive callbacks on changes.
+    /// When `emitInitialState` is `true`, handlers also receive the current state once monitoring starts.
     public static func startBackgroundMonitoring(
         interval: TimeInterval = 10,
+        emitInitialState: Bool = true,
         onChange: ((Bool) -> Void)? = nil
     ) {
         // Prevent multiple simultaneous starts - check and set flag atomically
@@ -293,6 +296,7 @@ public enum NetworkStatusMonitor {
         }
         _monitoringLock.withLock {
             _probeGeneration &+= 1
+            _emitInitialState = emitInitialState
         }
         
         // Retain the path monitor
@@ -301,14 +305,20 @@ public enum NetworkStatusMonitor {
             // Use lock to safely check and set the initial check flag atomically
             // This prevents duplicate /test calls when NWPathMonitor fires multiple times rapidly
             var shouldForceEmit = false
+            var shouldSuppressInitialEmission = false
             _monitoringLock.lock()
             if !_hasInitialCheckFired {
                 _hasInitialCheckFired = true
-                shouldForceEmit = true
+                shouldForceEmit = _emitInitialState
+                shouldSuppressInitialEmission = !_emitInitialState
             }
             _monitoringLock.unlock()
             
-            refreshReachability(for: path, forceEmit: shouldForceEmit)
+            refreshReachability(
+                for: path,
+                forceEmit: shouldForceEmit,
+                suppressEmit: shouldSuppressInitialEmission
+            )
         }
         pathMonitor = monitor
         monitor.start(queue: pathQueue)
@@ -335,6 +345,7 @@ public enum NetworkStatusMonitor {
         _monitoringLock.lock()
         _isMonitoringActive = false
         _probeGeneration &+= 1
+        _emitInitialState = true
         _monitoringLock.unlock()
         _initialCheckLock.lock()
         _hasInitialCheckFired = false
@@ -375,27 +386,34 @@ public enum NetworkStatusMonitor {
 
     // MARK: - Helpers
 
-    private static func refreshReachability(for path: NWPath, forceEmit: Bool) {
+    private static func refreshReachability(
+        for path: NWPath,
+        forceEmit: Bool,
+        suppressEmit: Bool = false
+    ) {
         if path.status != .satisfied {
             _monitoringLock.withLock {
                 _probeGeneration &+= 1
             }
-            updateCached(false, forceEmit: forceEmit)
+            updateCached(false, forceEmit: forceEmit, suppressEmit: suppressEmit)
             return
         }
 
         if configuredBaseURLString == nil {
-            updateCached(true, forceEmit: forceEmit)
+            updateCached(true, forceEmit: forceEmit, suppressEmit: suppressEmit)
             return
         }
 
         Task {
-            _ = await probeReachability(forceEmit: forceEmit)
+            _ = await probeReachability(forceEmit: forceEmit, suppressEmit: suppressEmit)
         }
     }
 
     @discardableResult
-    private static func probeReachability(forceEmit: Bool) async -> Bool {
+    private static func probeReachability(
+        forceEmit: Bool,
+        suppressEmit: Bool = false
+    ) async -> Bool {
         if let base = configuredBaseURLString {
             let generation = _monitoringLock.withLock {
                 _probeGeneration &+= 1
@@ -406,18 +424,22 @@ public enum NetworkStatusMonitor {
                 generation == _probeGeneration
             }
             if isCurrentProbe {
-                updateCached(ok, forceEmit: forceEmit)
+                updateCached(ok, forceEmit: forceEmit, suppressEmit: suppressEmit)
             }
             return ok
         }
 
         let route = await routeIsAvailableOnce()
-        updateCached(route, forceEmit: forceEmit)
+        updateCached(route, forceEmit: forceEmit, suppressEmit: suppressEmit)
         return route
     }
 
     /// Update cache and notify all registered handlers on the main queue if changed (or forced).
-    private static func updateCached(_ value: Bool, forceEmit: Bool = false) {
+    private static func updateCached(
+        _ value: Bool,
+        forceEmit: Bool = false,
+        suppressEmit: Bool = false
+    ) {
         var changed = false
         var handlersCopy: [((Bool) -> Void)] = []
 
@@ -425,12 +447,13 @@ public enum NetworkStatusMonitor {
         changed = (value != _cachedReachable)
         _cachedReachable = value
         _hasCachedReachable = true
-        if changed || forceEmit {
+        if !suppressEmit && (changed || forceEmit) {
             // Snapshot all current handlers (values) under lock
             handlersCopy = Array(_onChangeHandlers.values)
         }
         stateLock.unlock()
 
+        guard !suppressEmit else { return }
         guard changed || forceEmit else { return }
         guard !handlersCopy.isEmpty else { return }
 
@@ -469,6 +492,7 @@ extension NetworkStatusMonitor {
         _monitoringLock.withLock {
             _isMonitoringActive = false
             _probeGeneration = 0
+            _emitInitialState = true
         }
         _initialCheckLock.withLock {
             _hasInitialCheckFired = false

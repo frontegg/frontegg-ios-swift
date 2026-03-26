@@ -257,6 +257,40 @@ You can configure the log level in your `Frontegg.plist` file:
 
 Available values: `trace`, `debug`, `info`, `warn`, `error`, `critical`
 
+### Logger Delegate
+
+You can forward SDK log events to your own logging pipeline by implementing
+`FronteggLoggerDelegate`.
+
+```swift
+final class SDKLogBridge: FronteggLoggerDelegate {
+    func fronteggSDK(didLog message: String, level: FeLogger.Level, tag: String) {
+        DispatchQueue.global(qos: .utility).async {
+            print("[\(tag)] \(level): \(message)")
+        }
+    }
+}
+
+let bridge = SDKLogBridge()
+
+// Capture logs as early as possible.
+FeLogger.delegate = bridge
+
+// Or set it after SDK initialization.
+FronteggApp.shared.loggerDelegate = bridge
+```
+
+Notes:
+
+- The delegate is stored weakly. Retain your bridge in app code.
+- The delegate is called synchronously on the originating thread.
+- `logLevel` controls the SDK's built-in `os.Logger` output only. The delegate
+  receives all SDK log events.
+- `info`, `warn`, `error`, and `critical` delegate messages are sanitized before
+  delivery.
+- `trace` and `debug` delegate messages are forwarded as-is and may contain
+  sensitive values, so filter them before exporting to production systems.
+
 ### Trace ID Logging
 
 The SDK logs trace IDs from API responses (in the `frontegg-trace-id` header) in two ways:

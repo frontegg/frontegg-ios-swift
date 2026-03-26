@@ -25,6 +25,15 @@ public class FronteggApp {
     public var handleLoginWithSocialProvider:Bool = true
     public var backgroundColor: UIColor? = nil
     public var entitlementsEnabled: Bool = false
+    /// Convenience alias over `FeLogger.delegate`.
+    ///
+    /// Set `FeLogger.delegate` directly if you need to capture logs before
+    /// `FronteggApp.shared` is initialized. The delegate is called
+    /// synchronously on the originating thread and is stored weakly.
+    public var loggerDelegate: FronteggLoggerDelegate? {
+        get { FeLogger.delegate }
+        set { FeLogger.delegate = newValue }
+    }
 
     /// Account (tenant) alias for login-per-account (custom login box). When set, the authorize URL includes `organization=<alias>` so Frontegg routes the user to that account's login experience. Set from your app (e.g. from subdomain or query param) before calling login. Note: `switchTenant` is not supported between accounts that use custom login boxes.
     public var loginOrganizationAlias: String? = nil

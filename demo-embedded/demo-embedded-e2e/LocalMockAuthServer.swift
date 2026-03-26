@@ -924,7 +924,7 @@ final class LocalMockAuthServer {
     private func handleSocialLoginSuccess(query: [String: [String]]) -> HTTPResponse {
         let code = firstValue(query, key: "code")
         let rawState = firstValue(query, key: "state")
-        guard let authCode = state.authCode(for: code) else {
+        guard state.authCode(for: code) != nil else {
             return jsonResponse(status: 400, payload: ["error": "invalid_social_code"])
         }
 

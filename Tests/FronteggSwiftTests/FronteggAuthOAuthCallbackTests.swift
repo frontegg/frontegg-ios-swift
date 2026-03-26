@@ -52,6 +52,7 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        NetworkStatusMonitor._testReset()
         clearOAuthState()
 
         serviceKey = "frontegg-oauth-tests-\(UUID().uuidString)"
@@ -77,6 +78,7 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
 
     override func tearDown() {
         auth.cancelScheduledTokenRefresh()
+        NetworkStatusMonitor._testReset()
         credentialManager.clear()
         clearOAuthState()
         PlistHelper.testConfigOverride = nil
@@ -261,7 +263,32 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         XCTAssertEqual(auth.user?.email, "fresh@example.com")
         XCTAssertTrue(auth.isAuthenticated)
         XCTAssertTrue(auth.isOfflineMode)
+        await assertOfflineModePersistsBriefly()
         XCTAssertEqual(api.meCallCount, 1)
+    }
+
+    func test_handleHostedLoginCallback_completionRunsOnMainThread() async throws {
+        let accessToken = try makeAccessToken()
+        api.exchangeTokenResponse = try makeAuthResponse(accessToken: accessToken, refreshToken: "refresh-token-main-thread")
+        api.meResult = .success(try makeUser())
+
+        let (result, completionOnMainThread) = await withCheckedContinuation { continuation in
+            auth.handleHostedLoginCallback(
+                "code-main-thread",
+                "verifier-main-thread",
+                redirectUri: "test://callback"
+            ) { result in
+                continuation.resume(returning: (result, Thread.isMainThread))
+            }
+        }
+
+        XCTAssertTrue(completionOnMainThread)
+        switch result {
+        case .success(let user):
+            XCTAssertEqual(user.email, "test@example.com")
+        case .failure(let error):
+            XCTFail("Expected success, got \(error)")
+        }
     }
 
     func test_reconnectedToInternet_cancelsPendingOfflineDebounceBeforeStateFlips() async {
@@ -278,20 +305,15 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
     func test_settleUnauthenticatedStartupConnectivity_transientInitialFalse_doesNotLeaveOfflineFlashBehind() async {
         auth.setIsOfflineMode(false)
 
-        var onConnectedCalls = 0
         let settledOnline = await auth.settleUnauthenticatedStartupConnectivity(
             initialNetworkAvailable: false,
             debounceDelay: 0.01,
-            connectivityProbe: { true },
-            onConnected: {
-                onConnectedCalls += 1
-            }
+            connectivityProbe: { true }
         )
 
         try? await Task.sleep(nanoseconds: 80_000_000)
 
         XCTAssertTrue(settledOnline)
-        XCTAssertEqual(onConnectedCalls, 1)
         XCTAssertFalse(auth.isOfflineMode)
     }
 
@@ -299,7 +321,6 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         auth.setIsOfflineMode(false)
 
         var probeResults = [false, true]
-        var onConnectedCalls = 0
 
         let settledOnline = await auth.settleUnauthenticatedStartupConnectivity(
             initialNetworkAvailable: false,
@@ -307,16 +328,12 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
             recoveryProbeCount: 2,
             connectivityProbe: {
                 probeResults.removeFirst()
-            },
-            onConnected: {
-                onConnectedCalls += 1
             }
         )
 
         try? await Task.sleep(nanoseconds: 80_000_000)
 
         XCTAssertTrue(settledOnline)
-        XCTAssertEqual(onConnectedCalls, 1)
         XCTAssertFalse(auth.isOfflineMode)
     }
 
@@ -431,5 +448,18 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
     private func clearOAuthState() {
         UserDefaults.standard.removeObject(forKey: KeychainKeys.codeVerifier.rawValue)
         UserDefaults.standard.removeObject(forKey: KeychainKeys.oauthStateVerifiers.rawValue)
+    }
+
+    private func assertOfflineModePersistsBriefly(
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertTrue(
+            auth.isOfflineMode,
+            "Offline mode should remain true until a later connectivity update.",
+            file: file,
+            line: line
+        )
     }
 }

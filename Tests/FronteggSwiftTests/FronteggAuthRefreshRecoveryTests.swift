@@ -113,6 +113,7 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        NetworkStatusMonitor._testReset()
 
         let serviceKey = "frontegg-refresh-recovery-\(UUID().uuidString)"
         credentialManager = CredentialManager(serviceKey: serviceKey)
@@ -145,6 +146,7 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
 
     override func tearDown() {
         auth.cancelScheduledTokenRefresh()
+        NetworkStatusMonitor._testReset()
         credentialManager.clear()
         PlistHelper.testConfigOverride = nil
         FronteggAuth.testNetworkPathAvailabilityOverride = nil
@@ -202,6 +204,7 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertNil(api.callCounts[tenantsPath])
         XCTAssertTrue(auth.isAuthenticated)
         XCTAssertTrue(auth.isOfflineMode)
+        await assertOfflineModePersistsBriefly()
         XCTAssertEqual(auth.user?.email, "offline-me@example.com")
     }
 
@@ -220,6 +223,7 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertEqual(api.callCounts[tenantsPath], 4)
         XCTAssertTrue(auth.isAuthenticated)
         XCTAssertTrue(auth.isOfflineMode)
+        await assertOfflineModePersistsBriefly()
         XCTAssertEqual(auth.user?.email, "offline-tenants@example.com")
     }
 
@@ -235,6 +239,7 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertNil(api.callCounts[tenantsPath])
         XCTAssertTrue(auth.isAuthenticated)
         XCTAssertTrue(auth.isOfflineMode)
+        await assertOfflineModePersistsBriefly()
         XCTAssertEqual(auth.user?.email, "offline-401@example.com")
     }
 
@@ -250,6 +255,7 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertNil(api.callCounts[tenantsPath])
         XCTAssertTrue(auth.isAuthenticated)
         XCTAssertTrue(auth.isOfflineMode)
+        await assertOfflineModePersistsBriefly()
         XCTAssertEqual(auth.user?.email, "offline-html@example.com")
     }
 
@@ -266,6 +272,7 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertEqual(api.callCounts[tenantsPath], 1)
         XCTAssertTrue(auth.isAuthenticated)
         XCTAssertTrue(auth.isOfflineMode)
+        await assertOfflineModePersistsBriefly()
         XCTAssertEqual(auth.user?.email, "offline-tenants-401@example.com")
     }
 
@@ -346,6 +353,19 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
             }
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
+    }
+
+    private func assertOfflineModePersistsBriefly(
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertTrue(
+            auth.isOfflineMode,
+            "Offline mode should remain true until a later connectivity update.",
+            file: file,
+            line: line
+        )
     }
 
     private func makeOfflineConfig(serviceKey: String) -> FronteggPlist {

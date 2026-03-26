@@ -28,6 +28,36 @@ class MockFeatureFlagsApi: Api {
     }
 }
 
+private final class RequestBackedFeatureFlagsApi: Api {
+    private(set) var requestedPaths: [String] = []
+    var responseBody = "{\"instance-flag\": \"on\"}"
+
+    init() {
+        super.init(baseUrl: "https://test.example.com", clientId: "test-client", applicationId: nil)
+    }
+
+    override func getRequest(
+        path: String,
+        accessToken: String?,
+        refreshToken: String? = nil,
+        additionalHeaders: [String: String] = [:],
+        followRedirect: Bool = true,
+        timeout: Int = Api.DEFAULT_TIMEOUT,
+        retries: Int = 0
+    ) async throws -> (Data, URLResponse) {
+        let normalizedPath = path.hasPrefix("/") ? path : "/\(path)"
+        requestedPaths.append(normalizedPath)
+
+        let url = URL(string: "https://test.example.com\(normalizedPath)")!
+        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        return (Data(responseBody.utf8), response)
+    }
+
+    func callSuperGetFeatureFlags() async throws -> String {
+        try await super.getFeatureFlags()
+    }
+}
+
 final class FeatureFlagsTests: XCTestCase {
     
     var mockApi: MockFeatureFlagsApi!
@@ -189,6 +219,15 @@ final class FeatureFlagsTests: XCTestCase {
         let result = await featureFlags.fetchFeatureFlags()
         
         XCTAssertTrue(result)
+    }
+
+    func test_apiGetFeatureFlags_usesCurrentApiInstance() async throws {
+        let api = RequestBackedFeatureFlagsApi()
+
+        let flags = try await api.callSuperGetFeatureFlags()
+
+        XCTAssertEqual(flags, "{\"instance-flag\": \"on\"}")
+        XCTAssertEqual(api.requestedPaths, ["/flags"])
     }
     
     // MARK: - Multiple Flags Tests

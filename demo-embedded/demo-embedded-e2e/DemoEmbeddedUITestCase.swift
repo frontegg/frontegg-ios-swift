@@ -48,6 +48,7 @@ class DemoEmbeddedUITestCase: XCTestCase {
         return app
     }
 
+    @discardableResult
     func waitForScreen(_ identifier: String, timeout: TimeInterval = 20) -> XCUIElement {
         let element = screenAnchor(for: identifier)
         let deadline = Date().addingTimeInterval(timeout)

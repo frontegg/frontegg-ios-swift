@@ -6,7 +6,7 @@
 //
 
 
-public struct UserRole: Codable, Equatable {
+public struct UserRole: Codable, Equatable, Sendable {
     public var id: String
     public var key: String
     public var isDefault: Bool
