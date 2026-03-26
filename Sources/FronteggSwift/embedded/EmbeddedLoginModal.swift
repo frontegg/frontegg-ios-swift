@@ -41,6 +41,9 @@ public struct EmbeddedLoginModal: View {
             }
             
         }.onAppear {
+            FronteggRuntime.testingLog(
+                "E2E EmbeddedLoginModal onAppear initializing=\(fronteggAuth.initializing) showLoader=\(fronteggAuth.showLoader) isAuthenticated=\(fronteggAuth.isAuthenticated) isLoading=\(fronteggAuth.isLoading)"
+            )
             self.fronteggAuth.setWebLoading(true)
         }
         .onDisappear {
@@ -55,4 +58,3 @@ struct EmbeddedLoginModal_Previews: PreviewProvider {
         EmbeddedLoginModal()
     }
 }
-

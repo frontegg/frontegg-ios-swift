@@ -13,6 +13,11 @@ class DebugConfigurationChecker {
     
     func runChecks() {
 #if DEBUG
+        if FronteggRuntime.isTesting {
+            FronteggRuntime.testingLog("ℹ️ Skipping debug checks in UI test mode.")
+            return
+        }
+
         print("🔍 Running IOS debug configuration checks...")
         
         let isAvailable = isInternetAvailableNow()

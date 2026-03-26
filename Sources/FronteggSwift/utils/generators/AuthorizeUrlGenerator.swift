@@ -44,10 +44,12 @@ public class AuthorizeUrlGenerator {
         remainCodeVerifier: Bool = false,
         stepUp:Bool = false,
         maxAge: TimeInterval? = nil,
-        organization: String? = nil
+        organization: String? = nil,
+        registerPendingFlow: Bool = true
     ) -> (URL, String) {
         
         let nonce = createRandomString()
+        let state = createRandomString()
         let codeVerifier = remainCodeVerifier ? (CredentialManager.getCodeVerifier() ?? createRandomString()) : createRandomString()
         let codeChallenge = generateCodeChallenge(codeVerifier)
         
@@ -67,6 +69,7 @@ public class AuthorizeUrlGenerator {
             URLQueryItem(name: "code_challenge", value: codeChallenge),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
             URLQueryItem(name: "nonce", value: nonce),
+            URLQueryItem(name: "state", value: state),
         ]
         if stepUp {
             queryParams.append(URLQueryItem(name: "acr_values", value: StepUpConstants.ACR_VALUE))
@@ -92,6 +95,9 @@ public class AuthorizeUrlGenerator {
             authorizeUrl.queryItems = queryParams
             
             if let url = authorizeUrl.url{
+                if registerPendingFlow {
+                    CredentialManager.registerPendingOAuth(state: state, codeVerifier: codeVerifier)
+                }
                 return (url, codeVerifier)
             } else {
                 logger.error("Unkonwn error occured while generating authorize url, baseUrl: \(baseUrl)")
@@ -111,6 +117,9 @@ public class AuthorizeUrlGenerator {
         
         if let url = authorizeUrl.url {
             logger.trace("Generated url: \(url.absoluteString)")
+            if registerPendingFlow {
+                CredentialManager.registerPendingOAuth(state: state, codeVerifier: codeVerifier)
+            }
             return (url, codeVerifier);
         } else {
             logger.error("Unkonwn error occured while generating authorize url, baseUrl: \(baseUrl)")

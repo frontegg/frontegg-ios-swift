@@ -6,6 +6,7 @@
 
 import AuthenticationServices
 import UIKit
+import WebKit
 
 
 class WebAuthenticator: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
@@ -14,6 +15,9 @@ class WebAuthenticator: NSObject, ObservableObject, ASWebAuthenticationPresentat
     
     weak var window: UIWindow? = nil
     var session: ASWebAuthenticationSession? = nil
+#if DEBUG
+    private var testingSession: TestingWebAuthenticationSession?
+#endif
     
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
        if Thread.isMainThread {
@@ -39,8 +43,30 @@ class WebAuthenticator: NSObject, ObservableObject, ASWebAuthenticationPresentat
             lastSession.cancel()
             session = nil
         }
+#if DEBUG
+        testingSession?.cancel()
+        testingSession = nil
+#endif
         
         let bundleIdentifier = FronteggApp.shared.bundleIdentifier
+
+        #if DEBUG
+        if FronteggRuntime.allowsTestingWebAuthenticationTransport {
+            self.window = window
+            let testingSession = TestingWebAuthenticationSession(
+                websiteURL: websiteURL,
+                callbackURLScheme: bundleIdentifier,
+                presenter: resolvedPresenter(window: window),
+                ephemeralSession: ephemeralSession
+            ) { [weak self] callbackUrl, error in
+                self?.testingSession = nil
+                completionHandler(callbackUrl, error)
+            }
+            self.testingSession = testingSession
+            testingSession.start()
+            return
+        }
+        #endif
         
         // Add breadcrumb for social login start
         SentryHelper.addBreadcrumb(
@@ -173,8 +199,171 @@ class WebAuthenticator: NSObject, ObservableObject, ASWebAuthenticationPresentat
         
         self.window = window
         self.session = webAuthSession
-        webAuthSession.start()
+        let didStart = webAuthSession.start()
+        let logger = getLogger("WebAuthenticator")
+        FronteggRuntime.testingLog(
+            "WebAuthenticator.start url=\(websiteURL.absoluteString) didStart=\(didStart) hasWindow=\(window != nil) hasRootWindow=\(FronteggAuth.shared.getRootVC()?.view.window != nil)"
+        )
+        logger.info("ASWebAuthenticationSession start result: \(didStart), hasWindow: \(window != nil), hasRootWindow: \(FronteggAuth.shared.getRootVC()?.view.window != nil)")
+        if !didStart {
+            self.session = nil
+            completionHandler(
+                nil,
+                NSError(
+                    domain: "WebAuthenticator",
+                    code: 1,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "ASWebAuthenticationSession failed to start",
+                    ]
+                )
+            )
+        }
         
+    }
+
+    private func resolvedPresenter(window: UIWindow?) -> UIViewController? {
+        if let root = window?.rootViewController {
+            return root.presentedViewController ?? root
+        }
+        if let root = FronteggAuth.shared.getRootVC(true) {
+            return root.presentedViewController ?? root
+        }
+        if let root = FronteggAuth.shared.getRootVC() {
+            return root.presentedViewController ?? root
+        }
+        return nil
     }
     
 }
+
+#if DEBUG
+private final class TestingWebAuthenticationSession: NSObject, WKNavigationDelegate {
+    private let websiteURL: URL
+    private let callbackURLScheme: String
+    private weak var presenter: UIViewController?
+    private let ephemeralSession: Bool
+    private let completionHandler: ASWebAuthenticationSession.CompletionHandler
+
+    private var hostViewController: UIViewController?
+    private var webView: WKWebView?
+    private var finished = false
+
+    init(
+        websiteURL: URL,
+        callbackURLScheme: String,
+        presenter: UIViewController?,
+        ephemeralSession: Bool,
+        completionHandler: @escaping ASWebAuthenticationSession.CompletionHandler
+    ) {
+        self.websiteURL = websiteURL
+        self.callbackURLScheme = callbackURLScheme
+        self.presenter = presenter
+        self.ephemeralSession = ephemeralSession
+        self.completionHandler = completionHandler
+    }
+
+    func start() {
+        DispatchQueue.main.async {
+            guard let presenter = self.presenter else {
+                self.finish(
+                    callbackUrl: nil,
+                    error: NSError(
+                        domain: "WebAuthenticator",
+                        code: 2,
+                        userInfo: [NSLocalizedDescriptionKey: "Missing presenter for testing web auth"]
+                    )
+                )
+                return
+            }
+
+            let config = WKWebViewConfiguration()
+            if self.ephemeralSession {
+                config.websiteDataStore = .nonPersistent()
+            }
+
+            let webView = WKWebView(frame: .zero, configuration: config)
+            webView.navigationDelegate = self
+            webView.accessibilityIdentifier = "TestingWebAuthWebView"
+
+            let viewController = UIViewController()
+            viewController.modalPresentationStyle = .fullScreen
+            viewController.view.backgroundColor = .systemBackground
+            viewController.view.addSubview(webView)
+            webView.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                webView.topAnchor.constraint(equalTo: viewController.view.topAnchor),
+                webView.bottomAnchor.constraint(equalTo: viewController.view.bottomAnchor),
+                webView.leadingAnchor.constraint(equalTo: viewController.view.leadingAnchor),
+                webView.trailingAnchor.constraint(equalTo: viewController.view.trailingAnchor),
+            ])
+
+            self.hostViewController = viewController
+            self.webView = webView
+
+            presenter.present(viewController, animated: false) {
+                webView.load(URLRequest(url: self.websiteURL))
+            }
+        }
+    }
+
+    func cancel() {
+        finish(
+            callbackUrl: nil,
+            error: NSError(
+                domain: ASWebAuthenticationSessionError.errorDomain,
+                code: ASWebAuthenticationSessionError.canceledLogin.rawValue,
+                userInfo: [NSLocalizedDescriptionKey: "Testing web auth cancelled"]
+            )
+        )
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        if let url = navigationAction.request.url,
+           url.scheme == callbackURLScheme {
+            decisionHandler(.cancel)
+            finish(callbackUrl: url, error: nil)
+            return
+        }
+
+        decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        guard !isCancellation(error) else { return }
+        finish(callbackUrl: nil, error: error)
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        guard !isCancellation(error) else { return }
+        finish(callbackUrl: nil, error: error)
+    }
+
+    private func finish(callbackUrl: URL?, error: Error?) {
+        DispatchQueue.main.async {
+            guard !self.finished else { return }
+            self.finished = true
+
+            let complete = {
+                self.hostViewController = nil
+                self.webView = nil
+                self.completionHandler(callbackUrl, error)
+            }
+
+            if let host = self.hostViewController, host.presentingViewController != nil {
+                host.dismiss(animated: false, completion: complete)
+            } else {
+                complete()
+            }
+        }
+    }
+
+    private func isCancellation(_ error: Error) -> Bool {
+        (error as NSError).domain == NSURLErrorDomain &&
+        (error as NSError).code == URLError.cancelled.rawValue
+    }
+}
+#endif

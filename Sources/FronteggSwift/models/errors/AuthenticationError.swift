@@ -19,6 +19,7 @@ extension FronteggError {
         case failedToSwitchTenant
         case failedToMFA
         case codeVerifierNotFound
+        case invalidOAuthState
         case couldNotFindRootViewController
         case invalidPasskeysRequest
         case failedToAuthenticateWithPasskeys(_ message: String)
@@ -45,6 +46,7 @@ extension FronteggError.Authentication {
             case .failedToExtractCode: "Failed to get extract code from hostedLoginCallback url"
             case .failedToSwitchTenant: "Failed to switch tenant"
             case .codeVerifierNotFound: "Code verifier not found"
+            case .invalidOAuthState: "Invalid or stale OAuth state"
             case .couldNotFindRootViewController: "Unable to find root viewController"
             case .invalidPasskeysRequest: "Invalid passkeys request"
             case let .failedToAuthenticateWithPasskeys(message): "Failed to authenticate with Passkeys, \(message)"
@@ -68,6 +70,7 @@ extension FronteggError.Authentication {
             case .failedToExtractCode: "failedToExtractCode"
             case .failedToSwitchTenant: "failedToSwitchTenant"
             case .codeVerifierNotFound: "codeVerifierNotFound"
+            case .invalidOAuthState: "invalidOAuthState"
             case .couldNotFindRootViewController: "couldNotFindRootViewController"
             case .invalidPasskeysRequest: "invalidPasskeysRequest"
             case .failedToAuthenticateWithPasskeys: "failedToAuthenticateWithPasskeys"

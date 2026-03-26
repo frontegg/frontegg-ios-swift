@@ -41,8 +41,15 @@ struct NoConnectionPage: View {
                     .cornerRadius(12)
             }
             .padding(.horizontal, 40)
+            .accessibilityIdentifier("RetryConnectionButton")
         }
         .padding()
+        .accessibilityIdentifier("NoConnectionPageRoot")
+        .onAppear {
+            if DemoEmbeddedTestMode.isEnabled {
+                DemoEmbeddedUITestDiagnostics.shared.markNoConnectionPageSeen()
+            }
+        }
     }
 }
 

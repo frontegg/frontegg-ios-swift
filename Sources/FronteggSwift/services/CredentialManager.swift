@@ -10,6 +10,7 @@ public enum KeychainKeys: String {
     case accessToken = "accessToken"
     case refreshToken = "refreshToken"
     case codeVerifier = "fe_codeVerifier"
+    case oauthStateVerifiers = "fe_oauthStateVerifiers"
     case region = "fe_region"
     case userInfo = "user_me"
     case lastActiveTenantId = "fe_lastActiveTenantId"
@@ -191,6 +192,128 @@ public class CredentialManager {
     
     static func getCodeVerifier() -> String? {
         return UserDefaults.standard.string(forKey: KeychainKeys.codeVerifier.rawValue)
+    }
+
+    static func clearCodeVerifier() {
+        UserDefaults.standard.removeObject(forKey: KeychainKeys.codeVerifier.rawValue)
+    }
+
+    struct CodeVerifierResolution {
+        enum Source: String {
+            case stateMatch = "state_match"
+            case lastGeneratedFallback = "last_generated_fallback"
+            case missing = "missing"
+        }
+
+        let verifier: String?
+        let source: Source
+        let hasPendingOAuthStates: Bool
+    }
+
+    private static func getPendingOAuthStateVerifiers() -> [String: String] {
+        UserDefaults.standard.dictionary(forKey: KeychainKeys.oauthStateVerifiers.rawValue) as? [String: String] ?? [:]
+    }
+
+    private static func savePendingOAuthStateVerifiers(_ verifiers: [String: String]) {
+        if verifiers.isEmpty {
+            UserDefaults.standard.removeObject(forKey: KeychainKeys.oauthStateVerifiers.rawValue)
+        } else {
+            UserDefaults.standard.set(verifiers, forKey: KeychainKeys.oauthStateVerifiers.rawValue)
+        }
+    }
+
+    static func registerPendingOAuth(state: String, codeVerifier: String) {
+        var verifiers = getPendingOAuthStateVerifiers()
+        verifiers[state] = codeVerifier
+        savePendingOAuthStateVerifiers(verifiers)
+        saveCodeVerifier(codeVerifier)
+    }
+
+    static func hasPendingOAuthStates() -> Bool {
+        !getPendingOAuthStateVerifiers().isEmpty
+    }
+
+    static func resolveCodeVerifier(for state: String?, allowFallback: Bool = true) -> CodeVerifierResolution {
+        let normalizedState = state?.isEmpty == false ? state : nil
+        let verifiers = getPendingOAuthStateVerifiers()
+
+        if let normalizedState,
+           let verifier = verifiers[normalizedState],
+           !verifier.isEmpty {
+            return CodeVerifierResolution(
+                verifier: verifier,
+                source: .stateMatch,
+                hasPendingOAuthStates: !verifiers.isEmpty
+            )
+        }
+
+        if allowFallback,
+           let verifier = getCodeVerifier(),
+           !verifier.isEmpty {
+            return CodeVerifierResolution(
+                verifier: verifier,
+                source: .lastGeneratedFallback,
+                hasPendingOAuthStates: !verifiers.isEmpty
+            )
+        }
+
+        return CodeVerifierResolution(
+            verifier: nil,
+            source: .missing,
+            hasPendingOAuthStates: !verifiers.isEmpty
+        )
+    }
+
+    static func getCodeVerifier(for state: String?, allowFallback: Bool = true) -> String? {
+        resolveCodeVerifier(for: state, allowFallback: allowFallback).verifier
+    }
+
+    static func consumeCodeVerifier(for state: String?) -> String? {
+        guard let state, !state.isEmpty else {
+            return getCodeVerifier()
+        }
+
+        var verifiers = getPendingOAuthStateVerifiers()
+        if let verifier = verifiers.removeValue(forKey: state) {
+            savePendingOAuthStateVerifiers(verifiers)
+            return verifier
+        }
+
+        return getCodeVerifier()
+    }
+
+    static func clearPendingOAuth(state: String?) {
+        guard let state, !state.isEmpty else {
+            clearPendingOAuthStates()
+            return
+        }
+
+        var verifiers = getPendingOAuthStateVerifiers()
+        _ = verifiers.removeValue(forKey: state)
+        savePendingOAuthStateVerifiers(verifiers)
+    }
+
+    static func clearPendingOAuthStates() {
+        UserDefaults.standard.removeObject(forKey: KeychainKeys.oauthStateVerifiers.rawValue)
+    }
+
+    static func clearCodeVerifierIfMatching(_ codeVerifier: String?) {
+        guard let codeVerifier,
+              !codeVerifier.isEmpty,
+              getCodeVerifier() == codeVerifier else {
+            return
+        }
+        clearCodeVerifier()
+    }
+
+    static func completePendingOAuthFlow(using codeVerifier: String?) {
+        clearPendingOAuthStates()
+        clearCodeVerifierIfMatching(codeVerifier)
+    }
+
+    static func clearPendingOAuthFlows() {
+        clearPendingOAuthStates()
+        clearCodeVerifier()
     }
     
     

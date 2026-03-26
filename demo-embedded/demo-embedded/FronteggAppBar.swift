@@ -43,6 +43,7 @@ struct FronteggAppBar: View {
                             .background(Color.backgroundColor)
                     }
                     .padding(.trailing, 24)
+                    .accessibilityIdentifier("LogoutButton")
                 }
             }.padding(.top, 60)
            

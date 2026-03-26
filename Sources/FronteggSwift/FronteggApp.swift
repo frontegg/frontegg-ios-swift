@@ -151,6 +151,17 @@ public class FronteggApp {
     public func didFinishLaunchingWithOptions(){
         logger.info("Frontegg baseURL: \(self.baseUrl)")
     }
+
+    @MainActor
+    public func resetForTesting() async {
+        await auth.resetForTesting()
+    }
+
+#if DEBUG
+    public func configureTestingNetworkPathAvailability(_ available: Bool?) {
+        auth.setTestNetworkPathAvailabilityOverride(available)
+    }
+#endif
     
     public func manualInit(
             baseUrl: String,

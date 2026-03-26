@@ -27,10 +27,12 @@ struct UserPage: View {
                 Color.backgroundColor.ignoresSafeArea()
                 mainContent
             }
+            .accessibilityElement(children: .contain)
             .overlay(FronteggAppBar()
                 .ignoresSafeArea(edges: .top),alignment: .top)
             .overlay(Footer()
                 .ignoresSafeArea(edges: .bottom),alignment: .bottom)
+            .accessibilityIdentifier("UserPageRoot")
         }
     }
     
@@ -44,6 +46,7 @@ struct UserPage: View {
             Spacer().frame(height: 16)
             if fronteggAuth.isOfflineMode {
                 Text("Offline Mode")
+                    .accessibilityIdentifier("OfflineModeBadge")
             }
             userContent
             Spacer(minLength: 220)
@@ -314,6 +317,7 @@ struct UserInfoView: View {
                         .font(.bodyMedium)
                         .foregroundColor(Color(hex: "7A7C81"))
                         .lineLimit(1)
+                        .accessibilityIdentifier("UserEmailValue")
                     Text(user.roles.isEmpty ? "No roles assigned" : user.roles.map { $0.name }.joined(separator: ", "))
                         .font(.bodyMedium)
                         .foregroundColor(Color(hex: "7A7C81"))
@@ -504,4 +508,3 @@ struct TenantDropdown: View {
 #Preview {
     UserPage()
 }
-

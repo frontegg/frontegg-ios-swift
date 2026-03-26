@@ -232,7 +232,8 @@ private extension SocialLoginUrlGenerator {
         action: SocialLoginAction
     ) async throws -> URL? {
         let details = provider.details
-        guard var comps = URLComponents(string: details.authorizeEndpoint) else { return nil }
+        let authorizeEndpoint = FronteggRuntime.socialAuthorizeEndpointOverride(provider: provider.rawValue) ?? details.authorizeEndpoint
+        guard var comps = URLComponents(string: authorizeEndpoint) else { return nil }
         
         var queryItems: [URLQueryItem] = []
         

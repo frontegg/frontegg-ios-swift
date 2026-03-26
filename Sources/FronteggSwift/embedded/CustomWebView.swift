@@ -10,6 +10,12 @@ import AuthenticationServices
 
 
 class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
+    struct HostedCallbackCodeVerifierResolution {
+        let codeVerifier: String?
+        let source: String
+        let providerError: Error?
+    }
+
     var accessoryView: UIView?
     private let fronteggAuth: FronteggAuth = FronteggAuth.shared
     private let logger = getLogger("CustomWebView")
@@ -18,6 +24,15 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     private var magicLinkRedirectUri: String? = nil
     private var previousUrl: URL? = nil
     private var isSocialLoginFlow: Bool = false
+
+    private func isAllowedTestingLoopbackURL(_ url: URL) -> Bool {
+        guard FronteggRuntime.isTesting else { return false }
+        return url.absoluteString.starts(with: fronteggAuth.baseUrl)
+    }
+
+    private func isIOSRedirectPath(_ path: String) -> Bool {
+        path.range(of: "/oauth/account/redirect/ios/", options: [.caseInsensitive]) != nil
+    }
     
     
     override var inputAccessoryView: UIView? {
@@ -27,6 +42,52 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     
     private static func isCancelledAsAuthenticationLoginError(_ error: Error) -> Bool {
         (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue
+    }
+
+    internal static func resolveHostedCallbackCodeVerifier(
+        isMagicLink: Bool,
+        isSocialLogin: Bool,
+        oauthState: String?,
+        socialVerifierProvider: () async throws -> String
+    ) async -> HostedCallbackCodeVerifierResolution {
+        if isMagicLink {
+            return HostedCallbackCodeVerifierResolution(
+                codeVerifier: nil,
+                source: "magic_link",
+                providerError: nil
+            )
+        }
+
+        if isSocialLogin {
+            do {
+                let verifier = try await socialVerifierProvider()
+                return HostedCallbackCodeVerifierResolution(
+                    codeVerifier: verifier,
+                    source: "webview_local_storage",
+                    providerError: nil
+                )
+            } catch {
+                let resolution = CredentialManager.resolveCodeVerifier(
+                    for: oauthState,
+                    allowFallback: true
+                )
+                return HostedCallbackCodeVerifierResolution(
+                    codeVerifier: resolution.verifier,
+                    source: resolution.source.rawValue,
+                    providerError: error
+                )
+            }
+        }
+
+        let resolution = CredentialManager.resolveCodeVerifier(
+            for: oauthState,
+            allowFallback: false
+        )
+        return HostedCallbackCodeVerifierResolution(
+            codeVerifier: resolution.verifier,
+            source: resolution.source.rawValue,
+            providerError: nil
+        )
     }
     
     func webView(
@@ -94,41 +155,70 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 previousUrl = currentUrl
                 logger.trace("Updated previousUrl to: \(currentUrl.absoluteString)")
             }
+
+            if FronteggRuntime.isTesting,
+               url.absoluteString.starts(with: fronteggAuth.baseUrl),
+               url.path == "/__frontegg_test/social-login" {
+                let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+                let provider = components?.queryItems?.first(where: { $0.name == "provider" })?.value ?? "google"
+                let custom = components?.queryItems?.first(where: { $0.name == "custom" })?.value == "true"
+                let action: SocialLoginAction = components?.queryItems?.first(where: { $0.name == "action" })?.value == "signUp"
+                    ? .signUp
+                    : .login
+
+                FronteggRuntime.testingLog(
+                    "E2E intercepting embedded social trigger provider=\(provider) custom=\(custom) action=\(action.rawValue)"
+                )
+
+                DispatchQueue.main.async { [weak self] in
+                    self?.fronteggAuth.handleSocialLogin(
+                        providerString: provider,
+                        custom: custom,
+                        action: action
+                    )
+                }
+
+                return .cancel
+            }
             
             if let host = url.host, (host.contains("localhost") || host.contains("127.0.0.1")) {
-                logger.warning("⚠️ Blocking navigation to localhost: \(url.absoluteString)")
+                if isAllowedTestingLoopbackURL(url) {
+                    logger.info("✅ Allowing test loopback URL to continue through callback inspection: \(url.absoluteString)")
+                } else {
+                    logger.warning("⚠️ Blocking navigation to localhost: \(url.absoluteString)")
                 
-                if let prevUrl = previousUrl, prevUrl.path.contains("/postlogin/verify") {
-                    logger.warning("Detected localhost redirect after /postlogin/verify. Previous URL: \(prevUrl.absoluteString), Current URL: \(url.absoluteString)")
+                    if let prevUrl = previousUrl, prevUrl.path.contains("/postlogin/verify") {
+                        logger.warning("Detected localhost redirect after /postlogin/verify. Previous URL: \(prevUrl.absoluteString), Current URL: \(url.absoluteString)")
 
-                    if let urlComponents = URLComponents(url: prevUrl, resolvingAgainstBaseURL: false),
-                       let queryItems = urlComponents.queryItems,
-                       let type = queryItems.first(where: { $0.name == "type" })?.value {
-                        logger.info("Retrying social login with provider: \(type) to avoid localhost redirect")
-                        DispatchQueue.main.async { [weak self] in
-                            guard let self = self else { return }
-                            self.fronteggAuth.handleSocialLogin(providerString: type, custom: false, action: .login) { result in
-                                switch result {
-                                case .success(let user):
-                                    self.logger.info("✅ Social login completed successfully after blocking localhost redirect")
-                                    self.fronteggAuth.loginCompletion?(.success(user))
-                                    // Dismiss the webview
-                                    if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
-                                        presentingVC.dismiss(animated: true)
-                                        VCHolder.shared.vc = nil
+                        if let urlComponents = URLComponents(url: prevUrl, resolvingAgainstBaseURL: false),
+                           let queryItems = urlComponents.queryItems,
+                           let type = queryItems.first(where: { $0.name == "type" })?.value {
+                            logger.info("Retrying social login with provider: \(type) to avoid localhost redirect")
+                            DispatchQueue.main.async { [weak self] in
+                                guard let self = self else { return }
+                                self.fronteggAuth.handleSocialLogin(providerString: type, custom: false, action: .login) { result in
+                                    switch result {
+                                    case .success(let user):
+                                        self.logger.info("✅ Social login completed successfully after blocking localhost redirect")
+                                        self.fronteggAuth.loginCompletion?(.success(user))
+                                        // Dismiss the webview
+                                        if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
+                                            presentingVC.dismiss(animated: true)
+                                            VCHolder.shared.vc = nil
+                                        }
+                                    case .failure(let error):
+                                        self.logger.error("❌ Social login failed after blocking localhost redirect: \(error.localizedDescription)")
+                                        self.fronteggAuth.loginCompletion?(.failure(error))
                                     }
-                                case .failure(let error):
-                                    self.logger.error("❌ Social login failed after blocking localhost redirect: \(error.localizedDescription)")
-                                    self.fronteggAuth.loginCompletion?(.failure(error))
                                 }
                             }
+                            return .cancel
                         }
-                        return .cancel
                     }
-                }
                 
-                logger.warning("Blocking localhost navigation: \(url.absoluteString)")
-                return .cancel
+                    logger.warning("Blocking localhost navigation: \(url.absoluteString)")
+                    return .cancel
+                }
             }
             
             // Check if this is an external OIDC provider redirect (e.g., Auth0, Okta, Microsoft)
@@ -239,7 +329,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             // Check if this is an intermediate redirect callback URL (magic link, forget password, unlock account, invite)
             // These flows use /oauth/account/redirect/iOS/{bundleId} or /oauth/account/redirect/iOS/{bundleId}/oauth/callback
             // This URL is detected as .loginRoutes but should be handled as HostedLoginCallback
-            if url.path.contains("/oauth/account/redirect/iOS/") {
+            if isIOSRedirectPath(url.path) {
                 logger.info("🔵 [Social Login Debug] Intermediate redirect URL detected: \(url.absoluteString)")
                 let queryItems = getQueryItems(url.absoluteString)
                 let queryKeys = Array((queryItems ?? [:]).keys).sorted()
@@ -402,7 +492,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             if isSocialLoginFlow || 
                (previousUrl != nil && (
                    previousUrl!.path.contains("/oauth/account/social/success") ||
-                   previousUrl!.path.contains("/oauth/account/redirect/ios/") ||
+                   isIOSRedirectPath(previousUrl!.path) ||
                    previousUrl!.path.contains("/oauth/account/oidc/callback")
                )) {
                 // Check if current URL is a dashboard/tenant selection page
@@ -516,7 +606,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                                 } catch {
                                     // Refresh failed, reload login page
                                     self.logger.warning("Token refresh failed after social login redirect: \(error), reloading login page")
-                                    let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
+                                    let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
                                     CredentialManager.saveCodeVerifier(codeVerifier)
                                     _ = await MainActor.run {
                                         webView?.load(URLRequest(url: loginUrl))
@@ -525,7 +615,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                             } else {
                                 // No cookies and no refresh token, reload login page
                                 self.logger.warning("No authentication cookies or refresh token found after social login redirect, reloading login page")
-                                let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
+                                let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
                                 CredentialManager.saveCodeVerifier(codeVerifier)
                                 _ = await MainActor.run {
                                     webView?.load(URLRequest(url: loginUrl))
@@ -567,8 +657,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                         if let prevUrl = previousUrl {
                             // If previous URL was intermediate redirect without code, definitely unlock account flow
                             let prevHasCode = getQueryItems(prevUrl.absoluteString)?["code"] != nil
-                            shouldIgnore = prevUrl.path.contains("/oauth/account/redirect/iOS/") && !prevHasCode
-                            logger.info("Previous URL check - path contains /oauth/account/redirect/iOS/: \(prevUrl.path.contains("/oauth/account/redirect/iOS/")), prevHasCode: \(prevHasCode), shouldIgnore: \(shouldIgnore)")
+                            let previousWasIOSRedirect = isIOSRedirectPath(prevUrl.path)
+                            shouldIgnore = previousWasIOSRedirect && !prevHasCode
+                            logger.info("Previous URL check - path contains /oauth/account/redirect/ios/: \(previousWasIOSRedirect), prevHasCode: \(prevHasCode), shouldIgnore: \(shouldIgnore)")
                         } else {
                             // If no previous URL but magicLinkRedirectUri is set, likely unlock account flow
                             shouldIgnore = true
@@ -583,7 +674,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                             // Reset webview to initial state by loading fresh login page
                             // This ensures the app returns to initial state after unlock account flow
                             DispatchQueue.main.async {
-                                let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
+                                let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
                                 CredentialManager.saveCodeVerifier(codeVerifier)
                                 webView?.load(URLRequest(url: loginUrl))
                             }
@@ -600,7 +691,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                         // Reset webview to initial state by loading fresh login page
                         // This ensures the app returns to initial state after unlock account flow
                         DispatchQueue.main.async {
-                            let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
+                            let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
                             CredentialManager.saveCodeVerifier(codeVerifier)
                             webView?.load(URLRequest(url: loginUrl))
                         }
@@ -726,7 +817,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             // We need to use this URL as redirect_uri for token exchange, not the custom scheme
             // BUT: For unlock account flow, the server redirects to /oauth/account/redirect/iOS/{bundleId} WITHOUT code
             // In this case, we should NOT set magicLinkRedirectUri, as it's not an OAuth callback
-            if urlType == .loginRoutes && url.path.contains("/oauth/account/redirect/iOS/") {
+            if urlType == .loginRoutes && isIOSRedirectPath(url.path) {
                 // Check if this is unlock account flow (no code parameter) or magic link flow (with code)
                 let queryItems = getQueryItems(url.absoluteString)
                 let hasCode = queryItems?["code"] != nil
@@ -779,7 +870,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     """) { [weak self] result, error in
                         if let redirectInfo = result as? String {
                             self?.logger.info("🔐 Detected redirect in verification page: \(redirectInfo)")
-                            print("🔐 Frontegg Verification page redirect: \(redirectInfo)")
                         }
                     }
                 }
@@ -874,17 +964,56 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         }
         decisionHandler(.allow)
     }
+
+    private func failingNavigationURL(from error: NSError) -> URL? {
+        if let url = error.userInfo[NSURLErrorFailingURLErrorKey] as? URL {
+            return url
+        }
+        if let urlString = error.userInfo[NSURLErrorFailingURLStringErrorKey] as? String {
+            return URL(string: urlString)
+        }
+        if let url = error.userInfo["NSErrorFailingURLKey"] as? URL {
+            return url
+        }
+        if let urlString = error.userInfo["NSErrorFailingURLKey"] as? String {
+            return URL(string: urlString)
+        }
+        return nil
+    }
+
+    private func recoverHostedCallbackFromFailedNavigationIfNeeded(
+        webView: WKWebView,
+        error: NSError
+    ) -> Bool {
+        guard let failingURL = failingNavigationURL(from: error) else { return false }
+        guard let queryItems = getQueryItems(failingURL.absoluteString),
+              queryItems["code"] != nil else {
+            return false
+        }
+
+        let scheme = failingURL.scheme ?? ""
+        let isKnownAppScheme = getAppURLSchemes().contains(scheme)
+        let isHostedCallback = getOverrideUrlType(url: failingURL) == .HostedLoginCallback
+        guard isKnownAppScheme || isHostedCallback else { return false }
+
+        logger.warning("Recovering hosted callback from failed navigation to \(failingURL.absoluteString), domain: \(error.domain), code: \(error.code)")
+        _ = handleHostedLoginCallback(webView, failingURL)
+        return true
+    }
     
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError _error: Error) {
         let error = _error as NSError
         let statusCode = error.code
+        if recoverHostedCallbackFromFailedNavigationIfNeeded(webView: webView, error: error) {
+            return
+        }
         if(statusCode==102){
             // interrupted by frontegg webview
             return;
         }
         
         let errorMessage = error.localizedDescription;
-        let url = "\(error.userInfo["NSErrorFailingURLKey"] ?? "")"
+        let url = failingNavigationURL(from: error)?.absoluteString ?? "\(error.userInfo["NSErrorFailingURLKey"] ?? "")"
         logger.error("Failed to load page: \(errorMessage), status: \(statusCode), \(error)")
         
         
@@ -892,6 +1021,25 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         let content = generateErrorPage(message: errorMessage, url: url, status: statusCode);
         webView.loadHTMLString(content, baseURL: nil);
         
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError _error: Error) {
+        let error = _error as NSError
+        let statusCode = error.code
+        if recoverHostedCallbackFromFailedNavigationIfNeeded(webView: webView, error: error) {
+            return
+        }
+        if statusCode == 102 {
+            return
+        }
+
+        let errorMessage = error.localizedDescription
+        let url = failingNavigationURL(from: error)?.absoluteString ?? "\(error.userInfo["NSErrorFailingURLKey"] ?? "")"
+        logger.error("Navigation failed after start: \(errorMessage), status: \(statusCode), \(error)")
+
+        self.fronteggAuth.setWebLoading(false)
+        let content = generateErrorPage(message: errorMessage, url: url, status: statusCode)
+        webView.loadHTMLString(content, baseURL: nil)
     }
     
     
@@ -967,11 +1115,12 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             )
 
             logger.info("Restarting the process by generating a new authorize url")
-            let (url, codeVerifier) = AuthorizeUrlGenerator().generate()
+            let (url, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
             CredentialManager.saveCodeVerifier(codeVerifier)
             _ = webView?.load(URLRequest(url: url))
             return .cancel
         }
+        let oauthState = queryItems?["state"]
         
         // For magic link and similar flows (forget password, unlock account, invite), the server uses 
         // an intermediate redirect URL (/oauth/account/redirect/iOS/{bundleId} or /oauth/account/redirect/iOS/{bundleId}/oauth/callback)
@@ -982,7 +1131,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         
         // Check if URL contains /oauth/account/redirect/iOS/ - this indicates an intermediate redirect
         // (used for magic link, forget password, unlock account, invite flows)
-        if url.path.contains("/oauth/account/redirect/iOS/") {
+        if isIOSRedirectPath(url.path) {
             logger.info("🔵 [Social Login Debug] Detected intermediate redirect URL (magic link flow)")
             // This is an intermediate redirect callback - extract redirect_uri from the URL itself (without query parameters)
             isMagicLink = true
@@ -1045,31 +1194,35 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         self.fronteggAuth.setWebLoading(true)
         DispatchQueue.global(qos: .userInitiated).async {
             Task { @MainActor in
-                // Retrieve code_verifier based on flow type
-                let codeVerifier: String?
-                if isMagicLink {
-                    codeVerifier = nil
-                } else if isSocialLogin {
-                    // For social SSO flows, read verifier from webview localStorage
-                    // The verifier is generated and stored by the hosted login page in localStorage
-                    // and is NOT saved to CredentialManager (to avoid conflicts with main OAuth flow)
-                    do {
-                        let verifier = try await SocialLoginUrlGenerator.getCodeVerifierFromWebview()
-                        self.logger.info("🔵 [Social Login Debug] Retrieved code_verifier from webview localStorage for social login (length: \(verifier.count))")
-                        codeVerifier = verifier
-                    } catch {
-                        self.logger.warning("⚠️ [Social Login Debug] Failed to get code_verifier from webview for social login: \(error). Falling back to CredentialManager.")
-                        codeVerifier = CredentialManager.getCodeVerifier()
+                // Retrieve code_verifier based on flow type.
+                let verifierResolution = await Self.resolveHostedCallbackCodeVerifier(
+                    isMagicLink: isMagicLink,
+                    isSocialLogin: isSocialLogin,
+                    oauthState: oauthState,
+                    socialVerifierProvider: {
+                        try await SocialLoginUrlGenerator.getCodeVerifierFromWebview()
                     }
-                } else {
-                    // For regular OAuth flow, use CredentialManager
-                    codeVerifier = CredentialManager.getCodeVerifier()
+                )
+                if let providerError = verifierResolution.providerError {
+                    self.logger.warning("⚠️ [Social Login Debug] Failed to get code_verifier from webview for social login: \(providerError). Falling back to CredentialManager.")
+                } else if verifierResolution.source == "webview_local_storage",
+                          let verifier = verifierResolution.codeVerifier {
+                    self.logger.info("🔵 [Social Login Debug] Retrieved code_verifier from webview localStorage for social login (length: \(verifier.count))")
                 }
+                let codeVerifier = verifierResolution.codeVerifier
+                let codeVerifierSource = verifierResolution.source
                 
                 self.logger.info("🔵 [Social Login Debug] Code verifier present: \(codeVerifier != nil ? "yes" : "no")")
+                self.logger.info("🔵 [Social Login Debug] Code verifier source: \(codeVerifierSource)")
                 self.logger.trace("Using redirect_uri: \(redirectUri), isMagicLink: \(isMagicLink), codeVerifier: \(codeVerifier != nil ? "provided" : "nil")")
                 
-                FronteggAuth.shared.handleHostedLoginCallback(code, codeVerifier, redirectUri: redirectUri) { res in
+                FronteggAuth.shared.handleHostedLoginCallback(
+                    code,
+                    codeVerifier,
+                    oauthState: oauthState,
+                    redirectUri: redirectUri,
+                    completePendingFlowOnSuccess: !isMagicLink,
+                    completion: { res in
                     switch (res) {
                     case .success(let user):
                         let logger = getLogger("CustomWebView")
@@ -1101,7 +1254,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                         logger.error("❌ [Token Exchange] Redirect URI used: \(redirectUri)")
                         logger.error("❌ [Token Exchange] Code length: \(code.count), Code verifier used: \(codeVerifier != nil ? "yes" : "no")")
                         logger.error("❌ [Token Exchange] Is magic link: \(isMagicLink), Is social login: \(isSocialLogin)")
-                        print("Error \(error)")
                         self.isSocialLoginFlow = false
                         
                         // Log failed token exchange to Sentry
@@ -1110,6 +1262,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                                 "redirectUri": redirectUri,
                                 "codeLength": code.count,
                                 "codeVerifierUsed": codeVerifier != nil,
+                                "codeVerifierSource": codeVerifierSource,
                                 "isMagicLink": isMagicLink,
                                 "isSocialLogin": isSocialLogin
                             ],
@@ -1118,14 +1271,14 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                             ]
                         ])
                         
-                        let (url, codeVerifier)  = AuthorizeUrlGenerator().generate()
+                        let (url, codeVerifier)  = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
                         CredentialManager.saveCodeVerifier(codeVerifier)
                         DispatchQueue.main.async {
                             _ = webView?.load(URLRequest(url: url))
                         }
                     }
                     FronteggAuth.shared.loginCompletion?(res)
-                }
+                })
             }
         }
         return .cancel
@@ -1221,7 +1374,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                         ]
                     ])
                     
-                    let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
+                    let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
                     CredentialManager.saveCodeVerifier(codeVerifier)
                     _ = webView?.load(URLRequest(url: newUrl))
                 }
@@ -1245,7 +1398,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     ]
                 )
                 
-                let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate()
+                let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
                 CredentialManager.saveCodeVerifier(codeVerifier)
                 _ = webView?.load(URLRequest(url: newUrl))
                 

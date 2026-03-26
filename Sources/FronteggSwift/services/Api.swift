@@ -12,6 +12,8 @@ enum ApiError: Error {
     case invalidUrl(String)
     /// Refresh returned a retryable HTTP status (5xx, 408, 429). Must not clear the session.
     case refreshEndpointTransient(statusCode: Int, message: String)
+    /// /me or /me/tenants returned a non-2xx HTTP status (e.g. proxy blocked the request).
+    case meEndpointFailed(statusCode: Int, path: String)
 }
 
 
@@ -28,7 +30,9 @@ public class Api {
     internal static let DEFAULT_TIMEOUT: Int = 10
 
     /// HTTP statuses where the refresh token may still be valid; callers should retry instead of logging out.
-    private static func isTransientRefreshHTTPStatus(_ statusCode: Int) -> Bool {
+    /// This is intentionally broad: any 5xx plus 408/429 keeps the session recoverable until
+    /// a definitive auth failure proves the refresh token is invalid.
+    internal static func isTransientRefreshHTTPStatus(_ statusCode: Int) -> Bool {
         if statusCode == 408 || statusCode == 429 { return true }
         return (500...599).contains(statusCode)
     }
@@ -44,7 +48,8 @@ public class Api {
         self.baseUrl = baseUrl
         self.clientId = clientId
         self.applicationId = applicationId
-        self.credentialManager = CredentialManager(serviceKey: "frontegg")
+        let configuredServiceKey = (try? PlistHelper.fronteggConfig())?.keychainService ?? "frontegg"
+        self.credentialManager = CredentialManager(serviceKey: configuredServiceKey)
         
         var clientIdWithoutFirstDash = clientId
         if let firstDashIndex = clientId.firstIndex(of: "-") {
@@ -283,7 +288,8 @@ public class Api {
         refreshToken: String? = nil,
         additionalHeaders: [String: String] = [:],
         followRedirect: Bool = true,
-        timeout: Int = Api.DEFAULT_TIMEOUT
+        timeout: Int = Api.DEFAULT_TIMEOUT,
+        retries: Int = 0
     ) async throws -> (Data, URLResponse) {
         let urlStr = path.starts(with: self.baseUrl)
             ? path
@@ -293,77 +299,111 @@ public class Api {
             throw ApiError.invalidUrl("invalid url: \(urlStr)")
         }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
-        if let accessToken {
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        }
-        if let refreshToken {
-            request.setValue("\(self.cookieName)=\(refreshToken)", forHTTPHeaderField: "Cookie")
-        }
-        if let applicationId = self.applicationId {
-            request.setValue(applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
-        }
-        additionalHeaders.forEach { k, v in request.setValue(v, forHTTPHeaderField: k) }
+        var lastError: Error? = nil
 
-        // per-task timeout
-        request.timeoutInterval = TimeInterval(timeout)
+        for attempt in 0...retries {
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
+            if let accessToken {
+                request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            }
+            if let refreshToken {
+                request.setValue("\(self.cookieName)=\(refreshToken)", forHTTPHeaderField: "Cookie")
+            }
+            if let applicationId = self.applicationId {
+                request.setValue(applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
+            }
+            additionalHeaders.forEach { k, v in request.setValue(v, forHTTPHeaderField: k) }
 
-        // session-level timeouts
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = TimeInterval(timeout)
-        config.timeoutIntervalForResource = TimeInterval(timeout)
-        config.waitsForConnectivity = false
+            // per-task timeout
+            request.timeoutInterval = TimeInterval(timeout)
 
-        let session: URLSession
-        if followRedirect {
-            session = URLSession(configuration: config)
-        } else {
-            let redirectHandler = RedirectHandler()
-            session = URLSession(configuration: config, delegate: redirectHandler, delegateQueue: nil)
+            // session-level timeouts
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = TimeInterval(timeout)
+            config.timeoutIntervalForResource = TimeInterval(timeout)
+            config.waitsForConnectivity = false
+
+            let session: URLSession
+            if followRedirect {
+                session = URLSession(configuration: config)
+            } else {
+                let redirectHandler = RedirectHandler()
+                session = URLSession(configuration: config, delegate: redirectHandler, delegateQueue: nil)
+            }
+
+            let start = Date()
+            do {
+                let (data, response) = try await session.data(for: request)
+                let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+                let statusCode = (response as? HTTPURLResponse)?.statusCode
+                TraceIdLogger.shared.extractAndLogTraceId(from: response)
+                addHttpBreadcrumb(
+                    method: "GET",
+                    url: request.url,
+                    statusCode: statusCode,
+                    traceId: (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "frontegg-trace-id"),
+                    durationMs: durationMs,
+                    requestBodySize: nil,
+                    responseBodySize: data.count,
+                    followRedirect: followRedirect
+                )
+
+                // When retries enabled, check HTTP status for retryable errors
+                if retries > 0, let http = response as? HTTPURLResponse {
+                    if http.statusCode == 401 {
+                        throw ApiError.meEndpointFailed(statusCode: 401, path: path)
+                    }
+                    if Api.isTransientRefreshHTTPStatus(http.statusCode) {
+                        lastError = ApiError.meEndpointFailed(statusCode: http.statusCode, path: path)
+                        logger.warning("GET \(path) attempt \(attempt + 1)/\(retries + 1) returned \(http.statusCode)")
+                        if attempt < retries {
+                            try? await Task.sleep(nanoseconds: UInt64(attempt + 1) * 1_000_000_000)
+                        }
+                        continue // retry
+                    }
+                }
+
+                return (data, response)
+            } catch {
+                let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+                addHttpBreadcrumb(
+                    method: "GET",
+                    url: request.url,
+                    statusCode: nil,
+                    traceId: nil,
+                    durationMs: durationMs,
+                    requestBodySize: nil,
+                    responseBodySize: nil,
+                    followRedirect: followRedirect,
+                    error: error
+                )
+                SentryHelper.logError(error, context: [
+                    "http": [
+                        "method": "GET",
+                        "path": path,
+                        "followRedirect": followRedirect
+                    ]
+                ])
+
+                // 401 should not be retried
+                if let apiErr = error as? ApiError, case .meEndpointFailed(401, _) = apiErr {
+                    throw error
+                }
+
+                lastError = error
+
+                if attempt < retries {
+                    logger.warning("GET \(path) attempt \(attempt + 1)/\(retries + 1) failed: \(error)")
+                    try? await Task.sleep(nanoseconds: UInt64(attempt + 1) * 1_000_000_000)
+                } else {
+                    throw error
+                }
+            }
         }
-
-        let start = Date()
-        do {
-            let (data, response) = try await session.data(for: request)
-            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
-            let statusCode = (response as? HTTPURLResponse)?.statusCode
-            TraceIdLogger.shared.extractAndLogTraceId(from: response)
-            addHttpBreadcrumb(
-                method: "GET",
-                url: request.url,
-                statusCode: statusCode,
-                traceId: (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "frontegg-trace-id"),
-                durationMs: durationMs,
-                requestBodySize: nil,
-                responseBodySize: data.count,
-                followRedirect: followRedirect
-            )
-            return (data, response)
-        } catch {
-            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
-            addHttpBreadcrumb(
-                method: "GET",
-                url: request.url,
-                statusCode: nil,
-                traceId: nil,
-                durationMs: durationMs,
-                requestBodySize: nil,
-                responseBodySize: nil,
-                followRedirect: followRedirect,
-                error: error
-            )
-            SentryHelper.logError(error, context: [
-                "http": [
-                    "method": "GET",
-                    "path": path,
-                    "followRedirect": followRedirect
-                ]
-            ])
-            throw error
-        }
+        throw lastError!
     }
 
     
@@ -678,7 +718,7 @@ public class Api {
             }
             return nil
         } catch {
-            print(error)
+            self.logger.error("refreshTokenForMfa failed: \(error)")
             return nil
         }
     }
@@ -713,14 +753,21 @@ public class Api {
     }
     
     internal func me(accessToken: String) async throws -> User? {
-        let (meData, _) = try await getRequest(path: "identity/resources/users/v2/me", accessToken: accessToken)
-        
-        var meObj = try JSONSerialization.jsonObject(with: meData, options: [])  as! [String: Any]
-        
-        let (tenantsData, _) = try await getRequest(path: "identity/resources/users/v3/me/tenants", accessToken: accessToken)
-        
-        let tenantsObj = try JSONSerialization.jsonObject(with: tenantsData, options: [])  as! [String: Any]
-        
+        let mePath = "identity/resources/users/v2/me"
+        let (meData, _) = try await getRequest(path: mePath, accessToken: accessToken, retries: 3)
+
+        guard let meObj = try JSONSerialization.jsonObject(with: meData, options: []) as? [String: Any] else {
+            throw ApiError.meEndpointFailed(statusCode: 0, path: mePath)
+        }
+        var mergedObj = meObj
+
+        let tenantsPath = "identity/resources/users/v3/me/tenants"
+        let (tenantsData, _) = try await getRequest(path: tenantsPath, accessToken: accessToken, retries: 3)
+
+        guard let tenantsObj = try JSONSerialization.jsonObject(with: tenantsData, options: []) as? [String: Any] else {
+            throw ApiError.meEndpointFailed(statusCode: 0, path: tenantsPath)
+        }
+
         if let tenants = tenantsObj["tenants"] as? [[String: Any]] {
             self.logger.info("Found \(tenants.count) tenant(s) from API")
             for tenant in tenants {
@@ -731,13 +778,12 @@ public class Api {
         } else {
             self.logger.warning("No tenants array found in API response: \(tenantsObj)")
         }
-        
-        meObj["tenants"] = tenantsObj["tenants"]
-        meObj["activeTenant"] = tenantsObj["activeTenant"]
-        
-        let mergedData = try JSONSerialization.data(withJSONObject: meObj)
-        
-        
+
+        mergedObj["tenants"] = tenantsObj["tenants"]
+        mergedObj["activeTenant"] = tenantsObj["activeTenant"]
+
+        let mergedData = try JSONSerialization.data(withJSONObject: mergedObj)
+
         return try JSONDecoder().decode(User.self, from: mergedData)
     }
     

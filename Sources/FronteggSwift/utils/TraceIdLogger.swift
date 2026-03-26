@@ -9,6 +9,7 @@ import Foundation
 class TraceIdLogger {
     static let shared = TraceIdLogger()
     
+    private let logger = getLogger("TraceIdLogger")
     private let maxTraceIds = 100
     private let fileName = "frontegg-trace-ids.log"
     private let fileManager = FileManager.default
@@ -39,11 +40,11 @@ class TraceIdLogger {
         } else {
             // Fallback to Documents directory (accessible via Simulator file system)
             guard let documentsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
-                print("❌ TraceIdLogger: Could not access documents directory")
+                logger.error("Could not access documents directory for trace ID logging")
                 return
             }
             fileURL = documentsDirectory.appendingPathComponent(fileName)
-            print("ℹ️ TraceIdLogger: Saving to Documents directory: \(fileURL.path)")
+            logger.info("Saving trace IDs to Documents directory: \(fileURL.path)")
         }
         
         // Read existing trace IDs
@@ -67,14 +68,14 @@ class TraceIdLogger {
         // Write back to file
         let content = traceIds.joined(separator: "\n")
         guard let data = content.data(using: .utf8) else {
-            print("❌ TraceIdLogger: Failed to encode trace IDs to data")
+            logger.error("Failed to encode trace IDs to data")
             return
         }
         
         do {
             try data.write(to: fileURL, options: .atomic)
         } catch {
-            print("❌ TraceIdLogger: Failed to write trace IDs to file: \(error)")
+            logger.error("Failed to write trace IDs to file: \(error)")
         }
     }
     
@@ -97,9 +98,10 @@ class TraceIdLogger {
             level: .info,
             data: ["frontegg_trace_id": traceId]
         )
-        
-        // Also save to local file for debugging
+
+        // Local file persistence is debug-only; production keeps the breadcrumb without filesystem I/O.
+#if DEBUG
         logTraceId(traceId)
+#endif
     }
 }
-

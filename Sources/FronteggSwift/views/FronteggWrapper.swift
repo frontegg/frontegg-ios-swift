@@ -26,6 +26,8 @@ public struct FronteggWrapper<Content: View>: View {
                 || fronteggAuth.showLoader
                 || fronteggAuth.appLink {
                 DefaultLoader()
+                    .accessibilityIdentifier("DefaultLoaderRoot")
+                    .accessibilityValue(loaderDebugValue)
             } else {
                 Group(content: content)
             }
@@ -37,6 +39,15 @@ public struct FronteggWrapper<Content: View>: View {
             }
         }
     }
+
+    private var loaderDebugValue: String {
+        "initializing=\(fronteggAuth.initializing)," +
+        "showLoader=\(fronteggAuth.showLoader)," +
+        "appLink=\(fronteggAuth.appLink)," +
+        "isLoading=\(fronteggAuth.isLoading)," +
+        "isAuthenticated=\(fronteggAuth.isAuthenticated)," +
+        "isOfflineMode=\(fronteggAuth.isOfflineMode)"
+    }
 }
 
 struct FronteggWrapper_Previews: PreviewProvider {
@@ -46,4 +57,3 @@ struct FronteggWrapper_Previews: PreviewProvider {
         }
     }
 }
-

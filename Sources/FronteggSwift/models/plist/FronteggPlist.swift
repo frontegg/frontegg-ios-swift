@@ -193,10 +193,17 @@ struct FronteggPlist: Decodable, Equatable {
             if !self.lateInit {
                 throw error
             }
-            
-            let emptyPayload = try JSONSerialization.data(withJSONObject: ["baseUrl":"", "clientId":""], options: [])
-            let defaultLateInitPayload = try JSONDecoder().decode(Payload.self, from: emptyPayload)
-            self.payload = defaultLateInitPayload
+
+            // Late-init apps do not need a real region payload at plist load time.
+            // Using an empty decoded payload crashes in SingleRegionConfig because it
+            // validates that baseUrl starts with https. Keep a safe placeholder until
+            // manualInit/manualInitRegions provides the real runtime configuration.
+            self.payload = .singleRegion(
+                .init(
+                    baseUrl: "https://late-init.invalid",
+                    clientId: "late-init-placeholder"
+                )
+            )
         }
     }
 }

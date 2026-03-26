@@ -20,7 +20,8 @@ class MockEntitlementsApi: Api {
         refreshToken: String? = nil,
         additionalHeaders: [String: String] = [:],
         followRedirect: Bool = true,
-        timeout: Int = Api.DEFAULT_TIMEOUT
+        timeout: Int = Api.DEFAULT_TIMEOUT,
+        retries: Int = 0
     ) async throws -> (Data, URLResponse) {
         getRequestCallCount += 1
         if path.contains("user-entitlements"), let response = entitlementsResponse {
