@@ -14,6 +14,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         let codeVerifier: String?
         let source: String
         let providerError: Error?
+        let hasPendingOAuthStates: Bool
     }
 
     var accessoryView: UIView?
@@ -24,6 +25,30 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     private var magicLinkRedirectUri: String? = nil
     private var previousUrl: URL? = nil
     private var isSocialLoginFlow: Bool = false
+
+    func setActiveOAuthFlow(_ flow: FronteggOAuthFlow) {
+        fronteggAuth.activeEmbeddedOAuthFlow = flow
+    }
+
+    private func resetActiveOAuthFlow() {
+        fronteggAuth.activeEmbeddedOAuthFlow = .login
+    }
+
+    private func currentOAuthFlow(defaultingTo fallback: FronteggOAuthFlow = .login) -> FronteggOAuthFlow {
+        let currentFlow = fronteggAuth.activeEmbeddedOAuthFlow
+        return currentFlow == .login ? fallback : currentFlow
+    }
+
+    private func oauthCodeVerifierError(
+        oauthState: String?,
+        hasPendingOAuthStates: Bool
+    ) -> FronteggError {
+        if oauthState != nil && hasPendingOAuthStates {
+            return .authError(.invalidOAuthState)
+        }
+
+        return .authError(.codeVerifierNotFound)
+    }
 
     private func isAllowedTestingLoopbackURL(_ url: URL) -> Bool {
         guard FronteggRuntime.isTesting else { return false }
@@ -54,7 +79,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             return HostedCallbackCodeVerifierResolution(
                 codeVerifier: nil,
                 source: "magic_link",
-                providerError: nil
+                providerError: nil,
+                hasPendingOAuthStates: false
             )
         }
 
@@ -64,7 +90,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 return HostedCallbackCodeVerifierResolution(
                     codeVerifier: verifier,
                     source: "webview_local_storage",
-                    providerError: nil
+                    providerError: nil,
+                    hasPendingOAuthStates: CredentialManager.hasPendingOAuthStates()
                 )
             } catch {
                 let resolution = CredentialManager.resolveCodeVerifier(
@@ -74,7 +101,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 return HostedCallbackCodeVerifierResolution(
                     codeVerifier: resolution.verifier,
                     source: resolution.source.rawValue,
-                    providerError: error
+                    providerError: error,
+                    hasPendingOAuthStates: resolution.hasPendingOAuthStates
                 )
             }
         }
@@ -86,7 +114,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         return HostedCallbackCodeVerifierResolution(
             codeVerifier: resolution.verifier,
             source: resolution.source.rawValue,
-            providerError: nil
+            providerError: nil,
+            hasPendingOAuthStates: resolution.hasPendingOAuthStates
         )
     }
     
@@ -269,23 +298,29 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     ]
                 )
                 
-                // Check if this is an OAuth callback with code - handle it directly instead of opening externally
-                if hasCode {
-                    logger.info("✅ [Social Login Debug] Detected custom scheme OAuth callback URL with code, handling as HostedLoginCallback")
+                let failureDetails = queryItems.flatMap { fronteggAuth.oauthFailureDetails(from: $0) }
+                let hasOAuthError = failureDetails != nil
+
+                // Check if this is an OAuth callback with code or error - handle it directly instead of opening externally
+                if hasCode || hasOAuthError {
+                    logger.info("✅ [Social Login Debug] Detected custom scheme OAuth callback URL, handling as HostedLoginCallback")
                     logger.info("✅ [Social Login Debug] This is the expected redirect flow for social login")
                     logger.info("✅ [Social Login Debug] Callback URL parameters: \(queryKeys.joined(separator: ", "))")
                     if let codeValue = queryItems?["code"] {
                         logger.info("✅ [Social Login Debug] Code parameter length: \(codeValue.count) characters")
+                    } else if let errorValue = queryItems?["error"] {
+                        logger.info("✅ [Social Login Debug] Error callback detected: \(errorValue)")
                     }
                     SentryHelper.addBreadcrumb(
-                        "Custom scheme OAuth callback with code - handling",
+                        "Custom scheme OAuth callback detected - handling",
                         category: "social_login",
                         level: .info,
                         data: [
                             "url": url.absoluteString,
                             "scheme": scheme,
                             "queryKeys": queryKeys,
-                            "codeLength": queryItems?["code"]?.count ?? 0
+                            "codeLength": queryItems?["code"]?.count ?? 0,
+                            "errorValue": queryItems?["error"] ?? "nil"
                         ]
                     )
                     return self.handleHostedLoginCallback(webView, url)
@@ -701,6 +736,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 return self.handleHostedLoginCallback(webView, url)
             case .SocialOauthPreLogin:
                 isSocialLoginFlow = true
+                setActiveOAuthFlow(.socialLogin)
                 return self.setSocialLoginRedirectUri(webView, url)
             default:
                 return .allow
@@ -1114,6 +1150,22 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 ]
             )
 
+            let oauthFlow = currentOAuthFlow()
+            if let queryItems, let failureDetails = fronteggAuth.oauthFailureDetails(from: queryItems) {
+                fronteggAuth.reportOAuthFailure(
+                    error: failureDetails.error,
+                    flow: oauthFlow,
+                    errorCode: failureDetails.errorCode,
+                    errorDescription: failureDetails.errorDescription
+                )
+            } else {
+                fronteggAuth.reportOAuthFailure(
+                    error: FronteggError.authError(.failedToExtractCode),
+                    flow: oauthFlow
+                )
+            }
+
+            resetActiveOAuthFlow()
             logger.info("Restarting the process by generating a new authorize url")
             let (url, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
             CredentialManager.saveCodeVerifier(codeVerifier)
@@ -1183,6 +1235,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         // Social login is detected by: isSocialLoginFlow flag OR OIDC callback path OR /social/success (embedded mode only, Microsoft case)
         // We don't check for general /oauth/account/ paths to avoid false positives with magic link flows
         let isSocialLogin = isSocialLoginFlow || url.path.contains("/oauth/account/oidc/callback") || (url.path.contains("/oauth/account/social/success") && FronteggApp.shared.embeddedMode)
+        let oauthFlow = currentOAuthFlow(defaultingTo: isSocialLogin ? .socialLogin : .login)
         
         logger.info("🔵 [Social Login Debug] Final redirect_uri for token exchange: \(redirectUri)")
         logger.info("🔵 [Social Login Debug] Is magic link flow: \(isMagicLink)")
@@ -1215,12 +1268,29 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 self.logger.info("🔵 [Social Login Debug] Code verifier present: \(codeVerifier != nil ? "yes" : "no")")
                 self.logger.info("🔵 [Social Login Debug] Code verifier source: \(codeVerifierSource)")
                 self.logger.trace("Using redirect_uri: \(redirectUri), isMagicLink: \(isMagicLink), codeVerifier: \(codeVerifier != nil ? "provided" : "nil")")
+
+                if !isMagicLink && codeVerifier == nil {
+                    let fronteggError = self.oauthCodeVerifierError(
+                        oauthState: oauthState,
+                        hasPendingOAuthStates: verifierResolution.hasPendingOAuthStates
+                    )
+                    self.fronteggAuth.reportOAuthFailure(error: fronteggError, flow: oauthFlow)
+                    self.resetActiveOAuthFlow()
+
+                    let (loginUrl, refreshedCodeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
+                    CredentialManager.saveCodeVerifier(refreshedCodeVerifier)
+                    DispatchQueue.main.async {
+                        _ = webView?.load(URLRequest(url: loginUrl))
+                    }
+                    return
+                }
                 
                 FronteggAuth.shared.handleHostedLoginCallback(
                     code,
                     codeVerifier,
                     oauthState: oauthState,
                     redirectUri: redirectUri,
+                    flow: oauthFlow,
                     completePendingFlowOnSuccess: !isMagicLink,
                     completion: { res in
                     switch (res) {
@@ -1231,6 +1301,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                         logger.info("✅ [Token Exchange] Redirect URI used: \(redirectUri)")
                         logger.info("✅ [Token Exchange] Code length: \(code.count), Code verifier used: \(codeVerifier != nil ? "yes" : "no")")
                         self.isSocialLoginFlow = false
+                        self.resetActiveOAuthFlow()
                         
                         // Log successful token exchange to Sentry
                         SentryHelper.addBreadcrumb(
@@ -1255,6 +1326,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                         logger.error("❌ [Token Exchange] Code length: \(code.count), Code verifier used: \(codeVerifier != nil ? "yes" : "no")")
                         logger.error("❌ [Token Exchange] Is magic link: \(isMagicLink), Is social login: \(isSocialLogin)")
                         self.isSocialLoginFlow = false
+                        self.resetActiveOAuthFlow()
                         
                         // Log failed token exchange to Sentry
                         SentryHelper.logError(error, context: [
@@ -1361,7 +1433,14 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             if let error = error {
                 if CustomWebView.isCancelledAsAuthenticationLoginError(error) {
                     // Social login authentication canceled
+                    self.isSocialLoginFlow = false
+                    self.resetActiveOAuthFlow()
                 } else {
+                    let fronteggError = FronteggError.authError(.other(error))
+                    self.fronteggAuth.reportOAuthFailure(
+                        error: fronteggError,
+                        flow: self.currentOAuthFlow(defaultingTo: .socialLogin)
+                    )
                     SentryHelper.logError(error, context: [
                         "social_login": [
                             "url": url.absoluteString,
@@ -1376,10 +1455,16 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     
                     let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
                     CredentialManager.saveCodeVerifier(codeVerifier)
+                    self.isSocialLoginFlow = false
+                    self.resetActiveOAuthFlow()
                     _ = webView?.load(URLRequest(url: newUrl))
                 }
             }else if (callbackUrl == nil){
                 // Critical: callback URL is nil - redirect failed
+                self.fronteggAuth.reportOAuthFailure(
+                    error: FronteggError.authError(.unknown),
+                    flow: self.currentOAuthFlow(defaultingTo: .socialLogin)
+                )
                 SentryHelper.logMessage(
                     "Google Login fails to redirect to app in embeddedMode when Safari session exists - callbackUrl is nil",
                     level: .error,
@@ -1400,6 +1485,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 
                 let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
                 CredentialManager.saveCodeVerifier(codeVerifier)
+                self.isSocialLoginFlow = false
+                self.resetActiveOAuthFlow()
                 _ = webView?.load(URLRequest(url: newUrl))
                 
             }else {
@@ -1407,6 +1494,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     let queryItems = getQueryItems(callbackUrl.absoluteString)
                     let hasCode = queryItems?["code"] != nil
                     let hasError = queryItems?["error"] != nil
+                    let flow = self.currentOAuthFlow(defaultingTo: .socialLogin)
                     if !hasCode && !hasError {
                         let keys = Array((queryItems ?? [:]).keys).sorted()
                         SentryHelper.logMessage(
@@ -1426,6 +1514,32 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                                 ]
                             ]
                         )
+
+                        self.fronteggAuth.reportOAuthFailure(
+                            error: FronteggError.authError(.failedToExtractCode),
+                            flow: flow
+                        )
+                        let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
+                        CredentialManager.saveCodeVerifier(codeVerifier)
+                        self.isSocialLoginFlow = false
+                        self.resetActiveOAuthFlow()
+                        _ = webView?.load(URLRequest(url: newUrl))
+                        return
+                    }
+
+                    if let queryItems, let failureDetails = self.fronteggAuth.oauthFailureDetails(from: queryItems) {
+                        self.fronteggAuth.reportOAuthFailure(
+                            error: failureDetails.error,
+                            flow: flow,
+                            errorCode: failureDetails.errorCode,
+                            errorDescription: failureDetails.errorDescription
+                        )
+                        let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
+                        CredentialManager.saveCodeVerifier(codeVerifier)
+                        self.isSocialLoginFlow = false
+                        self.resetActiveOAuthFlow()
+                        _ = webView?.load(URLRequest(url: newUrl))
+                        return
                     }
                 }
 

@@ -37,7 +37,13 @@ public func getQueryItems(_ urlString: String) -> [String : String]? {
     }
     
     for item in components.queryItems ?? [] {
-        queryItems[item.name] = item.value?.removingPercentEncoding
+        guard let value = item.value else {
+            queryItems[item.name] = nil
+            continue
+        }
+
+        let normalizedValue = value.replacingOccurrences(of: "+", with: " ")
+        queryItems[item.name] = normalizedValue.removingPercentEncoding ?? normalizedValue
     }
     return queryItems
 }

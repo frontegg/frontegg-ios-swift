@@ -384,6 +384,21 @@ public enum NetworkStatusMonitor {
         }
     }
 
+    static func probeConfiguredReachability(
+        timeout: TimeInterval = 3,
+        treatRedirectsAsOffline: Bool = true
+    ) async -> Bool {
+        if let base = configuredBaseURLString {
+            return await checkServerConnectivity(
+                baseURLString: base,
+                timeout: timeout,
+                treatRedirectsAsOffline: treatRedirectsAsOffline
+            )
+        }
+
+        return await routeIsAvailableOnce()
+    }
+
     // MARK: - Helpers
 
     private static func refreshReachability(

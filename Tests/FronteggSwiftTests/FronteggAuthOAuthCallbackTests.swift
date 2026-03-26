@@ -4,6 +4,7 @@
 //
 
 import XCTest
+import AuthenticationServices
 @testable import FronteggSwift
 
 private final class MockOAuthCallbackApi: Api {
@@ -62,6 +63,36 @@ private final class MockOAuthCallbackApi: Api {
     }
 }
 
+private final class SpyOAuthErrorDelegate: FronteggOAuthErrorDelegate {
+    private(set) var contexts: [FronteggOAuthErrorContext] = []
+
+    func fronteggSDK(didReceiveOAuthError context: FronteggOAuthErrorContext) {
+        contexts.append(context)
+    }
+}
+
+private final class StartupProbeSequence {
+    private var results: [Bool]
+    private(set) var callCount = 0
+
+    init(_ results: [Bool]) {
+        self.results = results
+    }
+
+    func next() -> Bool {
+        callCount += 1
+        return results.removeFirst()
+    }
+}
+
+private final class BooleanBox {
+    var value: Bool
+
+    init(_ value: Bool) {
+        self.value = value
+    }
+}
+
 final class FronteggAuthOAuthCallbackTests: XCTestCase {
 
     private var auth: FronteggAuth!
@@ -93,6 +124,8 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         auth.setInitializing(false)
         auth.setShowLoader(false)
         auth.setWebLoading(false)
+        FronteggOAuthErrorRuntimeSettings.presentation = .toast
+        FronteggOAuthErrorRuntimeSettings.delegateBox.value = nil
     }
 
     override func tearDown() {
@@ -101,6 +134,8 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         credentialManager.clear()
         clearOAuthState()
         PlistHelper.testConfigOverride = nil
+        FronteggOAuthErrorRuntimeSettings.presentation = .toast
+        FronteggOAuthErrorRuntimeSettings.delegateBox.value = nil
         api = nil
         auth = nil
         credentialManager = nil
@@ -211,6 +246,196 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         XCTAssertNil(api.lastExchangeInput)
     }
 
+    func test_createOauthCallbackHandler_errorQuery_reportsDecodedErrorDescriptionToDelegate() async {
+        let delegate = SpyOAuthErrorDelegate()
+        FronteggOAuthErrorRuntimeSettings.presentation = .delegate
+        FronteggOAuthErrorRuntimeSettings.delegateBox.value = delegate
+        CredentialManager.registerPendingOAuth(state: "expected-state", codeVerifier: "expected-verifier")
+
+        let result = await executeCallback(
+            allowFallback: true,
+            url: makeCallbackUrl(
+                state: "expected-state",
+                errorMessage: "ER-05001",
+                errorDescription: "JWT+token+size+exceeded"
+            )
+        )
+
+        await waitForOAuthErrorDispatch()
+
+        switch result {
+        case .success:
+            XCTFail("Expected oauth error")
+        case .failure(let error):
+            guard case .authError(let authError) = error else {
+                return XCTFail("Expected auth error, got \(error)")
+            }
+            guard case .oauthError(let message) = authError else {
+                return XCTFail("Expected oauthError, got \(authError)")
+            }
+            XCTAssertEqual(message, "ER-05001: JWT token size exceeded")
+        }
+
+        XCTAssertEqual(delegate.contexts.count, 1)
+        XCTAssertEqual(delegate.contexts.first?.displayMessage, "ER-05001: JWT token size exceeded")
+        XCTAssertEqual(delegate.contexts.first?.errorCode, "ER-05001")
+        XCTAssertEqual(delegate.contexts.first?.errorDescription, "JWT token size exceeded")
+        XCTAssertEqual(delegate.contexts.first?.flow, .login)
+        XCTAssertEqual(delegate.contexts.first?.embeddedMode, false)
+    }
+
+    func test_handleSocialLoginCallback_errorCallback_returnsNil() {
+#if DEBUG
+        PlistHelper.testConfigOverride = makeSharedAppConfig()
+#endif
+        let app = FronteggApp.shared
+        let previousBaseUrl = app.baseUrl
+        let previousBundleIdentifier = app.bundleIdentifier
+        app.baseUrl = "https://test.example.com"
+        app.bundleIdentifier = "com.frontegg.demo"
+        defer {
+            app.baseUrl = previousBaseUrl
+            app.bundleIdentifier = previousBundleIdentifier
+        }
+
+        let callbackUrl = makeGeneratedRedirectCallbackUrl(
+            state: "expected-state",
+            errorMessage: "ER-05001",
+            errorDescription: "JWT+token+size+exceeded"
+        )
+
+        XCTAssertNil(auth.handleSocialLoginCallback(callbackUrl))
+    }
+
+    func test_handleOpenUrl_generatedRedirectError_reportsDecodedErrorDescriptionToDelegate() async {
+        let delegate = SpyOAuthErrorDelegate()
+        FronteggOAuthErrorRuntimeSettings.presentation = .delegate
+        FronteggOAuthErrorRuntimeSettings.delegateBox.value = delegate
+
+#if DEBUG
+        PlistHelper.testConfigOverride = makeSharedAppConfig()
+#endif
+        let app = FronteggApp.shared
+        let previousBaseUrl = app.baseUrl
+        let previousBundleIdentifier = app.bundleIdentifier
+        let previousEmbeddedMode = app.embeddedMode
+        app.baseUrl = "https://test.example.com"
+        app.bundleIdentifier = "com.frontegg.demo"
+        app.embeddedMode = auth.embeddedMode
+        defer {
+            app.baseUrl = previousBaseUrl
+            app.bundleIdentifier = previousBundleIdentifier
+            app.embeddedMode = previousEmbeddedMode
+        }
+
+        auth.activeEmbeddedOAuthFlow = .socialLogin
+        let callbackUrl = makeGeneratedRedirectCallbackUrl(
+            state: "expected-state",
+            errorMessage: "ER-05001",
+            errorDescription: "JWT+token+size+exceeded"
+        )
+
+        XCTAssertTrue(auth.handleOpenUrl(callbackUrl))
+        await waitForOAuthErrorDispatch()
+
+        XCTAssertEqual(delegate.contexts.count, 1)
+        XCTAssertEqual(delegate.contexts.first?.displayMessage, "ER-05001: JWT token size exceeded")
+        XCTAssertEqual(delegate.contexts.first?.errorCode, "ER-05001")
+        XCTAssertEqual(delegate.contexts.first?.errorDescription, "JWT token size exceeded")
+        XCTAssertEqual(delegate.contexts.first?.flow, .socialLogin)
+        XCTAssertEqual(delegate.contexts.first?.embeddedMode, false)
+    }
+
+    func test_createOauthCallbackHandler_transportError_clearsOnlyProvidedPendingState() async {
+        CredentialManager.registerPendingOAuth(state: "embedded-state", codeVerifier: "embedded-verifier")
+        CredentialManager.registerPendingOAuth(state: "popup-state", codeVerifier: "popup-verifier")
+
+        let result = await executeCallback(
+            allowFallback: true,
+            url: nil,
+            error: NSError(domain: "WebAuthenticator", code: 1),
+            pendingOAuthState: "popup-state"
+        )
+
+        switch result {
+        case .success:
+            XCTFail("Expected transport error failure")
+        case .failure:
+            break
+        }
+
+        XCTAssertEqual(
+            CredentialManager.getCodeVerifier(for: "embedded-state", allowFallback: false),
+            "embedded-verifier"
+        )
+        XCTAssertNil(CredentialManager.getCodeVerifier(for: "popup-state", allowFallback: false))
+        XCTAssertTrue(CredentialManager.hasPendingOAuthStates())
+        XCTAssertNil(api.lastExchangeInput)
+    }
+
+    func test_createOauthCallbackHandler_cancelledTransportError_doesNotReportOAuthFailure() async {
+        let delegate = SpyOAuthErrorDelegate()
+        FronteggOAuthErrorRuntimeSettings.presentation = .delegate
+        FronteggOAuthErrorRuntimeSettings.delegateBox.value = delegate
+        CredentialManager.registerPendingOAuth(state: "popup-state", codeVerifier: "popup-verifier")
+
+        let result = await executeCallback(
+            allowFallback: true,
+            url: nil,
+            error: NSError(
+                domain: ASWebAuthenticationSessionError.errorDomain,
+                code: ASWebAuthenticationSessionError.canceledLogin.rawValue
+            ),
+            pendingOAuthState: "popup-state"
+        )
+
+        await waitForOAuthErrorDispatch()
+
+        switch result {
+        case .success:
+            XCTFail("Expected cancel failure")
+        case .failure:
+            break
+        }
+
+        XCTAssertTrue(delegate.contexts.isEmpty)
+    }
+
+    func test_createOauthCallbackHandler_transportError_preservesHostedStateForFollowupSuccess() async throws {
+        let accessToken = try makeAccessToken()
+        api.exchangeTokenResponse = try makeAuthResponse(accessToken: accessToken, refreshToken: "refresh-token-cancel")
+        api.meResult = .success(try makeUser())
+
+        CredentialManager.registerPendingOAuth(state: "embedded-state", codeVerifier: "embedded-verifier")
+        CredentialManager.registerPendingOAuth(state: "popup-state", codeVerifier: "popup-verifier")
+
+        _ = await executeCallback(
+            allowFallback: true,
+            url: nil,
+            error: NSError(domain: "WebAuthenticator", code: 1),
+            pendingOAuthState: "popup-state"
+        )
+
+        let result = await executeCallback(
+            allowFallback: false,
+            url: makeCallbackUrl(code: "code-embedded", state: "embedded-state"),
+            pendingOAuthState: "embedded-state"
+        )
+
+        switch result {
+        case .success(let user):
+            XCTAssertEqual(user.email, "test@example.com")
+        case .failure(let error):
+            XCTFail("Expected hosted callback success after popup cancel, got \(error)")
+        }
+
+        XCTAssertEqual(api.lastExchangeInput?.code, "code-embedded")
+        XCTAssertEqual(api.lastExchangeInput?.codeVerifier, "embedded-verifier")
+        XCTAssertEqual(api.meCallCount, 1)
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertFalse(CredentialManager.hasPendingOAuthStates())
+    }
+
     func test_createOauthCallbackHandler_matchedStateTokenExchangeFailure_clearsOnlyMatchedStateAndPreservesNewerFallback() async {
         CredentialManager.registerPendingOAuth(state: "state-a", codeVerifier: "verifier-a")
         CredentialManager.registerPendingOAuth(state: "state-b", codeVerifier: "verifier-b")
@@ -233,6 +458,32 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         XCTAssertEqual(CredentialManager.getCodeVerifier(for: "state-b", allowFallback: false), "verifier-b")
         XCTAssertTrue(CredentialManager.hasPendingOAuthStates())
         XCTAssertEqual(CredentialManager.getCodeVerifier(), "newer-verifier")
+    }
+
+    func test_createOauthCallbackHandler_tokenExchangeFailure_reportsSingleDelegateEvent() async {
+        let delegate = SpyOAuthErrorDelegate()
+        FronteggOAuthErrorRuntimeSettings.presentation = .delegate
+        FronteggOAuthErrorRuntimeSettings.delegateBox.value = delegate
+        CredentialManager.registerPendingOAuth(state: "state-a", codeVerifier: "verifier-a")
+        api.exchangeTokenError = FronteggError.authError(.couldNotExchangeToken("exchange failed"))
+
+        let result = await executeCallback(
+            allowFallback: false,
+            url: makeCallbackUrl(code: "code-345", state: "state-a")
+        )
+
+        await waitForOAuthErrorDispatch()
+
+        switch result {
+        case .success:
+            XCTFail("Expected token exchange failure")
+        case .failure:
+            break
+        }
+
+        XCTAssertEqual(delegate.contexts.count, 1)
+        XCTAssertEqual(delegate.contexts.first?.displayMessage, "exchange failed")
+        XCTAssertEqual(delegate.contexts.first?.flow, .login)
     }
 
     func test_createOauthCallbackHandler_matchedStateMeFailure_clearsOnlyMatchedStateAndPreservesNewerFallback() async throws {
@@ -390,10 +641,95 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         XCTAssertFalse(auth.isOfflineMode)
     }
 
+    func test_completeUnauthenticatedStartupInitialization_transientFailures_keepLoaderUntilRecovery() async {
+        auth.setIsLoading(true)
+        auth.setInitializing(true)
+        auth.setIsOfflineMode(false)
+
+        let probeSequence = StartupProbeSequence([false, false, true])
+
+        let task = Task {
+            await auth.completeUnauthenticatedStartupInitialization(
+                monitoringInterval: 1,
+                startupProbeTimeout: 0.01,
+                offlineCommitWindow: 0.08,
+                probeDelay: 0.02,
+                connectivityProbe: { _ in
+                    probeSequence.next()
+                },
+                postConnectivityServices: {}
+            )
+        }
+
+        try? await Task.sleep(nanoseconds: 15_000_000)
+
+        let midRaceSnapshot = NetworkStatusMonitor._testSnapshot()
+        XCTAssertFalse(midRaceSnapshot.monitoringActive)
+        XCTAssertTrue(auth.isLoading)
+        XCTAssertTrue(auth.initializing)
+        XCTAssertFalse(auth.isOfflineMode)
+
+        let settledOnline = await task.value
+
+        let finalSnapshot = NetworkStatusMonitor._testSnapshot()
+        XCTAssertTrue(settledOnline)
+        XCTAssertEqual(probeSequence.callCount, 3)
+        XCTAssertFalse(auth.isLoading)
+        XCTAssertFalse(auth.initializing)
+        XCTAssertFalse(auth.isOfflineMode)
+        XCTAssertTrue(finalSnapshot.monitoringActive)
+        XCTAssertEqual(finalSnapshot.handlerCount, 1)
+    }
+
+    func test_completeUnauthenticatedStartupInitialization_sustainedFailure_commitsOfflineAfterRaceWindow() async {
+        auth.setIsLoading(true)
+        auth.setInitializing(true)
+        auth.setIsOfflineMode(false)
+
+        let postConnectivityServicesCalled = BooleanBox(false)
+        let probeSequence = StartupProbeSequence(Array(repeating: false, count: 8))
+
+        let task = Task {
+            await auth.completeUnauthenticatedStartupInitialization(
+                monitoringInterval: 1,
+                startupProbeTimeout: 0.01,
+                offlineCommitWindow: 0.08,
+                probeDelay: 0.02,
+                connectivityProbe: { _ in
+                    probeSequence.next()
+                },
+                postConnectivityServices: {
+                    postConnectivityServicesCalled.value = true
+                }
+            )
+        }
+
+        try? await Task.sleep(nanoseconds: 30_000_000)
+
+        let midRaceSnapshot = NetworkStatusMonitor._testSnapshot()
+        XCTAssertFalse(midRaceSnapshot.monitoringActive)
+        XCTAssertTrue(auth.isLoading)
+        XCTAssertTrue(auth.initializing)
+        XCTAssertFalse(auth.isOfflineMode)
+
+        let settledOnline = await task.value
+
+        let finalSnapshot = NetworkStatusMonitor._testSnapshot()
+        XCTAssertFalse(settledOnline)
+        XCTAssertGreaterThanOrEqual(probeSequence.callCount, 2)
+        XCTAssertFalse(postConnectivityServicesCalled.value)
+        XCTAssertFalse(auth.isLoading)
+        XCTAssertFalse(auth.initializing)
+        XCTAssertTrue(auth.isOfflineMode)
+        XCTAssertTrue(finalSnapshot.monitoringActive)
+        XCTAssertEqual(finalSnapshot.handlerCount, 1)
+    }
+
     private func executeCallback(
         allowFallback: Bool,
         url: URL?,
-        error: Error? = nil
+        error: Error? = nil,
+        pendingOAuthState: String? = nil
     ) async -> Result<User, FronteggError> {
         await withCheckedContinuation { continuation in
             let handler = auth.createOauthCallbackHandler(
@@ -401,7 +737,8 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
                     continuation.resume(returning: result)
                 },
                 allowLastCodeVerifierFallback: allowFallback,
-                redirectUriOverride: "test://callback"
+                redirectUriOverride: "test://callback",
+                pendingOAuthState: pendingOAuthState
             )
             handler(url, error)
         }
@@ -425,7 +762,8 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
     private func makeCallbackUrl(
         code: String? = nil,
         state: String? = nil,
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        errorDescription: String? = nil
     ) -> URL {
         var components = URLComponents(string: "test://callback")!
         var items: [URLQueryItem] = []
@@ -438,8 +776,60 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         if let errorMessage {
             items.append(URLQueryItem(name: "error", value: errorMessage))
         }
+        if let errorDescription {
+            items.append(URLQueryItem(name: "error_description", value: errorDescription))
+        }
         components.queryItems = items
         return components.url!
+    }
+
+    private func makeGeneratedRedirectCallbackUrl(
+        bundleIdentifier: String = "com.frontegg.demo",
+        host: String = "test.example.com",
+        code: String? = nil,
+        state: String? = nil,
+        errorMessage: String? = nil,
+        errorDescription: String? = nil
+    ) -> URL {
+        var components = URLComponents()
+        components.scheme = bundleIdentifier.lowercased()
+        components.host = host
+        components.path = "/ios/oauth/callback"
+
+        var items: [URLQueryItem] = []
+        if let code {
+            items.append(URLQueryItem(name: "code", value: code))
+        }
+        if let state {
+            items.append(URLQueryItem(name: "state", value: state))
+        }
+        if let errorMessage {
+            items.append(URLQueryItem(name: "error", value: errorMessage))
+        }
+        if let errorDescription {
+            items.append(URLQueryItem(name: "error_description", value: errorDescription))
+        }
+        components.queryItems = items
+        return components.url!
+    }
+
+    private func waitForOAuthErrorDispatch() async {
+        await Task.yield()
+        await MainActor.run {}
+    }
+
+    private func makeSharedAppConfig() -> FronteggPlist {
+        FronteggPlist(
+            lateInit: true,
+            payload: .singleRegion(
+                .init(
+                    baseUrl: "https://test.example.com",
+                    clientId: "test-client-id"
+                )
+            ),
+            keepUserLoggedInAfterReinstall: true,
+            useAsWebAuthenticationForAppleLogin: false
+        )
     }
 
     private func makeAccessToken(

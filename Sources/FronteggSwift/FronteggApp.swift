@@ -8,6 +8,92 @@
 import Foundation
 import UIKit
 
+/// Controls how the SDK presents OAuth failures to the user.
+public enum FronteggOAuthErrorPresentation: Equatable {
+    /// The SDK shows its built-in top toast with the formatted error message.
+    case toast
+    /// The SDK suppresses its built-in toast and forwards the failure to
+    /// `oauthErrorDelegate` so the app can render its own UI.
+    case delegate
+}
+
+/// Identifies the OAuth flow that produced an error.
+public enum FronteggOAuthFlow: Equatable {
+    /// Standard login and hosted login callbacks.
+    case login
+    /// Social login, such as Google or GitHub.
+    case socialLogin
+    /// Standard SSO flows.
+    case sso
+    /// Custom SSO flows.
+    case customSSO
+    /// Sign in with Apple.
+    case apple
+    /// MFA verification flows.
+    case mfa
+    /// Step-up authentication flows.
+    case stepUp
+    /// Verification or email confirmation flows.
+    case verification
+}
+
+/// Carries the SDK's normalized OAuth failure payload for custom presentation.
+public struct FronteggOAuthErrorContext {
+    /// The user-facing message the SDK would display in toast mode.
+    public let displayMessage: String
+    /// The raw OAuth error code, when available.
+    public let errorCode: String?
+    /// The decoded OAuth error description, when available.
+    public let errorDescription: String?
+    /// The SDK error object for programmatic inspection.
+    public let error: FronteggError
+    /// The OAuth flow that failed.
+    public let flow: FronteggOAuthFlow
+    /// Whether the failure happened while the SDK was configured for embedded mode.
+    public let embeddedMode: Bool
+
+    /// Creates an OAuth error context for app-controlled rendering.
+    public init(
+        displayMessage: String,
+        errorCode: String?,
+        errorDescription: String?,
+        error: FronteggError,
+        flow: FronteggOAuthFlow,
+        embeddedMode: Bool
+    ) {
+        self.displayMessage = displayMessage
+        self.errorCode = errorCode
+        self.errorDescription = errorDescription
+        self.error = error
+        self.flow = flow
+        self.embeddedMode = embeddedMode
+    }
+}
+
+/// Implement this protocol to render OAuth failures yourself.
+///
+/// Assign the delegate through `FronteggApp.oauthErrorDelegate` and set
+/// `FronteggApp.oauthErrorPresentation = .delegate`.
+///
+/// The callback is delivered on the main thread. User-cancelled OAuth flows are
+/// not reported.
+public protocol FronteggOAuthErrorDelegate: AnyObject {
+    /// Called when the SDK wants the host app to present an OAuth failure.
+    ///
+    /// - Parameter context: The normalized OAuth failure payload, including the
+    ///   user-facing message, structured error fields, and flow metadata.
+    func fronteggSDK(didReceiveOAuthError context: FronteggOAuthErrorContext)
+}
+
+final class FronteggWeakOAuthErrorDelegateBox {
+    weak var value: FronteggOAuthErrorDelegate?
+}
+
+enum FronteggOAuthErrorRuntimeSettings {
+    static var presentation: FronteggOAuthErrorPresentation = .toast
+    static let delegateBox = FronteggWeakOAuthErrorDelegateBox()
+}
+
 public class FronteggApp {
     
     public static let shared = FronteggApp()
@@ -33,6 +119,24 @@ public class FronteggApp {
     public var loggerDelegate: FronteggLoggerDelegate? {
         get { FeLogger.delegate }
         set { FeLogger.delegate = newValue }
+    }
+    /// Controls how the SDK presents OAuth failures.
+    ///
+    /// Defaults to `.toast`. Set to `.delegate` to suppress the built-in SDK
+    /// toast and route failures to `oauthErrorDelegate` instead.
+    public var oauthErrorPresentation: FronteggOAuthErrorPresentation {
+        get { FronteggOAuthErrorRuntimeSettings.presentation }
+        set { FronteggOAuthErrorRuntimeSettings.presentation = newValue }
+    }
+    /// Delegate for app-controlled OAuth failure rendering.
+    ///
+    /// The delegate is stored weakly and is called on the main thread when
+    /// `oauthErrorPresentation` is set to `.delegate`. Completion handlers for
+    /// the underlying auth flow still run as usual. User-cancelled OAuth flows
+    /// are not reported.
+    public var oauthErrorDelegate: FronteggOAuthErrorDelegate? {
+        get { FronteggOAuthErrorRuntimeSettings.delegateBox.value }
+        set { FronteggOAuthErrorRuntimeSettings.delegateBox.value = newValue }
     }
 
     /// Account (tenant) alias for login-per-account (custom login box). When set, the authorize URL includes `organization=<alias>` so Frontegg routes the user to that account's login experience. Set from your app (e.g. from subdomain or query param) before calling login. Note: `switchTenant` is not supported between accounts that use custom login boxes.
@@ -162,8 +266,8 @@ public class FronteggApp {
     }
 
     @MainActor
-    public func resetForTesting() async {
-        await auth.resetForTesting()
+    public func resetForTesting(baseUrlOverride: String? = nil) async {
+        await auth.resetForTesting(baseUrlOverride: baseUrlOverride)
     }
 
 #if DEBUG

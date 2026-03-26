@@ -70,6 +70,40 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         waitForUserEmail("google-social@frontegg.com", timeout: 30)
     }
 
+    func testEmbeddedGoogleSocialLoginOAuthErrorShowsToastAndKeepsLoginOpen() throws {
+        Self.server.queueEmbeddedSocialSuccessOAuthError(
+            errorCode: "ER-05001",
+            errorDescription: "JWT token size exceeded the maximum allowed size. Please contact support to reduce token payload size."
+        )
+
+        launchApp(resetState: true, useTestingWebAuthenticationTransport: false)
+        waitForScreen("LoginPageRoot")
+        tapButton("E2EEmbeddedGoogleSocialButton")
+
+        acceptSystemDialogIfNeeded(timeout: 10)
+        XCTAssertTrue(Self.server.waitForRequest(path: "/idp/google/authorize", timeout: 10))
+
+        app.getWebLabel("Mock Google Login").waitUntilExists(timeout: 20)
+        app.getWebButton("Continue with Mock Google").safeTap()
+        acceptSystemDialogIfNeeded(timeout: 10)
+
+        let toast = app.otherElements["OAuthErrorToast"].waitUntilExists(timeout: 20)
+        let toastMessage = (toast.value as? String) ?? toast.label
+        XCTAssertTrue(toastMessage.contains("ER-05001"), screenDebugSummary())
+        XCTAssertTrue(toastMessage.contains("JWT token size exceeded"), screenDebugSummary())
+        XCTAssertFalse(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
+
+        app.getWebButton("Continue").waitUntilExists(timeout: 20)
+    }
+
+    func testColdLaunchTransientProbeTimeoutsDoNotBlinkNoConnectionPage() throws {
+        try Self.server.queueProbeTimeouts(count: 2, delayMs: 1_500)
+
+        launchApp(resetState: true)
+        waitForScreen("LoginPageRoot", timeout: 15)
+        assertNoConnectionScreenDoesNotAppear(duration: 2)
+    }
+
     func testLogoutTerminateTransientProbeFailureDoesNotBlinkNoConnectionPage() throws {
         launchApp(resetState: true)
         loginWithPassword()

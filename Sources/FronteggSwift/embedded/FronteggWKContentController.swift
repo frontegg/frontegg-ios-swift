@@ -108,12 +108,16 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
             }
             
         case "loginWithSSO":
+            webView?.setActiveOAuthFlow(.sso)
             FronteggAuth.shared.loginWithSSO(email: message.payload, self.socialLoginHandler)
         case "loginWithCustomSSO":
+            webView?.setActiveOAuthFlow(.customSSO)
             FronteggAuth.shared.loginWithCustomSSO(ssoUrl: message.payload, self.customSSOHandler)
         case "loginWithSocialLogin":
+            webView?.setActiveOAuthFlow(.socialLogin)
             FronteggAuth.shared.loginWithSocialLogin(socialLoginUrl: message.payload, self.socialLoginHandler)
         case "loginWithSocialLoginProvider":
+            webView?.setActiveOAuthFlow(.socialLogin)
             let formAction = self.getFromAction()
             if let config = try? PlistHelper.fronteggConfig(), config.useLegacySocialLoginFlow {
                 FronteggAuth.shared.directLoginAction(window: nil,
@@ -137,6 +141,7 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
                 )
             }
         case "loginWithCustomSocialLoginProvider":
+            webView?.setActiveOAuthFlow(.socialLogin)
             let formAction = self.getFromAction()
             if let config = try? PlistHelper.fronteggConfig(), config.useLegacySocialLoginFlow {
                 FronteggAuth.shared.directLoginAction(window: nil,

@@ -13,9 +13,19 @@ import os
 /// The delegate is called synchronously on the originating thread. Retain your
 /// delegate in app code, and dispatch any network or disk I/O off-thread.
 ///
+/// The delegate receives every SDK log event, including events below the
+/// configured `logLevel`.
+///
 /// `trace` and `debug` messages are forwarded as-is. `info`, `warning`,
 /// `error`, and `critical` messages are sanitized before delivery.
 public protocol FronteggLoggerDelegate: AnyObject {
+    /// Called for each SDK log event.
+    ///
+    /// - Parameters:
+    ///   - message: The log message. Sensitive values are sanitized for
+    ///     `info`, `warning`, `error`, and `critical` events.
+    ///   - level: The SDK log level for the event.
+    ///   - tag: The logger label that emitted the event.
     func fronteggSDK(didLog message: String, level: FeLogger.Level, tag: String)
 }
 
@@ -73,8 +83,14 @@ public class FeLogger {
     }
 
     /// Set this to receive all SDK log events, including events below the
-    /// configured SDK log level. Assign before `FronteggApp.shared` to observe
-    /// bootstrap logs as well.
+    /// configured SDK log level.
+    ///
+    /// Assign before `FronteggApp.shared` if you need bootstrap logs. The
+    /// delegate is stored weakly and is called synchronously on the originating
+    /// thread.
+    ///
+    /// `trace` and `debug` events are forwarded as-is. `info`, `warning`,
+    /// `error`, and `critical` events are sanitized before delivery.
     public static weak var delegate: FronteggLoggerDelegate?
     
     public var logLevel: FeLogger.Level  = Level.error

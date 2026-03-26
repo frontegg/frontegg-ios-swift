@@ -32,7 +32,9 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
             self.sendApplePostLogin(code)
         } else {
             logger.error("Failed to authenticate with AppleId provider")
-            completionHandler?(.failure(FronteggError.authError(.unknown)))
+            let fronteggError = FronteggError.authError(.unknown)
+            FronteggAuth.shared.reportOAuthFailure(error: fronteggError, flow: .apple)
+            completionHandler?(.failure(fronteggError))
         }
     }
     
@@ -43,7 +45,9 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
             completionHandler?(.failure(FronteggError.authError(.operationCanceled)))
         }else {
             logger.error("Failed to authenticate with apple \(error.localizedDescription)")
-            completionHandler?(.failure(FronteggError.authError(.other(error))))
+            let fronteggError = FronteggError.authError(.other(error))
+            FronteggAuth.shared.reportOAuthFailure(error: fronteggError, flow: .apple)
+            completionHandler?(.failure(fronteggError))
         }
         completionHandler = nil
     }
@@ -65,10 +69,14 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
                     
                 } catch {
                     if error is FronteggError {
-                        self.completionHandler?(.failure(error as! FronteggError))
+                        let fronteggError = error as! FronteggError
+                        FronteggAuth.shared.reportOAuthFailure(error: fronteggError, flow: .apple)
+                        self.completionHandler?(.failure(fronteggError))
                     }else {
                         self.logger.error("Failed to authenticate with apple \(error.localizedDescription)")
-                        self.completionHandler?(.failure(.authError(.failedToAuthenticate)))
+                        let fronteggError = FronteggError.authError(.failedToAuthenticate)
+                        FronteggAuth.shared.reportOAuthFailure(error: fronteggError, flow: .apple)
+                        self.completionHandler?(.failure(fronteggError))
                     }
                     
                 }
@@ -93,4 +101,3 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
     }
     
 }
-

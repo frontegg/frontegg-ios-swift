@@ -65,8 +65,22 @@ class StepUpAuthenticator {
         DispatchQueue.main.async {
             FronteggAuth.shared.setIsStepUpAuthorization(true)
             FronteggAuth.shared.setIsLoading(false)
-            let oauthCallback = FronteggAuth.shared.createOauthCallbackHandler(updatedCompletion)
+            let oauthCallback = FronteggAuth.shared.createOauthCallbackHandler(
+                updatedCompletion,
+                pendingOAuthState: Self.pendingOAuthState(from: authorizeUrl),
+                flow: .stepUp
+            )
             WebAuthenticator.shared.start(authorizeUrl, completionHandler: oauthCallback)
         }
+    }
+
+    private static func pendingOAuthState(from url: URL) -> String? {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+
+        return components.queryItems?.first(where: { item in
+            item.name == "state" && !(item.value?.isEmpty ?? true)
+        })?.value
     }
 }

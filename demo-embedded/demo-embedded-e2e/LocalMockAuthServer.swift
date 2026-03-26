@@ -3,6 +3,7 @@ import Network
 
 final class LocalMockAuthServer {
     private let readinessTimeout: TimeInterval = 10
+    private let mockedOAuthDelayRangeMs = 100...300
     private let listenerQueue = DispatchQueue(label: "com.frontegg.demo-embedded-e2e.mock-server")
     private let state = MockAuthState()
     private let requestLogLock = NSLock()
@@ -108,6 +109,27 @@ final class LocalMockAuthServer {
             method: "HEAD",
             path: "/test",
             responses: statusCodes.map { ["status": $0, "body": "offline"] }
+        )
+    }
+
+    func queueProbeTimeouts(count: Int, delayMs: Int = 1_500) throws {
+        try enqueue(
+            method: "HEAD",
+            path: "/test",
+            responses: Array(
+                repeating: ["status": 200, "body": "ok", "delay_ms": delayMs],
+                count: count
+            )
+        )
+    }
+
+    func queueEmbeddedSocialSuccessOAuthError(
+        errorCode: String,
+        errorDescription: String
+    ) {
+        state.queueEmbeddedSocialSuccessOAuthError(
+            errorCode: errorCode,
+            errorDescription: errorDescription
         )
     }
 
@@ -234,76 +256,121 @@ final class LocalMockAuthServer {
     private func route(_ request: HTTPRequest) -> HTTPResponse {
         log(request)
         if let queued = state.dequeue(method: request.method, path: request.path) {
-            return queuedResponse(from: queued)
+            return applyMockedOAuthDelayIfNeeded(
+                to: queuedResponse(from: queued),
+                for: request
+            )
         }
 
+        let response: HTTPResponse
         switch (request.method, request.path) {
         case ("HEAD", "/test"), ("GET", "/test"):
-            return textResponse(status: 200, body: "ok")
+            response = textResponse(status: 200, body: "ok")
         case ("GET", "/oauth/authorize"):
-            return renderAuthorizePage(query: request.query)
+            response = renderAuthorizePage(query: request.query)
         case ("GET", "/oauth/account/social/success"):
-            return handleSocialLoginSuccess(query: request.query)
+            response = handleSocialLoginSuccess(query: request.query)
         case ("GET", "/oauth/prelogin"):
-            return handleHostedPrelogin(query: request.query)
+            response = handleHostedPrelogin(query: request.query)
         case ("POST", "/oauth/postlogin"):
-            return handleHostedPostlogin(request)
+            response = handleHostedPostlogin(request)
         case ("GET", "/oauth/postlogin/redirect"):
-            return handleHostedPostloginRedirect(query: request.query)
+            response = handleHostedPostloginRedirect(query: request.query)
         case ("GET", "/idp/google/authorize"):
-            return handleMockGoogleAuthorize(query: request.query)
+            response = handleMockGoogleAuthorize(query: request.query)
         case ("GET", "/embedded/continue"):
-            return renderEmbeddedContinue(query: request.query)
+            response = renderEmbeddedContinue(query: request.query)
         case ("POST", "/embedded/password"):
-            return completeEmbeddedPassword(request)
+            response = completeEmbeddedPassword(request)
         case ("GET", "/browser/complete"):
-            return completeBrowserFlow(query: request.query)
+            response = completeBrowserFlow(query: request.query)
         case ("GET", "/dashboard"):
-            return handleDashboard()
+            response = handleDashboard()
         case ("POST", "/oauth/token"):
-            return handleOAuthToken(request)
+            response = handleOAuthToken(request)
         case ("POST", "/frontegg/oauth/authorize/silent"):
-            return handleSilentAuthorize(request)
+            response = handleSilentAuthorize(request)
         case ("GET", "/flags"):
-            return handleFeatureFlags()
+            response = handleFeatureFlags()
         case ("GET", "/frontegg/flags"):
-            return handleFeatureFlags()
+            response = handleFeatureFlags()
         case ("GET", "/frontegg/metadata"):
-            return handleMetadata()
+            response = handleMetadata()
         case ("GET", "/vendors/public"), ("GET", "/frontegg/vendors/public"):
-            return handlePublicVendors()
+            response = handlePublicVendors()
         case ("GET", "/frontegg/identity/resources/sso/v2"):
-            return handleSocialLoginConfig()
+            response = handleSocialLoginConfig()
         case ("GET", "/frontegg/identity/resources/configurations/v1/public"):
-            return handlePublicConfiguration()
+            response = handlePublicConfiguration()
         case ("GET", "/frontegg/identity/resources/configurations/v1/auth/strategies/public"):
-            return handleAuthStrategies()
+            response = handleAuthStrategies()
         case ("GET", "/frontegg/identity/resources/configurations/v1/sign-up/strategies"):
-            return handleSignUpStrategies()
+            response = handleSignUpStrategies()
         case ("GET", "/frontegg/team/resources/sso/v2/configurations/public"):
-            return handleTeamSSOConfigurations()
+            response = handleTeamSSOConfigurations()
         case ("GET", "/identity/resources/sso/custom/v1"):
-            return handleCustomSocialLoginConfig()
+            response = handleCustomSocialLoginConfig()
         case ("GET", "/frontegg/identity/resources/sso/custom/v1"):
-            return handleCustomSocialLoginConfig()
+            response = handleCustomSocialLoginConfig()
         case ("GET", "/identity/resources/configurations/sessions/v1"):
-            return handleSessionConfiguration()
+            response = handleSessionConfiguration()
         case ("GET", "/frontegg/identity/resources/configurations/v1/captcha-policy/public"):
-            return handleCaptchaPolicy()
+            response = handleCaptchaPolicy()
         case ("POST", "/frontegg/identity/resources/auth/v1/user/token/refresh"):
-            return handleHostedRefresh(request)
+            response = handleHostedRefresh(request)
         case ("POST", "/frontegg/identity/resources/auth/v2/user/sso/prelogin"):
-            return handleHostedSSOPrelogin(request)
+            response = handleHostedSSOPrelogin(request)
         case ("POST", "/frontegg/identity/resources/auth/v1/user"):
-            return handleHostedPasswordLogin(request)
+            response = handleHostedPasswordLogin(request)
         case ("GET", "/identity/resources/users/v2/me"):
-            return handleMe(request)
+            response = handleMe(request)
         case ("GET", "/identity/resources/users/v3/me/tenants"):
-            return handleTenants(request)
+            response = handleTenants(request)
         case ("POST", "/oauth/logout/token"):
-            return handleLogout(request)
+            response = handleLogout(request)
         default:
-            return jsonResponse(status: 404, payload: ["error": "Unhandled route \(request.method) \(request.path)"])
+            response = jsonResponse(status: 404, payload: ["error": "Unhandled route \(request.method) \(request.path)"])
+        }
+
+        return applyMockedOAuthDelayIfNeeded(to: response, for: request)
+    }
+
+    private func applyMockedOAuthDelayIfNeeded(
+        to response: HTTPResponse,
+        for request: HTTPRequest
+    ) -> HTTPResponse {
+        guard isMockedOAuthFlowRequest(request) else {
+            return response
+        }
+
+        guard response.delayMs == 0 else {
+            return response
+        }
+
+        return HTTPResponse(
+            statusCode: response.statusCode,
+            headers: response.headers,
+            body: response.body,
+            delayMs: Int.random(in: mockedOAuthDelayRangeMs),
+            closeConnection: response.closeConnection
+        )
+    }
+
+    private func isMockedOAuthFlowRequest(_ request: HTTPRequest) -> Bool {
+        switch (request.method, request.path) {
+        case ("GET", "/oauth/authorize"),
+             ("GET", "/oauth/account/social/success"),
+             ("GET", "/oauth/prelogin"),
+             ("POST", "/oauth/postlogin"),
+             ("GET", "/oauth/postlogin/redirect"),
+             ("GET", "/idp/google/authorize"),
+             ("POST", "/oauth/token"),
+             ("POST", "/frontegg/oauth/authorize/silent"),
+             ("POST", "/frontegg/identity/resources/auth/v1/user/token/refresh"),
+             ("POST", "/frontegg/identity/resources/auth/v2/user/sso/prelogin"):
+            return true
+        default:
+            return false
         }
     }
 
@@ -929,8 +996,9 @@ final class LocalMockAuthServer {
         }
 
         // First pass: provider redirected back to Frontegg inside ASWebAuthenticationSession.
-        // Redirect to the app callback URL so the session can close and the SDK can normalize
-        // the callback back into /oauth/account/social/success inside the embedded webview.
+        // Redirect directly to the generated iOS callback URL so the session can close and
+        // the SDK can normalize the social callback back into /oauth/account/social/success
+        // inside the embedded webview, matching the production custom Google flow.
         if firstValue(query, key: "redirectUri").isEmpty {
             guard let socialState = decodeSocialState(rawState),
                   let bundleId = socialState["bundleId"] as? String,
@@ -938,16 +1006,13 @@ final class LocalMockAuthServer {
                 return jsonResponse(status: 400, payload: ["error": "invalid_social_state"])
             }
 
-            var callbackComponents = URLComponents()
-            callbackComponents.scheme = bundleId.lowercased()
-            callbackComponents.host = baseURL.host
-            callbackComponents.path = "/oauth/account/redirect/ios/\(bundleId)/google"
-            callbackComponents.queryItems = [
-                URLQueryItem(name: "code", value: code),
-                URLQueryItem(name: "state", value: rawState),
-            ]
-
-            return redirectResponse(location: callbackComponents.string ?? "")
+            return redirectResponse(
+                location: buildGeneratedRedirectCodeCallbackURL(
+                    bundleIdentifier: bundleId,
+                    state: rawState,
+                    code: code
+                )
+            )
         }
 
         // Second pass: embedded webview loads /oauth/account/social/success after callback
@@ -959,6 +1024,29 @@ final class LocalMockAuthServer {
             return jsonResponse(status: 400, payload: ["error": "missing_social_redirect_uri"])
         }
 
+        if let pendingError = state.consumeEmbeddedSocialSuccessOAuthError() {
+            let callbackState = state.latestHostedLoginState() ?? rawState
+            if let bundleId = embeddedBundleIdentifier(from: redirectURI) {
+                return redirectResponse(
+                    location: buildGeneratedRedirectCallbackURL(
+                        bundleIdentifier: bundleId,
+                        state: callbackState,
+                        error: pendingError.errorCode,
+                        errorDescription: pendingError.errorDescription
+                    )
+                )
+            }
+
+            return redirectResponse(
+                location: buildCallbackURL(
+                    redirectURI: redirectURI,
+                    state: callbackState,
+                    error: pendingError.errorCode,
+                    errorDescription: pendingError.errorDescription
+                )
+            )
+        }
+
         return redirectResponse(
             location: buildCallbackURL(
                 redirectURI: redirectURI,
@@ -966,6 +1054,21 @@ final class LocalMockAuthServer {
                 state: rawState
             )
         )
+    }
+
+    private func embeddedBundleIdentifier(from redirectURI: String) -> String? {
+        guard let components = URLComponents(string: redirectURI) else {
+            return nil
+        }
+
+        let prefix = "/oauth/account/redirect/ios/"
+        guard components.path.hasPrefix(prefix) else {
+            return nil
+        }
+
+        let suffix = components.path.dropFirst(prefix.count)
+        let bundleId = suffix.split(separator: "/").first.map(String.init) ?? ""
+        return bundleId.isEmpty ? nil : bundleId
     }
 
     private func handleDashboard() -> HTTPResponse {
@@ -1167,6 +1270,65 @@ final class LocalMockAuthServer {
         }
         components.queryItems = queryItems
         return components.string ?? redirectURI
+    }
+
+    private func buildCallbackURL(
+        redirectURI: String,
+        state: String,
+        error: String,
+        errorDescription: String
+    ) -> String {
+        guard var components = URLComponents(string: redirectURI) else {
+            return redirectURI
+        }
+
+        var queryItems = components.queryItems ?? []
+        queryItems.append(URLQueryItem(name: "error", value: error))
+        queryItems.append(URLQueryItem(name: "error_description", value: errorDescription))
+        if !state.isEmpty {
+            queryItems.append(URLQueryItem(name: "state", value: state))
+        }
+        components.queryItems = queryItems
+        return components.string ?? redirectURI
+    }
+
+    private func buildGeneratedRedirectCallbackURL(
+        bundleIdentifier: String,
+        state: String,
+        error: String,
+        errorDescription: String
+    ) -> String {
+        var components = URLComponents()
+        components.scheme = bundleIdentifier.lowercased()
+        components.host = baseURL.host
+        components.path = "/ios/oauth/callback"
+
+        var queryItems = [
+            URLQueryItem(name: "error", value: error),
+            URLQueryItem(name: "error_description", value: errorDescription)
+        ]
+        if !state.isEmpty {
+            queryItems.append(URLQueryItem(name: "state", value: state))
+        }
+        components.queryItems = queryItems
+        return components.string ?? "\(bundleIdentifier.lowercased())://\(baseURL.host ?? "")/ios/oauth/callback"
+    }
+
+    private func buildGeneratedRedirectCodeCallbackURL(
+        bundleIdentifier: String,
+        state: String,
+        code: String
+    ) -> String {
+        var components = URLComponents()
+        components.scheme = bundleIdentifier.lowercased()
+        components.host = baseURL.host
+        components.path = "/ios/oauth/callback"
+        components.queryItems = [
+            URLQueryItem(name: "state", value: state),
+            URLQueryItem(name: "code", value: code),
+            URLQueryItem(name: "social-login-callback", value: "true")
+        ]
+        return components.string ?? "\(bundleIdentifier.lowercased())://\(baseURL.host ?? "")/ios/oauth/callback"
     }
 
     private func parseJSONDictionary(_ data: Data) -> [String: Any] {
@@ -1467,13 +1629,20 @@ private struct HostedLoginContext {
     let loginHint: String
 }
 
+private struct PendingEmbeddedSocialSuccessOAuthError {
+    let errorCode: String
+    let errorDescription: String
+}
+
 private final class MockAuthState {
     private let queue = DispatchQueue(label: "com.frontegg.demo-embedded-e2e.mock-state")
     private var queuedResponses: [String: [[String: Any]]] = [:]
     private var authCodes: [String: AuthCode] = [:]
     private var hostedLoginContexts: [String: HostedLoginContext] = [:]
+    private var latestHostedLoginStateValue: String?
     private var completedHostedLogins: [String: String] = [:]
     private var refreshTokens: [String: String] = [:]
+    private var pendingEmbeddedSocialSuccessOAuthError: PendingEmbeddedSocialSuccessOAuthError?
 
     init() {
         reset()
@@ -1484,10 +1653,12 @@ private final class MockAuthState {
             queuedResponses = [:]
             authCodes = [:]
             hostedLoginContexts = [:]
+            latestHostedLoginStateValue = nil
             completedHostedLogins = [:]
             refreshTokens = [
                 "signup-refresh-token": "signup@frontegg.com",
             ]
+            pendingEmbeddedSocialSuccessOAuthError = nil
         }
     }
 
@@ -1534,6 +1705,7 @@ private final class MockAuthState {
                 originalState: originalState,
                 loginHint: loginHint
             )
+            latestHostedLoginStateValue = hostedState
             return hostedState
         }
     }
@@ -1573,6 +1745,32 @@ private final class MockAuthState {
     func saveRefreshToken(_ refreshToken: String, email: String) {
         queue.sync {
             refreshTokens[refreshToken] = email
+        }
+    }
+
+    func queueEmbeddedSocialSuccessOAuthError(
+        errorCode: String,
+        errorDescription: String
+    ) {
+        queue.sync {
+            pendingEmbeddedSocialSuccessOAuthError = PendingEmbeddedSocialSuccessOAuthError(
+                errorCode: errorCode,
+                errorDescription: errorDescription
+            )
+        }
+    }
+
+    func consumeEmbeddedSocialSuccessOAuthError() -> PendingEmbeddedSocialSuccessOAuthError? {
+        queue.sync {
+            let pendingError = pendingEmbeddedSocialSuccessOAuthError
+            pendingEmbeddedSocialSuccessOAuthError = nil
+            return pendingError
+        }
+    }
+
+    func latestHostedLoginState() -> String? {
+        queue.sync {
+            latestHostedLoginStateValue
         }
     }
 

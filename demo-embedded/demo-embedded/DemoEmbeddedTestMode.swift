@@ -91,7 +91,7 @@ final class DemoEmbeddedBootstrapper: ObservableObject {
         }
 
         if DemoEmbeddedTestMode.shouldResetState {
-            await FronteggApp.shared.resetForTesting()
+            await FronteggApp.shared.resetForTesting(baseUrlOverride: baseUrl)
             DemoEmbeddedUITestDiagnostics.shared.resetPersistentState()
         }
 

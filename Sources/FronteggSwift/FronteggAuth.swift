@@ -18,6 +18,20 @@ extension UIWindow {
     static var key: UIWindow? {
         return UIApplication.shared.windows.filter {$0.isKeyWindow}.first
     }
+
+    static var fronteggPresentationCandidate: UIWindow? {
+        let sceneWindows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .filter { scene in
+                scene.activationState == .foregroundActive || scene.activationState == .foregroundInactive
+            }
+            .flatMap(\.windows)
+
+        return sceneWindows.first(where: \.isKeyWindow)
+            ?? sceneWindows.first(where: { !$0.isHidden && $0.alpha > 0 })
+            ?? UIApplication.shared.windows.first(where: \.isKeyWindow)
+            ?? UIApplication.shared.windows.last
+    }
 }
 
 public enum AttemptReasonType {
@@ -42,6 +56,12 @@ private struct StoredSessionArtifacts {
     let tenantId: String?
 }
 
+struct OAuthFailureDetails {
+    let error: FronteggError
+    let errorCode: String?
+    let errorDescription: String?
+}
+
 
 public class FronteggAuth: FronteggState {
     
@@ -58,6 +78,7 @@ public class FronteggAuth: FronteggState {
     public var pendingAppLink: URL? = nil
     public var loginHint: String? = nil
     public var lastAttemptReason: AttemptReasonType? = nil
+    var activeEmbeddedOAuthFlow: FronteggOAuthFlow = .login
     
     
     weak var webview: CustomWebView? = nil
@@ -79,6 +100,9 @@ public class FronteggAuth: FronteggState {
     private var refreshTokenDispatch: DispatchWorkItem?
     private var offlineDebounceWork: DispatchWorkItem?
     private let offlineDebounceDelay: TimeInterval = 0.6
+    private let unauthenticatedStartupOfflineCommitWindow: TimeInterval = 4.5
+    private let unauthenticatedStartupProbeDelay: TimeInterval = 0.5
+    private let unauthenticatedStartupProbeTimeout: TimeInterval = 1.0
     var loginCompletion: CompletionHandler? = nil
     private var networkMonitoringToken: NetworkStatusMonitor.OnChangeToken?
     private var isInitializingWithTokens: Bool = false
@@ -87,6 +111,21 @@ public class FronteggAuth: FronteggState {
     private var entitlementsLoadInProgress: Bool = false
     private var entitlementsLoadPendingCompletions: [((Bool) -> Void)] = []
     private var entitlementsLoadForceRefreshPending: Bool = false
+
+    internal static func isUserCancelledOAuthFlow(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == ASWebAuthenticationSessionError.errorDomain,
+           nsError.code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
+            return true
+        }
+
+        if let authError = error as? ASAuthorizationError,
+           authError.code == .canceled {
+            return true
+        }
+
+        return false
+    }
     
     init (
         baseUrl:String,
@@ -485,6 +524,91 @@ public class FronteggAuth: FronteggState {
         return false
     }
 
+    @discardableResult
+    func completeUnauthenticatedStartupInitialization(
+        monitoringInterval: TimeInterval,
+        startupProbeTimeout: TimeInterval? = nil,
+        offlineCommitWindow: TimeInterval? = nil,
+        probeDelay: TimeInterval? = nil,
+        connectivityProbe: ((TimeInterval) async -> Bool)? = nil,
+        postConnectivityServices: (() async -> Void)? = nil
+    ) async -> Bool {
+        let probeTimeout = startupProbeTimeout ?? unauthenticatedStartupProbeTimeout
+        let commitWindow = offlineCommitWindow ?? unauthenticatedStartupOfflineCommitWindow
+        let retryDelay = probeDelay ?? unauthenticatedStartupProbeDelay
+        let probe = connectivityProbe ?? { timeout in
+            await NetworkStatusMonitor.probeConfiguredReachability(timeout: timeout)
+        }
+        let runPostConnectivityServices = postConnectivityServices ?? {
+            await self.startPostConnectivityServices()
+        }
+
+        logger.info(
+            "Starting unauthenticated startup connectivity race (window: \(commitWindow)s, probeTimeout: \(probeTimeout)s, retryDelay: \(retryDelay)s)"
+        )
+
+        offlineDebounceWork?.cancel()
+        offlineDebounceWork = nil
+        await MainActor.run {
+            self.setIsOfflineMode(false)
+        }
+
+        let raceStart = Date()
+        var probeCount = 0
+
+        func performProbe() async -> Bool {
+            probeCount += 1
+            return await probe(probeTimeout)
+        }
+
+        var settledOnline = await performProbe()
+
+        while !settledOnline {
+            let remaining = commitWindow - Date().timeIntervalSince(raceStart)
+            if remaining <= 0 {
+                break
+            }
+
+            if retryDelay > 0 {
+                let sleepSeconds = min(retryDelay, remaining)
+                if sleepSeconds > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(sleepSeconds * 1_000_000_000))
+                }
+            }
+
+            let remainingAfterDelay = commitWindow - Date().timeIntervalSince(raceStart)
+            if remainingAfterDelay <= 0 {
+                break
+            }
+
+            settledOnline = await performProbe()
+        }
+
+        logger.info(
+            "Unauthenticated startup connectivity settled \(settledOnline ? "online" : "offline") after \(probeCount) probe(s)"
+        )
+
+        if settledOnline {
+            await MainActor.run {
+                self.setIsOfflineMode(false)
+            }
+            await runPostConnectivityServices()
+        } else {
+            await MainActor.run {
+                self.setIsOfflineMode(true)
+            }
+        }
+
+        ensureOfflineMonitoringActive(intervalOverride: monitoringInterval, emitInitialState: false)
+
+        await MainActor.run {
+            self.setIsLoading(false)
+            self.setInitializing(false)
+        }
+
+        return settledOnline
+    }
+
     private func startPostConnectivityServices() async {
         await self.featureFlags.start()
         SentryHelper.setSentryEnabledFromFeatureFlag(self.featureFlags.isOn(FeatureFlags.mobileEnableLoggingKey))
@@ -601,19 +725,7 @@ public class FronteggAuth: FronteggState {
                     }
                 }.store(in: &subscribers)
             
-            if !hasTokensInKeychain {
-                logger.info("🟢 Starting /test monitoring (initial) - user not logged in (no tokens in keychain)")
-                let token = NetworkStatusMonitor.addOnChangeReturningToken { [weak self] reachable in
-                    guard let self = self else { return }
-                    if reachable {
-                        self.reconnectedToInternet()
-                    } else {
-                        self.disconnectedFromInternet()
-                    }
-                }
-                self.networkMonitoringToken = token
-                NetworkStatusMonitor.startBackgroundMonitoring(interval: monitoringInterval, onChange: nil)
-            } else {
+            if hasTokensInKeychain {
                 NetworkStatusMonitor.stopBackgroundMonitoring()
                 if let token = self.networkMonitoringToken {
                     NetworkStatusMonitor.removeOnChange(token)
@@ -743,24 +855,12 @@ public class FronteggAuth: FronteggState {
                 }
             }
         } else {
-            // No tokens found - monitoring already started above if enableOfflineMode
+            // No tokens found - keep the loader visible while startup connectivity races the offline timeout.
             Task {
-                let initialNetworkAvailable = await NetworkStatusMonitor.isActive
-                let settledOnline = await self.settleUnauthenticatedStartupConnectivity(
-                    initialNetworkAvailable: initialNetworkAvailable,
-                    connectivityProbe: {
-                        await NetworkStatusMonitor.isActive
-                    }
+                let interval = (try? PlistHelper.fronteggConfig())?.networkMonitoringInterval ?? 10
+                _ = await self.completeUnauthenticatedStartupInitialization(
+                    monitoringInterval: interval
                 )
-
-                if settledOnline {
-                    await self.startPostConnectivityServices()
-                }
-
-                await MainActor.run { [weak self] in
-                    self?.setIsLoading(false)
-                    self?.setInitializing(false)
-                }
             }
         }
     }
@@ -1237,7 +1337,7 @@ public class FronteggAuth: FronteggState {
     }
 
     @MainActor
-    func resetForTesting() async {
+    func resetForTesting(baseUrlOverride: String? = nil) async {
         cancelScheduledTokenRefresh()
         offlineDebounceWork?.cancel()
         offlineDebounceWork = nil
@@ -1257,6 +1357,7 @@ public class FronteggAuth: FronteggState {
         isInitializingWithTokens = false
         isLoginInProgress = false
         pendingAppLink = nil
+        activeEmbeddedOAuthFlow = .login
         loginHint = nil
         loginCompletion = nil
         lastAttemptReason = nil
@@ -1286,18 +1387,7 @@ public class FronteggAuth: FronteggState {
         entitlements.clear()
         resetEntitlementsLoadState()
 
-        let websiteDataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            WKWebsiteDataStore.default().removeData(ofTypes: websiteDataTypes, modifiedSince: .distantPast) {
-                continuation.resume()
-            }
-        }
-
-        if let cookies = HTTPCookieStorage.shared.cookies {
-            for cookie in cookies {
-                HTTPCookieStorage.shared.deleteCookie(cookie)
-            }
-        }
+        await clearWebsiteDataForTesting(baseUrlOverride: baseUrlOverride)
         URLCache.shared.removeAllCachedResponses()
     }
 
@@ -1306,6 +1396,162 @@ public class FronteggAuth: FronteggState {
         Self.testNetworkPathAvailabilityOverride = available
     }
 #endif
+
+    @MainActor
+    private func clearWebsiteDataForTesting(baseUrlOverride: String?) async {
+        let store = WKWebsiteDataStore.default()
+        let allWebsiteDataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
+
+        guard let host = Self.resolvedTestingResetHost(
+            baseUrlOverride: baseUrlOverride,
+            currentBaseUrl: baseUrl,
+            appBaseUrl: FronteggApp.shared.baseUrl
+        ) else {
+            logger.warning("resetForTesting could not resolve a scoped host, falling back to global WebKit data cleanup")
+            await removeAllWebsiteData(store: store, websiteDataTypes: allWebsiteDataTypes)
+            clearSharedCookiesForTesting(host: nil)
+            return
+        }
+
+        let websiteDataTypes = Self.testingResetWebsiteDataTypes()
+        logger.info("resetForTesting clearing scoped web data for host: \(host)")
+
+        let records = await fetchWebsiteDataRecords(store: store, websiteDataTypes: websiteDataTypes)
+        let matchingRecords = records.filter {
+            Self.shouldRemoveTestingWebsiteDataRecord(named: $0.displayName, forHost: host)
+        }
+
+        if !matchingRecords.isEmpty {
+            await removeWebsiteData(store: store, websiteDataTypes: websiteDataTypes, records: matchingRecords)
+        }
+
+        let storeCookies = await getAllCookies(store: store)
+        for cookie in storeCookies where cookieDomain(cookie.domain, matches: host) {
+            await deleteCookie(store: store, cookie: cookie)
+        }
+
+        clearSharedCookiesForTesting(host: host)
+    }
+
+    @MainActor
+    private func fetchWebsiteDataRecords(
+        store: WKWebsiteDataStore,
+        websiteDataTypes: Set<String>
+    ) async -> [WKWebsiteDataRecord] {
+        await withCheckedContinuation { (continuation: CheckedContinuation<[WKWebsiteDataRecord], Never>) in
+            store.fetchDataRecords(ofTypes: websiteDataTypes) { records in
+                continuation.resume(returning: records)
+            }
+        }
+    }
+
+    @MainActor
+    private func removeWebsiteData(
+        store: WKWebsiteDataStore,
+        websiteDataTypes: Set<String>,
+        records: [WKWebsiteDataRecord]
+    ) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            store.removeData(ofTypes: websiteDataTypes, for: records) {
+                continuation.resume()
+            }
+        }
+    }
+
+    @MainActor
+    private func removeAllWebsiteData(
+        store: WKWebsiteDataStore,
+        websiteDataTypes: Set<String>
+    ) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            store.removeData(ofTypes: websiteDataTypes, modifiedSince: .distantPast) {
+                continuation.resume()
+            }
+        }
+    }
+
+    @MainActor
+    private func getAllCookies(store: WKWebsiteDataStore) async -> [HTTPCookie] {
+        await withCheckedContinuation { (continuation: CheckedContinuation<[HTTPCookie], Never>) in
+            store.httpCookieStore.getAllCookies { cookies in
+                continuation.resume(returning: cookies)
+            }
+        }
+    }
+
+    @MainActor
+    private func deleteCookie(store: WKWebsiteDataStore, cookie: HTTPCookie) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            store.httpCookieStore.delete(cookie) {
+                continuation.resume()
+            }
+        }
+    }
+
+    private func clearSharedCookiesForTesting(host: String?) {
+        let cookiesToDelete: [HTTPCookie]
+        if let host, !host.isEmpty {
+            cookiesToDelete = (HTTPCookieStorage.shared.cookies ?? []).filter {
+                cookieDomain($0.domain, matches: host)
+            }
+        } else {
+            cookiesToDelete = HTTPCookieStorage.shared.cookies ?? []
+        }
+
+        for cookie in cookiesToDelete {
+            HTTPCookieStorage.shared.deleteCookie(cookie)
+        }
+    }
+
+    internal static func resolvedTestingResetHost(
+        baseUrlOverride: String?,
+        currentBaseUrl: String,
+        appBaseUrl: String
+    ) -> String? {
+        for candidate in [baseUrlOverride, currentBaseUrl, appBaseUrl] {
+            guard let candidate,
+                  let host = URL(string: candidate)?.host?.lowercased(),
+                  !host.isEmpty,
+                  host != "late-init.invalid" else {
+                continue
+            }
+            return host
+        }
+        return nil
+    }
+
+    internal static func shouldRemoveTestingWebsiteDataRecord(named displayName: String, forHost host: String) -> Bool {
+        let normalizedDisplayName = displayName.lowercased()
+        let normalizedHost = host.lowercased()
+
+        return normalizedDisplayName == normalizedHost ||
+               normalizedDisplayName.hasSuffix("." + normalizedHost) ||
+               normalizedHost.hasSuffix("." + normalizedDisplayName)
+    }
+
+    internal static func testingResetWebsiteDataTypes() -> Set<String> {
+        var dataTypes: Set<String> = [
+            WKWebsiteDataTypeCookies,
+            WKWebsiteDataTypeDiskCache,
+            WKWebsiteDataTypeMemoryCache,
+            WKWebsiteDataTypeSessionStorage,
+            WKWebsiteDataTypeLocalStorage,
+            WKWebsiteDataTypeIndexedDBDatabases,
+            WKWebsiteDataTypeWebSQLDatabases,
+            WKWebsiteDataTypeOfflineWebApplicationCache,
+        ]
+
+        if #available(iOS 11.3, *) {
+            dataTypes.insert(WKWebsiteDataTypeFetchCache)
+            dataTypes.insert(WKWebsiteDataTypeServiceWorkerRegistrations)
+        }
+
+        if #available(iOS 16.0, *) {
+            dataTypes.insert(WKWebsiteDataTypeFileSystem)
+        }
+
+        return dataTypes
+    }
 
     public func logout(clearCookie: Bool = true, _ completion: FronteggAuth.LogoutHandler? = nil) {
         Task { @MainActor in
@@ -1711,9 +1957,9 @@ public class FronteggAuth: FronteggState {
     
     /// Starts network monitoring so that `reconnectedToInternet()` fires when connectivity returns.
     /// Safe to call multiple times — stops existing monitoring first to avoid duplicates.
-    private func ensureOfflineMonitoringActive(emitInitialState: Bool = true) {
+    private func ensureOfflineMonitoringActive(intervalOverride: TimeInterval? = nil, emitInitialState: Bool = true) {
         let config = try? PlistHelper.fronteggConfig()
-        let monitoringInterval = config?.networkMonitoringInterval ?? 10
+        let monitoringInterval = intervalOverride ?? config?.networkMonitoringInterval ?? 10
 
         // Stop existing monitoring to avoid duplicates
         NetworkStatusMonitor.stopBackgroundMonitoring()
@@ -2117,6 +2363,7 @@ public class FronteggAuth: FronteggState {
             codeVerifier,
             oauthState: nil,
             redirectUri: nil,
+            flow: .login,
             completePendingFlowOnSuccess: false,
             completion: completion
         )
@@ -2128,6 +2375,7 @@ public class FronteggAuth: FronteggState {
             codeVerifier,
             oauthState: nil,
             redirectUri: nil,
+            flow: .login,
             completePendingFlowOnSuccess: false,
             completion: completion
         )
@@ -2139,9 +2387,175 @@ public class FronteggAuth: FronteggState {
             codeVerifier,
             oauthState: nil,
             redirectUri: redirectUri,
+            flow: .login,
             completePendingFlowOnSuccess: false,
             completion: completion
         )
+    }
+
+    private func normalizedOAuthMessageComponent(_ value: String?) -> String? {
+        guard let value else {
+            return nil
+        }
+
+        let normalizedValue = value
+            .replacingOccurrences(of: "+", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !normalizedValue.isEmpty else {
+            return nil
+        }
+
+        return normalizedValue
+    }
+
+    private func oauthDisplayMessage(
+        errorCode: String?,
+        errorDescription: String?,
+        fallbackMessage: String? = nil
+    ) -> String {
+        let normalizedCode = normalizedOAuthMessageComponent(errorCode)
+        let normalizedDescription = normalizedOAuthMessageComponent(errorDescription)
+        let normalizedFallback = normalizedOAuthMessageComponent(fallbackMessage)
+
+        if let normalizedCode, let normalizedDescription {
+            return "\(normalizedCode): \(normalizedDescription)"
+        }
+
+        if let normalizedDescription {
+            return normalizedDescription
+        }
+
+        if let normalizedCode {
+            return normalizedCode
+        }
+
+        if let normalizedFallback {
+            return normalizedFallback
+        }
+
+        return FronteggError.authError(.unknown).localizedDescription
+    }
+
+    func oauthFailureDetails(
+        errorCode: String?,
+        errorDescription: String?,
+        fallbackError: FronteggError? = nil
+    ) -> OAuthFailureDetails {
+        let normalizedCode = normalizedOAuthMessageComponent(errorCode)
+        let normalizedDescription = normalizedOAuthMessageComponent(errorDescription)
+        let message = oauthDisplayMessage(
+            errorCode: normalizedCode,
+            errorDescription: normalizedDescription,
+            fallbackMessage: fallbackError?.localizedDescription
+        )
+
+        if normalizedCode != nil || normalizedDescription != nil {
+            return OAuthFailureDetails(
+                error: FronteggError.authError(.oauthError(message)),
+                errorCode: normalizedCode,
+                errorDescription: normalizedDescription
+            )
+        }
+
+        return OAuthFailureDetails(
+            error: fallbackError ?? FronteggError.authError(.oauthError(message)),
+            errorCode: nil,
+            errorDescription: nil
+        )
+    }
+
+    func oauthFailureDetails(from queryItems: [String: String]) -> OAuthFailureDetails? {
+        let errorCode = normalizedOAuthMessageComponent(queryItems["error"])
+        let errorDescription = normalizedOAuthMessageComponent(queryItems["error_description"])
+
+        guard errorCode != nil || errorDescription != nil else {
+            return nil
+        }
+
+        return oauthFailureDetails(
+            errorCode: errorCode,
+            errorDescription: errorDescription
+        )
+    }
+
+    private func shouldSuppressOAuthErrorPresentation(for error: FronteggError) -> Bool {
+        switch error {
+        case .authError(let authError):
+            switch authError {
+            case .operationCanceled:
+                return true
+            case .other(let underlyingError):
+                return Self.isUserCancelledOAuthFlow(underlyingError)
+            default:
+                return false
+            }
+        default:
+            return false
+        }
+    }
+
+    internal func reportOAuthFailure(
+        error: FronteggError,
+        flow: FronteggOAuthFlow,
+        errorCode: String? = nil,
+        errorDescription: String? = nil,
+        embeddedMode: Bool? = nil
+    ) {
+        guard !shouldSuppressOAuthErrorPresentation(for: error) else {
+            return
+        }
+
+        let context = FronteggOAuthErrorContext(
+            displayMessage: oauthDisplayMessage(
+                errorCode: errorCode,
+                errorDescription: errorDescription,
+                fallbackMessage: error.localizedDescription
+            ),
+            errorCode: normalizedOAuthMessageComponent(errorCode),
+            errorDescription: normalizedOAuthMessageComponent(errorDescription),
+            error: error,
+            flow: flow,
+            embeddedMode: embeddedMode ?? self.embeddedMode
+        )
+
+        Task { @MainActor in
+            switch FronteggOAuthErrorRuntimeSettings.presentation {
+            case .toast:
+                let window = self.resolveOAuthErrorPresentationWindow()
+                if window == nil {
+                    self.logger.warning("OAuth failure toast could not find a presentation window")
+                }
+                FronteggOAuthToastPresenter.shared.show(message: context.displayMessage, in: window)
+            case .delegate:
+                FronteggOAuthErrorRuntimeSettings.delegateBox.value?.fronteggSDK(didReceiveOAuthError: context)
+            }
+        }
+    }
+
+    @MainActor
+    private func resolveOAuthErrorPresentationWindow() -> UIWindow? {
+        if let window = self.webview?.window {
+            return window
+        }
+
+        if let window = VCHolder.shared.vc?.presentedViewController?.view.window {
+            return window
+        }
+
+        if let window = VCHolder.shared.vc?.view.window {
+            return window
+        }
+
+        if let window = self.getRootVC(true)?.view.window {
+            return window
+        }
+
+        if let window = self.getRootVC()?.view.window {
+            return window
+        }
+
+        return UIWindow.fronteggPresentationCandidate
     }
 
     private func completePendingOAuthFlowIfNeeded(
@@ -2191,6 +2605,7 @@ public class FronteggAuth: FronteggState {
         _ codeVerifier: String?,
         oauthState: String?,
         redirectUri: String?,
+        flow: FronteggOAuthFlow = .login,
         completePendingFlowOnSuccess: Bool,
         matchedPendingOAuthState: Bool = false,
         completion: @escaping FronteggAuth.CompletionHandler
@@ -2234,6 +2649,7 @@ public class FronteggAuth: FronteggState {
                     matchedPendingOAuthState: matchedPendingOAuthState,
                     managePendingOAuthFlow: completePendingFlowOnSuccess
                 )
+                self.reportOAuthFailure(error: error, flow: flow)
                 await MainActor.run {
                     self.isLoginInProgress = false
                     completion(.failure(error))
@@ -2245,15 +2661,17 @@ public class FronteggAuth: FronteggState {
             
             guard let data = responseData else {
                 logger.error("Hosted login token exchange returned nil response data")
+                let authError = FronteggError.authError(.failedToAuthenticate)
                 self.clearMatchedPendingOAuthFlowIfNeeded(
                     oauthState: oauthState,
                     codeVerifier: codeVerifier,
                     matchedPendingOAuthState: matchedPendingOAuthState,
                     managePendingOAuthFlow: completePendingFlowOnSuccess
                 )
+                self.reportOAuthFailure(error: authError, flow: flow)
                 await MainActor.run {
                     self.isLoginInProgress = false
-                    completion(.failure(FronteggError.authError(.failedToAuthenticate)))
+                    completion(.failure(authError))
                     self.setIsLoading(false)
                     self.setWebLoading(false)
                 }
@@ -2272,15 +2690,17 @@ public class FronteggAuth: FronteggState {
                 let user = meResult.user
                 
                 guard let user = user else {
+                    let authError = FronteggError.authError(.failedToLoadUserData("User data is nil"))
                     self.clearMatchedPendingOAuthFlowIfNeeded(
                         oauthState: oauthState,
                         codeVerifier: codeVerifier,
                         matchedPendingOAuthState: matchedPendingOAuthState,
                         managePendingOAuthFlow: completePendingFlowOnSuccess
                     )
+                    self.reportOAuthFailure(error: authError, flow: flow)
                     await MainActor.run {
                         self.isLoginInProgress = false
-                        completion(.failure(FronteggError.authError(.failedToLoadUserData("User data is nil"))))
+                        completion(.failure(authError))
                         self.setIsLoading(false)
                         self.setWebLoading(false)
                     }
@@ -2331,15 +2751,17 @@ public class FronteggAuth: FronteggState {
                     }
 
                     guard let fallbackUser else {
+                        let authError = FronteggError.authError(.failedToLoadUserData(error.localizedDescription))
                         self.clearMatchedPendingOAuthFlowIfNeeded(
                             oauthState: oauthState,
                             codeVerifier: codeVerifier,
                             matchedPendingOAuthState: matchedPendingOAuthState,
                             managePendingOAuthFlow: completePendingFlowOnSuccess
                         )
+                        self.reportOAuthFailure(error: authError, flow: flow)
                         await MainActor.run {
                             self.isLoginInProgress = false
-                            completion(.failure(FronteggError.authError(.failedToLoadUserData(error.localizedDescription))))
+                            completion(.failure(authError))
                             self.setIsLoading(false)
                             self.setWebLoading(false)
                         }
@@ -2353,15 +2775,17 @@ public class FronteggAuth: FronteggState {
                         hydrationMode: .preserveCachedOrDerivedUser
                     )
                     guard self.isAuthenticated, let resolvedUser = self.user else {
+                        let authError = FronteggError.authError(.failedToAuthenticate)
                         self.clearMatchedPendingOAuthFlowIfNeeded(
                             oauthState: oauthState,
                             codeVerifier: codeVerifier,
                             matchedPendingOAuthState: matchedPendingOAuthState,
                             managePendingOAuthFlow: completePendingFlowOnSuccess
                         )
+                        self.reportOAuthFailure(error: authError, flow: flow)
                         await MainActor.run {
                             self.isLoginInProgress = false
-                            completion(.failure(FronteggError.authError(.failedToAuthenticate)))
+                            completion(.failure(authError))
                             self.setIsLoading(false)
                             self.setWebLoading(false)
                         }
@@ -2383,15 +2807,17 @@ public class FronteggAuth: FronteggState {
                         completion(.success(resolvedUser))
                     }
                 } else {
+                    let authError = FronteggError.authError(.failedToLoadUserData(error.localizedDescription))
                     self.clearMatchedPendingOAuthFlowIfNeeded(
                         oauthState: oauthState,
                         codeVerifier: codeVerifier,
                         matchedPendingOAuthState: matchedPendingOAuthState,
                         managePendingOAuthFlow: completePendingFlowOnSuccess
                     )
+                    self.reportOAuthFailure(error: authError, flow: flow)
                     await MainActor.run {
                         self.isLoginInProgress = false
-                        completion(.failure(FronteggError.authError(.failedToLoadUserData(error.localizedDescription))))
+                        completion(.failure(authError))
                         self.setIsLoading(false)
                         self.setWebLoading(false)
                     }
@@ -2617,41 +3043,87 @@ public class FronteggAuth: FronteggState {
             }
         }
     }
+    private func pendingOAuthState(from url: URL) -> String? {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+
+        return components.queryItems?.first(where: { item in
+            item.name == "state" && !(item.value?.isEmpty ?? true)
+        })?.value
+    }
+
+    private func matchesGeneratedRedirectUri(_ url: URL) -> Bool {
+        guard
+            let expected = URLComponents(string: generateRedirectUri()),
+            let actual = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else {
+            return false
+        }
+
+        return actual.scheme == expected.scheme
+            && actual.host == expected.host
+            && actual.path == expected.path
+    }
+
     internal func createOauthCallbackHandler(
         _ completion: @escaping FronteggAuth.CompletionHandler,
         allowLastCodeVerifierFallback: Bool = false,
-        redirectUriOverride: String? = nil
+        redirectUriOverride: String? = nil,
+        pendingOAuthState: String? = nil,
+        flow: FronteggOAuthFlow = .login
     ) -> ((URL?, Error?) -> Void) {
         
         return { [weak self] callbackUrl, error in
             guard let self = self else { return }
+
+            func clearPendingOAuthState(_ state: String?) {
+                guard let state, !state.isEmpty else {
+                    return
+                }
+                CredentialManager.clearPendingOAuth(state: state)
+            }
+
+            func clearRelevantPendingOAuthState(callbackState: String?) {
+                clearPendingOAuthState(callbackState ?? pendingOAuthState)
+            }
             
             if let error {
-                CredentialManager.clearPendingOAuthStates()
-                completion(.failure(FronteggError.authError(.other(error))))
+                clearPendingOAuthState(pendingOAuthState)
+                let fronteggError = FronteggError.authError(.other(error))
+                self.reportOAuthFailure(error: fronteggError, flow: flow)
+                completion(.failure(fronteggError))
                 return
             }
             
             guard let url = callbackUrl else {
-                CredentialManager.clearPendingOAuthStates()
-                completion(.failure(FronteggError.authError(.unknown)))
+                clearPendingOAuthState(pendingOAuthState)
+                let fronteggError = FronteggError.authError(.unknown)
+                self.reportOAuthFailure(error: fronteggError, flow: flow)
+                completion(.failure(fronteggError))
                 return
             }
             
             let parsedQueryItems = getQueryItems(url.absoluteString)
             guard let queryItems = parsedQueryItems else {
-                CredentialManager.clearPendingOAuthStates()
-                completion(.failure(FronteggError.authError(.failedToExtractCode)))
+                clearPendingOAuthState(pendingOAuthState)
+                let fronteggError = FronteggError.authError(.failedToExtractCode)
+                self.reportOAuthFailure(error: fronteggError, flow: flow)
+                completion(.failure(fronteggError))
                 return
             }
 
             let oauthState = queryItems["state"]
 
-            // Check for error in callback
-            if let errorMessage = queryItems["error"] {
-                CredentialManager.clearPendingOAuth(state: oauthState)
-                let error = FronteggError.authError(.oauthError(errorMessage))
-                completion(.failure(error))
+            if let failureDetails = self.oauthFailureDetails(from: queryItems) {
+                clearRelevantPendingOAuthState(callbackState: oauthState)
+                self.reportOAuthFailure(
+                    error: failureDetails.error,
+                    flow: flow,
+                    errorCode: failureDetails.errorCode,
+                    errorDescription: failureDetails.errorDescription
+                )
+                completion(.failure(failureDetails.error))
                 return
             }
             
@@ -2674,9 +3146,10 @@ public class FronteggAuth: FronteggState {
                 // If this is a verification callback and there's no code, the verification might have succeeded
                 // but the redirect didn't include the code. In this case, we should inform the user
                 // that verification succeeded but they need to try logging in again.
-                CredentialManager.clearPendingOAuth(state: oauthState)
-                let error = FronteggError.authError(.failedToExtractCode)
-                completion(.failure(error))
+                clearRelevantPendingOAuthState(callbackState: oauthState)
+                let fronteggError = FronteggError.authError(.failedToExtractCode)
+                self.reportOAuthFailure(error: fronteggError, flow: flow)
+                completion(.failure(fronteggError))
                 return
             }
             
@@ -2685,10 +3158,11 @@ public class FronteggAuth: FronteggState {
                 allowFallback: allowLastCodeVerifierFallback
             )
             guard let codeVerifier = resolution.verifier else {
-                let error = FronteggError.authError(
+                let fronteggError = FronteggError.authError(
                     self.oauthCodeVerifierError(for: oauthState, resolution: resolution)
                 )
-                completion(.failure(error))
+                self.reportOAuthFailure(error: fronteggError, flow: flow)
+                completion(.failure(fronteggError))
                 return
             }
             if resolution.source == .lastGeneratedFallback {
@@ -2702,6 +3176,7 @@ public class FronteggAuth: FronteggState {
                 codeVerifier,
                 oauthState: oauthState,
                 redirectUri: redirectUriOverride,
+                flow: flow,
                 completePendingFlowOnSuccess: true,
                 matchedPendingOAuthState: resolution.source == .stateMatch,
                 completion: completion
@@ -2728,9 +3203,13 @@ public class FronteggAuth: FronteggState {
             
         }
         
-        let oauthCallback = createOauthCallbackHandler(completion)
         let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: loginHint)
         CredentialManager.saveCodeVerifier(codeVerifier)
+        let oauthCallback = createOauthCallbackHandler(
+            completion,
+            pendingOAuthState: pendingOAuthState(from: authorizeUrl),
+            flow: .login
+        )
         
         
         WebAuthenticator.shared.start(authorizeUrl, completionHandler: oauthCallback)
@@ -2760,12 +3239,14 @@ public class FronteggAuth: FronteggState {
             
         }
         
-        let oauthCallback = createOauthCallbackHandler(
-            completion,
-            allowLastCodeVerifierFallback: loginAction != nil
-        )
         let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: loginHint, loginAction: loginAction)
         CredentialManager.saveCodeVerifier(codeVerifier)
+        let oauthCallback = createOauthCallbackHandler(
+            completion,
+            allowLastCodeVerifierFallback: loginAction != nil,
+            pendingOAuthState: pendingOAuthState(from: authorizeUrl),
+            flow: .login
+        )
         WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: ephemeralSession ?? true, window:window,  completionHandler: oauthCallback)
     }
     
@@ -2798,21 +3279,42 @@ public class FronteggAuth: FronteggState {
             
             if let error {
                 self.logger.error("OAuth error: \(String(describing: error))")
+                let fronteggError = FronteggError.authError(.other(error))
+                self.activeEmbeddedOAuthFlow = .login
+                self.reportOAuthFailure(error: fronteggError, flow: .socialLogin)
                 return
             }
             
             guard let callbackURL else {
                 self.logger.info("OAuth callback invoked with nil URL and no error")
+                self.activeEmbeddedOAuthFlow = .login
+                self.reportOAuthFailure(
+                    error: FronteggError.authError(.unknown),
+                    flow: .socialLogin
+                )
                 return
             }
             
             self.logger.debug("OAuth callback URL: \(callbackURL.absoluteString)")
+
+            if let queryItems = getQueryItems(callbackURL.absoluteString),
+               let failureDetails = self.oauthFailureDetails(from: queryItems) {
+                self.activeEmbeddedOAuthFlow = .login
+                self.reportOAuthFailure(
+                    error: failureDetails.error,
+                    flow: .socialLogin,
+                    errorCode: failureDetails.errorCode,
+                    errorDescription: failureDetails.errorDescription
+                )
+                return
+            }
             
             DispatchQueue.main.async { [weak self] in
-                guard
-                    let self,
-                    let finalURL = self.handleSocialLoginCallback(callbackURL)
-                else {
+                guard let self else {
+                    return
+                }
+
+                guard let finalURL = self.handleSocialLoginCallback(callbackURL) else {
                     SentryHelper.logMessage(
                         "Social login callback could not be parsed (hosted)",
                         level: .warning,
@@ -2826,6 +3328,11 @@ public class FronteggAuth: FronteggState {
                                 "type": "social_login_callback_unhandled"
                             ]
                         ]
+                    )
+                    self.activeEmbeddedOAuthFlow = .login
+                    self.reportOAuthFailure(
+                        error: FronteggError.authError(.failedToExtractCode),
+                        flow: .socialLogin
                     )
                     return
                 }
@@ -2931,12 +3438,23 @@ public class FronteggAuth: FronteggState {
             generatedUrl = AuthorizeUrlGenerator.shared.generate(remainCodeVerifier: remainCodeVerifier)
         }
         
-        let oauthCallback = createOauthCallbackHandler(
-            completion,
-            allowLastCodeVerifierFallback: true
-        )
         let (authorizeUrl, codeVerifier) = generatedUrl
         CredentialManager.saveCodeVerifier(codeVerifier)
+        let oauthFlow: FronteggOAuthFlow
+        switch type {
+        case "social-login", "custom-social-login":
+            oauthFlow = .socialLogin
+        case "direct" where data.contains("/user/sso/") || data.contains("appleid.apple.com"):
+            oauthFlow = .socialLogin
+        default:
+            oauthFlow = .login
+        }
+        let oauthCallback = createOauthCallbackHandler(
+            completion,
+            allowLastCodeVerifierFallback: true,
+            pendingOAuthState: pendingOAuthState(from: authorizeUrl),
+            flow: oauthFlow
+        )
         
         WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: ephemeralSession ?? true, window: window ?? getRootVC()?.view.window, completionHandler: oauthCallback)
     }
@@ -2986,12 +3504,14 @@ public class FronteggAuth: FronteggState {
                         if #available(iOS 15.0, *), appleConfig.customised, !config.useAsWebAuthenticationForAppleLogin {
                             await AppleAuthenticator.shared.start(completionHandler: completion)
                         }else {
+                            let generatedAuth = try await self.generateAppleAuthorizeUrl(config: appleConfig)
                             let oauthCallback = self.createOauthCallbackHandler(
                                 completion,
-                                allowLastCodeVerifierFallback: true
+                                allowLastCodeVerifierFallback: true,
+                                pendingOAuthState: generatedAuth.pendingOAuthState,
+                                flow: .apple
                             )
-                            let url = try await self.generateAppleAuthorizeUrl(config: appleConfig)
-                            await WebAuthenticator.shared.start(url, ephemeralSession: true, completionHandler: oauthCallback)
+                            await WebAuthenticator.shared.start(generatedAuth.url, ephemeralSession: true, completionHandler: oauthCallback)
                         }
                     } else {
                         throw FronteggError.configError(.socialLoginMissing("Apple"))
@@ -3011,8 +3531,14 @@ public class FronteggAuth: FronteggState {
     }
     
     
-    func createOauth2SessionState() async throws -> Data {
+    private struct OAuth2SessionStateContext {
+        let encodedState: Data
+        let pendingOAuthState: String?
+    }
+
+    private func createOauth2SessionState() async throws -> OAuth2SessionStateContext {
         let (url, codeVerifier)  = AuthorizeUrlGenerator.shared.generate()
+        let pendingOAuthState = pendingOAuthState(from: url)
         
         let (_, authorizeResponse) = try await FronteggAuth.shared.api.getRequest(path: url.absoluteString, accessToken: nil, additionalHeaders: ["Accept":"text/html"])
         
@@ -3037,16 +3563,19 @@ public class FronteggAuth: FronteggState {
         
         CredentialManager.saveCodeVerifier(codeVerifier)
         
-        return oauthStateJson
+        return OAuth2SessionStateContext(
+            encodedState: oauthStateJson,
+            pendingOAuthState: pendingOAuthState
+        )
     }
-    func generateAppleAuthorizeUrl(config: SocialLoginOption) async throws -> URL {
+    func generateAppleAuthorizeUrl(config: SocialLoginOption) async throws -> (url: URL, pendingOAuthState: String?) {
         let sessionState = try await createOauth2SessionState()
         
         let scope = ["openid", "name", "email"] + config.additionalScopes
         let appId = FronteggAuth.shared.applicationId ?? ""
         
         let stateDict = [
-            "oauthState": sessionState.base64EncodedString(),
+            "oauthState": sessionState.encodedState.base64EncodedString(),
             "appId": appId,
             "provider": "apple",
             "action": "login",
@@ -3069,7 +3598,7 @@ public class FronteggAuth: FronteggState {
         
         let finalUrl = urlComponent.url!
         
-        return finalUrl
+        return (finalUrl, sessionState.pendingOAuthState)
     }
     
     func loginWithSocialLogin(socialLoginUrl: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
@@ -3096,12 +3625,6 @@ public class FronteggAuth: FronteggState {
             ]
         )
         
-        let oauthCallback = createOauthCallbackHandler(
-            completion,
-            allowLastCodeVerifierFallback: true
-        )
-        
-        
         let directLogin: [String: Any] = [
             "type": "direct",
             "data": socialLoginUrl,
@@ -3116,6 +3639,12 @@ public class FronteggAuth: FronteggState {
         
         let (authorizeUrl, codeVerifier) = generatedUrl
         CredentialManager.saveCodeVerifier(codeVerifier)
+        let oauthCallback = createOauthCallbackHandler(
+            completion,
+            allowLastCodeVerifierFallback: true,
+            pendingOAuthState: pendingOAuthState(from: authorizeUrl),
+            flow: .socialLogin
+        )
         
         logger.info("🔵 [Social Login] Starting social login flow")
         logger.info("🔵 [Social Login] Authorize URL: \(authorizeUrl.absoluteString)")
@@ -3146,14 +3675,14 @@ public class FronteggAuth: FronteggState {
         let completion = _completion ?? self.loginCompletion ?? { res in
             
         }
-        
-        let oauthCallback = createOauthCallbackHandler(
-            completion,
-            allowLastCodeVerifierFallback: true
-        )
-        
         let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: email, remainCodeVerifier: true)
         CredentialManager.saveCodeVerifier(codeVerifier)
+        let oauthCallback = createOauthCallbackHandler(
+            completion,
+            allowLastCodeVerifierFallback: true,
+            pendingOAuthState: pendingOAuthState(from: authorizeUrl),
+            flow: .sso
+        )
         
         WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: true, window: getRootVC()?.view.window, completionHandler: oauthCallback)
     }
@@ -3162,11 +3691,6 @@ public class FronteggAuth: FronteggState {
         let completion = _completion ?? self.loginCompletion ?? { res in
             
         }
-        
-        let oauthCallback = createOauthCallbackHandler(
-            completion,
-            allowLastCodeVerifierFallback: true
-        )
         
         let directLogin: [String: Any] = [
             "type": "direct",
@@ -3182,6 +3706,12 @@ public class FronteggAuth: FronteggState {
         
         let (authorizeUrl, codeVerifier) = generatedUrl
         CredentialManager.saveCodeVerifier(codeVerifier)
+        let oauthCallback = createOauthCallbackHandler(
+            completion,
+            allowLastCodeVerifierFallback: true,
+            pendingOAuthState: pendingOAuthState(from: authorizeUrl),
+            flow: .customSSO
+        )
         FronteggRuntime.testingLog("loginWithCustomSSO authorizeUrl: \(authorizeUrl.absoluteString)")
 
         WebAuthenticator.shared.start(
@@ -3199,6 +3729,9 @@ public class FronteggAuth: FronteggState {
                 "E2E embeddedLogin rootVC=\(type(of: rootVC)) presented=\(String(describing: rootVC.presentedViewController)) embeddedMode=\(self.embeddedMode)"
             )
             self.loginHint = loginHint
+            if self.pendingAppLink == nil {
+                self.activeEmbeddedOAuthFlow = .login
+            }
             if self.loginCompletion != nil {
                 logger.info("Login request ignored, Embedded login already in progress.")
                 return
@@ -3228,7 +3761,9 @@ public class FronteggAuth: FronteggState {
         logger.info("🔵 [handleOpenUrl] Base URL: \(self.baseUrl)")
         logger.info("🔵 [handleOpenUrl] URL has prefix baseUrl: \(url.absoluteString.hasPrefix(self.baseUrl))")
         logger.info("🔵 [handleOpenUrl] internalHandleUrl: \(internalHandleUrl)")
-        
+        let matchesGeneratedRedirectCallback = matchesGeneratedRedirectUri(url)
+        let parsedQueryItems = getQueryItems(url.absoluteString)
+
         // Log app redirect handling
         SentryHelper.addBreadcrumb(
             "App redirect received (handleOpenUrl)",
@@ -3242,12 +3777,35 @@ public class FronteggAuth: FronteggState {
                 "query": url.query ?? "nil",
                 "baseUrl": self.baseUrl,
                 "matchesBaseUrl": url.absoluteString.hasPrefix(self.baseUrl),
+                "matchesGeneratedRedirectUri": matchesGeneratedRedirectCallback,
                 "internalHandleUrl": internalHandleUrl,
                 "embeddedMode": self.embeddedMode
             ]
         )
+
+        if matchesGeneratedRedirectCallback,
+           let parsedQueryItems,
+           let failureDetails = self.oauthFailureDetails(from: parsedQueryItems) {
+            logger.info("✅ [handleOpenUrl] Detected generated redirect URI OAuth error callback")
+            self.reportOAuthFailure(
+                error: failureDetails.error,
+                flow: self.activeEmbeddedOAuthFlow == .login ? .login : self.activeEmbeddedOAuthFlow,
+                errorCode: failureDetails.errorCode,
+                errorDescription: failureDetails.errorDescription
+            )
+
+            if let webView = self.webview {
+                let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
+                CredentialManager.saveCodeVerifier(codeVerifier)
+                webView.load(URLRequest(url: newUrl, cachePolicy: .reloadRevalidatingCacheData))
+            }
+
+            self.activeEmbeddedOAuthFlow = .login
+            setAppLink(false)
+            return true
+        }
         
-        if(!url.absoluteString.hasPrefix(self.baseUrl) && !internalHandleUrl){
+        if(!url.absoluteString.hasPrefix(self.baseUrl) && !internalHandleUrl && !matchesGeneratedRedirectCallback){
             logger.warning("⚠️ [handleOpenUrl] URL doesn't match baseUrl and internalHandleUrl is false, returning false")
             SentryHelper.logMessage(
                 "App redirect URL rejected - doesn't match baseUrl",
@@ -3257,6 +3815,7 @@ public class FronteggAuth: FronteggState {
                         "url": url.absoluteString,
                         "baseUrl": self.baseUrl,
                         "internalHandleUrl": internalHandleUrl,
+                        "matchesGeneratedRedirectUri": matchesGeneratedRedirectCallback,
                         "scheme": url.scheme ?? "nil",
                         "host": url.host ?? "nil"
                     ],
@@ -3322,7 +3881,9 @@ public class FronteggAuth: FronteggState {
             
             let oauthCallback = createOauthCallbackHandler(
                 completion,
-                allowLastCodeVerifierFallback: true
+                allowLastCodeVerifierFallback: true,
+                pendingOAuthState: pendingOAuthState(from: verificationUrl),
+                flow: .verification
             )
             
             var callbackReceived = false
@@ -3421,6 +3982,7 @@ public class FronteggAuth: FronteggState {
         }
         
         if let socialLoginUrl = handleSocialLoginCallback(url){
+            self.activeEmbeddedOAuthFlow = .socialLogin
             if let webView = self.webview {
                 let request = URLRequest(url: socialLoginUrl, cachePolicy: .reloadRevalidatingCacheData)
                 webView.load(request)
@@ -3429,6 +3991,7 @@ public class FronteggAuth: FronteggState {
                 self.pendingAppLink = socialLoginUrl
             }
         }else {
+            self.activeEmbeddedOAuthFlow = .login
             self.pendingAppLink = url
         }
         setWebLoading(true)
@@ -3685,6 +4248,10 @@ public class FronteggAuth: FronteggState {
         // Helpers
         let items = comps.queryItems ?? []
         func q(_ name: String) -> String? { items.first { $0.name == name }?.value }
+
+        if q("error") != nil || q("error_description") != nil {
+            return nil
+        }
         
         // Extract supported params
         var queryParams: [String: String] = [:]
@@ -3869,13 +4436,18 @@ public class FronteggAuth: FronteggState {
                     self.setIsLoading(false)
                     
                     if self.embeddedMode {
+                        self.activeEmbeddedOAuthFlow = .mfa
                         self.pendingAppLink = authorizeUrl
                         self.setWebLoading(true)
                         self.embeddedLogin(completion, loginHint: nil)
                         return
                     }
                     
-                    let oauthCallback = self.createOauthCallbackHandler(completion ?? { _ in })
+                    let oauthCallback = self.createOauthCallbackHandler(
+                        completion ?? { _ in },
+                        pendingOAuthState: self.pendingOAuthState(from: authorizeUrl),
+                        flow: .mfa
+                    )
                     WebAuthenticator.shared.start(authorizeUrl, completionHandler: oauthCallback)
                 }
             } catch let error as FronteggError {
