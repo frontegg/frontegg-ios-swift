@@ -3,9 +3,11 @@ import XCTest
 
 private final class MockRefreshRecoveryApi: Api {
     private(set) var refreshCallCount = 0
+    private(set) var meWithRefreshCallCount = 0
     private(set) var callCounts: [String: Int] = [:]
 
     var refreshResult: Result<AuthResponse, Error>?
+    var meWithRefreshResult: Result<MeResult, Error>?
     var responseQueues: [String: [(statusCode: Int, data: Data, error: Error?)]] = [:]
 
     init() {
@@ -28,6 +30,23 @@ private final class MockRefreshRecoveryApi: Api {
         case .failure(let error):
             throw error
         }
+    }
+
+    override func me(accessToken: String, refreshToken: String) async throws -> MeResult {
+        if let meWithRefreshResult {
+            meWithRefreshCallCount += 1
+            switch meWithRefreshResult {
+            case .success(let result):
+                return result
+            case .failure(let error):
+                throw error
+            }
+        }
+        return try await super.me(accessToken: accessToken, refreshToken: refreshToken)
+    }
+
+    override func sleepBeforeRetry(attempt: Int) async {
+        // Recovery tests should not wait on retry backoff timers.
     }
 
     override func getRequest(
@@ -310,22 +329,125 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertEqual(auth.user?.email, "refreshed-missing-exp@example.com")
     }
 
-    private func makeAuthResponse(email: String, refreshToken: String) throws -> AuthResponse {
+    func test_refreshTokenIfNeeded_refreshSucceeds_jwtTenantChanged_fetchesFreshUser() async throws {
+        auth.setUser(try makeUser(email: "cached@example.com", tenantId: "tenant-stale"))
+        auth.setIsAuthenticated(true)
+
+        api.refreshResult = .success(
+            try makeAuthResponse(
+                email: "fresh@example.com",
+                refreshToken: "refresh-token-new",
+                tenantId: "tenant-fresh"
+            )
+        )
+        api.meWithRefreshResult = .success(
+            MeResult(
+                user: try makeUser(email: "fresh@example.com", tenantId: "tenant-fresh"),
+                refreshedTokens: nil
+            )
+        )
+
+        let refreshed = await auth.refreshTokenIfNeeded()
+
+        XCTAssertTrue(refreshed)
+        XCTAssertEqual(api.refreshCallCount, 1)
+        XCTAssertEqual(api.meWithRefreshCallCount, 1)
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertEqual(auth.user?.email, "fresh@example.com")
+        XCTAssertEqual(auth.user?.tenantId, "tenant-fresh")
+    }
+
+    func test_refreshTokenIfNeeded_refreshSucceeds_jwtTenantUnchanged_usesCachedUser() async throws {
+        let cachedAccessToken = try makeAccessToken(email: "cached@example.com", tenantId: "tenant-123")
+        auth.setAccessToken(cachedAccessToken)
+        auth.setRefreshToken("refresh-token-existing")
+        auth.setUser(try makeUser(email: "cached@example.com", tenantId: "tenant-123"))
+        auth.setIsAuthenticated(true)
+
+        let refreshedAccessToken = try makeAccessToken(email: "new-token@example.com", tenantId: "tenant-123")
+        api.refreshResult = .success(
+            try makeAuthResponse(
+                accessToken: refreshedAccessToken,
+                refreshToken: "refresh-token-new"
+            )
+        )
+        api.meWithRefreshResult = .failure(ApiError.invalidUrl("me() should not be called when tenant is unchanged"))
+
+        let refreshed = await auth.refreshTokenIfNeeded()
+
+        XCTAssertTrue(refreshed)
+        XCTAssertEqual(api.refreshCallCount, 1)
+        XCTAssertEqual(api.meWithRefreshCallCount, 0)
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertEqual(auth.user?.email, "cached@example.com")
+        XCTAssertEqual(auth.accessToken, refreshedAccessToken)
+        XCTAssertEqual(auth.refreshToken, "refresh-token-new")
+    }
+
+    func test_refreshTokenIfNeeded_refreshSucceeds_adoptsRerefreshedTokensFromMe() async throws {
+        let initialRefresh = try makeAuthResponse(
+            email: "initial@example.com",
+            refreshToken: "refresh-token-initial",
+            tenantId: "tenant-123"
+        )
+        let rerefreshedAccessToken = try makeAccessToken(email: "final@example.com", tenantId: "tenant-123")
+        let rerefreshedTokens = try makeAuthResponse(
+            accessToken: rerefreshedAccessToken,
+            refreshToken: "refresh-token-rerefreshed"
+        )
+
+        api.refreshResult = .success(initialRefresh)
+        api.meWithRefreshResult = .success(
+            MeResult(
+                user: try makeUser(email: "final@example.com", tenantId: "tenant-123"),
+                refreshedTokens: rerefreshedTokens
+            )
+        )
+
+        let refreshed = await auth.refreshTokenIfNeeded()
+
+        XCTAssertTrue(refreshed)
+        XCTAssertEqual(api.refreshCallCount, 1)
+        XCTAssertEqual(api.meWithRefreshCallCount, 1)
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertEqual(auth.user?.email, "final@example.com")
+        XCTAssertEqual(auth.accessToken, rerefreshedAccessToken)
+        XCTAssertEqual(auth.refreshToken, "refresh-token-rerefreshed")
+    }
+
+    private func makeAuthResponse(
+        email: String,
+        refreshToken: String,
+        tenantId: String = "tenant-123"
+    ) throws -> AuthResponse {
         let json = TestDataFactory.makeAuthResponse(
             refreshToken: refreshToken,
-            accessToken: try makeAccessToken(email: email)
+            accessToken: try makeAccessToken(email: email, tenantId: tenantId)
         )
         let data = try JSONSerialization.data(withJSONObject: json)
         return try JSONDecoder().decode(AuthResponse.self, from: data)
     }
 
-    private func makeAccessToken(email: String, includeExp: Bool = true) throws -> String {
+    private func makeAuthResponse(accessToken: String, refreshToken: String) throws -> AuthResponse {
+        let json = TestDataFactory.makeAuthResponse(
+            refreshToken: refreshToken,
+            accessToken: accessToken
+        )
+        let data = try JSONSerialization.data(withJSONObject: json)
+        return try JSONDecoder().decode(AuthResponse.self, from: data)
+    }
+
+    private func makeAccessToken(
+        email: String,
+        includeExp: Bool = true,
+        tenantId: String = "tenant-123"
+    ) throws -> String {
         var payload: [String: Any] = [
             "sub": UUID().uuidString,
             "email": email,
             "name": "Recovered User",
-            "tenantId": "tenant-123",
-            "tenantIds": ["tenant-123"]
+            "tenantId": tenantId,
+            "tenantIds": [tenantId]
         ]
         if includeExp {
             payload["exp"] = Int(Date().timeIntervalSince1970 + 3600)
@@ -333,8 +455,15 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         return try TestDataFactory.makeJWT(payloadDict: payload)
     }
 
-    private func makeUser(email: String) throws -> User {
-        let data = try JSONSerialization.data(withJSONObject: TestDataFactory.makeUser(email: email))
+    private func makeUser(email: String, tenantId: String = "tenant-123") throws -> User {
+        let tenant = TestDataFactory.makeTenant(id: tenantId, name: "Tenant \(tenantId)", tenantId: tenantId)
+        let data = try JSONSerialization.data(withJSONObject: TestDataFactory.makeUser(
+            email: email,
+            tenantId: tenantId,
+            tenantIds: [tenantId],
+            tenants: [tenant],
+            activeTenant: tenant
+        ))
         return try JSONDecoder().decode(User.self, from: data)
     }
 

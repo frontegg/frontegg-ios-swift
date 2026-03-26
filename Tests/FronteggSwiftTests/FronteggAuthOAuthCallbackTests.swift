@@ -16,6 +16,7 @@ private final class MockOAuthCallbackApi: Api {
     var exchangeTokenResponse: AuthResponse?
     var exchangeTokenError: FronteggError?
     var meResult: Result<User?, Error> = .success(nil)
+    var meRefreshResult: Result<MeResult, Error>?
     var lastExchangeInput: ExchangeInput?
     var meCallCount = 0
 
@@ -32,14 +33,32 @@ private final class MockOAuthCallbackApi: Api {
         return (exchangeTokenResponse, exchangeTokenError)
     }
 
-    override func me(accessToken: String) async throws -> User? {
-        meCallCount += 1
+    private func resolveMeResult() throws -> MeResult {
+        if let meRefreshResult {
+            switch meRefreshResult {
+            case .success(let result):
+                return result
+            case .failure(let error):
+                throw error
+            }
+        }
+
         switch meResult {
         case .success(let user):
-            return user
+            return MeResult(user: user, refreshedTokens: nil)
         case .failure(let error):
             throw error
         }
+    }
+
+    override func me(accessToken: String) async throws -> User? {
+        meCallCount += 1
+        return try resolveMeResult().user
+    }
+
+    override func me(accessToken: String, refreshToken: String) async throws -> MeResult {
+        meCallCount += 1
+        return try resolveMeResult()
     }
 }
 
@@ -289,6 +308,40 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         case .failure(let error):
             XCTFail("Expected success, got \(error)")
         }
+    }
+
+    func test_handleHostedLoginCallback_adoptsRerefreshedTokensReturnedFromMe() async throws {
+        let exchangedAccessToken = try makeAccessToken(email: "exchange@example.com")
+        let rerefreshedAccessToken = try makeAccessToken(email: "corrected@example.com")
+        let rerefreshedTokens = try makeAuthResponse(
+            accessToken: rerefreshedAccessToken,
+            refreshToken: "refresh-token-rerefreshed"
+        )
+
+        api.exchangeTokenResponse = try makeAuthResponse(
+            accessToken: exchangedAccessToken,
+            refreshToken: "refresh-token-exchanged"
+        )
+        api.meRefreshResult = .success(
+            MeResult(
+                user: try makeUser(email: "corrected@example.com"),
+                refreshedTokens: rerefreshedTokens
+            )
+        )
+
+        let result = await executeHostedLoginCallback(code: "code-rerefresh", codeVerifier: "verifier-rerefresh")
+
+        switch result {
+        case .success(let user):
+            XCTAssertEqual(user.email, "corrected@example.com")
+        case .failure(let error):
+            XCTFail("Expected success, got \(error)")
+        }
+
+        XCTAssertEqual(api.meCallCount, 1)
+        XCTAssertEqual(auth.user?.email, "corrected@example.com")
+        XCTAssertEqual(auth.accessToken, rerefreshedAccessToken)
+        XCTAssertEqual(auth.refreshToken, "refresh-token-rerefreshed")
     }
 
     func test_reconnectedToInternet_cancelsPendingOfflineDebounceBeforeStateFlips() async {

@@ -844,17 +844,43 @@ public class FronteggAuth: FronteggState {
     private func setCredentialsInternal(accessToken: String, refreshToken: String, user: User? = nil, hydrationMode: CredentialHydrationMode) async {
         self.logger.info("Setting credentials (refresh token length: \(refreshToken.count), hydrationMode: \(hydrationModeDescription(hydrationMode)))")
 
+        var accessToken = accessToken
+        var refreshToken = refreshToken
+
         do {
             let config = try? PlistHelper.fronteggConfig()
             let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
 
             // Decode token to get tenantId
-            let decode = try JWTHelper.decode(jwtToken: accessToken)
+            var decode = try JWTHelper.decode(jwtToken: accessToken)
 
             // Resolve user: refresh paths prefer cached user, authoritative paths fetch from /me
             let userToUse: User
             if let providedUser = user {
                 userToUse = providedUser
+            } else if hydrationMode == .refreshPreserveCachedUser, let existingUser = self.user {
+                let jwtTenantId = decode["tenantId"] as? String
+                if jwtTenantId != nil && jwtTenantId != existingUser.tenantId {
+                    self.logger.info("Refresh path: tenant changed in JWT (\(jwtTenantId!) vs cached \(existingUser.tenantId)), fetching fresh user data")
+                    do {
+                        let meResult = try await self.api.me(accessToken: accessToken, refreshToken: refreshToken)
+                        guard let fetchedUser = meResult.user else {
+                            throw FronteggError.authError(.failedToLoadUserData("User data is nil"))
+                        }
+                        userToUse = fetchedUser
+                        if let newTokens = meResult.refreshedTokens {
+                            accessToken = newTokens.access_token
+                            refreshToken = newTokens.refresh_token
+                            decode = try JWTHelper.decode(jwtToken: accessToken)
+                            self.logger.info("Refresh path: adopted re-refreshed tokens after tenant correction")
+                        }
+                    } catch {
+                        throw CredentialHydrationFailure.authoritativeUserLoadFailed(error)
+                    }
+                } else {
+                    self.logger.info("Refresh path: using existing in-memory user (tenant unchanged)")
+                    userToUse = existingUser
+                }
             } else if hydrationMode != .authoritative, let existingUser = self.user {
                 self.logger.info("\(hydrationModeDescription(hydrationMode)) path: using existing in-memory user")
                 userToUse = existingUser
@@ -871,10 +897,17 @@ public class FronteggAuth: FronteggState {
                 userToUse = derivedUser
             } else {
                 do {
-                    guard let fetchedUser = try await self.api.me(accessToken: accessToken) else {
+                    let meResult = try await self.api.me(accessToken: accessToken, refreshToken: refreshToken)
+                    guard let fetchedUser = meResult.user else {
                         throw FronteggError.authError(.failedToLoadUserData("User data is nil"))
                     }
                     userToUse = fetchedUser
+                    if let newTokens = meResult.refreshedTokens {
+                        accessToken = newTokens.access_token
+                        refreshToken = newTokens.refresh_token
+                        decode = try JWTHelper.decode(jwtToken: accessToken)
+                        self.logger.info("Adopted re-refreshed tokens from me() call")
+                    }
                 } catch {
                     throw CredentialHydrationFailure.authoritativeUserLoadFailed(error)
                 }
@@ -953,9 +986,11 @@ public class FronteggAuth: FronteggState {
                 refreshOffset = nil
                 logger.warning("JWT missing exp claim during credential setup. Skipping refresh scheduling until a later refresh check.")
             }
+            let accessTokenToSet = accessToken
+            let refreshTokenToSet = refreshToken
             await MainActor.run {
-                setRefreshToken(refreshToken)
-                setAccessToken(accessToken)
+                setRefreshToken(refreshTokenToSet)
+                setAccessToken(accessTokenToSet)
                 setUser(userToSet)
                 setIsAuthenticated(true)
                 setIsOfflineMode(false)
@@ -1017,9 +1052,11 @@ public class FronteggAuth: FronteggState {
                     stage: "setCredentialsInternal"
                 )
                 let enableSessionPerTenant = (try? PlistHelper.fronteggConfig())?.enableSessionPerTenant ?? false
+                let accessTokenToSet = accessToken
+                let refreshTokenToSet = refreshToken
                 await MainActor.run {
-                    setRefreshToken(refreshToken)
-                    setAccessToken(accessToken)
+                    setRefreshToken(refreshTokenToSet)
+                    setAccessToken(accessTokenToSet)
                     setUser(resolvedUser)
                     setIsAuthenticated(true)
                     setIsOfflineMode(true)
@@ -2227,7 +2264,12 @@ public class FronteggAuth: FronteggState {
             
             do {
                 logger.info("Going to load user data")
-                let user = try await self.api.me(accessToken: data.access_token)
+                let meResult = try await self.api.me(
+                    accessToken: data.access_token,
+                    refreshToken: data.refresh_token
+                )
+                let hydratedTokens = meResult.refreshedTokens ?? data
+                let user = meResult.user
                 
                 guard let user = user else {
                     self.clearMatchedPendingOAuthFlowIfNeeded(
@@ -2245,7 +2287,11 @@ public class FronteggAuth: FronteggState {
                     return
                 }
                 
-                await setCredentials(accessToken: data.access_token, refreshToken: data.refresh_token, user: user)
+                await setCredentials(
+                    accessToken: hydratedTokens.access_token,
+                    refreshToken: hydratedTokens.refresh_token,
+                    user: user
+                )
                 self.completePendingOAuthFlowIfNeeded(
                     oauthState: oauthState,
                     codeVerifier: codeVerifier,
