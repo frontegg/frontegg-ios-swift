@@ -16,6 +16,13 @@ enum ApiError: Error {
     case meEndpointFailed(statusCode: Int, path: String)
 }
 
+/// Result of `me()`. When a token re-refresh was performed,
+/// `refreshedTokens` carries the new tokens that the caller must adopt.
+internal struct MeResult {
+    let user: User?
+    let refreshedTokens: AuthResponse?
+}
+
 
 class RedirectHandler: NSObject, URLSessionTaskDelegate {
     // This method allows you to control redirect behavior

@@ -48,7 +48,7 @@ public class FronteggAuth: FronteggState {
 #if DEBUG
     static var testNetworkPathAvailabilityOverride: Bool? = nil
 #endif
-    
+
     public var embeddedMode: Bool
     public var isRegional: Bool
     public var regionData: [RegionConfig]
@@ -491,7 +491,7 @@ public class FronteggAuth: FronteggState {
         await SocialLoginUrlGenerator.shared.reloadConfigs()
         self.warmingWebViewAsync()
     }
-    
+
     public func initializeSubscriptions() {
         let config = try? PlistHelper.fronteggConfig()
         let enableOfflineMode = config?.enableOfflineMode ?? false
@@ -635,7 +635,7 @@ public class FronteggAuth: FronteggState {
 
         let refreshTokenSnapshot = refreshToken
         let accessTokenSnapshot = accessToken
-        
+
         if hasAnySessionArtifacts {
             // Explicitly stop any existing monitoring before setting tokens
             NetworkStatusMonitor.stopBackgroundMonitoring()
@@ -780,7 +780,7 @@ public class FronteggAuth: FronteggState {
             return "preserveCachedOrDerivedUser"
         }
     }
-                
+
 
     private func resolveBestEffortUser(accessToken: String, includeInMemory: Bool = true) -> User? {
         if includeInMemory, let currentUser = self.user {
@@ -1269,7 +1269,7 @@ public class FronteggAuth: FronteggState {
         Self.testNetworkPathAvailabilityOverride = available
     }
 #endif
-    
+
     public func logout(clearCookie: Bool = true, _ completion: FronteggAuth.LogoutHandler? = nil) {
         Task { @MainActor in
             
@@ -1305,7 +1305,7 @@ public class FronteggAuth: FronteggState {
                 self.credentialManager.clear()
             }
             CredentialManager.clearPendingOAuthFlows()
-            
+
             if clearCookie {
                 await self.clearCookie()
             }
@@ -2158,13 +2158,13 @@ public class FronteggAuth: FronteggState {
         matchedPendingOAuthState: Bool = false,
         completion: @escaping FronteggAuth.CompletionHandler
     ) {
-        
+
         // Use provided redirectUri or generate default one
         // For magic link flow, we should use the redirectUri from the callback URL
         let redirectUri = redirectUri ?? generateRedirectUri()
         setIsLoading(true)
         self.isLoginInProgress = true
-        
+
         logger.info("Handling hosted login callback (redirectUri: \(redirectUri), hasCodeVerifier: \(codeVerifier != nil))")
         
         Task {
@@ -2650,7 +2650,7 @@ public class FronteggAuth: FronteggState {
                     "Using last generated code verifier fallback for OAuth callback (state present: \(oauthState != nil))"
                 )
             }
-            
+
             self.handleHostedLoginCallback(
                 code,
                 codeVerifier,
@@ -2802,7 +2802,7 @@ public class FronteggAuth: FronteggState {
             FronteggRuntime.testingLog(
                 "E2E handleSocialLogin generatedAuthUrl provider=\(providerString) url=\(generatedAuthUrl?.absoluteString ?? "nil")"
             )
-            
+
             // Check if we need to use legacy flow
             if generatedAuthUrl == nil && !custom {
                 if let provider = SocialLoginProvider(rawValue: providerString),
@@ -3137,7 +3137,7 @@ public class FronteggAuth: FronteggState {
         let (authorizeUrl, codeVerifier) = generatedUrl
         CredentialManager.saveCodeVerifier(codeVerifier)
         FronteggRuntime.testingLog("loginWithCustomSSO authorizeUrl: \(authorizeUrl.absoluteString)")
-        
+
         WebAuthenticator.shared.start(
             authorizeUrl,
             ephemeralSession: true,
@@ -3171,7 +3171,7 @@ public class FronteggAuth: FronteggState {
             
             rootVC.present(hostingController, animated: false, completion: nil)
             FronteggRuntime.testingLog("E2E embeddedLogin present called")
-            
+
         } else {
             logger.critical(FronteggError.authError(.couldNotFindRootViewController).localizedDescription)
             exit(500)
