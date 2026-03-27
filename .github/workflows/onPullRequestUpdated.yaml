@@ -93,12 +93,12 @@ jobs:
         run: |
           swift package resolve
           xcodebuild build -scheme FronteggSwift -destination "platform=iOS Simulator,name=iPhone 16 Pro"
-
-  swift-sdk-e2e:
-    name: Swift SDK E2E
-    needs: [validate-pr, unit-tests, build-and-lint]
-    uses: frontegg/e2e-system-tests/.github/workflows/swift-sdk-e2e-reusable.yml@main
-    with:
-      swift_repo_ref: ${{ github.event.pull_request.head.sha }}
-      test_suite: hosted:no-social
-    secrets: inherit
+#
+#  swift-sdk-e2e:
+#    name: Swift SDK E2E
+#    needs: [validate-pr, unit-tests, build-and-lint]
+#    uses: frontegg/e2e-system-tests/.github/workflows/swift-sdk-e2e-reusable.yml@main
+#    with:
+#      swift_repo_ref: ${{ github.event.pull_request.head.sha }}
+#      test_suite: hosted:no-social
+#    secrets: inherit

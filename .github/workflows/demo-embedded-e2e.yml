@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   demo-embedded-e2e:
-    name: "Run Demo Embedded E2E"
+    name: "Run Demo-Embedded E2E Tests"
     runs-on: "macos-15-xlarge"
     steps:
       - name: Checkout
