@@ -220,7 +220,7 @@ class DemoEmbeddedUITestCase: XCTestCase {
 
     func openEmbeddedLogin() {
         waitForScreen("LoginPageRoot")
-        app.buttons["NativeLoginButton"].tap()
+        app.buttons["NativeLoginButton"].waitUntilExists(timeout: 20).safeTap()
     }
 
     func tapButton(_ identifier: String, timeout: TimeInterval = 20, maxScrollAttempts: Int = 6) {
@@ -247,19 +247,24 @@ class DemoEmbeddedUITestCase: XCTestCase {
     }
 
     func loginWithPassword(email: String = "test@frontegg.com", password: String = "Testpassword1!") {
-        if email == "test@frontegg.com",
-           app.buttons["E2EEmbeddedPasswordButton"].exists {
-            waitForScreen("LoginPageRoot")
-            app.buttons["E2EEmbeddedPasswordButton"].tap()
+        waitForScreen("LoginPageRoot")
+
+        if email == "test@frontegg.com" {
+            guard app.buttons["E2EEmbeddedPasswordButton"].waitForExistence(timeout: 5) else {
+                XCTFail("Expected E2EEmbeddedPasswordButton for default password login. \(screenDebugSummary())")
+                return
+            }
+
+            tapButton("E2EEmbeddedPasswordButton", timeout: 5)
             waitForUserEmail(email)
             return
         }
 
         openEmbeddedLogin()
-        app.getWebInput("Email is required").safeTypeText(email)
-        app.getWebButton("Continue").safeTap()
-        app.getWebPasswordInput("Password is required").safeTypeText(password)
-        app.getWebButton("Sign in").safeTap()
+        waitForWebElement(elementType: .textField, text: "Email is required").safeTypeText(email)
+        waitForWebElement(elementType: .button, text: "Continue").safeTap()
+        waitForWebElement(elementType: .secureTextField, text: "Password is required").safeTypeText(password)
+        waitForWebElement(elementType: .button, text: "Sign in").safeTap()
         waitForUserEmail(email)
     }
 
@@ -350,6 +355,30 @@ class DemoEmbeddedUITestCase: XCTestCase {
     private func diagnosticValue(for identifier: String) -> String? {
         let element = app.staticTexts[identifier]
         return element.exists ? element.label : nil
+    }
+
+    private func waitForWebElement(
+        elementType: XCUIElement.ElementType,
+        text: String,
+        timeout: TimeInterval = 20
+    ) -> XCUIElement {
+        let predicate = NSPredicate(format: "label == %@ OR identifier == %@", text, text)
+        let query = app.webViews.descendants(matching: elementType).matching(predicate)
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            let matches = query.allElementsBoundByIndex.filter(\.exists)
+            if let hittableMatch = matches.last(where: \.isHittable) {
+                return hittableMatch
+            }
+            if let visibleMatch = matches.last {
+                return visibleMatch
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("Expected web element \(text) of type \(elementType) within \(timeout)s. \(screenDebugSummary())")
+        return query.firstMatch
     }
 
     private func screenAnchor(for identifier: String) -> XCUIElement {
