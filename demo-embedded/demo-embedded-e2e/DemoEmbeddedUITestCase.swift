@@ -89,6 +89,135 @@ class DemoEmbeddedUITestCase: XCTestCase {
         }
     }
 
+    func waitForAuthenticatedOfflineMode(_ enabled: Bool, timeout: TimeInterval = 20) {
+        let offlineMarker = app.staticTexts["AuthenticatedOfflineModeEnabled"]
+        let offlineBadge = app.staticTexts["OfflineModeBadge"]
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            if !allowsUnexpectedNoConnectionScreen,
+               unexpectedNoConnectionScreenWasSeen() {
+                XCTFail("Unexpected NoConnectionPageRoot appeared while waiting for authenticated offline mode \(enabled). \(screenDebugSummary())")
+                return
+            }
+
+            let conditionSatisfied = enabled
+                ? (offlineMarker.exists && offlineBadge.exists)
+                : (!offlineMarker.exists && !offlineBadge.exists)
+            if conditionSatisfied {
+                return
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("Expected authenticated offline mode \(enabled). \(screenDebugSummary())")
+    }
+
+    func tapGetCurrentAccessTokenButton() {
+        let button = app.buttons["GetCurrentAccessTokenButton"]
+        if button.waitForExistence(timeout: 5) {
+            button.safeTap()
+            return
+        }
+
+        app.buttons["Get Current Access Token"].waitUntilExists(timeout: 5).safeTap()
+    }
+
+    func accessTokenVersion(timeout: TimeInterval = 10) -> Int {
+        let value = textValue(for: "AccessTokenVersionValue", timeout: timeout)
+        guard let version = Int(value) else {
+            XCTFail("Expected integer token version, got \(value). \(screenDebugSummary())")
+            return -1
+        }
+        return version
+    }
+
+    func accessTokenExpiration(timeout: TimeInterval = 10) -> Int {
+        let value = textValue(for: "AccessTokenExpValue", timeout: timeout)
+        guard let expiration = Int(value) else {
+            XCTFail("Expected integer token expiration, got \(value). \(screenDebugSummary())")
+            return -1
+        }
+        return expiration
+    }
+
+    @discardableResult
+    func waitForAccessTokenVersionChange(from initialVersion: Int, timeout: TimeInterval = 20) -> Int {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            let currentVersion = accessTokenVersion(timeout: 2)
+            if currentVersion != initialVersion {
+                return currentVersion
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("Expected access token version to change from \(initialVersion). \(screenDebugSummary())")
+        return initialVersion
+    }
+
+    func waitUntilAccessTokenExpiresWithin(_ seconds: Int, timeout: TimeInterval = 10) {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            let expiration = accessTokenExpiration(timeout: 2)
+            let now = Int(Date().timeIntervalSince1970)
+            if expiration - now <= seconds {
+                return
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("Expected access token to expire within \(seconds)s. \(screenDebugSummary())")
+    }
+
+    @discardableResult
+    func waitForOAuthErrorToast(timeout: TimeInterval = 20) -> XCUIElement {
+        let anyToast = app.descendants(matching: .any).matching(identifier: "OAuthErrorToast").firstMatch
+        let staticToast = app.staticTexts["OAuthErrorToast"]
+        let otherToast = app.otherElements["OAuthErrorToast"]
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            for candidate in [anyToast, staticToast, otherToast] where candidate.exists {
+                return candidate
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("Expected OAuth error toast within \(timeout)s. \(screenDebugSummary())")
+        return anyToast
+    }
+
+    @discardableResult
+    func waitForOAuthErrorMessage(_ substring: String, timeout: TimeInterval = 20) -> XCUIElement {
+        let message = app.staticTexts["OAuthErrorLastMessage"].waitUntilExists(timeout: timeout)
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            if message.label.contains(substring) {
+                return message
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("Expected OAuth error message containing '\(substring)' within \(timeout)s. \(screenDebugSummary())")
+        return message
+    }
+
+    func waitForDuration(_ duration: TimeInterval, pollInterval: TimeInterval = 0.1) {
+        let deadline = Date().addingTimeInterval(duration)
+        while Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
+        }
+    }
+
     func openEmbeddedLogin() {
         waitForScreen("LoginPageRoot")
         app.buttons["NativeLoginButton"].tap()
@@ -188,6 +317,10 @@ class DemoEmbeddedUITestCase: XCTestCase {
         let currentScreenVisible = app.buttons["RetryConnectionButton"].exists
         let stickyMarkerVisible = app.staticTexts["NoConnectionPageSeenEver"].exists
         return currentScreenVisible || stickyMarkerVisible
+    }
+
+    private func textValue(for identifier: String, timeout: TimeInterval) -> String {
+        app.staticTexts[identifier].waitUntilExists(timeout: timeout).label
     }
 
     private func screenAnchor(for identifier: String) -> XCUIElement {

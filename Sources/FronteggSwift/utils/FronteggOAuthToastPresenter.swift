@@ -6,19 +6,88 @@ final class FronteggOAuthToastPresenter {
 
     private weak var activeToastView: UIView?
     private var dismissWorkItem: DispatchWorkItem?
+    private var presentationRetryWorkItem: DispatchWorkItem?
+    private let presentationRetryInterval: TimeInterval = 0.15
+    private let maxPresentationRetryAttempts = 60
+    private let displayDuration: TimeInterval = 10
 
     private init() {}
 
     func show(message: String, in window: UIWindow?) {
         dismissCurrentToast(animated: false)
+        cancelPendingPresentation()
 
         let trimmedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedMessage.isEmpty else {
             return
         }
-        guard let window = window ?? UIWindow.fronteggPresentationCandidate else {
+
+        presentToast(
+            message: trimmedMessage,
+            preferredWindow: window,
+            remainingAttempts: maxPresentationRetryAttempts
+        )
+    }
+
+    private func presentToast(
+        message: String,
+        preferredWindow: UIWindow?,
+        remainingAttempts: Int
+    ) {
+        guard let window = resolvePresentationWindow(preferredWindow) else {
+            guard remainingAttempts > 0 else {
+                return
+            }
+
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.presentToast(
+                    message: message,
+                    preferredWindow: preferredWindow,
+                    remainingAttempts: remainingAttempts - 1
+                )
+            }
+            presentationRetryWorkItem = workItem
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + presentationRetryInterval,
+                execute: workItem
+            )
             return
         }
+
+        presentationRetryWorkItem = nil
+        showToast(message: message, in: window)
+    }
+
+    private func resolvePresentationWindow(_ preferredWindow: UIWindow?) -> UIWindow? {
+        if let preferredWindow, isUsablePresentationWindow(preferredWindow) {
+            return preferredWindow
+        }
+
+        guard let candidate = UIWindow.fronteggPresentationCandidate,
+              isUsablePresentationWindow(candidate) else {
+            return nil
+        }
+
+        return candidate
+    }
+
+    private func isUsablePresentationWindow(_ window: UIWindow) -> Bool {
+        if let scene = window.windowScene {
+            switch scene.activationState {
+            case .foregroundActive, .foregroundInactive:
+                break
+            default:
+                return false
+            }
+        }
+
+        return !window.isHidden && window.alpha > 0 && !window.bounds.isEmpty
+    }
+
+    private func showToast(message: String, in window: UIWindow) {
+        let presentationView = window
+        window.layoutIfNeeded()
+        presentationView.layoutIfNeeded()
 
         let container = UIView()
         container.translatesAutoresizingMaskIntoConstraints = false
@@ -29,13 +98,14 @@ final class FronteggOAuthToastPresenter {
         container.transform = CGAffineTransform(translationX: 0, y: -8)
         container.isAccessibilityElement = true
         container.accessibilityIdentifier = "OAuthErrorToast"
-        container.accessibilityLabel = trimmedMessage
-        container.accessibilityValue = trimmedMessage
+        container.accessibilityLabel = message
+        container.accessibilityValue = message
         container.accessibilityTraits = .staticText
+        container.isUserInteractionEnabled = false
 
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.text = trimmedMessage
+        label.text = message
         label.textColor = .white
         label.font = UIFont.preferredFont(forTextStyle: .subheadline)
         label.adjustsFontForContentSizeCategory = true
@@ -43,15 +113,16 @@ final class FronteggOAuthToastPresenter {
         label.textAlignment = .center
 
         container.addSubview(label)
-        window.addSubview(container)
-        window.bringSubviewToFront(container)
+        presentationView.addSubview(container)
+        presentationView.bringSubviewToFront(container)
 
-        let maxWidth = max(220, min(window.bounds.width - 32, 420))
+        let maxWidth = max(220, min(presentationView.bounds.width - 32, 420))
+        let topAnchor = presentationView.safeAreaLayoutGuide.topAnchor
         NSLayoutConstraint.activate([
-            container.topAnchor.constraint(equalTo: window.safeAreaLayoutGuide.topAnchor, constant: 12),
-            container.centerXAnchor.constraint(equalTo: window.centerXAnchor),
-            container.leadingAnchor.constraint(greaterThanOrEqualTo: window.leadingAnchor, constant: 16),
-            container.trailingAnchor.constraint(lessThanOrEqualTo: window.trailingAnchor, constant: -16),
+            container.topAnchor.constraint(equalTo: topAnchor, constant: 12),
+            container.centerXAnchor.constraint(equalTo: presentationView.centerXAnchor),
+            container.leadingAnchor.constraint(greaterThanOrEqualTo: presentationView.leadingAnchor, constant: 16),
+            container.trailingAnchor.constraint(lessThanOrEqualTo: presentationView.trailingAnchor, constant: -16),
             container.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth),
 
             label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 14),
@@ -85,10 +156,16 @@ final class FronteggOAuthToastPresenter {
         }
 
         self.dismissWorkItem = dismissWorkItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: dismissWorkItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + displayDuration, execute: dismissWorkItem)
+    }
+
+    private func cancelPendingPresentation() {
+        presentationRetryWorkItem?.cancel()
+        presentationRetryWorkItem = nil
     }
 
     private func dismissCurrentToast(animated: Bool) {
+        cancelPendingPresentation()
         dismissWorkItem?.cancel()
         dismissWorkItem = nil
 

@@ -105,6 +105,11 @@ public class FronteggAuth: FronteggState {
     private let unauthenticatedStartupProbeTimeout: TimeInterval = 1.0
     var loginCompletion: CompletionHandler? = nil
     private var networkMonitoringToken: NetworkStatusMonitor.OnChangeToken?
+    private var pendingOAuthErrorContext: FronteggOAuthErrorContext?
+    private var pendingOAuthErrorPresentationWorkItem: DispatchWorkItem?
+    private var pendingEmbeddedOAuthErrorFallbackWorkItem: DispatchWorkItem?
+    private let oauthErrorPresentationDelay: TimeInterval = 0.35
+    private let embeddedOAuthErrorRecoveryFallbackDelay: TimeInterval = 1.25
     private var isInitializingWithTokens: Bool = false
     private var isLoginInProgress: Bool = false
     private let entitlementsLoadLock = NSLock()
@@ -362,6 +367,10 @@ public class FronteggAuth: FronteggState {
 
     @objc private func applicationDidBecomeActive() {
         logger.info("application become active")
+
+        Task { @MainActor in
+            self.flushPendingOAuthErrorPresentationIfNeeded(delayIfNeeded: true)
+        }
 
         if initializing || isLoginInProgress {
             return
@@ -1088,12 +1097,13 @@ public class FronteggAuth: FronteggState {
             }
             let accessTokenToSet = accessToken
             let refreshTokenToSet = refreshToken
+            let shouldEnterOfflineMode = hydrationMode == .preserveCachedOrDerivedUser
             await MainActor.run {
                 setRefreshToken(refreshTokenToSet)
                 setAccessToken(accessTokenToSet)
                 setUser(userToSet)
                 setIsAuthenticated(true)
-                setIsOfflineMode(false)
+                setIsOfflineMode(shouldEnterOfflineMode)
                 setAppLink(false)
                 setInitializing(false)
                 setIsStepUpAuthorization(false)
@@ -1101,7 +1111,7 @@ public class FronteggAuth: FronteggState {
                 // isLoading must be at the bottom
                 setIsLoading(false)
 
-                if let refreshOffset {
+                if !shouldEnterOfflineMode, let refreshOffset {
                     scheduleTokenRefresh(offset: refreshOffset)
                 } else {
                     cancelScheduledTokenRefresh()
@@ -1141,11 +1151,9 @@ public class FronteggAuth: FronteggState {
 
         } catch {
             let enableOfflineMode = (try? PlistHelper.fronteggConfig())?.enableOfflineMode ?? false
-            // Policy is intentionally broad for /me and /me/tenants: once token exchange or refresh
-            // succeeds, preserve the session for any authoritative user-load failure and make the
-            // connectivity distinction visible through diagnostics rather than auth state changes.
             if let userLoadFailure = authoritativeUserLoadFailure(from: error),
                enableOfflineMode,
+               isConnectivityError(userLoadFailure),
                let resolvedUser = self.resolveBestEffortUser(accessToken: accessToken) {
                 self.logPreservedSessionAfterAuthoritativeUserLoadFailure(
                     userLoadFailure,
@@ -1394,6 +1402,10 @@ public class FronteggAuth: FronteggState {
 #if DEBUG
     func setTestNetworkPathAvailabilityOverride(_ available: Bool?) {
         Self.testNetworkPathAvailabilityOverride = available
+    }
+
+    func hasScheduledTokenRefreshForTesting() -> Bool {
+        refreshTokenDispatch != nil
     }
 #endif
 
@@ -2263,7 +2275,22 @@ public class FronteggAuth: FronteggState {
                 }
             }
             
-            await self.setCredentialsInternal(accessToken: data.access_token, refreshToken: data.refresh_token, hydrationMode: .refreshPreserveCachedUser)
+            await self.setCredentialsInternal(
+                accessToken: data.access_token,
+                refreshToken: data.refresh_token,
+                hydrationMode: .refreshPreserveCachedUser
+            )
+
+            let didHydrateAuthenticatedSession = await MainActor.run {
+                self.isAuthenticated && self.accessToken != nil && self.refreshToken != nil
+            }
+            guard didHydrateAuthenticatedSession else {
+                self.logger.warning(
+                    "Token refresh completed, but credential hydration did not restore an authenticated session"
+                )
+                return false
+            }
+
             self.logger.info("Token refreshed successfully")
 
             // Log successful token refresh
@@ -2414,24 +2441,32 @@ public class FronteggAuth: FronteggState {
         errorDescription: String?,
         fallbackMessage: String? = nil
     ) -> String {
-        let normalizedCode = normalizedOAuthMessageComponent(errorCode)
-        let normalizedDescription = normalizedOAuthMessageComponent(errorDescription)
-        let normalizedFallback = normalizedOAuthMessageComponent(fallbackMessage)
+        oauthDisplayMessage(
+            normalizedErrorCode: normalizedOAuthMessageComponent(errorCode),
+            normalizedErrorDescription: normalizedOAuthMessageComponent(errorDescription),
+            normalizedFallbackMessage: normalizedOAuthMessageComponent(fallbackMessage)
+        )
+    }
 
-        if let normalizedCode, let normalizedDescription {
-            return "\(normalizedCode): \(normalizedDescription)"
+    private func oauthDisplayMessage(
+        normalizedErrorCode: String?,
+        normalizedErrorDescription: String?,
+        normalizedFallbackMessage: String? = nil
+    ) -> String {
+        if let normalizedErrorCode, let normalizedErrorDescription {
+            return "\(normalizedErrorCode): \(normalizedErrorDescription)"
         }
 
-        if let normalizedDescription {
-            return normalizedDescription
+        if let normalizedErrorDescription {
+            return normalizedErrorDescription
         }
 
-        if let normalizedCode {
-            return normalizedCode
+        if let normalizedErrorCode {
+            return normalizedErrorCode
         }
 
-        if let normalizedFallback {
-            return normalizedFallback
+        if let normalizedFallbackMessage {
+            return normalizedFallbackMessage
         }
 
         return FronteggError.authError(.unknown).localizedDescription
@@ -2442,19 +2477,31 @@ public class FronteggAuth: FronteggState {
         errorDescription: String?,
         fallbackError: FronteggError? = nil
     ) -> OAuthFailureDetails {
-        let normalizedCode = normalizedOAuthMessageComponent(errorCode)
-        let normalizedDescription = normalizedOAuthMessageComponent(errorDescription)
+        oauthFailureDetails(
+            normalizedErrorCode: normalizedOAuthMessageComponent(errorCode),
+            normalizedErrorDescription: normalizedOAuthMessageComponent(errorDescription),
+            fallbackError: fallbackError
+        )
+    }
+
+    private func oauthFailureDetails(
+        normalizedErrorCode: String?,
+        normalizedErrorDescription: String?,
+        fallbackError: FronteggError? = nil
+    ) -> OAuthFailureDetails {
         let message = oauthDisplayMessage(
-            errorCode: normalizedCode,
-            errorDescription: normalizedDescription,
-            fallbackMessage: fallbackError?.localizedDescription
+            normalizedErrorCode: normalizedErrorCode,
+            normalizedErrorDescription: normalizedErrorDescription,
+            normalizedFallbackMessage: normalizedOAuthMessageComponent(
+                fallbackError?.localizedDescription
+            )
         )
 
-        if normalizedCode != nil || normalizedDescription != nil {
+        if normalizedErrorCode != nil || normalizedErrorDescription != nil {
             return OAuthFailureDetails(
                 error: FronteggError.authError(.oauthError(message)),
-                errorCode: normalizedCode,
-                errorDescription: normalizedDescription
+                errorCode: normalizedErrorCode,
+                errorDescription: normalizedErrorDescription
             )
         }
 
@@ -2474,8 +2521,8 @@ public class FronteggAuth: FronteggState {
         }
 
         return oauthFailureDetails(
-            errorCode: errorCode,
-            errorDescription: errorDescription
+            normalizedErrorCode: errorCode,
+            normalizedErrorDescription: errorDescription
         )
     }
 
@@ -2506,30 +2553,184 @@ public class FronteggAuth: FronteggState {
             return
         }
 
+        enqueueOAuthFailurePresentation(
+            error: error,
+            flow: flow,
+            normalizedErrorCode: normalizedOAuthMessageComponent(errorCode),
+            normalizedErrorDescription: normalizedOAuthMessageComponent(errorDescription),
+            normalizedFallbackMessage: normalizedOAuthMessageComponent(error.localizedDescription),
+            embeddedMode: embeddedMode
+        )
+    }
+
+    internal func reportOAuthFailure(
+        details: OAuthFailureDetails,
+        flow: FronteggOAuthFlow,
+        embeddedMode: Bool? = nil
+    ) {
+        guard !shouldSuppressOAuthErrorPresentation(for: details.error) else {
+            return
+        }
+
+        enqueueOAuthFailurePresentation(
+            error: details.error,
+            flow: flow,
+            normalizedErrorCode: details.errorCode,
+            normalizedErrorDescription: details.errorDescription,
+            normalizedFallbackMessage: normalizedOAuthMessageComponent(
+                details.error.localizedDescription
+            ),
+            embeddedMode: embeddedMode
+        )
+    }
+
+    private func enqueueOAuthFailurePresentation(
+        error: FronteggError,
+        flow: FronteggOAuthFlow,
+        normalizedErrorCode: String?,
+        normalizedErrorDescription: String?,
+        normalizedFallbackMessage: String?,
+        embeddedMode: Bool?
+    ) {
         let context = FronteggOAuthErrorContext(
             displayMessage: oauthDisplayMessage(
-                errorCode: errorCode,
-                errorDescription: errorDescription,
-                fallbackMessage: error.localizedDescription
+                normalizedErrorCode: normalizedErrorCode,
+                normalizedErrorDescription: normalizedErrorDescription,
+                normalizedFallbackMessage: normalizedFallbackMessage
             ),
-            errorCode: normalizedOAuthMessageComponent(errorCode),
-            errorDescription: normalizedOAuthMessageComponent(errorDescription),
+            errorCode: normalizedErrorCode,
+            errorDescription: normalizedErrorDescription,
             error: error,
             flow: flow,
             embeddedMode: embeddedMode ?? self.embeddedMode
         )
 
         Task { @MainActor in
-            switch FronteggOAuthErrorRuntimeSettings.presentation {
-            case .toast:
-                let window = self.resolveOAuthErrorPresentationWindow()
-                if window == nil {
-                    self.logger.warning("OAuth failure toast could not find a presentation window")
-                }
-                FronteggOAuthToastPresenter.shared.show(message: context.displayMessage, in: window)
-            case .delegate:
-                FronteggOAuthErrorRuntimeSettings.delegateBox.value?.fronteggSDK(didReceiveOAuthError: context)
+            FronteggRuntime.testingLog(
+                "E2E queued OAuth error flow=\(context.flow) embedded=\(context.embeddedMode) code=\(context.errorCode ?? "nil") message=\(context.displayMessage)"
+            )
+            self.pendingOAuthErrorContext = context
+            let shouldDeferEmbeddedPresentation = context.embeddedMode && self.webview != nil
+            if shouldDeferEmbeddedPresentation {
+                self.pendingOAuthErrorPresentationWorkItem?.cancel()
+                self.pendingOAuthErrorPresentationWorkItem = nil
+                self.scheduleEmbeddedOAuthErrorFallbackIfNeeded(for: context)
+                return
             }
+
+            self.pendingEmbeddedOAuthErrorFallbackWorkItem?.cancel()
+            self.pendingEmbeddedOAuthErrorFallbackWorkItem = nil
+            self.flushPendingOAuthErrorPresentationIfNeeded()
+        }
+    }
+
+    @MainActor
+    internal func flushPendingOAuthErrorPresentationIfNeeded(delayIfNeeded: Bool = false) {
+        let requiresForegroundWindow =
+            FronteggOAuthErrorRuntimeSettings.presentation == .toast
+
+        guard !requiresForegroundWindow || UIApplication.shared.applicationState != .background else {
+            return
+        }
+
+        guard let context = pendingOAuthErrorContext else {
+            pendingEmbeddedOAuthErrorFallbackWorkItem?.cancel()
+            pendingEmbeddedOAuthErrorFallbackWorkItem = nil
+            return
+        }
+
+        pendingEmbeddedOAuthErrorFallbackWorkItem?.cancel()
+        pendingEmbeddedOAuthErrorFallbackWorkItem = nil
+        pendingOAuthErrorContext = nil
+        FronteggRuntime.testingLog(
+            "E2E flushing OAuth error flow=\(context.flow) embedded=\(context.embeddedMode) delay=\(delayIfNeeded)"
+        )
+        scheduleOAuthErrorPresentation(
+            context,
+            delay: delayIfNeeded ? oauthErrorPresentationDelay : 0
+        )
+    }
+
+    @MainActor
+    private func scheduleOAuthErrorPresentation(
+        _ context: FronteggOAuthErrorContext,
+        delay: TimeInterval
+    ) {
+        pendingOAuthErrorPresentationWorkItem?.cancel()
+
+        let shouldPresentImmediately =
+            delay <= 0 && FronteggOAuthErrorRuntimeSettings.presentation == .delegate
+        if shouldPresentImmediately {
+            pendingOAuthErrorPresentationWorkItem = nil
+            presentOAuthError(context)
+            return
+        }
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingOAuthErrorPresentationWorkItem = nil
+            self.presentOAuthError(context)
+        }
+
+        pendingOAuthErrorPresentationWorkItem = workItem
+        if delay > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+        } else {
+            DispatchQueue.main.async(execute: workItem)
+        }
+    }
+
+    @MainActor
+    private func scheduleEmbeddedOAuthErrorFallbackIfNeeded(for context: FronteggOAuthErrorContext) {
+        pendingEmbeddedOAuthErrorFallbackWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingEmbeddedOAuthErrorFallbackWorkItem = nil
+            guard let pendingContext = self.pendingOAuthErrorContext else {
+                return
+            }
+
+            let isSamePendingError =
+                pendingContext.displayMessage == context.displayMessage &&
+                pendingContext.errorCode == context.errorCode &&
+                pendingContext.errorDescription == context.errorDescription &&
+                pendingContext.flow == context.flow &&
+                pendingContext.embeddedMode == context.embeddedMode
+
+            guard isSamePendingError else {
+                return
+            }
+
+            self.logger.warning("Embedded OAuth error recovery did not settle in time. Presenting pending OAuth error and clearing the loader.")
+            FronteggRuntime.testingLog(
+                "E2E embedded OAuth error fallback firing flow=\(context.flow) code=\(context.errorCode ?? "nil")"
+            )
+            self.setWebLoading(false)
+            self.flushPendingOAuthErrorPresentationIfNeeded()
+        }
+
+        pendingEmbeddedOAuthErrorFallbackWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + embeddedOAuthErrorRecoveryFallbackDelay,
+            execute: workItem
+        )
+    }
+
+    @MainActor
+    private func presentOAuthError(_ context: FronteggOAuthErrorContext) {
+        FronteggRuntime.testingLog(
+            "E2E presenting OAuth error flow=\(context.flow) embedded=\(context.embeddedMode) message=\(context.displayMessage)"
+        )
+        switch FronteggOAuthErrorRuntimeSettings.presentation {
+        case .toast:
+            let window = self.resolveOAuthErrorPresentationWindow()
+            if window == nil {
+                self.logger.warning("OAuth failure toast could not find a presentation window")
+            }
+            FronteggOAuthToastPresenter.shared.show(message: context.displayMessage, in: window)
+        case .delegate:
+            FronteggOAuthErrorRuntimeSettings.delegateBox.value?.fronteggSDK(didReceiveOAuthError: context)
         }
     }
 
@@ -2736,7 +2937,7 @@ public class FronteggAuth: FronteggState {
                 logger.error("Hosted login callback failed to load user data: \(error.localizedDescription)")
                 let enableOfflineMode = (try? PlistHelper.fronteggConfig())?.enableOfflineMode ?? false
 
-                if enableOfflineMode {
+                if enableOfflineMode && isConnectivityError(error) {
                     // Token exchange succeeded — tokens are valid.
                     // Preserve them and enter offline mode instead of discarding.
                     let fallbackUser = self.resolveBestEffortUser(
@@ -3117,12 +3318,7 @@ public class FronteggAuth: FronteggState {
 
             if let failureDetails = self.oauthFailureDetails(from: queryItems) {
                 clearRelevantPendingOAuthState(callbackState: oauthState)
-                self.reportOAuthFailure(
-                    error: failureDetails.error,
-                    flow: flow,
-                    errorCode: failureDetails.errorCode,
-                    errorDescription: failureDetails.errorDescription
-                )
+                self.reportOAuthFailure(details: failureDetails, flow: flow)
                 completion(.failure(failureDetails.error))
                 return
             }
@@ -3250,7 +3446,99 @@ public class FronteggAuth: FronteggState {
         WebAuthenticator.shared.start(authorizeUrl, ephemeralSession: ephemeralSession ?? true, window:window,  completionHandler: oauthCallback)
     }
     
-    
+    private func completeSocialLoginFailure(
+        _ error: FronteggError,
+        errorCode: String? = nil,
+        errorDescription: String? = nil,
+        completion: @escaping FronteggAuth.CompletionHandler
+    ) {
+        self.activeEmbeddedOAuthFlow = .login
+        self.reportOAuthFailure(
+            error: error,
+            flow: .socialLogin,
+            errorCode: errorCode,
+            errorDescription: errorDescription
+        )
+
+        DispatchQueue.main.async {
+            completion(.failure(error))
+        }
+    }
+
+    private func completeSocialLoginFailure(
+        _ details: OAuthFailureDetails,
+        completion: @escaping FronteggAuth.CompletionHandler
+    ) {
+        self.activeEmbeddedOAuthFlow = .login
+        self.reportOAuthFailure(details: details, flow: .socialLogin)
+
+        DispatchQueue.main.async {
+            completion(.failure(details.error))
+        }
+    }
+
+    internal func handleSocialLoginOAuthCallback(
+        providerString: String,
+        callbackURL: URL?,
+        error: Error?,
+        completion: @escaping FronteggAuth.CompletionHandler
+    ) {
+        if let error {
+            self.logger.error("OAuth error: \(String(describing: error))")
+            self.completeSocialLoginFailure(
+                FronteggError.authError(.other(error)),
+                completion: completion
+            )
+            return
+        }
+
+        guard let callbackURL else {
+            self.logger.info("OAuth callback invoked with nil URL and no error")
+            self.completeSocialLoginFailure(
+                FronteggError.authError(.unknown),
+                completion: completion
+            )
+            return
+        }
+
+        self.logger.debug("OAuth callback URL: \(callbackURL.absoluteString)")
+
+        if let queryItems = getQueryItems(callbackURL.absoluteString),
+           let failureDetails = self.oauthFailureDetails(from: queryItems) {
+            self.completeSocialLoginFailure(failureDetails, completion: completion)
+            return
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else {
+                return
+            }
+
+            guard let finalURL = self.handleSocialLoginCallback(callbackURL) else {
+                SentryHelper.logMessage(
+                    "Social login callback could not be parsed (hosted)",
+                    level: .warning,
+                    context: [
+                        "social_login": [
+                            "provider": providerString,
+                            "callbackUrl": callbackURL.absoluteString,
+                            "baseUrl": FronteggAuth.shared.baseUrl
+                        ],
+                        "error": [
+                            "type": "social_login_callback_unhandled"
+                        ]
+                    ]
+                )
+                self.completeSocialLoginFailure(
+                    FronteggError.authError(.failedToExtractCode),
+                    completion: completion
+                )
+                return
+            }
+            self.loadInWebView(finalURL)
+        }
+    }
+
     /// Starts a social login flow.
     ///
     /// - Parameters:
@@ -3276,68 +3564,12 @@ public class FronteggAuth: FronteggState {
         
         let oauthCallback: (URL?, Error?) -> Void = { [weak self] callbackURL, error in
             guard let self else { return }
-            
-            if let error {
-                self.logger.error("OAuth error: \(String(describing: error))")
-                let fronteggError = FronteggError.authError(.other(error))
-                self.activeEmbeddedOAuthFlow = .login
-                self.reportOAuthFailure(error: fronteggError, flow: .socialLogin)
-                return
-            }
-            
-            guard let callbackURL else {
-                self.logger.info("OAuth callback invoked with nil URL and no error")
-                self.activeEmbeddedOAuthFlow = .login
-                self.reportOAuthFailure(
-                    error: FronteggError.authError(.unknown),
-                    flow: .socialLogin
-                )
-                return
-            }
-            
-            self.logger.debug("OAuth callback URL: \(callbackURL.absoluteString)")
-
-            if let queryItems = getQueryItems(callbackURL.absoluteString),
-               let failureDetails = self.oauthFailureDetails(from: queryItems) {
-                self.activeEmbeddedOAuthFlow = .login
-                self.reportOAuthFailure(
-                    error: failureDetails.error,
-                    flow: .socialLogin,
-                    errorCode: failureDetails.errorCode,
-                    errorDescription: failureDetails.errorDescription
-                )
-                return
-            }
-            
-            DispatchQueue.main.async { [weak self] in
-                guard let self else {
-                    return
-                }
-
-                guard let finalURL = self.handleSocialLoginCallback(callbackURL) else {
-                    SentryHelper.logMessage(
-                        "Social login callback could not be parsed (hosted)",
-                        level: .warning,
-                        context: [
-                            "social_login": [
-                                "provider": providerString,
-                                "callbackUrl": callbackURL.absoluteString,
-                                "baseUrl": FronteggAuth.shared.baseUrl
-                            ],
-                            "error": [
-                                "type": "social_login_callback_unhandled"
-                            ]
-                        ]
-                    )
-                    self.activeEmbeddedOAuthFlow = .login
-                    self.reportOAuthFailure(
-                        error: FronteggError.authError(.failedToExtractCode),
-                        flow: .socialLogin
-                    )
-                    return
-                }
-                self.loadInWebView(finalURL)
-            }
+            self.handleSocialLoginOAuthCallback(
+                providerString: providerString,
+                callbackURL: callbackURL,
+                error: error,
+                completion: done
+            )
         }
         
         Task { [weak self] in
@@ -3368,6 +3600,10 @@ public class FronteggAuth: FronteggState {
             
             guard let authURL = generatedAuthUrl else {
                 self.logger.error("Failed to generate auth URL for \(providerString)")
+                self.completeSocialLoginFailure(
+                    FronteggError.authError(.unknown),
+                    completion: done
+                )
                 return
             }
             
@@ -3783,21 +4019,40 @@ public class FronteggAuth: FronteggState {
             ]
         )
 
+        let redirectCallbackFailureDetails: OAuthFailureDetails? = {
+            guard let parsedQueryItems else { return nil }
+            if let failureDetails = self.oauthFailureDetails(from: parsedQueryItems) {
+                return failureDetails
+            }
+
+            let rawError = parsedQueryItems["error"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let rawDescription = parsedQueryItems["error_description"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !(rawError?.isEmpty ?? true) || !(rawDescription?.isEmpty ?? true) else {
+                return nil
+            }
+
+            return self.oauthFailureDetails(
+                errorCode: parsedQueryItems["error"],
+                errorDescription: parsedQueryItems["error_description"],
+                fallbackError: FronteggError.authError(.failedToExtractCode)
+            )
+        }()
+
         if matchesGeneratedRedirectCallback,
-           let parsedQueryItems,
-           let failureDetails = self.oauthFailureDetails(from: parsedQueryItems) {
+           let failureDetails = redirectCallbackFailureDetails {
             logger.info("✅ [handleOpenUrl] Detected generated redirect URI OAuth error callback")
             self.reportOAuthFailure(
-                error: failureDetails.error,
-                flow: self.activeEmbeddedOAuthFlow == .login ? .login : self.activeEmbeddedOAuthFlow,
-                errorCode: failureDetails.errorCode,
-                errorDescription: failureDetails.errorDescription
+                details: failureDetails,
+                flow: self.activeEmbeddedOAuthFlow == .login ? .login : self.activeEmbeddedOAuthFlow
             )
 
             if let webView = self.webview {
                 let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
                 CredentialManager.saveCodeVerifier(codeVerifier)
-                webView.load(URLRequest(url: newUrl, cachePolicy: .reloadRevalidatingCacheData))
+                self.setWebLoading(false)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    webView.load(URLRequest(url: newUrl, cachePolicy: .reloadRevalidatingCacheData))
+                }
             }
 
             self.activeEmbeddedOAuthFlow = .login

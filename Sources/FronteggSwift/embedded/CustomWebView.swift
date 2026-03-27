@@ -39,6 +39,24 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         return currentFlow == .login ? fallback : currentFlow
     }
 
+    private func reloadFreshLoginPage(after delay: TimeInterval = 0) {
+        let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
+        CredentialManager.saveCodeVerifier(codeVerifier)
+        fronteggAuth.setWebLoading(true)
+        FronteggRuntime.testingLog(
+            "E2E reloading embedded login page after=\(delay)s url=\(loginUrl.absoluteString)"
+        )
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            _ = self.load(
+                URLRequest(
+                    url: loginUrl,
+                    cachePolicy: .reloadRevalidatingCacheData
+                )
+            )
+        }
+    }
+
     private func oauthCodeVerifierError(
         oauthState: String?,
         hasPendingOAuthStates: Bool
@@ -57,6 +75,38 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
 
     private func isIOSRedirectPath(_ path: String) -> Bool {
         path.range(of: "/oauth/account/redirect/ios/", options: [.caseInsensitive]) != nil
+    }
+
+    private func hasOAuthErrorParameters(_ queryItems: [String: String]?) -> Bool {
+        guard let queryItems else { return false }
+
+        let rawError = queryItems["error"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawDescription = queryItems["error_description"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return !(rawError?.isEmpty ?? true) || !(rawDescription?.isEmpty ?? true)
+    }
+
+    private func oauthFailureDetailsOrFallback(
+        from queryItems: [String: String]?,
+        fallbackError: FronteggError? = nil
+    ) -> OAuthFailureDetails? {
+        guard let queryItems else {
+            return nil
+        }
+
+        if let failureDetails = fronteggAuth.oauthFailureDetails(from: queryItems) {
+            return failureDetails
+        }
+
+        guard hasOAuthErrorParameters(queryItems) else {
+            return nil
+        }
+
+        return fronteggAuth.oauthFailureDetails(
+            errorCode: queryItems["error"],
+            errorDescription: queryItems["error_description"],
+            fallbackError: fallbackError
+        )
     }
     
     
@@ -298,8 +348,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     ]
                 )
                 
-                let failureDetails = queryItems.flatMap { fronteggAuth.oauthFailureDetails(from: $0) }
-                let hasOAuthError = failureDetails != nil
+                let failureDetails = oauthFailureDetailsOrFallback(from: queryItems)
+                let hasOAuthError = failureDetails != nil || hasOAuthErrorParameters(queryItems)
 
                 // Check if this is an OAuth callback with code or error - handle it directly instead of opening externally
                 if hasCode || hasOAuthError {
@@ -382,6 +432,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                             "queryKeys": queryKeys
                         ]
                     )
+                    return self.handleHostedLoginCallback(webView, url)
+                } else if hasOAuthErrorParameters(queryItems) {
+                    logger.info("✅ [Social Login Debug] Intermediate redirect callback URL with OAuth error, handling as HostedLoginCallback")
                     return self.handleHostedLoginCallback(webView, url)
                 } else {
                     logger.warning("⚠️ [Social Login Debug] Intermediate redirect URL detected but no code parameter found")
@@ -468,6 +521,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                         )
                         return self.handleHostedLoginCallback(webView, url)
                     }
+                } else if hasOAuthErrorParameters(queryItems) {
+                    logger.info("✅ [Social Login Debug] OAuth account callback URL with OAuth error, handling as HostedLoginCallback")
+                    return self.handleHostedLoginCallback(webView, url)
                 } else {
                     logger.warning("⚠️ [Social Login Debug] OAuth account path detected but no code parameter found: \(url.absoluteString)")
                     SentryHelper.addBreadcrumb(
@@ -641,19 +697,15 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                                 } catch {
                                     // Refresh failed, reload login page
                                     self.logger.warning("Token refresh failed after social login redirect: \(error), reloading login page")
-                                    let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
-                                    CredentialManager.saveCodeVerifier(codeVerifier)
-                                    _ = await MainActor.run {
-                                        webView?.load(URLRequest(url: loginUrl))
+                                    await MainActor.run {
+                                        self.reloadFreshLoginPage()
                                     }
                                 }
                             } else {
                                 // No cookies and no refresh token, reload login page
                                 self.logger.warning("No authentication cookies or refresh token found after social login redirect, reloading login page")
-                                let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
-                                CredentialManager.saveCodeVerifier(codeVerifier)
-                                _ = await MainActor.run {
-                                    webView?.load(URLRequest(url: loginUrl))
+                                await MainActor.run {
+                                    self.reloadFreshLoginPage()
                                 }
                             }
                         }
@@ -709,9 +761,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                             // Reset webview to initial state by loading fresh login page
                             // This ensures the app returns to initial state after unlock account flow
                             DispatchQueue.main.async {
-                                let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
-                                CredentialManager.saveCodeVerifier(codeVerifier)
-                                webView.load(URLRequest(url: loginUrl))
+                                self.reloadFreshLoginPage()
                             }
                             return .cancel
                         }
@@ -726,9 +776,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                         // Reset webview to initial state by loading fresh login page
                         // This ensures the app returns to initial state after unlock account flow
                         DispatchQueue.main.async {
-                            let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
-                            CredentialManager.saveCodeVerifier(codeVerifier)
-                            webView.load(URLRequest(url: loginUrl))
+                            self.reloadFreshLoginPage()
                         }
                         return .cancel
                     }
@@ -915,6 +963,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     // usually internal routes are redirects
                     // this 500ms will prevent loader blinking
                     self.fronteggAuth.setWebLoading(false)
+                    Task { @MainActor [weak self] in
+                        self?.fronteggAuth.flushPendingOAuthErrorPresentationIfNeeded(delayIfNeeded: true)
+                    }
                 }
 
             }
@@ -922,6 +973,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 logger.info("hiding Loader screen")
                 if(fronteggAuth.webLoading) {
                     fronteggAuth.setWebLoading(false)
+                }
+                Task { @MainActor [weak self] in
+                    self?.fronteggAuth.flushPendingOAuthErrorPresentationIfNeeded(delayIfNeeded: true)
                 }
             } else if let statusCode = self.lastResponseStatusCode {
                 self.lastResponseStatusCode = nil;
@@ -1022,17 +1076,22 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         error: NSError
     ) -> Bool {
         guard let failingURL = failingNavigationURL(from: error) else { return false }
-        guard let queryItems = getQueryItems(failingURL.absoluteString),
-              queryItems["code"] != nil else {
+        guard let queryItems = getQueryItems(failingURL.absoluteString) else {
             return false
         }
+
+        let hasCode = queryItems["code"] != nil
+        let hasOAuthError = hasOAuthErrorParameters(queryItems)
+        guard hasCode || hasOAuthError else { return false }
 
         let scheme = failingURL.scheme ?? ""
         let isKnownAppScheme = getAppURLSchemes().contains(scheme)
         let isHostedCallback = getOverrideUrlType(url: failingURL) == .HostedLoginCallback
         guard isKnownAppScheme || isHostedCallback else { return false }
 
-        logger.warning("Recovering hosted callback from failed navigation to \(failingURL.absoluteString), domain: \(error.domain), code: \(error.code)")
+        logger.warning(
+            "Recovering hosted callback from failed navigation to \(failingURL.absoluteString), domain: \(error.domain), code: \(error.code), hasCode: \(hasCode), hasOAuthError: \(hasOAuthError)"
+        )
         _ = handleHostedLoginCallback(webView, failingURL)
         return true
     }
@@ -1151,13 +1210,11 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             )
 
             let oauthFlow = currentOAuthFlow()
-            if let queryItems, let failureDetails = fronteggAuth.oauthFailureDetails(from: queryItems) {
-                fronteggAuth.reportOAuthFailure(
-                    error: failureDetails.error,
-                    flow: oauthFlow,
-                    errorCode: failureDetails.errorCode,
-                    errorDescription: failureDetails.errorDescription
-                )
+            if let failureDetails = oauthFailureDetailsOrFallback(
+                from: queryItems,
+                fallbackError: FronteggError.authError(.failedToExtractCode)
+            ) {
+                fronteggAuth.reportOAuthFailure(details: failureDetails, flow: oauthFlow)
             } else {
                 fronteggAuth.reportOAuthFailure(
                     error: FronteggError.authError(.failedToExtractCode),
@@ -1165,11 +1222,16 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 )
             }
 
+            isSocialLoginFlow = false
             resetActiveOAuthFlow()
             logger.info("Restarting the process by generating a new authorize url")
-            let (url, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
-            CredentialManager.saveCodeVerifier(codeVerifier)
-            _ = webView?.load(URLRequest(url: url))
+            fronteggAuth.setWebLoading(false)
+            Task { @MainActor in
+                self.fronteggAuth.flushPendingOAuthErrorPresentationIfNeeded()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                self.reloadFreshLoginPage()
+            }
             return .cancel
         }
         let oauthState = queryItems?["state"]
@@ -1276,12 +1338,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     )
                     self.fronteggAuth.reportOAuthFailure(error: fronteggError, flow: oauthFlow)
                     self.resetActiveOAuthFlow()
-
-                    let (loginUrl, refreshedCodeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
-                    CredentialManager.saveCodeVerifier(refreshedCodeVerifier)
-                    DispatchQueue.main.async {
-                        _ = webView?.load(URLRequest(url: loginUrl))
-                    }
+                    self.reloadFreshLoginPage()
                     return
                 }
                 
@@ -1342,12 +1399,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                                 "type": "token_exchange_failed"
                             ]
                         ])
-                        
-                        let (url, codeVerifier)  = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
-                        CredentialManager.saveCodeVerifier(codeVerifier)
-                        DispatchQueue.main.async {
-                            _ = webView?.load(URLRequest(url: url))
-                        }
+
+                        self.reloadFreshLoginPage()
                     }
                     FronteggAuth.shared.loginCompletion?(res)
                 })
@@ -1453,11 +1506,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                         ]
                     ])
                     
-                    let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
-                    CredentialManager.saveCodeVerifier(codeVerifier)
                     self.isSocialLoginFlow = false
                     self.resetActiveOAuthFlow()
-                    _ = webView?.load(URLRequest(url: newUrl))
+                    self.reloadFreshLoginPage()
                 }
             }else if (callbackUrl == nil){
                 // Critical: callback URL is nil - redirect failed
@@ -1483,11 +1534,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     ]
                 )
                 
-                let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
-                CredentialManager.saveCodeVerifier(codeVerifier)
                 self.isSocialLoginFlow = false
                 self.resetActiveOAuthFlow()
-                _ = webView?.load(URLRequest(url: newUrl))
+                self.reloadFreshLoginPage()
                 
             }else {
                 if let callbackUrl = callbackUrl {
@@ -1519,26 +1568,20 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                             error: FronteggError.authError(.failedToExtractCode),
                             flow: flow
                         )
-                        let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
-                        CredentialManager.saveCodeVerifier(codeVerifier)
                         self.isSocialLoginFlow = false
                         self.resetActiveOAuthFlow()
-                        _ = webView?.load(URLRequest(url: newUrl))
+                        self.reloadFreshLoginPage()
                         return
                     }
 
-                    if let queryItems, let failureDetails = self.fronteggAuth.oauthFailureDetails(from: queryItems) {
-                        self.fronteggAuth.reportOAuthFailure(
-                            error: failureDetails.error,
-                            flow: flow,
-                            errorCode: failureDetails.errorCode,
-                            errorDescription: failureDetails.errorDescription
-                        )
-                        let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
-                        CredentialManager.saveCodeVerifier(codeVerifier)
+                    if let failureDetails = self.oauthFailureDetailsOrFallback(
+                        from: queryItems,
+                        fallbackError: FronteggError.authError(.failedToExtractCode)
+                    ) {
+                        self.fronteggAuth.reportOAuthFailure(details: failureDetails, flow: flow)
                         self.isSocialLoginFlow = false
                         self.resetActiveOAuthFlow()
-                        _ = webView?.load(URLRequest(url: newUrl))
+                        self.reloadFreshLoginPage()
                         return
                     }
                 }

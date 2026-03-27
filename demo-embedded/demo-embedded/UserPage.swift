@@ -48,6 +48,9 @@ struct UserPage: View {
                 Text("Offline Mode")
                     .accessibilityIdentifier("OfflineModeBadge")
             }
+            if DemoEmbeddedTestMode.isEnabled {
+                testAccessTokenDiagnostics
+            }
             userContent
             Spacer(minLength: 220)
         }
@@ -82,6 +85,7 @@ struct UserPage: View {
         }
         .buttonStyle(PrimaryButtonStyle())
         .padding(.horizontal, 8)
+        .accessibilityIdentifier("SensitiveActionButton")
     }
     
     private var getAccessTokenButton: some View {
@@ -102,6 +106,7 @@ struct UserPage: View {
         }
         .buttonStyle(PrimaryButtonStyle())
         .padding(.horizontal, 8)
+        .accessibilityIdentifier("GetCurrentAccessTokenButton")
     }
 
     private var entitlementsSection: some View {
@@ -226,6 +231,43 @@ struct UserPage: View {
         messageTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: false) { _ in
             message = nil
         }
+    }
+
+    private var testAccessTokenDiagnostics: some View {
+        let diagnostics = currentAccessTokenDiagnostics
+        return VStack(spacing: 0) {
+            Text(diagnostics.version)
+                .font(.system(size: 1))
+                .foregroundColor(.clear)
+                .accessibilityIdentifier("AccessTokenVersionValue")
+            Text(diagnostics.exp)
+                .font(.system(size: 1))
+                .foregroundColor(.clear)
+                .accessibilityIdentifier("AccessTokenExpValue")
+        }
+    }
+
+    private var currentAccessTokenDiagnostics: (version: String, exp: String) {
+        guard let accessToken = fronteggAuth.accessToken,
+              let claims = try? JWTHelper.decode(jwtToken: accessToken) else {
+            return ("missing", "missing")
+        }
+
+        let version: String
+        if let tokenVersion = claims["token_version"] as? Int {
+            version = String(tokenVersion)
+        } else {
+            version = "missing"
+        }
+
+        let exp: String
+        if let expValue = claims["exp"] as? Int {
+            exp = String(expValue)
+        } else {
+            exp = "missing"
+        }
+
+        return (version, exp)
     }
 }
 

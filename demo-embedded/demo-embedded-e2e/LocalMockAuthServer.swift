@@ -96,6 +96,20 @@ final class LocalMockAuthServer {
         requestLogLock.unlock()
     }
 
+    func configureTokenPolicy(
+        email: String,
+        accessTokenTTL: Int,
+        refreshTokenTTL: Int,
+        startingTokenVersion: Int = 1
+    ) {
+        state.configureTokenPolicy(
+            email: email,
+            accessTokenTTL: accessTokenTTL,
+            refreshTokenTTL: refreshTokenTTL,
+            startingTokenVersion: startingTokenVersion
+        )
+    }
+
     func enqueue(
         method: String = "GET",
         path: String,
@@ -120,6 +134,18 @@ final class LocalMockAuthServer {
                 repeating: ["status": 200, "body": "ok", "delay_ms": delayMs],
                 count: count
             )
+        )
+    }
+
+    func queueConnectionDrops(
+        method: String = "POST",
+        path: String,
+        count: Int = 1
+    ) throws {
+        try enqueue(
+            method: method,
+            path: path,
+            responses: Array(repeating: ["close_connection": true], count: count)
         )
     }
 
@@ -148,10 +174,28 @@ final class LocalMockAuthServer {
         return hasRequest(method: method, path: path)
     }
 
-    func requestCount(path: String) -> Int {
+    func waitForRequestCount(
+        method: String? = nil,
+        path: String,
+        count: Int,
+        timeout: TimeInterval = 10
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if requestCount(method: method, path: path) >= count {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        return requestCount(method: method, path: path) >= count
+    }
+
+    func requestCount(method: String? = nil, path: String) -> Int {
         requestLogLock.lock()
         defer { requestLogLock.unlock() }
-        return requestLog.filter { $0.path == path }.count
+        return requestLog.filter {
+            $0.path == path && (method == nil || $0.method == method)
+        }.count
     }
 
     private func handle(connection: NWConnection) {
@@ -581,7 +625,14 @@ final class LocalMockAuthServer {
     ) -> HTTPResponse {
         let hostedStateLiteral = javaScriptLiteral(hostedState)
         let emailLiteral = javaScriptLiteral(email)
-        let accessTokenLiteral = javaScriptLiteral(accessToken(email: email))
+        let tokenPolicy = state.tokenPolicy(for: email)
+        let accessTokenLiteral = javaScriptLiteral(
+            accessToken(
+                email: email,
+                tokenVersion: tokenPolicy.startingTokenVersion,
+                expiresIn: tokenPolicy.accessTokenTTL
+            )
+        )
         let body = """
         <h1>\(htmlEscaped(title))</h1>
         <form id="provider-login-form">
@@ -757,18 +808,26 @@ final class LocalMockAuthServer {
             guard let authCode = state.consumeCode(code) else {
                 return jsonResponse(status: 400, payload: ["error": "invalid_code"])
             }
-            let refreshToken = "refresh-\(UUID().uuidString.lowercased())"
-            state.saveRefreshToken(refreshToken, email: authCode.email)
-            return jsonResponse(status: 200, payload: authResponse(email: authCode.email, refreshToken: refreshToken))
+            let issuedRefreshToken = state.issueRefreshToken(email: authCode.email)
+            return jsonResponse(
+                status: 200,
+                payload: authResponse(
+                    session: issuedRefreshToken.record,
+                    refreshToken: issuedRefreshToken.token
+                )
+            )
 
         case "refresh_token":
             guard let refreshToken = body["refresh_token"] as? String, !refreshToken.isEmpty else {
                 return jsonResponse(status: 400, payload: ["error": "missing_refresh_token"])
             }
-            guard let email = state.email(forRefreshToken: refreshToken) else {
+            guard let session = state.refreshSession(for: refreshToken) else {
                 return jsonResponse(status: 401, payload: ["error": "invalid_refresh_token"])
             }
-            return jsonResponse(status: 200, payload: authResponse(email: email, refreshToken: refreshToken))
+            return jsonResponse(
+                status: 200,
+                payload: authResponse(session: session, refreshToken: refreshToken)
+            )
 
         default:
             return jsonResponse(status: 400, payload: ["error": "unsupported_grant_type \(grantType)"])
@@ -777,11 +836,14 @@ final class LocalMockAuthServer {
 
     private func handleSilentAuthorize(_ request: HTTPRequest) -> HTTPResponse {
         guard let refreshToken = refreshTokenFromCookies(request.headers["cookie"]),
-              let email = state.email(forRefreshToken: refreshToken) else {
+              let session = state.validRefreshTokenRecord(for: refreshToken) else {
             return jsonResponse(status: 401, payload: ["error": "invalid_refresh_cookie"])
         }
 
-        return jsonResponse(status: 200, payload: authResponse(email: email, refreshToken: refreshToken))
+        return jsonResponse(
+            status: 200,
+            payload: authResponse(session: session, refreshToken: refreshToken)
+        )
     }
 
     private func handleFeatureFlags() -> HTTPResponse {
@@ -866,13 +928,16 @@ final class LocalMockAuthServer {
 
     private func handleHostedRefresh(_ request: HTTPRequest) -> HTTPResponse {
         guard let refreshToken = refreshTokenFromCookies(request.headers["cookie"]),
-              let email = state.email(forRefreshToken: refreshToken) else {
+              let session = state.refreshSession(for: refreshToken) else {
             return jsonResponse(status: 401, payload: [
                 "errors": ["Session not found"],
             ])
         }
 
-        return jsonResponse(status: 200, payload: authResponse(email: email, refreshToken: refreshToken))
+        return jsonResponse(
+            status: 200,
+            payload: authResponse(session: session, refreshToken: refreshToken)
+        )
     }
 
     private func handleHostedSSOPrelogin(_ request: HTTPRequest) -> HTTPResponse {
@@ -901,11 +966,15 @@ final class LocalMockAuthServer {
     private func handleHostedPasswordLogin(_ request: HTTPRequest) -> HTTPResponse {
         let body = parseJSONDictionary(request.body)
         let email = body["email"] as? String ?? "test@frontegg.com"
-        let refreshToken = "refresh-\(UUID().uuidString.lowercased())"
-        state.saveRefreshToken(refreshToken, email: email)
+        let issuedRefreshToken = state.issueRefreshToken(email: email)
 
-        let authData = (try? JSONSerialization.data(withJSONObject: authResponse(email: email, refreshToken: refreshToken))) ?? Data("{}".utf8)
-        let cookieValue = "fe_refresh_demo_embedded_e2e=\(refreshToken); Path=/; HttpOnly; SameSite=Lax"
+        let authData = (try? JSONSerialization.data(
+            withJSONObject: authResponse(
+                session: issuedRefreshToken.record,
+                refreshToken: issuedRefreshToken.token
+            )
+        )) ?? Data("{}".utf8)
+        let cookieValue = "fe_refresh_demo_embedded_e2e=\(issuedRefreshToken.token); Path=/; HttpOnly; SameSite=Lax"
         return HTTPResponse(
             statusCode: 200,
             headers: [
@@ -1421,7 +1490,11 @@ final class LocalMockAuthServer {
             .replacingOccurrences(of: "=", with: "")
     }
 
-    private func accessToken(email: String) -> String {
+    private func accessToken(
+        email: String,
+        tokenVersion: Int,
+        expiresIn: Int
+    ) -> String {
         let now = Int(Date().timeIntervalSince1970)
         let payload: [String: Any] = [
             "sub": "user-\(email.components(separatedBy: "@").first ?? "demo")",
@@ -1430,8 +1503,9 @@ final class LocalMockAuthServer {
             "tenantId": tenantId(for: email),
             "tenantIds": [tenantId(for: email)],
             "profilePictureUrl": "https://example.com/avatar.png",
-            "exp": now + 3600,
+            "exp": now + expiresIn,
             "iat": now,
+            "token_version": tokenVersion,
         ]
 
         let header = encodeBase64URLJSON(["alg": "none", "typ": "JWT"])
@@ -1439,8 +1513,16 @@ final class LocalMockAuthServer {
         return "\(header).\(body).signature"
     }
 
-    private func authResponse(email: String, refreshToken: String) -> [String: Any] {
-        let accessToken = accessToken(email: email)
+    private func authResponse(
+        session: RefreshTokenRecord,
+        refreshToken: String
+    ) -> [String: Any] {
+        let policy = state.tokenPolicy(for: session.email)
+        let accessToken = accessToken(
+            email: session.email,
+            tokenVersion: session.tokenVersion,
+            expiresIn: policy.accessTokenTTL
+        )
         return [
             "token_type": "Bearer",
             "refresh_token": refreshToken,
@@ -1634,6 +1716,29 @@ private struct PendingEmbeddedSocialSuccessOAuthError {
     let errorDescription: String
 }
 
+private struct TokenPolicy {
+    let accessTokenTTL: Int
+    let refreshTokenTTL: Int
+    let startingTokenVersion: Int
+
+    static let `default` = TokenPolicy(
+        accessTokenTTL: 3600,
+        refreshTokenTTL: 24 * 3600,
+        startingTokenVersion: 1
+    )
+}
+
+private struct RefreshTokenRecord {
+    let email: String
+    let expiresAt: TimeInterval
+    var tokenVersion: Int
+}
+
+private struct IssuedRefreshToken {
+    let token: String
+    let record: RefreshTokenRecord
+}
+
 private final class MockAuthState {
     private let queue = DispatchQueue(label: "com.frontegg.demo-embedded-e2e.mock-state")
     private var queuedResponses: [String: [[String: Any]]] = [:]
@@ -1641,7 +1746,8 @@ private final class MockAuthState {
     private var hostedLoginContexts: [String: HostedLoginContext] = [:]
     private var latestHostedLoginStateValue: String?
     private var completedHostedLogins: [String: String] = [:]
-    private var refreshTokens: [String: String] = [:]
+    private var refreshTokens: [String: RefreshTokenRecord] = [:]
+    private var tokenPolicies: [String: TokenPolicy] = [:]
     private var pendingEmbeddedSocialSuccessOAuthError: PendingEmbeddedSocialSuccessOAuthError?
 
     init() {
@@ -1655,8 +1761,13 @@ private final class MockAuthState {
             hostedLoginContexts = [:]
             latestHostedLoginStateValue = nil
             completedHostedLogins = [:]
+            tokenPolicies = [:]
             refreshTokens = [
-                "signup-refresh-token": "signup@frontegg.com",
+                "signup-refresh-token": RefreshTokenRecord(
+                    email: "signup@frontegg.com",
+                    expiresAt: Date().timeIntervalSince1970 + TimeInterval(TokenPolicy.default.refreshTokenTTL),
+                    tokenVersion: TokenPolicy.default.startingTokenVersion
+                ),
             ]
             pendingEmbeddedSocialSuccessOAuthError = nil
         }
@@ -1742,9 +1853,55 @@ private final class MockAuthState {
         }
     }
 
-    func saveRefreshToken(_ refreshToken: String, email: String) {
+    func configureTokenPolicy(
+        email: String,
+        accessTokenTTL: Int,
+        refreshTokenTTL: Int,
+        startingTokenVersion: Int
+    ) {
         queue.sync {
-            refreshTokens[refreshToken] = email
+            tokenPolicies[email.lowercased()] = TokenPolicy(
+                accessTokenTTL: accessTokenTTL,
+                refreshTokenTTL: refreshTokenTTL,
+                startingTokenVersion: startingTokenVersion
+            )
+        }
+    }
+
+    func tokenPolicy(for email: String) -> TokenPolicy {
+        queue.sync {
+            tokenPolicyLocked(for: email)
+        }
+    }
+
+    func issueRefreshToken(email: String) -> IssuedRefreshToken {
+        queue.sync {
+            let refreshToken = "refresh-\(UUID().uuidString.lowercased())"
+            let policy = tokenPolicyLocked(for: email)
+            let record = RefreshTokenRecord(
+                email: email,
+                expiresAt: Date().timeIntervalSince1970 + TimeInterval(policy.refreshTokenTTL),
+                tokenVersion: policy.startingTokenVersion
+            )
+            refreshTokens[refreshToken] = record
+            return IssuedRefreshToken(token: refreshToken, record: record)
+        }
+    }
+
+    func validRefreshTokenRecord(for refreshToken: String) -> RefreshTokenRecord? {
+        queue.sync {
+            validatedRefreshTokenRecordLocked(for: refreshToken)
+        }
+    }
+
+    func refreshSession(for refreshToken: String) -> RefreshTokenRecord? {
+        queue.sync {
+            guard var record = validatedRefreshTokenRecordLocked(for: refreshToken) else {
+                return nil
+            }
+            record.tokenVersion += 1
+            refreshTokens[refreshToken] = record
+            return record
         }
     }
 
@@ -1776,7 +1933,7 @@ private final class MockAuthState {
 
     func email(forRefreshToken refreshToken: String) -> String? {
         queue.sync {
-            refreshTokens[refreshToken]
+            validatedRefreshTokenRecordLocked(for: refreshToken)?.email
         }
     }
 
@@ -1788,6 +1945,23 @@ private final class MockAuthState {
 
     private func queueKey(method: String, path: String) -> String {
         "\(method.uppercased()) \(normalizedPath(path))"
+    }
+
+    private func tokenPolicyLocked(for email: String) -> TokenPolicy {
+        tokenPolicies[email.lowercased()] ?? .default
+    }
+
+    private func validatedRefreshTokenRecordLocked(for refreshToken: String) -> RefreshTokenRecord? {
+        guard let record = refreshTokens[refreshToken] else {
+            return nil
+        }
+
+        guard record.expiresAt > Date().timeIntervalSince1970 else {
+            refreshTokens.removeValue(forKey: refreshToken)
+            return nil
+        }
+
+        return record
     }
 
     private func normalizedPath(_ path: String) -> String {

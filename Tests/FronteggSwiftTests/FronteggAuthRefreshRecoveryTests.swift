@@ -246,53 +246,56 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertEqual(auth.user?.email, "offline-tenants@example.com")
     }
 
-    func test_refreshTokenIfNeeded_refreshSucceeds_me401_entersOfflineMode() async throws {
+    func test_refreshTokenIfNeeded_refreshSucceeds_me401_clearsSession() async throws {
         api.refreshResult = .success(try makeAuthResponse(email: "offline-401@example.com", refreshToken: "refresh-token-new"))
         api.enqueueJSON(path: mePath, statusCode: 401, json: [:])
 
         let refreshed = await auth.refreshTokenIfNeeded()
 
-        XCTAssertTrue(refreshed)
+        XCTAssertFalse(refreshed)
         XCTAssertEqual(api.refreshCallCount, 1)
         XCTAssertEqual(api.callCounts[mePath], 1)
         XCTAssertNil(api.callCounts[tenantsPath])
-        XCTAssertTrue(auth.isAuthenticated)
-        XCTAssertTrue(auth.isOfflineMode)
-        await assertOfflineModePersistsBriefly()
-        XCTAssertEqual(auth.user?.email, "offline-401@example.com")
+        XCTAssertFalse(auth.isAuthenticated)
+        XCTAssertFalse(auth.isOfflineMode)
+        XCTAssertNil(auth.user)
+        XCTAssertNil(auth.accessToken)
+        XCTAssertNil(auth.refreshToken)
     }
 
-    func test_refreshTokenIfNeeded_refreshSucceeds_meHtmlProxyResponse_entersOfflineMode() async throws {
+    func test_refreshTokenIfNeeded_refreshSucceeds_meHtmlProxyResponse_clearsSession() async throws {
         api.refreshResult = .success(try makeAuthResponse(email: "offline-html@example.com", refreshToken: "refresh-token-new"))
         api.enqueueBody(path: mePath, statusCode: 403, body: "<html><body>Proxy blocked</body></html>")
 
         let refreshed = await auth.refreshTokenIfNeeded()
 
-        XCTAssertTrue(refreshed)
+        XCTAssertFalse(refreshed)
         XCTAssertEqual(api.refreshCallCount, 1)
         XCTAssertEqual(api.callCounts[mePath], 1)
         XCTAssertNil(api.callCounts[tenantsPath])
-        XCTAssertTrue(auth.isAuthenticated)
-        XCTAssertTrue(auth.isOfflineMode)
-        await assertOfflineModePersistsBriefly()
-        XCTAssertEqual(auth.user?.email, "offline-html@example.com")
+        XCTAssertFalse(auth.isAuthenticated)
+        XCTAssertFalse(auth.isOfflineMode)
+        XCTAssertNil(auth.user)
+        XCTAssertNil(auth.accessToken)
+        XCTAssertNil(auth.refreshToken)
     }
 
-    func test_refreshTokenIfNeeded_refreshSucceeds_tenants401_entersOfflineMode() async throws {
+    func test_refreshTokenIfNeeded_refreshSucceeds_tenants401_clearsSession() async throws {
         api.refreshResult = .success(try makeAuthResponse(email: "offline-tenants-401@example.com", refreshToken: "refresh-token-new"))
         api.enqueueJSON(path: mePath, statusCode: 200, json: TestDataFactory.makeUser(email: "offline-tenants-401@example.com"))
         api.enqueueJSON(path: tenantsPath, statusCode: 401, json: [:])
 
         let refreshed = await auth.refreshTokenIfNeeded()
 
-        XCTAssertTrue(refreshed)
+        XCTAssertFalse(refreshed)
         XCTAssertEqual(api.refreshCallCount, 1)
         XCTAssertEqual(api.callCounts[mePath], 1)
         XCTAssertEqual(api.callCounts[tenantsPath], 1)
-        XCTAssertTrue(auth.isAuthenticated)
-        XCTAssertTrue(auth.isOfflineMode)
-        await assertOfflineModePersistsBriefly()
-        XCTAssertEqual(auth.user?.email, "offline-tenants-401@example.com")
+        XCTAssertFalse(auth.isAuthenticated)
+        XCTAssertFalse(auth.isOfflineMode)
+        XCTAssertNil(auth.user)
+        XCTAssertNil(auth.accessToken)
+        XCTAssertNil(auth.refreshToken)
     }
 
     func test_setCredentials_missingExpClaim_authenticatesWithoutCrashing() async throws {

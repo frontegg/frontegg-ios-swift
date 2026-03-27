@@ -307,6 +307,50 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         XCTAssertNil(auth.handleSocialLoginCallback(callbackUrl))
     }
 
+    func test_handleSocialLoginOAuthCallback_errorCompletesFailure() async {
+        let result = await executeSocialLoginOAuthCallback(
+            url: nil,
+            error: URLError(.cannotConnectToHost)
+        )
+
+        switch result {
+        case .success:
+            XCTFail("Expected social login callback failure")
+        case .failure(let error):
+            guard case .authError(let authError) = error else {
+                return XCTFail("Expected auth error, got \(error)")
+            }
+            guard case .other(let underlyingError) = authError else {
+                return XCTFail("Expected wrapped underlying error, got \(authError)")
+            }
+            XCTAssertEqual((underlyingError as NSError).domain, NSURLErrorDomain)
+            XCTAssertEqual((underlyingError as NSError).code, URLError.cannotConnectToHost.rawValue)
+        }
+    }
+
+    func test_handleSocialLoginOAuthCallback_queryErrorCompletesFailure() async {
+        let result = await executeSocialLoginOAuthCallback(
+            url: makeCallbackUrl(
+                state: "social-state",
+                errorMessage: "access_denied",
+                errorDescription: "User+canceled"
+            )
+        )
+
+        switch result {
+        case .success:
+            XCTFail("Expected social login callback failure")
+        case .failure(let error):
+            guard case .authError(let authError) = error else {
+                return XCTFail("Expected auth error, got \(error)")
+            }
+            guard case .oauthError(let message) = authError else {
+                return XCTFail("Expected oauthError, got \(authError)")
+            }
+            XCTAssertEqual(message, "access_denied: User canceled")
+        }
+    }
+
     func test_handleOpenUrl_generatedRedirectError_reportsDecodedErrorDescriptionToDelegate() async {
         let delegate = SpyOAuthErrorDelegate()
         FronteggOAuthErrorRuntimeSettings.presentation = .delegate
@@ -513,13 +557,13 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         XCTAssertEqual(CredentialManager.getCodeVerifier(), "newer-verifier")
     }
 
-    func test_handleHostedLoginCallback_offlineRecovery_ignoresStaleInMemoryUserWhenUsingJWTFallback() async throws {
+    func test_handleHostedLoginCallback_connectivityRecovery_ignoresStaleInMemoryUserWhenUsingJWTFallback() async throws {
         PlistHelper.testConfigOverride = makeOfflineConfig(serviceKey: serviceKey)
 
         auth.setUser(try makeUser(email: "stale@example.com"))
         let freshAccessToken = try makeAccessToken(email: "fresh@example.com")
         api.exchangeTokenResponse = try makeAuthResponse(accessToken: freshAccessToken, refreshToken: "refresh-token-offline")
-        api.meResult = .failure(ApiError.meEndpointFailed(statusCode: 401, path: "identity/resources/users/v2/me"))
+        api.meResult = .failure(URLError(.timedOut))
 
         let result = await executeHostedLoginCallback(code: "code-567", codeVerifier: "verifier-567")
 
@@ -533,7 +577,39 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         XCTAssertEqual(auth.user?.email, "fresh@example.com")
         XCTAssertTrue(auth.isAuthenticated)
         XCTAssertTrue(auth.isOfflineMode)
+        XCTAssertFalse(auth.hasScheduledTokenRefreshForTesting())
         await assertOfflineModePersistsBriefly()
+        XCTAssertEqual(api.meCallCount, 1)
+    }
+
+    func test_handleHostedLoginCallback_nonConnectivityUserLoadFailure_doesNotEnterOfflineRecovery() async throws {
+        PlistHelper.testConfigOverride = makeOfflineConfig(serviceKey: serviceKey)
+
+        let accessToken = try makeAccessToken(email: "fresh@example.com")
+        api.exchangeTokenResponse = try makeAuthResponse(
+            accessToken: accessToken,
+            refreshToken: "refresh-token-non-connectivity"
+        )
+        api.meResult = .failure(
+            ApiError.meEndpointFailed(statusCode: 401, path: "identity/resources/users/v2/me")
+        )
+
+        let result = await executeHostedLoginCallback(
+            code: "code-non-connectivity",
+            codeVerifier: "verifier-non-connectivity"
+        )
+
+        switch result {
+        case .success:
+            XCTFail("Expected hosted login callback to fail for non-connectivity /me error")
+        case .failure:
+            break
+        }
+
+        XCTAssertFalse(auth.isAuthenticated)
+        XCTAssertFalse(auth.isOfflineMode)
+        XCTAssertNil(auth.user)
+        XCTAssertFalse(auth.hasScheduledTokenRefreshForTesting())
         XCTAssertEqual(api.meCallCount, 1)
     }
 
@@ -759,6 +835,22 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         }
     }
 
+    private func executeSocialLoginOAuthCallback(
+        providerString: String = "google",
+        url: URL?,
+        error: Error? = nil
+    ) async -> Result<User, FronteggError> {
+        await withCheckedContinuation { continuation in
+            auth.handleSocialLoginOAuthCallback(
+                providerString: providerString,
+                callbackURL: url,
+                error: error
+            ) { result in
+                continuation.resume(returning: result)
+            }
+        }
+    }
+
     private func makeCallbackUrl(
         code: String? = nil,
         state: String? = nil,
@@ -814,8 +906,10 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
     }
 
     private func waitForOAuthErrorDispatch() async {
-        await Task.yield()
-        await MainActor.run {}
+        for _ in 0..<4 {
+            await Task.yield()
+            await MainActor.run {}
+        }
     }
 
     private func makeSharedAppConfig() -> FronteggPlist {
