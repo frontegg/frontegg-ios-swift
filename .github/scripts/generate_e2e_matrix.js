@@ -46,7 +46,8 @@ function splitIntoShards(items, shardCount) {
 
 function main() {
   const appsInput = process.env.INPUT_APPS || "embedded,multi-region,uikit";
-  const shardCount = Math.max(1, parseInt(process.env.INPUT_SHARD_COUNT || "1", 10));
+  const parsed = parseInt(process.env.INPUT_SHARD_COUNT || "1", 10);
+  const shardCount = Number.isNaN(parsed) ? 1 : Math.max(1, parsed);
 
   const apps = appsInput
     .split(",")
