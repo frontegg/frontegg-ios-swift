@@ -222,6 +222,16 @@ public class CredentialManager {
         }
     }
 
+    static func pendingOAuthState(from url: URL) -> String? {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+
+        return components.queryItems?.first(where: { item in
+            item.name == "state" && !(item.value?.isEmpty ?? true)
+        })?.value
+    }
+
     static func registerPendingOAuth(state: String, codeVerifier: String) {
         var verifiers = getPendingOAuthStateVerifiers()
         verifiers[state] = codeVerifier

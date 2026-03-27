@@ -75,4 +75,26 @@ final class EncodingUtilsTests: XCTestCase {
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
         XCTAssertTrue(s.unicodeScalars.allSatisfy { allowed.contains($0) })
     }
+
+    func test_createRandomString_uniqueness_across_calls() {
+        let a = createRandomString(32)
+        let b = createRandomString(32)
+        XCTAssertNotEqual(a, b)
+    }
+
+    func test_createRandomString_zero_length_returns_empty() {
+        let s = createRandomString(0)
+        XCTAssertEqual(s, "")
+    }
+
+    func test_toEncodedBase64_emptyData_returnsEmpty() {
+        let encoded = Data().toEncodedBase64()
+        XCTAssertEqual(encoded, "")
+    }
+
+    func test_toDecodedData_emptyString_returnsEmptyData() {
+        let data = "".toDecodedData()
+        XCTAssertNotNil(data)
+        XCTAssertEqual(data?.count, 0)
+    }
 }

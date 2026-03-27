@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -15,6 +15,8 @@
 		4106B7DD2B0ED9C900481291 /* LoaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4106B7D12B0ED9C900481291 /* LoaderView.swift */; };
 		4106B7E02B0EEC8E00481291 /* SelectRegionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4106B7DF2B0EEC8E00481291 /* SelectRegionView.swift */; };
 		412401DC2AB20D6F00AAC758 /* FronteggSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 412401DB2AB20D6F00AAC758 /* FronteggSwift */; };
+		416019AF2F77314E0040C3E8 /* MultiRegionTestMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 416019AE2F77314E0040C3E8 /* MultiRegionTestMode.swift */; };
+		416019B12F7734FA0040C3E8 /* FronteggTest.plist in Resources */ = {isa = PBXBuildFile; fileRef = 416019B02F7734FA0040C3E8 /* FronteggTest.plist */; };
 		45BB5F482DE99DD000C4CA55 /* FronteggAppBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45BB5F442DE99DD000C4CA55 /* FronteggAppBar.swift */; };
 		45BB5F492DE99DD000C4CA55 /* LoginPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45BB5F452DE99DD000C4CA55 /* LoginPage.swift */; };
 		45BB5F4A2DE99DD000C4CA55 /* Footer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45BB5F432DE99DD000C4CA55 /* Footer.swift */; };
@@ -29,6 +31,16 @@
 		45BB5F5B2DE99DF000C4CA55 /* Manrope-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 45BB5F522DE99DF000C4CA55 /* Manrope-Medium.ttf */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		4160196C2F772D940040C3E8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 412401AB2AB20B0900AAC758 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 412401B22AB20B0900AAC758;
+			remoteInfo = "demo-multi-region";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		4106B7C62B0ED9C900481291 /* Frontegg.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Frontegg.plist; sourceTree = "<group>"; };
 		4106B7C72B0ED9C900481291 /* MultiRegionApp.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MultiRegionApp.swift; sourceTree = "<group>"; };
@@ -41,6 +53,9 @@
 		4106B7DF2B0EEC8E00481291 /* SelectRegionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectRegionView.swift; sourceTree = "<group>"; };
 		412401B32AB20B0900AAC758 /* demo-multi-region.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "demo-multi-region.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		412401D92AB20D5C00AAC758 /* frontegg-swift */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = "frontegg-swift"; path = ..; sourceTree = "<group>"; };
+		416019662F772D940040C3E8 /* demo-multi-region-e2e.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "demo-multi-region-e2e.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		416019AE2F77314E0040C3E8 /* MultiRegionTestMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiRegionTestMode.swift; sourceTree = "<group>"; };
+		416019B02F7734FA0040C3E8 /* FronteggTest.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = FronteggTest.plist; sourceTree = "<group>"; };
 		45BB5F432DE99DD000C4CA55 /* Footer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Footer.swift; sourceTree = "<group>"; };
 		45BB5F442DE99DD000C4CA55 /* FronteggAppBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FronteggAppBar.swift; sourceTree = "<group>"; };
 		45BB5F452DE99DD000C4CA55 /* LoginPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginPage.swift; sourceTree = "<group>"; };
@@ -55,6 +70,10 @@
 		45BB5F542DE99DF000C4CA55 /* Manrope-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-SemiBold.ttf"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		416019672F772D940040C3E8 /* demo-multi-region-e2e */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "demo-multi-region-e2e"; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXFrameworksBuildPhase section */
 		412401B02AB20B0900AAC758 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
@@ -64,12 +83,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		416019632F772D940040C3E8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		4106B7C22B0ED9C900481291 /* demo-multi-region */ = {
 			isa = PBXGroup;
 			children = (
+				416019AE2F77314E0040C3E8 /* MultiRegionTestMode.swift */,
 				45BB5F4D2DE99DD700C4CA55 /* Fonts */,
 				45BB5F432DE99DD000C4CA55 /* Footer.swift */,
 				45BB5F442DE99DD000C4CA55 /* FronteggAppBar.swift */,
@@ -82,6 +109,7 @@
 				4106B7D12B0ED9C900481291 /* LoaderView.swift */,
 				4106B7D02B0ED9C900481291 /* demo-multi-region.entitlements */,
 				4106B7C62B0ED9C900481291 /* Frontegg.plist */,
+				416019B02F7734FA0040C3E8 /* FronteggTest.plist */,
 				4106B7D22B0ED9C900481291 /* Info.plist */,
 				4106B7C82B0ED9C900481291 /* Assets.xcassets */,
 				4106B7C92B0ED9C900481291 /* Preview Content */,
@@ -102,6 +130,7 @@
 			children = (
 				412401C42AB20B5C00AAC758 /* Packages */,
 				4106B7C22B0ED9C900481291 /* demo-multi-region */,
+				416019672F772D940040C3E8 /* demo-multi-region-e2e */,
 				412401B42AB20B0900AAC758 /* Products */,
 				412401DA2AB20D6F00AAC758 /* Frameworks */,
 			);
@@ -111,6 +140,7 @@
 			isa = PBXGroup;
 			children = (
 				412401B32AB20B0900AAC758 /* demo-multi-region.app */,
+				416019662F772D940040C3E8 /* demo-multi-region-e2e.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -167,6 +197,29 @@
 			productReference = 412401B32AB20B0900AAC758 /* demo-multi-region.app */;
 			productType = "com.apple.product-type.application";
 		};
+		416019652F772D940040C3E8 /* demo-multi-region-e2e */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 416019702F772D940040C3E8 /* Build configuration list for PBXNativeTarget "demo-multi-region-e2e" */;
+			buildPhases = (
+				416019622F772D940040C3E8 /* Sources */,
+				416019632F772D940040C3E8 /* Frameworks */,
+				416019642F772D940040C3E8 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4160196D2F772D940040C3E8 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				416019672F772D940040C3E8 /* demo-multi-region-e2e */,
+			);
+			name = "demo-multi-region-e2e";
+			packageProductDependencies = (
+			);
+			productName = "demo-multi-region-e2e";
+			productReference = 416019662F772D940040C3E8 /* demo-multi-region-e2e.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -174,11 +227,15 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1430;
+				LastSwiftUpdateCheck = 2630;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					412401B22AB20B0900AAC758 = {
 						CreatedOnToolsVersion = 14.3.1;
+					};
+					416019652F772D940040C3E8 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 412401B22AB20B0900AAC758;
 					};
 				};
 			};
@@ -196,6 +253,7 @@
 			projectRoot = "";
 			targets = (
 				412401B22AB20B0900AAC758 /* demo-multi-region */,
+				416019652F772D940040C3E8 /* demo-multi-region-e2e */,
 			);
 		};
 /* End PBXProject section */
@@ -210,11 +268,19 @@
 				45BB5F552DE99DF000C4CA55 /* Manrope-Bold.ttf in Resources */,
 				45BB5F562DE99DF000C4CA55 /* Manrope-ExtraLight.ttf in Resources */,
 				45BB5F572DE99DF000C4CA55 /* Manrope-SemiBold.ttf in Resources */,
+				416019B12F7734FA0040C3E8 /* FronteggTest.plist in Resources */,
 				45BB5F582DE99DF000C4CA55 /* Manrope-Regular.ttf in Resources */,
 				45BB5F592DE99DF000C4CA55 /* Manrope-ExtraBold.ttf in Resources */,
 				45BB5F5A2DE99DF000C4CA55 /* Manrope-Light.ttf in Resources */,
 				45BB5F5B2DE99DF000C4CA55 /* Manrope-Medium.ttf in Resources */,
 				4106B7D72B0ED9C900481291 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		416019642F772D940040C3E8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -227,6 +293,7 @@
 			files = (
 				4106B7D62B0ED9C900481291 /* MultiRegionApp.swift in Sources */,
 				4106B7E02B0EEC8E00481291 /* SelectRegionView.swift in Sources */,
+				416019AF2F77314E0040C3E8 /* MultiRegionTestMode.swift in Sources */,
 				4106B7DC2B0ED9C900481291 /* MyApp.swift in Sources */,
 				45BB5F482DE99DD000C4CA55 /* FronteggAppBar.swift in Sources */,
 				45BB5F492DE99DD000C4CA55 /* LoginPage.swift in Sources */,
@@ -237,7 +304,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		416019622F772D940040C3E8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		4160196D2F772D940040C3E8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 412401B22AB20B0900AAC758 /* demo-multi-region */;
+			targetProxy = 4160196C2F772D940040C3E8 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		412401BF2AB20B0A00AAC758 /* Debug */ = {
@@ -428,6 +510,57 @@
 			};
 			name = Release;
 		};
+		4160196E2F772D940040C3E8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3R2X6557U2;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.frontegg.demo-multi-region-e2e";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "demo-multi-region";
+			};
+			name = Debug;
+		};
+		4160196F2F772D940040C3E8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3R2X6557U2;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.frontegg.demo-multi-region-e2e";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "demo-multi-region";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -445,6 +578,15 @@
 			buildConfigurations = (
 				412401C22AB20B0A00AAC758 /* Debug */,
 				412401C32AB20B0A00AAC758 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		416019702F772D940040C3E8 /* Build configuration list for PBXNativeTarget "demo-multi-region-e2e" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4160196E2F772D940040C3E8 /* Debug */,
+				4160196F2F772D940040C3E8 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

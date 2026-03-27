@@ -56,9 +56,11 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
     // MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
-        
+        view.accessibilityIdentifier = "StreamPageRoot"
+        testLabel.accessibilityIdentifier = "AccessTokenLabel"
+
         self.setupAppFlow()
-        
+
         self.addObservers()
     }
     

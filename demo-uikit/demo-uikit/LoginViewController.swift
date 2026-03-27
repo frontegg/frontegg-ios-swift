@@ -26,6 +26,13 @@ class LoginViewController: BaseViewController {
         return .portrait
     }
     /// The view did appear for the login view      
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.accessibilityIdentifier = "LoginPageRoot"
+        errorLabel.accessibilityIdentifier = "LoginErrorLabel"
+        retryButton.accessibilityIdentifier = "RetryButton"
+    }
+
     override func viewDidAppear(_ animated: Bool) {
         self.checkSession()
     }

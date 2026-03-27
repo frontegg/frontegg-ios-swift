@@ -1,0 +1,39 @@
+{
+  "scenarios": [
+    {
+      "method": "testPasswordLoginShowsStreamScreen",
+      "title": "Password Login Shows Stream",
+      "description": "App auto-triggers login, authenticates with password, verifies StreamViewController is shown with access token."
+    },
+    {
+      "method": "testSessionRestoreAfterTerminate",
+      "title": "Session Restore After Terminate",
+      "description": "Logs in, terminates app, relaunches without reset — verifies session persists."
+    },
+    {
+      "method": "testLogoutReturnsToLoginScreen",
+      "title": "Logout Returns to Login",
+      "description": "Authenticated on stream page, taps logout, verifies LoginViewController is shown."
+    },
+    {
+      "method": "testTokenRefreshKeepsSessionAlive",
+      "title": "Token Refresh Keeps Session",
+      "description": "Logs in with short-lived token, waits for expiry, verifies token refreshes and session continues."
+    },
+    {
+      "method": "testLoginErrorShowsRetryButton",
+      "title": "Login Error Shows Retry",
+      "description": "Mock server drops connection, verifies error label and retry button appear."
+    },
+    {
+      "method": "testColdLaunchInitializesCorrectly",
+      "title": "Cold Launch Initializes",
+      "description": "Fresh launch verifies app reaches either login or stream page without crashing."
+    },
+    {
+      "method": "testMultipleLaunchCyclesDoNotCrash",
+      "title": "Multiple Launch Cycles Stability",
+      "description": "Logs in, then terminates and relaunches twice — verifies session survives multiple cycles."
+    }
+  ]
+}

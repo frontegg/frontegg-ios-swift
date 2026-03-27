@@ -1,0 +1,44 @@
+{
+  "scenarios": [
+    {
+      "method": "testManualInitLoginAndVerifyAuthenticated",
+      "title": "Manual Init Login",
+      "description": "Configures the app via manualInit with mock server, logs in with password, verifies authenticated state."
+    },
+    {
+      "method": "testSessionRestoreAfterTerminateInRegion",
+      "title": "Session Restore After Terminate",
+      "description": "Logs in, terminates app, relaunches without reset — verifies session persists in the same region."
+    },
+    {
+      "method": "testLogoutReturnsToLoginPage",
+      "title": "Logout Returns to Login",
+      "description": "Logs in, taps logout, verifies login page is shown."
+    },
+    {
+      "method": "testLogoutAndReloginInSameRegion",
+      "title": "Logout and Re-login in Same Region",
+      "description": "Full logout/re-login cycle — verifies region context is maintained."
+    },
+    {
+      "method": "testExpiredAccessTokenRefreshesOnRelaunch",
+      "title": "Expired Token Refresh on Relaunch",
+      "description": "Logs in with short-lived token, waits for expiry, relaunches — verifies token refresh keeps user authenticated."
+    },
+    {
+      "method": "testEntitlementsLoadAfterLogin",
+      "title": "Entitlements Load After Login",
+      "description": "Logs in, taps Load Entitlements, verifies load completes."
+    },
+    {
+      "method": "testColdLaunchWithNoSessionShowsLoginPage",
+      "title": "Cold Launch Shows Login",
+      "description": "Fresh launch with reset — verifies login page appears when no session exists."
+    },
+    {
+      "method": "testMultipleLaunchCyclesDoNotCrash",
+      "title": "Multiple Launch Cycles Stability",
+      "description": "Logs in, then terminates and relaunches twice — verifies session survives multiple cycles."
+    }
+  ]
+}

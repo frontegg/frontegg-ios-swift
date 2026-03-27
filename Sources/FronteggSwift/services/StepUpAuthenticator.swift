@@ -56,12 +56,11 @@ class StepUpAuthenticator {
             }
         }
 
-        let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(
+        let (authorizeUrl, _) = AuthorizeUrlGenerator.shared.generate(
             stepUp: true,
             maxAge: maxAge
         )
         
-        CredentialManager.saveCodeVerifier(codeVerifier)
         DispatchQueue.main.async {
             FronteggAuth.shared.setIsStepUpAuthorization(true)
             FronteggAuth.shared.setIsLoading(false)
@@ -75,12 +74,6 @@ class StepUpAuthenticator {
     }
 
     private static func pendingOAuthState(from url: URL) -> String? {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return nil
-        }
-
-        return components.queryItems?.first(where: { item in
-            item.name == "state" && !(item.value?.isEmpty ?? true)
-        })?.value
+        CredentialManager.pendingOAuthState(from: url)
     }
 }

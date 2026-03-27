@@ -11,10 +11,18 @@ import FronteggSwift
 /// The main entry point for the demo application.
 @main
 struct MultiRegionApp: App {
+    @StateObject private var bootstrapper = MultiRegionBootstrapper()
+
     var body: some Scene {
         WindowGroup {
-            FronteggWrapper() {
-                MyApp()
+            Group {
+                if bootstrapper.isReady {
+                    FronteggWrapper() {
+                        MyApp()
+                    }
+                } else {
+                    LoaderView()
+                }
             }
         }
     }
