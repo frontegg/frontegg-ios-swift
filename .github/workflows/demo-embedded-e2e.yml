@@ -1,0 +1,47 @@
+name: "demo-embedded-e2e"
+
+on:
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: demo-embedded-e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  demo-embedded-e2e:
+    name: "Run Demo Embedded E2E"
+    runs-on: "macos-15-xlarge"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check macOS and Xcode versions
+        run: |
+          sw_vers
+          xcode-select --print-path
+          xcodebuild -version
+
+      - name: Run demo-embedded E2E tests
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project demo-embedded/demo-embedded.xcodeproj \
+            -scheme demo-embedded \
+            -destination "platform=iOS Simulator,name=iPhone 16 Pro" \
+            -derivedDataPath "$RUNNER_TEMP/demo-embedded-e2e-derived-data" \
+            -resultBundlePath "$RUNNER_TEMP/demo-embedded-e2e.xcresult" \
+            -parallel-testing-enabled NO \
+            test 2>&1 | tee "$RUNNER_TEMP/demo-embedded-e2e.log"
+
+      - name: Upload demo-embedded E2E artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: demo-embedded-e2e-results
+          path: |
+            ${{ runner.temp }}/demo-embedded-e2e.log
+            ${{ runner.temp }}/demo-embedded-e2e.xcresult
+          retention-days: 7
