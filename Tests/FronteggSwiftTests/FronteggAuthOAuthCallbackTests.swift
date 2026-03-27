@@ -391,6 +391,34 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         }
     }
 
+    func test_handleSocialLogin_invalidProviderCompletesFailureOnMainThreadAndResetsFlow() async {
+        await MainActor.run {
+            auth.activeEmbeddedOAuthFlow = .socialLogin
+        }
+
+        let (result, completionOnMainThread) = await withCheckedContinuation { continuation in
+            auth.handleSocialLogin(providerString: "not-a-provider", custom: false) { result in
+                continuation.resume(returning: (result, Thread.isMainThread))
+            }
+        }
+
+        XCTAssertTrue(completionOnMainThread)
+        let finalFlowIsLogin = await MainActor.run { auth.activeEmbeddedOAuthFlow == .login }
+        XCTAssertTrue(finalFlowIsLogin)
+
+        switch result {
+        case .success:
+            XCTFail("Expected social login to fail for an unknown provider")
+        case .failure(let error):
+            guard case .authError(let authError) = error else {
+                return XCTFail("Expected auth error, got \(error)")
+            }
+            guard case .unknown = authError else {
+                return XCTFail("Expected unknown auth error, got \(authError)")
+            }
+        }
+    }
+
     func test_handleOpenUrl_generatedRedirectError_reportsDecodedErrorDescriptionToDelegate() async {
         let delegate = SpyOAuthErrorDelegate()
         FronteggOAuthErrorRuntimeSettings.presentation = .delegate

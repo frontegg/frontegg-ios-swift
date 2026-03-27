@@ -265,12 +265,12 @@ public class FronteggApp {
         logger.info("Frontegg baseURL: \(self.baseUrl)")
     }
 
+#if DEBUG
     @MainActor
     public func resetForTesting(baseUrlOverride: String? = nil) async {
         await auth.resetForTesting(baseUrlOverride: baseUrlOverride)
     }
 
-#if DEBUG
     public func configureTestingNetworkPathAvailability(_ available: Bool?) {
         auth.setTestNetworkPathAvailabilityOverride(available)
     }

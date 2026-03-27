@@ -1343,6 +1343,7 @@ public class FronteggAuth: FronteggState {
         refreshTokenDispatch = nil
     }
 
+#if DEBUG
     @MainActor
     func resetForTesting(baseUrlOverride: String? = nil) async {
         cancelScheduledTokenRefresh()
@@ -1369,9 +1370,7 @@ public class FronteggAuth: FronteggState {
         loginCompletion = nil
         lastAttemptReason = nil
         webview = nil
-#if DEBUG
         Self.testNetworkPathAvailabilityOverride = nil
-#endif
 
         credentialManager.deleteLastActiveTenantId()
         credentialManager.clear()
@@ -1398,7 +1397,6 @@ public class FronteggAuth: FronteggState {
         URLCache.shared.removeAllCachedResponses()
     }
 
-#if DEBUG
     func setTestNetworkPathAvailabilityOverride(_ available: Bool?) {
         Self.testNetworkPathAvailabilityOverride = available
     }
@@ -3001,7 +2999,11 @@ public class FronteggAuth: FronteggState {
                         user: fallbackUser,
                         hydrationMode: .preserveCachedOrDerivedUser
                     )
-                    guard self.isAuthenticated, let resolvedUser = self.user else {
+                    let hydratedSession = await MainActor.run {
+                        (isAuthenticated: self.isAuthenticated, user: self.user)
+                    }
+                    guard hydratedSession.isAuthenticated,
+                          let resolvedUser = hydratedSession.user else {
                         let authError = FronteggError.authError(.failedToAuthenticate)
                         self.clearMatchedPendingOAuthFlowIfNeeded(
                             oauthState: oauthState,
@@ -3471,15 +3473,14 @@ public class FronteggAuth: FronteggState {
         errorDescription: String? = nil,
         completion: @escaping FronteggAuth.CompletionHandler
     ) {
-        self.activeEmbeddedOAuthFlow = .login
-        self.reportOAuthFailure(
-            error: error,
-            flow: .socialLogin,
-            errorCode: errorCode,
-            errorDescription: errorDescription
-        )
-
         DispatchQueue.main.async {
+            self.activeEmbeddedOAuthFlow = .login
+            self.reportOAuthFailure(
+                error: error,
+                flow: .socialLogin,
+                errorCode: errorCode,
+                errorDescription: errorDescription
+            )
             completion(.failure(error))
         }
     }
@@ -3488,10 +3489,9 @@ public class FronteggAuth: FronteggState {
         _ details: OAuthFailureDetails,
         completion: @escaping FronteggAuth.CompletionHandler
     ) {
-        self.activeEmbeddedOAuthFlow = .login
-        self.reportOAuthFailure(details: details, flow: .socialLogin)
-
         DispatchQueue.main.async {
+            self.activeEmbeddedOAuthFlow = .login
+            self.reportOAuthFailure(details: details, flow: .socialLogin)
             completion(.failure(details.error))
         }
     }
