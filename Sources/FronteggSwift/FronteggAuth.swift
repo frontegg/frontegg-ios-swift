@@ -111,7 +111,7 @@ public class FronteggAuth: FronteggState {
     private let oauthErrorPresentationDelay: TimeInterval = 0.35
     private let embeddedOAuthErrorRecoveryFallbackDelay: TimeInterval = 1.25
     private var isInitializingWithTokens: Bool = false
-    private var isLoginInProgress: Bool = false
+    @MainActor private var isLoginInProgress: Bool = false
     private let entitlementsLoadLock = NSLock()
     private var entitlementsLoadInProgress: Bool = false
     private var entitlementsLoadPendingCompletions: [((Bool) -> Void)] = []
@@ -365,12 +365,11 @@ public class FronteggAuth: FronteggState {
         }
     }
 
+    @MainActor
     @objc private func applicationDidBecomeActive() {
         logger.info("application become active")
 
-        Task { @MainActor in
-            self.flushPendingOAuthErrorPresentationIfNeeded(delayIfNeeded: true)
-        }
+        self.flushPendingOAuthErrorPresentationIfNeeded(delayIfNeeded: true)
 
         if initializing || isLoginInProgress {
             return
@@ -1407,6 +1406,11 @@ public class FronteggAuth: FronteggState {
     func hasScheduledTokenRefreshForTesting() -> Bool {
         refreshTokenDispatch != nil
     }
+
+    @MainActor
+    func isLoginInProgressForTesting() -> Bool {
+        isLoginInProgress
+    }
 #endif
 
     @MainActor
@@ -1612,6 +1616,7 @@ public class FronteggAuth: FronteggState {
             setInitializing(false)
             setAppLink(false)
             setIsOfflineMode(false)
+            self.isLoginInProgress = false
             setRefreshingToken(false)
             setIsStepUpAuthorization(false)
             self.lastAttemptReason = nil
@@ -2176,7 +2181,7 @@ public class FronteggAuth: FronteggState {
         
         self.lastAttemptReason = nil
         
-        if self.isLoginInProgress {
+        if await self.isLoginInProgress {
             self.logger.info("Skip refreshing token - login in progress")
             return false
         }
@@ -2831,15 +2836,17 @@ public class FronteggAuth: FronteggState {
         completion: @escaping FronteggAuth.CompletionHandler
     ) {
 
-        // Use provided redirectUri or generate default one
-        // For magic link flow, we should use the redirectUri from the callback URL
-        let redirectUri = redirectUri ?? generateRedirectUri()
-        setIsLoading(true)
-        self.isLoginInProgress = true
-
-        logger.info("Handling hosted login callback (redirectUri: \(redirectUri), hasCodeVerifier: \(codeVerifier != nil))")
-        
         Task {
+            // Use provided redirectUri or generate default one.
+            // For magic link flow, use the redirectUri from the callback URL.
+            let redirectUri = redirectUri ?? generateRedirectUri()
+
+            await MainActor.run {
+                self.setIsLoading(true)
+                self.isLoginInProgress = true
+            }
+
+            self.logger.info("Handling hosted login callback (redirectUri: \(redirectUri), hasCodeVerifier: \(codeVerifier != nil))")
             logger.info("Exchanging hosted login callback token")
             let (responseData, error) = await api.exchangeToken(
                 code: code,

@@ -14,15 +14,42 @@ private final class MockOAuthCallbackApi: Api {
         let codeVerifier: String?
     }
 
+    private let stateLock = NSLock()
+    private var blockExchangeToken = false
+    private var blockedExchangeTokenContinuation: CheckedContinuation<Void, Never>?
+
     var exchangeTokenResponse: AuthResponse?
     var exchangeTokenError: FronteggError?
     var meResult: Result<User?, Error> = .success(nil)
     var meRefreshResult: Result<MeResult, Error>?
     var lastExchangeInput: ExchangeInput?
     var meCallCount = 0
+    var onExchangeTokenStarted: (() -> Void)?
 
     init() {
         super.init(baseUrl: "https://test.example.com", clientId: "test-client-id", applicationId: nil)
+    }
+
+    private func withStateLock<T>(_ body: () -> T) -> T {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return body()
+    }
+
+    func setExchangeTokenBlocked(_ blocked: Bool) {
+        withStateLock {
+            blockExchangeToken = blocked
+        }
+    }
+
+    func resumeExchangeToken() {
+        let continuation = withStateLock {
+            blockExchangeToken = false
+            let continuation = blockedExchangeTokenContinuation
+            blockedExchangeTokenContinuation = nil
+            return continuation
+        }
+        continuation?.resume()
     }
 
     override func exchangeToken(
@@ -31,6 +58,19 @@ private final class MockOAuthCallbackApi: Api {
         codeVerifier: String?
     ) async -> (AuthResponse?, FronteggError?) {
         lastExchangeInput = ExchangeInput(code: code, redirectUrl: redirectUrl, codeVerifier: codeVerifier)
+
+        let shouldBlock = withStateLock { blockExchangeToken }
+        if shouldBlock {
+            await withCheckedContinuation { continuation in
+                withStateLock {
+                    blockedExchangeTokenContinuation = continuation
+                }
+                onExchangeTokenStarted?()
+            }
+        } else {
+            onExchangeTokenStarted?()
+        }
+
         return (exchangeTokenResponse, exchangeTokenError)
     }
 
@@ -647,6 +687,50 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
             XCTAssertEqual(user.email, "test@example.com")
         case .failure(let error):
             XCTFail("Expected success, got \(error)")
+        }
+    }
+
+    func test_logout_clearsLoginInProgressWhileHostedLoginCallbackIsInFlight() async {
+        api.exchangeTokenError = FronteggError.authError(.failedToAuthenticate)
+        api.setExchangeTokenBlocked(true)
+
+        let exchangeStarted = expectation(description: "hosted login exchange started")
+        api.onExchangeTokenStarted = {
+            exchangeStarted.fulfill()
+        }
+
+        let callbackTask = Task {
+            await self.executeHostedLoginCallback(code: "code-logout", codeVerifier: "verifier-logout")
+        }
+
+        await fulfillment(of: [exchangeStarted], timeout: 1.0)
+
+        let loginInProgressBeforeLogout = await auth.isLoginInProgressForTesting()
+        XCTAssertTrue(loginInProgressBeforeLogout)
+
+        let logoutResult = await withCheckedContinuation { continuation in
+            auth.logout(clearCookie: false) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch logoutResult {
+        case .success(let didLogout):
+            XCTAssertTrue(didLogout)
+        case .failure(let error):
+            XCTFail("Expected logout to succeed, got \(error)")
+        }
+
+        let loginInProgressAfterLogout = await auth.isLoginInProgressForTesting()
+        XCTAssertFalse(loginInProgressAfterLogout)
+
+        api.resumeExchangeToken()
+
+        switch await callbackTask.value {
+        case .success:
+            XCTFail("Expected hosted login callback to fail after the blocked exchange resumes")
+        case .failure:
+            break
         }
     }
 
