@@ -3,10 +3,12 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 60;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
+		416019A12F7731350040C3E8 /* UIKitTestMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 416019A02F7731350040C3E8 /* UIKitTestMode.swift */; };
+		416019BF2F7735180040C3E8 /* FronteggTest.plist in Resources */ = {isa = PBXBuildFile; fileRef = 416019BE2F7735180040C3E8 /* FronteggTest.plist */; };
 		417E63F22D2EF6C000108847 /* MainNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417E63F12D2EF6C000108847 /* MainNavController.swift */; };
 		417E63F42D2EF75D00108847 /* LoginViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417E63F32D2EF75D00108847 /* LoginViewController.swift */; };
 		417E63F62D2EF78600108847 /* BaseViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417E63F52D2EF78600108847 /* BaseViewController.swift */; };
@@ -25,8 +27,21 @@
 		4564D6E82D9EC1D400801B2D /* FronteggSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 4564D6E72D9EC1D400801B2D /* FronteggSwift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		416019872F772DFC0040C3E8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 41AEA8662B67F4760045C0B3 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 41AEA86D2B67F4760045C0B3;
+			remoteInfo = "demo-uikit";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		412291542D3824D200C5C807 /* demo-uikit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "demo-uikit.entitlements"; sourceTree = "<group>"; };
+		416019812F772DFC0040C3E8 /* demo-uikit-e2e.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "demo-uikit-e2e.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		416019A02F7731350040C3E8 /* UIKitTestMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIKitTestMode.swift; sourceTree = "<group>"; };
+		416019BE2F7735180040C3E8 /* FronteggTest.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = FronteggTest.plist; sourceTree = "<group>"; };
 		417E63F12D2EF6C000108847 /* MainNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainNavController.swift; sourceTree = "<group>"; };
 		417E63F32D2EF75D00108847 /* LoginViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewController.swift; sourceTree = "<group>"; };
 		417E63F52D2EF78600108847 /* BaseViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaseViewController.swift; sourceTree = "<group>"; };
@@ -46,7 +61,18 @@
 		41AEA8922B67FD2A0045C0B3 /* Frontegg.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Frontegg.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		416019822F772DFC0040C3E8 /* demo-uikit-e2e */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "demo-uikit-e2e"; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXFrameworksBuildPhase section */
+		4160197E2F772DFC0040C3E8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		41AEA86B2B67F4760045C0B3 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -63,6 +89,7 @@
 			children = (
 				41AEA8882B67F4BE0045C0B3 /* Packages */,
 				41AEA8702B67F4760045C0B3 /* demo-uikit */,
+				416019822F772DFC0040C3E8 /* demo-uikit-e2e */,
 				41AEA86F2B67F4760045C0B3 /* Products */,
 				41AEA8852B67F48D0045C0B3 /* Frameworks */,
 			);
@@ -72,6 +99,7 @@
 			isa = PBXGroup;
 			children = (
 				41AEA86E2B67F4760045C0B3 /* demo-uikit.app */,
+				416019812F772DFC0040C3E8 /* demo-uikit-e2e.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -79,6 +107,7 @@
 		41AEA8702B67F4760045C0B3 /* demo-uikit */ = {
 			isa = PBXGroup;
 			children = (
+				416019A02F7731350040C3E8 /* UIKitTestMode.swift */,
 				412291542D3824D200C5C807 /* demo-uikit.entitlements */,
 				41AEA8712B67F4760045C0B3 /* AppDelegate.swift */,
 				41AEA8732B67F4760045C0B3 /* SceneDelegate.swift */,
@@ -90,6 +119,7 @@
 				41AEA87F2B67F4770045C0B3 /* Info.plist */,
 				41AEA8902B67FC970045C0B3 /* AuthenticationController.swift */,
 				41AEA8922B67FD2A0045C0B3 /* Frontegg.plist */,
+				416019BE2F7735180040C3E8 /* FronteggTest.plist */,
 				417E63F32D2EF75D00108847 /* LoginViewController.swift */,
 				417E63F52D2EF78600108847 /* BaseViewController.swift */,
 				417E63F72D2EF7FB00108847 /* StreamViewController.swift */,
@@ -117,6 +147,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		416019802F772DFC0040C3E8 /* demo-uikit-e2e */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4160198B2F772DFC0040C3E8 /* Build configuration list for PBXNativeTarget "demo-uikit-e2e" */;
+			buildPhases = (
+				4160197D2F772DFC0040C3E8 /* Sources */,
+				4160197E2F772DFC0040C3E8 /* Frameworks */,
+				4160197F2F772DFC0040C3E8 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				416019882F772DFC0040C3E8 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				416019822F772DFC0040C3E8 /* demo-uikit-e2e */,
+			);
+			name = "demo-uikit-e2e";
+			packageProductDependencies = (
+			);
+			productName = "demo-uikit-e2e";
+			productReference = 416019812F772DFC0040C3E8 /* demo-uikit-e2e.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		41AEA86D2B67F4760045C0B3 /* demo-uikit */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 41AEA8822B67F4770045C0B3 /* Build configuration list for PBXNativeTarget "demo-uikit" */;
@@ -144,9 +197,13 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1430;
+				LastSwiftUpdateCheck = 2630;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					416019802F772DFC0040C3E8 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 41AEA86D2B67F4760045C0B3;
+					};
 					41AEA86D2B67F4760045C0B3 = {
 						CreatedOnToolsVersion = 14.3.1;
 					};
@@ -169,15 +226,24 @@
 			projectRoot = "";
 			targets = (
 				41AEA86D2B67F4760045C0B3 /* demo-uikit */,
+				416019802F772DFC0040C3E8 /* demo-uikit-e2e */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		4160197F2F772DFC0040C3E8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		41AEA86C2B67F4760045C0B3 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				416019BF2F7735180040C3E8 /* FronteggTest.plist in Resources */,
 				41AEA8932B67FD2A0045C0B3 /* Frontegg.plist in Resources */,
 				41AEA87E2B67F4770045C0B3 /* LaunchScreen.storyboard in Resources */,
 				41AEA87B2B67F4770045C0B3 /* Assets.xcassets in Resources */,
@@ -188,6 +254,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		4160197D2F772DFC0040C3E8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		41AEA86A2B67F4760045C0B3 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -197,6 +270,7 @@
 				417E63FA2D2EF8C100108847 /* Extensions.swift in Sources */,
 				417E63F42D2EF75D00108847 /* LoginViewController.swift in Sources */,
 				417E63F22D2EF6C000108847 /* MainNavController.swift in Sources */,
+				416019A12F7731350040C3E8 /* UIKitTestMode.swift in Sources */,
 				41AEA8762B67F4760045C0B3 /* ViewController.swift in Sources */,
 				41AEA8722B67F4760045C0B3 /* AppDelegate.swift in Sources */,
 				41AEA8742B67F4760045C0B3 /* SceneDelegate.swift in Sources */,
@@ -207,6 +281,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		416019882F772DFC0040C3E8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 41AEA86D2B67F4760045C0B3 /* demo-uikit */;
+			targetProxy = 416019872F772DFC0040C3E8 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		41AEA8772B67F4760045C0B3 /* Main.storyboard */ = {
@@ -228,6 +310,57 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		416019892F772DFC0040C3E8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3R2X6557U2;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.frontegg.demo-uikit-e2e";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "demo-uikit";
+			};
+			name = Debug;
+		};
+		4160198A2F772DFC0040C3E8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3R2X6557U2;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.frontegg.demo-uikit-e2e";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "demo-uikit";
+			};
+			name = Release;
+		};
 		41AEA8802B67F4770045C0B3 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -403,6 +536,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		4160198B2F772DFC0040C3E8 /* Build configuration list for PBXNativeTarget "demo-uikit-e2e" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				416019892F772DFC0040C3E8 /* Debug */,
+				4160198A2F772DFC0040C3E8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		41AEA8692B67F4760045C0B3 /* Build configuration list for PBXProject "demo-uikit" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

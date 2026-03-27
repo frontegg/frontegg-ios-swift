@@ -30,9 +30,10 @@ struct UserPage: View {
                 .ignoresSafeArea(edges: .top),alignment: .top)
             .overlay(Footer()
                 .ignoresSafeArea(edges: .bottom),alignment: .bottom)
+            .accessibilityIdentifier("UserPageRoot")
         }
     }
-    
+
     private var mainContent: some View {
         ScrollView {
             Spacer().frame(height: 130)
@@ -288,6 +289,7 @@ struct UserInfoView: View {
                         .font(.bodyMedium)
                         .foregroundColor(Color(hex: "7A7C81"))
                         .lineLimit(1)
+                        .accessibilityIdentifier("UserEmailValue")
                     Text(user.roles.isEmpty ? "No roles assigned" : user.roles.map { $0.name }.joined(separator: ", "))
                         .font(.bodyMedium)
                         .foregroundColor(Color(hex: "7A7C81"))

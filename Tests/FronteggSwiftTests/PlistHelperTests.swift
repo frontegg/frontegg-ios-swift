@@ -221,3 +221,25 @@ extension PlistHelperTests {
         }
     }
 }
+
+// MARK: - fronteggConfig() Tests
+extension PlistHelperTests {
+
+    func test_fronteggConfig_returns_testConfigOverride_when_set() throws {
+        let override = FronteggPlist(
+            lateInit: true,
+            payload: .singleRegion(.init(baseUrl: "https://override.example.com", clientId: "override-client")),
+            keepUserLoggedInAfterReinstall: false
+        )
+        PlistHelper.testConfigOverride = override
+        let config = try PlistHelper.fronteggConfig()
+        XCTAssertEqual(config, override)
+        PlistHelper.testConfigOverride = nil
+    }
+
+    func test_fronteggConfig_throws_when_no_override_and_no_plist() {
+        PlistHelper.testConfigOverride = nil
+        // In test bundle there is no Frontegg.plist, so this should throw
+        XCTAssertThrowsError(try PlistHelper.fronteggConfig())
+    }
+}
