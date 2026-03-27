@@ -390,6 +390,19 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         XCTAssertEqual(delegate.contexts.first?.embeddedMode, false)
     }
 
+    func test_getQueryItems_plusOnlyOAuthErrorValues_doNotProduceFailureDetails() {
+        let callbackUrl = makeGeneratedRedirectCallbackUrl(
+            errorMessage: "+++",
+            errorDescription: "+++"
+        )
+
+        let queryItems = getQueryItems(callbackUrl.absoluteString)
+
+        XCTAssertEqual(queryItems?["error"], "   ")
+        XCTAssertEqual(queryItems?["error_description"], "   ")
+        XCTAssertNil(auth.oauthFailureDetails(from: queryItems ?? [:]))
+    }
+
     func test_createOauthCallbackHandler_transportError_clearsOnlyProvidedPendingState() async {
         CredentialManager.registerPendingOAuth(state: "embedded-state", codeVerifier: "embedded-verifier")
         CredentialManager.registerPendingOAuth(state: "popup-state", codeVerifier: "popup-verifier")

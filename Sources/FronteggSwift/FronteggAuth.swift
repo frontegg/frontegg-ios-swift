@@ -4043,7 +4043,7 @@ public class FronteggAuth: FronteggState {
             logger.info("✅ [handleOpenUrl] Detected generated redirect URI OAuth error callback")
             self.reportOAuthFailure(
                 details: failureDetails,
-                flow: self.activeEmbeddedOAuthFlow == .login ? .login : self.activeEmbeddedOAuthFlow
+                flow: self.activeEmbeddedOAuthFlow
             )
 
             if let webView = self.webview {
