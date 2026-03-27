@@ -36,6 +36,14 @@ jobs:
             -parallel-testing-enabled NO \
             test 2>&1 | tee "$RUNNER_TEMP/demo-embedded-e2e.log"
 
+      - name: Publish demo-embedded E2E run summary
+        if: always()
+        run: |
+          node .github/scripts/publish_demo_embedded_e2e_summary.js \
+            --log "$RUNNER_TEMP/demo-embedded-e2e.log" \
+            --catalog "demo-embedded/demo-embedded-e2e/scenario-catalog.json" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
       - name: Upload demo-embedded E2E artifacts
         uses: actions/upload-artifact@v4
         if: always()
