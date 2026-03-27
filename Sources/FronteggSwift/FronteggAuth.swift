@@ -1864,18 +1864,23 @@ public class FronteggAuth: FronteggState {
         return StoredSessionArtifacts(accessToken: accessToken, refreshToken: refreshToken, offlineUser: offlineUser, tenantId: tenantId)
     }
 
-    /// Shared state update for connectivity loss. Used by handleOfflineLikeFailure() and getOrRefreshAccessTokenAsync()
-    /// so both paths update auth/offline state consistently. Does NOT enqueue retries — only scheduled refresh paths do that.
+    /// Shared state update for connectivity loss on manual refresh paths.
+    /// Does NOT enqueue retries — scheduled refresh paths handle their own retry/backoff logic.
     private func applyConnectivityLossState(enableOfflineMode: Bool) async {
         let hasTokens = (self.refreshToken != nil || self.accessToken != nil)
         guard hasTokens else { return }
 
         if enableOfflineMode {
-            let offlineUser = self.credentialManager.getOfflineUser()
+            let resolvedUser = self.accessToken.flatMap { self.resolveBestEffortUser(accessToken: $0) }
+                ?? self.user
+                ?? self.credentialManager.getOfflineUser()
+            if let resolvedUser, self.credentialManager.getOfflineUser() == nil {
+                self.credentialManager.saveOfflineUser(user: resolvedUser)
+            }
             await MainActor.run {
-                self.setUser(self.user ?? offlineUser)
+                self.setUser(resolvedUser)
                 self.setInitializing(false)
-                self.setIsAuthenticated(true)
+                self.setIsAuthenticated(hasTokens)
                 self.setIsOfflineMode(true)
                 self.setIsLoading(false)
             }
@@ -1886,6 +1891,20 @@ public class FronteggAuth: FronteggState {
                 // Keep isOfflineMode=false — app didn't opt into offline UX
             }
         }
+    }
+
+    /// Manual refresh failures should preserve the cached session and rely on reconnect monitoring
+    /// instead of spinning scheduled refresh retries against a disconnected or blocked network.
+    private func startOfflineMonitoringAfterManualConnectivityFailure(enableOfflineMode: Bool) {
+        guard enableOfflineMode else { return }
+
+        let hasTokens = (self.refreshToken != nil || self.accessToken != nil)
+        guard hasTokens else { return }
+
+        self.lastAttemptReason = .noNetwork
+        self.logger.info("Manual refresh connectivity failure - canceling scheduled token refreshes and starting offline monitoring")
+        self.cancelScheduledTokenRefresh()
+        self.ensureOfflineMonitoringActive()
     }
 
     // MARK: - Offline-like handler
@@ -3091,18 +3110,10 @@ public class FronteggAuth: FronteggState {
             }
         }
 
-        // If offline, return cached access token (even if near expiry) — no backend call can succeed
         if enableOfflineMode {
             let isNetworkAvailable = await checkNetworkPath(timeout: 300_000_000)
             if !isNetworkAvailable {
-                self.logger.info("getOrRefreshAccessTokenAsync: offline, returning cached token if available")
-                await applyConnectivityLossState(enableOfflineMode: enableOfflineMode)
-                if let cachedToken = self.accessToken {
-                    self.logger.info("Returning cached access token while offline (token source: in-memory)")
-                    return cachedToken
-                }
-                self.logger.info("No cached access token available offline, returning nil (not throwing)")
-                return nil
+                self.logger.info("getOrRefreshAccessTokenAsync: NWPathMonitor reported offline, but continuing with manual refresh because the path check is advisory")
             }
         }
 
@@ -3210,8 +3221,9 @@ public class FronteggAuth: FronteggState {
 
                 // On connectivity error while offline, return cached token instead of retrying
                 if enableOfflineMode && isConnectivityError(error) {
-                    self.logger.info("Connectivity error in getOrRefreshAccessTokenAsync, returning cached token")
+                    self.logger.info("Connectivity error in getOrRefreshAccessTokenAsync, preserving cached session and returning cached token")
                     await applyConnectivityLossState(enableOfflineMode: enableOfflineMode)
+                    self.startOfflineMonitoringAfterManualConnectivityFailure(enableOfflineMode: enableOfflineMode)
                     return self.accessToken
                 }
 

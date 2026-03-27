@@ -246,6 +246,73 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertEqual(auth.user?.email, "offline-tenants@example.com")
     }
 
+    func test_refreshTokenIfNeeded_networkPathUnavailable_entersOfflineModeWithoutRefreshAttempt() async throws {
+        FronteggAuth.testNetworkPathAvailabilityOverride = false
+        let cachedAccessToken = try seedAuthenticatedSession(
+            email: "path-offline@example.com",
+            expirationOffset: -60
+        )
+
+        let refreshed = await auth.refreshTokenIfNeeded()
+        let snapshot = NetworkStatusMonitor._testSnapshot()
+
+        XCTAssertFalse(refreshed)
+        XCTAssertEqual(api.refreshCallCount, 0)
+        XCTAssertEqual(auth.accessToken, cachedAccessToken)
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertTrue(auth.isOfflineMode)
+        XCTAssertEqual(auth.user?.email, "path-offline@example.com")
+        XCTAssertTrue(snapshot.monitoringActive)
+        await assertOfflineModePersistsBriefly()
+    }
+
+    func test_getOrRefreshAccessTokenAsync_networkPathUnavailableStillAttemptsManualRefresh() async throws {
+        FronteggAuth.testNetworkPathAvailabilityOverride = false
+        _ = try seedAuthenticatedSession(
+            email: "manual-refresh@example.com",
+            expirationOffset: -60
+        )
+
+        let refreshedAccessToken = try makeAccessToken(email: "manual-refresh@example.com")
+        api.refreshResult = .success(
+            try makeAuthResponse(
+                accessToken: refreshedAccessToken,
+                refreshToken: "refresh-token-new"
+            )
+        )
+
+        let token = try await auth.getOrRefreshAccessTokenAsync()
+        let snapshot = NetworkStatusMonitor._testSnapshot()
+
+        XCTAssertEqual(api.refreshCallCount, 1)
+        XCTAssertEqual(token, refreshedAccessToken)
+        XCTAssertEqual(auth.accessToken, refreshedAccessToken)
+        XCTAssertEqual(auth.refreshToken, "refresh-token-new")
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertFalse(auth.isOfflineMode)
+        XCTAssertFalse(snapshot.monitoringActive)
+    }
+
+    func test_getOrRefreshAccessTokenAsync_destinationUnreachable_preservesCachedTokenAndStartsOfflineMonitoring() async throws {
+        FronteggAuth.testNetworkPathAvailabilityOverride = true
+        let cachedAccessToken = try seedAuthenticatedSession(
+            email: "destination-unreachable@example.com",
+            expirationOffset: -60
+        )
+        api.refreshResult = .failure(URLError(.timedOut))
+
+        let token = try await auth.getOrRefreshAccessTokenAsync()
+        let snapshot = NetworkStatusMonitor._testSnapshot()
+
+        XCTAssertEqual(api.refreshCallCount, 1)
+        XCTAssertEqual(token, cachedAccessToken)
+        XCTAssertEqual(auth.accessToken, cachedAccessToken)
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertTrue(auth.isOfflineMode)
+        XCTAssertEqual(auth.user?.email, "destination-unreachable@example.com")
+        XCTAssertTrue(snapshot.monitoringActive)
+    }
+
     func test_refreshTokenIfNeeded_refreshSucceeds_me401_clearsSession() async throws {
         api.refreshResult = .success(try makeAuthResponse(email: "offline-401@example.com", refreshToken: "refresh-token-new"))
         api.enqueueJSON(path: mePath, statusCode: 401, json: [:])
@@ -443,7 +510,8 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
     private func makeAccessToken(
         email: String,
         includeExp: Bool = true,
-        tenantId: String = "tenant-123"
+        tenantId: String = "tenant-123",
+        expirationOffset: TimeInterval = 3600
     ) throws -> String {
         var payload: [String: Any] = [
             "sub": UUID().uuidString,
@@ -453,9 +521,27 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
             "tenantIds": [tenantId]
         ]
         if includeExp {
-            payload["exp"] = Int(Date().timeIntervalSince1970 + 3600)
+            payload["exp"] = Int(Date().timeIntervalSince1970 + expirationOffset)
         }
         return try TestDataFactory.makeJWT(payloadDict: payload)
+    }
+
+    @discardableResult
+    private func seedAuthenticatedSession(
+        email: String,
+        tenantId: String = "tenant-123",
+        expirationOffset: TimeInterval = -60
+    ) throws -> String {
+        let cachedAccessToken = try makeAccessToken(
+            email: email,
+            tenantId: tenantId,
+            expirationOffset: expirationOffset
+        )
+        auth.setAccessToken(cachedAccessToken)
+        auth.setRefreshToken("refresh-token-existing")
+        auth.setUser(try makeUser(email: email, tenantId: tenantId))
+        auth.setIsAuthenticated(true)
+        return cachedAccessToken
     }
 
     private func makeUser(email: String, tenantId: String = "tenant-123") throws -> User {

@@ -244,13 +244,43 @@ struct UserPage: View {
                 .font(.system(size: 1))
                 .foregroundColor(.clear)
                 .accessibilityIdentifier("AccessTokenExpValue")
+            Text(diagnostics.remainingSeconds)
+                .font(.system(size: 1))
+                .foregroundColor(.clear)
+                .accessibilityIdentifier("AccessTokenRemainingSecondsValue")
+            Text(diagnostics.shouldRefresh)
+                .font(.system(size: 1))
+                .foregroundColor(.clear)
+                .accessibilityIdentifier("AccessTokenShouldRefreshValue")
+            Text(diagnostics.initializing)
+                .font(.system(size: 1))
+                .foregroundColor(.clear)
+                .accessibilityIdentifier("AuthInitializingValue")
+            Text(diagnostics.refreshingToken)
+                .font(.system(size: 1))
+                .foregroundColor(.clear)
+                .accessibilityIdentifier("AuthRefreshingTokenValue")
         }
     }
 
-    private var currentAccessTokenDiagnostics: (version: String, exp: String) {
+    private var currentAccessTokenDiagnostics: (
+        version: String,
+        exp: String,
+        remainingSeconds: String,
+        shouldRefresh: String,
+        initializing: String,
+        refreshingToken: String
+    ) {
         guard let accessToken = fronteggAuth.accessToken,
               let claims = try? JWTHelper.decode(jwtToken: accessToken) else {
-            return ("missing", "missing")
+            return (
+                "missing",
+                "missing",
+                "missing",
+                "missing",
+                fronteggAuth.initializing ? "1" : "0",
+                fronteggAuth.refreshingToken ? "1" : "0"
+            )
         }
 
         let version: String
@@ -267,7 +297,30 @@ struct UserPage: View {
             exp = "missing"
         }
 
-        return (version, exp)
+        let remainingSeconds: String
+        let shouldRefresh: String
+        if let expValue = claims["exp"] as? Int {
+            let remaining = expValue - Int(Date().timeIntervalSince1970)
+            remainingSeconds = String(remaining)
+
+            let remainingMilliseconds = (Double(expValue) * 1000) - (Date().timeIntervalSince1970 * 1000)
+            let refreshOffset = remainingMilliseconds > 20_000
+                ? (remainingMilliseconds * 0.8) / 1000
+                : max((remainingMilliseconds - 20_000) / 1000, 0)
+            shouldRefresh = refreshOffset <= 15 ? "1" : "0"
+        } else {
+            remainingSeconds = "missing"
+            shouldRefresh = "missing"
+        }
+
+        return (
+            version,
+            exp,
+            remainingSeconds,
+            shouldRefresh,
+            fronteggAuth.initializing ? "1" : "0",
+            fronteggAuth.refreshingToken ? "1" : "0"
+        )
     }
 }
 
@@ -294,6 +347,7 @@ struct MessageView: View {
         .background(bacground)
         .cornerRadius(16)
         .padding(.horizontal, 24)
+        .accessibilityIdentifier("UserPageMessage")
     }
 }
 

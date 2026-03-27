@@ -297,7 +297,31 @@ class DemoEmbeddedUITestCase: XCTestCase {
             "Welcome!",
         ].filter { app.staticTexts[$0].exists }
 
-        return "Visible screens: \(visibleScreens.joined(separator: ", ")); prominent texts: \(prominentTexts.joined(separator: ", ")); webViews: \(app.webViews.count); buttons: \(app.buttons.count)"
+        let tokenExp = diagnosticValue(for: "AccessTokenExpValue").flatMap(Int.init)
+        let remainingSeconds = tokenExp.map { String($0 - Int(Date().timeIntervalSince1970)) }
+        let shouldRefresh = tokenExp.map { expiration in
+            let nowMilliseconds = Date().timeIntervalSince1970 * 1000
+            let remainingMilliseconds = (Double(expiration) * 1000) - nowMilliseconds
+            let refreshOffset = remainingMilliseconds > 20_000
+                ? (remainingMilliseconds * 0.8) / 1000
+                : max((remainingMilliseconds - 20_000) / 1000, 0)
+            return refreshOffset <= 15 ? "1" : "0"
+        }
+
+        let diagnostics = [
+            "tokenVersion": diagnosticValue(for: "AccessTokenVersionValue"),
+            "tokenExp": diagnosticValue(for: "AccessTokenExpValue"),
+            "remaining": remainingSeconds,
+            "shouldRefresh": shouldRefresh,
+            "initializing": diagnosticValue(for: "AuthInitializingValue"),
+            "refreshingToken": diagnosticValue(for: "AuthRefreshingTokenValue"),
+            "offlineMarker": app.staticTexts["AuthenticatedOfflineModeEnabled"].exists ? "1" : "0",
+            "message": diagnosticValue(for: "UserPageMessage"),
+        ]
+            .compactMap { key, value in value.map { "\(key)=\($0)" } }
+            .joined(separator: ", ")
+
+        return "Visible screens: \(visibleScreens.joined(separator: ", ")); prominent texts: \(prominentTexts.joined(separator: ", ")); diagnostics: \(diagnostics); webViews: \(app.webViews.count); buttons: \(app.buttons.count)"
     }
 
     func terminateApp() {
@@ -321,6 +345,11 @@ class DemoEmbeddedUITestCase: XCTestCase {
 
     private func textValue(for identifier: String, timeout: TimeInterval) -> String {
         app.staticTexts[identifier].waitUntilExists(timeout: timeout).label
+    }
+
+    private func diagnosticValue(for identifier: String) -> String? {
+        let element = app.staticTexts[identifier]
+        return element.exists ? element.label : nil
     }
 
     private func screenAnchor(for identifier: String) -> XCUIElement {
