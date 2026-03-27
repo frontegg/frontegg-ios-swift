@@ -74,12 +74,6 @@ class StepUpAuthenticator {
     }
 
     private static func pendingOAuthState(from url: URL) -> String? {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return nil
-        }
-
-        return components.queryItems?.first(where: { item in
-            item.name == "state" && !(item.value?.isEmpty ?? true)
-        })?.value
+        CredentialManager.pendingOAuthState(from: url)
     }
 }
