@@ -14,54 +14,6 @@ import SwiftUI
 import Network
 
 
-extension UIWindow {
-    static var key: UIWindow? {
-        return UIApplication.shared.windows.filter {$0.isKeyWindow}.first
-    }
-
-    static var fronteggPresentationCandidate: UIWindow? {
-        let sceneWindows = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .filter { scene in
-                scene.activationState == .foregroundActive || scene.activationState == .foregroundInactive
-            }
-            .flatMap(\.windows)
-
-        return sceneWindows.first(where: \.isKeyWindow)
-            ?? sceneWindows.first(where: { !$0.isHidden && $0.alpha > 0 })
-            ?? UIApplication.shared.windows.first(where: \.isKeyWindow)
-            ?? UIApplication.shared.windows.last
-    }
-}
-
-public enum AttemptReasonType {
-    case unknown
-    case noNetwork
-}
-
-private enum CredentialHydrationMode {
-    case authoritative              // login, tenant-switch, passkey, apple auth — fetch /me
-    case refreshPreserveCachedUser  // token refresh — prefer cached user
-    case preserveCachedOrDerivedUser // callback recovery — keep cached/JWT user, skip a second /me
-}
-
-private enum CredentialHydrationFailure: Error {
-    case authoritativeUserLoadFailed(Error)
-}
-
-private struct StoredSessionArtifacts {
-    let accessToken: String?
-    let refreshToken: String?
-    let offlineUser: User?
-    let tenantId: String?
-}
-
-struct OAuthFailureDetails {
-    let error: FronteggError
-    let errorCode: String?
-    let errorDescription: String?
-}
-
 
 public class FronteggAuth: FronteggState {
     
@@ -3421,7 +3373,6 @@ public class FronteggAuth: FronteggState {
         }
         
         let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: loginHint)
-        CredentialManager.saveCodeVerifier(codeVerifier)
         let oauthCallback = createOauthCallbackHandler(
             completion,
             pendingOAuthState: pendingOAuthState(from: authorizeUrl),
@@ -3457,7 +3408,6 @@ public class FronteggAuth: FronteggState {
         }
         
         let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: loginHint, loginAction: loginAction)
-        CredentialManager.saveCodeVerifier(codeVerifier)
         let oauthCallback = createOauthCallbackHandler(
             completion,
             allowLastCodeVerifierFallback: loginAction != nil,
@@ -3694,7 +3644,6 @@ public class FronteggAuth: FronteggState {
         }
         
         let (authorizeUrl, codeVerifier) = generatedUrl
-        CredentialManager.saveCodeVerifier(codeVerifier)
         let oauthFlow: FronteggOAuthFlow
         switch type {
         case "social-login", "custom-social-login":
@@ -3815,9 +3764,7 @@ public class FronteggAuth: FronteggState {
         guard let oauthStateJson = try? JSONSerialization.data(withJSONObject: oauthStateDic, options: .withoutEscapingSlashes) else {
             throw FronteggError.authError(.failedToAuthenticate)
         }
-        
-        CredentialManager.saveCodeVerifier(codeVerifier)
-        
+
         return OAuth2SessionStateContext(
             encodedState: oauthStateJson,
             pendingOAuthState: pendingOAuthState
@@ -3893,7 +3840,6 @@ public class FronteggAuth: FronteggState {
         }
         
         let (authorizeUrl, codeVerifier) = generatedUrl
-        CredentialManager.saveCodeVerifier(codeVerifier)
         let oauthCallback = createOauthCallbackHandler(
             completion,
             allowLastCodeVerifierFallback: true,
@@ -3931,7 +3877,6 @@ public class FronteggAuth: FronteggState {
             
         }
         let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: email, remainCodeVerifier: true)
-        CredentialManager.saveCodeVerifier(codeVerifier)
         let oauthCallback = createOauthCallbackHandler(
             completion,
             allowLastCodeVerifierFallback: true,
@@ -3960,7 +3905,6 @@ public class FronteggAuth: FronteggState {
         }
         
         let (authorizeUrl, codeVerifier) = generatedUrl
-        CredentialManager.saveCodeVerifier(codeVerifier)
         let oauthCallback = createOauthCallbackHandler(
             completion,
             allowLastCodeVerifierFallback: true,
@@ -4066,8 +4010,7 @@ public class FronteggAuth: FronteggState {
             )
 
             if let webView = self.webview {
-                let (newUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
-                CredentialManager.saveCodeVerifier(codeVerifier)
+                let (newUrl, _) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
                 self.setWebLoading(false)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                     webView.load(URLRequest(url: newUrl, cachePolicy: .reloadRevalidatingCacheData))
@@ -4693,17 +4636,15 @@ public class FronteggAuth: FronteggState {
     ) {
         Task {
             do {
-                let (authorizeUrl, codeVerifier): (URL, String)
-                
+                var authorizeUrl: URL
+
                 if let requestData = mfaRequestData {
-                    (authorizeUrl, codeVerifier) = try await multiFactorAuthenticator.start(mfaRequestData: requestData, refreshToken: refreshToken)
+                    (authorizeUrl, _) = try await multiFactorAuthenticator.start(mfaRequestData: requestData, refreshToken: refreshToken)
                 } else if let requestJson = mfaRequestJson {
-                    (authorizeUrl, codeVerifier) = try multiFactorAuthenticator.start(mfaRequestJson: requestJson)
+                    (authorizeUrl, _) = try multiFactorAuthenticator.start(mfaRequestJson: requestJson)
                 } else {
                     return
                 }
-                
-                CredentialManager.saveCodeVerifier(codeVerifier)
                 
                 await MainActor.run { [weak self] in
                     guard let self else { return }
