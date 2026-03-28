@@ -8,6 +8,8 @@ import Foundation
 import WebKit
 import Combine
 
+private let authenticatedStartupNetworkAssessmentTimeout: UInt64 = 500_000_000
+
 extension FronteggAuth {
 
     @MainActor
@@ -74,6 +76,126 @@ extension FronteggAuth {
     }
     
     // MARK: Connectivity — see FronteggAuth+Connectivity.swift
+
+    func completeAuthenticatedStartupSessionRestore(
+        accessTokenSnapshot: String?,
+        refreshTokenSnapshot: String?,
+        canRestoreOfflineAuthenticatedState: Bool,
+        assessmentProvider: ((UInt64) async -> AuthenticatedStartupNetworkPathAssessment)? = nil,
+        postConnectivityServices: (() async -> Void)? = nil
+    ) async {
+        let assessment: AuthenticatedStartupNetworkPathAssessment
+        if let assessmentProvider {
+            assessment = await assessmentProvider(authenticatedStartupNetworkAssessmentTimeout)
+        } else {
+            assessment = await self.assessAuthenticatedStartupNetworkPath(
+                timeout: authenticatedStartupNetworkAssessmentTimeout
+            )
+        }
+
+        let runPostConnectivityServices = postConnectivityServices ?? {
+            await self.startPostConnectivityServices()
+        }
+
+        self.logger.info(
+            "Authenticated startup network assessment: \(assessment.rawValue) (hasRefreshToken: \(refreshTokenSnapshot != nil))"
+        )
+
+        switch assessment {
+        case .available:
+            await performAuthenticatedStartupRefresh(
+                skipNetworkCheck: false,
+                runPostConnectivityServicesOnFailure: true,
+                postConnectivityServices: runPostConnectivityServices
+            )
+        case .advisoryUnavailable where refreshTokenSnapshot != nil:
+            self.logger.info(
+                "Authenticated startup path is only advisory-unavailable; attempting refresh with network gate bypassed"
+            )
+            await performAuthenticatedStartupRefresh(
+                skipNetworkCheck: true,
+                runPostConnectivityServicesOnFailure: false,
+                postConnectivityServices: runPostConnectivityServices
+            )
+        case .advisoryUnavailable:
+            self.logger.info(
+                "Authenticated startup path is advisory-unavailable and no refresh token is available; restoring offline state"
+            )
+            await restoreAuthenticatedStartupOfflineState(
+                accessTokenSnapshot: accessTokenSnapshot,
+                refreshTokenSnapshot: refreshTokenSnapshot,
+                canRestoreOfflineAuthenticatedState: canRestoreOfflineAuthenticatedState
+            )
+        case .forcedUnavailable:
+            self.logger.info("Authenticated startup path is explicitly forced offline; restoring offline state")
+            await restoreAuthenticatedStartupOfflineState(
+                accessTokenSnapshot: accessTokenSnapshot,
+                refreshTokenSnapshot: refreshTokenSnapshot,
+                canRestoreOfflineAuthenticatedState: canRestoreOfflineAuthenticatedState
+            )
+        }
+    }
+
+    private func performAuthenticatedStartupRefresh(
+        skipNetworkCheck: Bool,
+        runPostConnectivityServicesOnFailure: Bool,
+        postConnectivityServices: () async -> Void
+    ) async {
+        await MainActor.run {
+            self.setIsLoading(true)
+        }
+
+        let refreshed = await self.refreshTokenIfNeeded(skipNetworkCheck: skipNetworkCheck)
+
+        if !refreshed {
+            await MainActor.run {
+                if self.isLoading { self.setIsLoading(false) }
+                if self.initializing { self.setInitializing(false) }
+            }
+        }
+
+        if refreshed || runPostConnectivityServicesOnFailure {
+            await postConnectivityServices()
+        }
+    }
+
+    private func restoreAuthenticatedStartupOfflineState(
+        accessTokenSnapshot: String?,
+        refreshTokenSnapshot: String?,
+        canRestoreOfflineAuthenticatedState: Bool
+    ) async {
+        self.cancelScheduledTokenRefresh()
+        self.ensureOfflineMonitoringActive(emitInitialState: false)
+
+        let offlineUser = self.credentialManager.getOfflineUser()
+
+        if canRestoreOfflineAuthenticatedState {
+            if refreshTokenSnapshot != nil && accessTokenSnapshot != nil {
+                self.logger.info("Offline restore: full token pair")
+            } else if accessTokenSnapshot != nil {
+                self.logger.info("Offline restore: access-token-only (no refresh capability)")
+            } else {
+                self.logger.info("Offline restore: refresh-token + offlineUser")
+            }
+
+            await MainActor.run {
+                self.setUser(self.user ?? offlineUser)
+                self.setIsAuthenticated(true)
+                self.setIsOfflineMode(true)
+                self.setIsLoading(false)
+                self.setInitializing(false)
+            }
+        } else {
+            self.logger.warning("Offline: refresh-token only, no offlineUser. Preserving artifacts, not offline-authenticated.")
+
+            await MainActor.run {
+                self.setIsAuthenticated(false)
+                self.setIsOfflineMode(true)
+                self.setIsLoading(false)
+                self.setInitializing(false)
+            }
+        }
+    }
 
 
     public func initializeSubscriptions() {
@@ -226,74 +348,11 @@ extension FronteggAuth {
             // For offline mode, check network path status without making /test calls
             if enableOfflineMode {
                 Task { [accessTokenSnapshot, canRestoreOfflineAuthenticatedState, refreshTokenSnapshot] in
-                    let isNetworkAvailable = await self.checkNetworkPath(timeout: 500_000_000)
-
-                    if !isNetworkAvailable {
-                        self.cancelScheduledTokenRefresh()
-                        let offlineUser = self.credentialManager.getOfflineUser()
-
-                        if canRestoreOfflineAuthenticatedState {
-                            // Log which restore branch was taken
-                            if refreshTokenSnapshot != nil && accessTokenSnapshot != nil {
-                                self.logger.info("Offline restore: full token pair")
-                            } else if accessTokenSnapshot != nil {
-                                self.logger.info("Offline restore: access-token-only (no refresh capability)")
-                            } else {
-                                self.logger.info("Offline restore: refresh-token + offlineUser")
-                            }
-                            await MainActor.run {
-                                self.setUser(self.user ?? offlineUser)
-                                self.setIsAuthenticated(true)
-                                self.setIsOfflineMode(true)
-                                self.setIsLoading(false)
-                                self.setInitializing(false)
-                            }
-                        } else {
-                            // refresh-token-only, no offlineUser — preserve artifacts for reconnect
-                            // but do NOT show logged-in UI (not enough cached state for meaningful offline access)
-                            // Note: this is the only remaining case since we're inside `if hasAnySessionArtifacts`
-                            self.logger.warning("Offline: refresh-token only, no offlineUser. Preserving artifacts, not offline-authenticated.")
-
-                            // Restart monitoring so reconnectedToInternet() can trigger a refresh when network returns.
-                            // Monitoring was stopped earlier because hasAnySessionArtifacts was true.
-                            let token = NetworkStatusMonitor.addOnChangeReturningToken { [weak self] reachable in
-                                guard let self = self else { return }
-                                if reachable {
-                                    self.reconnectedToInternet()
-                                } else {
-                                    self.disconnectedFromInternet()
-                                }
-                            }
-                            self.networkMonitoringToken = token
-                            let interval = (try? PlistHelper.fronteggConfig())?.networkMonitoringInterval ?? 10
-                            NetworkStatusMonitor.startBackgroundMonitoring(interval: interval, onChange: nil)
-
-                            await MainActor.run {
-                                self.setIsAuthenticated(false)
-                                self.setIsOfflineMode(true)
-                                self.setIsLoading(false)
-                                self.setInitializing(false)
-                            }
-                        }
-                    } else {
-                        // Network available — stabilize auth first, then run optional tasks
-                        await MainActor.run {
-                            self.setIsLoading(true)
-                        }
-
-                        let refreshed = await self.refreshTokenIfNeeded()
-
-                        // If refresh returned early (e.g., no refresh token), ensure loading/initializing are reset
-                        if !refreshed {
-                            await MainActor.run {
-                                if self.isLoading { self.setIsLoading(false) }
-                                if self.initializing { self.setInitializing(false) }
-                            }
-                        }
-
-                        // Then run optional network tasks (non-blocking for auth)
-                        await self.startPostConnectivityServices()
-                    }
+                    await self.completeAuthenticatedStartupSessionRestore(
+                        accessTokenSnapshot: accessTokenSnapshot,
+                        refreshTokenSnapshot: refreshTokenSnapshot,
+                        canRestoreOfflineAuthenticatedState: canRestoreOfflineAuthenticatedState
+                    )
                 }
             } else {
                 // Offline mode not enabled - proceed with normal initialization

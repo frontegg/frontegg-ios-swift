@@ -78,7 +78,7 @@ extension FronteggAuth {
             return
         }
 
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else {
                 return
             }
@@ -104,6 +104,8 @@ extension FronteggAuth {
                 )
                 return
             }
+            // Re-inject code verifier into webview localStorage before loading success URL
+            await SocialLoginUrlGenerator.shared.reinjectCodeVerifierIntoWebview()
             self.loadInWebView(finalURL)
         }
     }

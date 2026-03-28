@@ -225,8 +225,10 @@ extension FronteggAuth {
             return false
         }
 
-        // Hard no-network (quick exit path) — advisory only; actual request errors remain authoritative
-        if enableOfflineMode {
+        if skipNetworkCheck {
+            self.logger.info("Skipping pre-refresh network gate and attempting refresh directly")
+        } else if enableOfflineMode {
+            // Hard no-network (quick exit path) — advisory only; actual request errors remain authoritative
             let isNetworkAvailable = await checkNetworkPath(timeout: 300_000_000)
 
             guard isNetworkAvailable else {

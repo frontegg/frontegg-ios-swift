@@ -8,6 +8,12 @@ import Foundation
 import UIKit
 import Network
 
+enum AuthenticatedStartupNetworkPathAssessment: String {
+    case available = "available"
+    case advisoryUnavailable = "advisory_unavailable"
+    case forcedUnavailable = "forced_unavailable"
+}
+
 extension FronteggAuth {
 
     func startPostConnectivityServices() async {
@@ -237,6 +243,19 @@ extension FronteggAuth {
                 continuation.resume(returning: false)
             }
         }
+    }
+
+    func assessAuthenticatedStartupNetworkPath(
+        timeout: UInt64 = 500_000_000
+    ) async -> AuthenticatedStartupNetworkPathAssessment {
+#if DEBUG
+        if let override = Self.testNetworkPathAvailabilityOverride {
+            return override ? .available : .forcedUnavailable
+        }
+#endif
+
+        let isNetworkAvailable = await checkNetworkPath(timeout: timeout)
+        return isNetworkAvailable ? .available : .advisoryUnavailable
     }
 
     /// Resolves stored session artifacts (tokens, offline user, tenant) using consistent precedence:

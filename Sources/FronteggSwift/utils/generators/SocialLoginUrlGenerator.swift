@@ -94,6 +94,9 @@ public final class SocialLoginUrlGenerator {
     private var socialLoginConfig: SocialLoginConfig?
     private var customSocialLoginConfigs: [CustomSocialLoginProviderConfig]?
     private let logger = getLogger("SocialLoginUrlGenerator")
+
+    /// Code verifier captured during custom provider URL generation, for re-injection after ASWebAuth.
+    var pendingCustomProviderCodeVerifier: String?
     
     
     /// Generates an authorization URL for a standard social login provider.
@@ -307,10 +310,17 @@ private extension SocialLoginUrlGenerator {
             return nil
         }
         
+        // Read OAuth session state from webview localStorage (matches web's getOauthStateFromLocalstorage)
+        var oauthState: String? = nil
+        if let webview = FronteggAuth.shared.webview {
+            oauthState = await Self.getOauthStateFromWebview(webview)
+        }
+
         let state = try Self.createState(
             provider: provider.displayName,
             appId: FronteggAuth.shared.applicationId,
-            action: action
+            action: action,
+            oauthState: oauthState
         )
         
         // Use the helper to add/replace our required params, preserving any others.
@@ -330,10 +340,20 @@ private extension SocialLoginUrlGenerator {
                 comps.addOrReplaceQueryItem(name: promptKey, value: promptValue)
             }
             
+            // Do NOT add code_challenge to the URL for custom providers — the backend's
+            // custom handler exchanges the code with the IdP using client_secret only,
+            // it does not forward code_verifier to the IdP. Adding code_challenge would
+            // cause the IdP to reject the backend's token exchange.
+            // We only capture the verifier here for re-injection into webview localStorage
+            // so the hosted success page can pass it as code_verifier_pkce for Frontegg-level PKCE.
             if matchedDetails.requiresPKCE && FronteggAuth.shared.featureFlags.isOn("identity-sso-force-pkce") {
-                logger.debug(
-                    "Skipping PKCE injection for custom provider \(provider.displayName) to match hosted custom social flow"
-                )
+                do {
+                    let verifier: String = try await Self.getCodeVerifierFromWebview()
+                    logger.info("🔵 [PKCE Debug] Captured code verifier for custom provider \(provider.displayName) (first 10 chars): \(String(verifier.prefix(10)))")
+                    self.pendingCustomProviderCodeVerifier = verifier
+                } catch {
+                    logger.warning("Failed to capture code verifier for custom provider \(provider.displayName): \(error)")
+                }
             }
         }
         
@@ -353,22 +373,43 @@ public extension SocialLoginUrlGenerator {
         let action: String
         let bundleId: String
         let platform: String
+        let oauthState: String?
     }
     
-    static func createState(provider: SocialLoginProvider, appId: String?, action: SocialLoginAction) throws -> String {
-        return try createState(provider: provider.rawValue, appId: appId, action: action)
+    static func createState(provider: SocialLoginProvider, appId: String?, action: SocialLoginAction, oauthState: String? = nil) throws -> String {
+        return try createState(provider: provider.rawValue, appId: appId, action: action, oauthState: oauthState)
     }
 
-    static func createState(provider: String, appId: String?, action: SocialLoginAction) throws -> String {
+    static func createState(provider: String, appId: String?, action: SocialLoginAction, oauthState: String? = nil) throws -> String {
         let stateObject = OAuthState(
             provider: provider,
             appId: appId ?? "",
             action: action.rawValue,
             bundleId: FronteggApp.shared.bundleIdentifier,
-            platform: "ios"
+            platform: "ios",
+            oauthState: oauthState
         )
         let data = try JSONEncoder().encode(stateObject)
         return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    /// Reads the OAuth session state keys from webview localStorage and returns a base64-encoded JSON string.
+    /// Matches the web's `getOauthStateFromLocalstorage()` in hooks.ts.
+    @MainActor
+    private static func getOauthStateFromWebview(_ webview: WKWebView) async -> String? {
+        let js = """
+        (function() {
+            var keys = ['FRONTEGG_OAUTH_ORGANIZATION', 'FRONTEGG_OAUTH_TENANT_ID',
+                         'FRONTEGG_OAUTH_REDIRECT_AFTER_LOGIN', 'FRONTEGG_OAUTH_STATE_AFTER_LOGIN'];
+            var state = {};
+            keys.forEach(function(key) {
+                var val = window.localStorage.getItem(key);
+                if (val) state[key] = val;
+            });
+            return btoa(JSON.stringify(state));
+        })()
+        """
+        return try? await webview.evaluateJavaScript(js) as? String
     }
 
     // Helper that must run on the main actor because WKWebView APIs are UI-bound.
@@ -397,6 +438,27 @@ public extension SocialLoginUrlGenerator {
         logger.debug("🔵 [PKCE Debug] Read code_verifier from localStorage (length: \(codeVerifier.count))")
         
         return codeVerifier
+    }
+
+    /// Re-injects the pending code verifier into the webview's localStorage.
+    /// Call this after ASWebAuthenticationSession returns, before loading the social success URL.
+    @MainActor
+    func reinjectCodeVerifierIntoWebview() async {
+        guard let verifier = pendingCustomProviderCodeVerifier else { return }
+        pendingCustomProviderCodeVerifier = nil
+
+        guard let webview = FronteggAuth.shared.webview else {
+            logger.warning("No webview available to reinject code verifier")
+            return
+        }
+
+        let js = "window.localStorage.setItem('FRONTEGG_CODE_VERIFIER', '\(verifier)')"
+        do {
+            _ = try await webview.evaluateJavaScript(js)
+            logger.debug("🔵 [PKCE Debug] Re-injected code verifier into webview localStorage")
+        } catch {
+            logger.warning("Failed to reinject code verifier into webview localStorage: \(error)")
+        }
     }
 
     func defaultSocialLoginRedirectUri() -> String {

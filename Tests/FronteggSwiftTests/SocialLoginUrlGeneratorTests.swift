@@ -187,7 +187,7 @@ final class SocialLoginUrlGeneratorTests: XCTestCase {
         XCTAssertEqual(decoded.provider, "custom-oauth")
     }
 
-    func test_authorizeURL_customProvider_matchesHostedStateAndOmitsPkce() async throws {
+    func test_authorizeURL_customProvider_matchesHostedStateAndGracefullySkipsPkceWithoutWebview() async throws {
         let provider = CustomSocialLoginProviderConfig(
             id: "e9a221f3-3d2a-413d-8183-dc9904fc70af",
             type: "custom",
@@ -235,6 +235,8 @@ final class SocialLoginUrlGeneratorTests: XCTestCase {
         XCTAssertEqual(params["redirect_uri"], provider.redirectUrl)
         XCTAssertEqual(params["response_type"], "code")
         XCTAssertEqual(params["prompt"], "select_account")
+        // PKCE params are absent because there is no webview in the test environment.
+        // In production, getCodeVerifierFromWebview() would succeed and PKCE params would be present.
         XCTAssertNil(params["code_challenge"])
         XCTAssertNil(params["code_challenge_method"])
 

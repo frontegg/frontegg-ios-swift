@@ -267,6 +267,65 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         await assertOfflineModePersistsBriefly()
     }
 
+    func test_completeAuthenticatedStartupSessionRestore_forcedUnavailable_restoresOfflineStateWithoutRefreshAttempt() async throws {
+        let cachedAccessToken = try seedStartupRestoreState(
+            email: "startup-offline@example.com",
+            expirationOffset: -60
+        )
+
+        await auth.completeAuthenticatedStartupSessionRestore(
+            accessTokenSnapshot: cachedAccessToken,
+            refreshTokenSnapshot: "refresh-token-existing",
+            canRestoreOfflineAuthenticatedState: true,
+            assessmentProvider: { _ in .forcedUnavailable },
+            postConnectivityServices: {
+                XCTFail("Forced-offline startup restore should not start post-connectivity services")
+            }
+        )
+
+        let snapshot = NetworkStatusMonitor._testSnapshot()
+
+        XCTAssertEqual(api.refreshCallCount, 0)
+        XCTAssertEqual(auth.accessToken, cachedAccessToken)
+        XCTAssertEqual(auth.refreshToken, "refresh-token-existing")
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertTrue(auth.isOfflineMode)
+        XCTAssertEqual(auth.user?.email, "startup-offline@example.com")
+        XCTAssertTrue(snapshot.monitoringActive)
+        XCTAssertFalse(snapshot.emitInitialState)
+    }
+
+    func test_completeAuthenticatedStartupSessionRestore_advisoryUnavailable_attemptsRefreshAndStaysOnline() async throws {
+        let cachedAccessToken = try seedStartupRestoreState(
+            email: "startup-refresh@example.com",
+            expirationOffset: -60
+        )
+        let refreshedResponse = try makeAuthResponse(
+            email: "startup-refresh@example.com",
+            refreshToken: "refresh-token-new"
+        )
+        api.refreshResult = .success(refreshedResponse)
+
+        await auth.completeAuthenticatedStartupSessionRestore(
+            accessTokenSnapshot: cachedAccessToken,
+            refreshTokenSnapshot: "refresh-token-existing",
+            canRestoreOfflineAuthenticatedState: true,
+            assessmentProvider: { _ in .advisoryUnavailable },
+            postConnectivityServices: {}
+        )
+
+        let snapshot = NetworkStatusMonitor._testSnapshot()
+
+        XCTAssertEqual(api.refreshCallCount, 1)
+        XCTAssertEqual(auth.accessToken, refreshedResponse.access_token)
+        XCTAssertEqual(auth.refreshToken, "refresh-token-new")
+        XCTAssertNotEqual(auth.accessToken, cachedAccessToken)
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertFalse(auth.isOfflineMode)
+        XCTAssertFalse(snapshot.monitoringActive)
+        XCTAssertEqual(auth.user?.email, "startup-refresh@example.com")
+    }
+
     func test_getOrRefreshAccessTokenAsync_networkPathUnavailableStillAttemptsManualRefresh() async throws {
         FronteggAuth.testNetworkPathAvailabilityOverride = false
         _ = try seedAuthenticatedSession(
@@ -543,6 +602,30 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         auth.setRefreshToken("refresh-token-existing")
         auth.setUser(try makeUser(email: email, tenantId: tenantId))
         auth.setIsAuthenticated(true)
+        return cachedAccessToken
+    }
+
+    @discardableResult
+    private func seedStartupRestoreState(
+        email: String,
+        tenantId: String = "tenant-123",
+        expirationOffset: TimeInterval = -60
+    ) throws -> String {
+        let cachedAccessToken = try makeAccessToken(
+            email: email,
+            tenantId: tenantId,
+            expirationOffset: expirationOffset
+        )
+        let offlineUser = try makeUser(email: email, tenantId: tenantId)
+
+        auth.setAccessToken(cachedAccessToken)
+        auth.setRefreshToken("refresh-token-existing")
+        auth.setUser(offlineUser)
+        auth.setIsAuthenticated(false)
+        auth.setIsOfflineMode(false)
+        auth.setInitializing(true)
+        auth.setIsLoading(true)
+
         return cachedAccessToken
     }
 
