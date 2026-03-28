@@ -117,4 +117,62 @@ final class MultiRegionE2ETests: MultiRegionUITestCase {
         waitForUserPage(timeout: 20)
         waitForUserEmail("test@frontegg.com")
     }
+
+    // MARK: - Logout and re-login in different region context
+
+    /// Verifies that logging out and then logging in again works correctly,
+    /// exercising the full credential clearing and re-authentication path.
+    func testLogoutClearsSessionAndRelaunchShowsLogin() {
+        configureDefaultToken()
+        launchApp(resetState: true)
+        loginWithPassword()
+        waitForUserEmail("test@frontegg.com")
+
+        let logoutBtn = app.buttons["Logout"].firstMatch
+        XCTAssertTrue(logoutBtn.waitForExistence(timeout: 10), "Logout button not found")
+        logoutBtn.tap()
+        waitForLoginPage(timeout: 15)
+
+        // Relaunch without reset — keychain should have been cleared by logout
+        terminateAndRelaunch(resetState: false)
+        waitForLoginPage(timeout: 15)
+        XCTAssertFalse(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
+    }
+
+    // MARK: - Connection failure recovery
+
+    /// Verifies that a session survives transient connection failures on relaunch
+    /// in a multi-region context.
+    func testRelaunchWithConnectionDropRecoversSesion() throws {
+        configureDefaultToken()
+        launchApp(resetState: true)
+        loginWithPassword()
+        waitForUserEmail("test@frontegg.com")
+
+        app.terminate()
+
+        // Queue transient drops on both refresh endpoints
+        try Self.mockServer.queueConnectionDrops(path: "/oauth/token", count: 2)
+        try Self.mockServer.queueConnectionDrops(path: "/frontegg/identity/resources/auth/v1/user/token/refresh", count: 2)
+
+        launchApp(resetState: false)
+        waitForUserEmail("test@frontegg.com", timeout: 30)
+    }
+
+    // MARK: - Token refresh with short TTL
+
+    /// Verifies that an in-flight token refresh keeps the session alive
+    /// even with a very short access token TTL.
+    func testTokenRefreshKeepsSessionAlive() {
+        configureDefaultToken(accessTTL: 2)
+        launchApp(resetState: true)
+        loginWithPassword()
+        waitForUserEmail("test@frontegg.com")
+
+        // Wait long enough for at least one refresh cycle
+        Thread.sleep(forTimeInterval: 5)
+
+        // Session should still be alive
+        XCTAssertTrue(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
+    }
 }

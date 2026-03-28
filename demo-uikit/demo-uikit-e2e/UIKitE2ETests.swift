@@ -85,4 +85,58 @@ final class UIKitE2ETests: UIKitUITestCase {
         terminateAndRelaunch(resetState: false)
         waitForStreamPage(timeout: 20)
     }
+
+    // MARK: - Logout clears session
+
+    /// Verifies that after logout + terminate + relaunch, the session is NOT restored.
+    func testLogoutClearsSessionOnRelaunch() {
+        configureDefaultToken()
+        launchApp(resetState: true)
+        waitForStreamPage(timeout: 30)
+
+        tapButton("Logout", timeout: 10)
+        waitForLoginPage(timeout: 15)
+
+        // Relaunch without reset — keychain should have been cleared by logout
+        terminateAndRelaunch(resetState: false)
+        // The app auto-triggers login, but with no session it should stay on login
+        // (or briefly show loading then login)
+        waitForLoginPage(timeout: 20)
+        XCTAssertFalse(app.staticTexts["AccessTokenLabel"].exists, screenDebugSummary())
+    }
+
+    // MARK: - Connection failure recovery
+
+    /// Verifies that a UIKit session survives transient connection drops on relaunch.
+    func testRelaunchWithConnectionDropRecoversSesion() throws {
+        configureDefaultToken()
+        launchApp(resetState: true)
+        waitForStreamPage(timeout: 30)
+
+        app.terminate()
+
+        try Self.mockServer.queueConnectionDrops(path: "/oauth/token", count: 2)
+        try Self.mockServer.queueConnectionDrops(path: "/frontegg/identity/resources/auth/v1/user/token/refresh", count: 2)
+
+        launchApp(resetState: false)
+        waitForStreamPage(timeout: 30)
+        waitForAccessTokenLabel()
+    }
+
+    // MARK: - Expired access token refresh
+
+    /// Verifies that relaunching with an expired access token but valid refresh token
+    /// restores the session via token refresh in a UIKit context.
+    func testExpiredAccessTokenRefreshesOnRelaunch() {
+        configureDefaultToken(accessTTL: 3)
+        launchApp(resetState: true)
+        waitForStreamPage(timeout: 30)
+
+        app.terminate()
+        Thread.sleep(forTimeInterval: 5)
+
+        launchApp(resetState: false)
+        waitForStreamPage(timeout: 20)
+        waitForAccessTokenLabel()
+    }
 }

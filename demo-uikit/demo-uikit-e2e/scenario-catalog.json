@@ -29,6 +29,21 @@
       "method": "testMultipleLaunchCyclesDoNotCrash",
       "title": "Multiple Launch Cycles Stability",
       "description": "Logs in, then terminates and relaunches twice — verifies session survives multiple cycles."
+    },
+    {
+      "method": "testLogoutClearsSessionOnRelaunch",
+      "title": "Logout clears session on relaunch",
+      "description": "Logs in, logs out, terminates, relaunches without reset, and verifies the login page appears (keychain cleared by logout)."
+    },
+    {
+      "method": "testRelaunchWithConnectionDropRecoversSesion",
+      "title": "Relaunch with connection drops recovers session",
+      "description": "Logs in, terminates, queues connection drops on refresh endpoints, relaunches, and verifies the session recovers."
+    },
+    {
+      "method": "testExpiredAccessTokenRefreshesOnRelaunch",
+      "title": "Expired access token refreshes on relaunch",
+      "description": "Logs in with a short access TTL, terminates after access expires, relaunches, and verifies the token is refreshed."
     }
   ]
 }

@@ -89,6 +89,26 @@
       "method": "testPasswordLoginWorksWithOfflineModeDisabled",
       "title": "Password login works with offline mode disabled",
       "description": "Launches with enableOfflineMode=false and completes a password login, confirming normal auth flows are unaffected."
+    },
+    {
+      "method": "testLogoutClearsSessionAndRelaunchShowsLogin",
+      "title": "Logout clears session so relaunch shows login",
+      "description": "Logs in, logs out, terminates, relaunches without reset, and verifies the login page appears (keychain cleared by logout)."
+    },
+    {
+      "method": "testExpiredRefreshTokenClearsSessionAndShowsLogin",
+      "title": "Expired refresh token clears session and shows login",
+      "description": "Logs in with a very short refresh token TTL, waits for both tokens to expire, relaunches, and verifies the app clears credentials and shows login."
+    },
+    {
+      "method": "testScheduledTokenRefreshFiresBeforeExpiry",
+      "title": "Scheduled token refresh fires before expiry",
+      "description": "Logs in with a short access token TTL and verifies the SDK's scheduled refresh fires automatically, incrementing the token version while the app stays in the foreground."
+    },
+    {
+      "method": "testAuthenticatedRelaunchWithExpiredAccessTokenAndFreshRefreshToken",
+      "title": "Relaunch with expired access token refreshes via valid refresh token",
+      "description": "Logs in with a very short access TTL, terminates after access expires but before refresh expires, relaunches, and verifies the token is refreshed."
     }
   ]
 }

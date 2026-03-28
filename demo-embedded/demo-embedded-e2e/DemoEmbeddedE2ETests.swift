@@ -414,4 +414,106 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         loginWithPassword()
         waitForUserEmail("test@frontegg.com")
     }
+
+    // MARK: - Logout and session lifecycle
+
+    /// Verifies that logout clears all tokens from keychain so a subsequent relaunch
+    /// does not restore the session — the user sees the login page, not the profile.
+    func testLogoutClearsSessionAndRelaunchShowsLogin() throws {
+        launchApp(resetState: true)
+        loginWithPassword()
+        waitForUserEmail("test@frontegg.com")
+
+        // Logout
+        let logoutButton = app.buttons["LogoutButton"]
+        if logoutButton.exists {
+            logoutButton.tap()
+        } else {
+            app.buttons["Logout"].waitUntilExists().safeTap()
+        }
+        waitForScreen("LoginPageRoot")
+
+        // Relaunch without resetting state — keychain should be cleared by logout
+        terminateApp()
+        launchApp(resetState: false)
+        waitForScreen("LoginPageRoot", timeout: 10)
+
+        // Must NOT restore to user page
+        XCTAssertFalse(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
+    }
+
+    // MARK: - Token refresh edge cases
+
+    /// Verifies that when the refresh token itself has expired, the app clears the
+    /// session and shows the login page instead of spinning in a loading state.
+    func testExpiredRefreshTokenClearsSessionAndShowsLogin() throws {
+        let shortRefreshTTL = 5
+        Self.server.configureTokenPolicy(
+            email: "test@frontegg.com",
+            accessTokenTTL: 3,
+            refreshTokenTTL: shortRefreshTTL
+        )
+
+        launchApp(resetState: true)
+        loginWithPassword()
+        waitForUserEmail("test@frontegg.com")
+
+        // Wait for BOTH tokens to expire
+        terminateApp()
+        waitForDuration(TimeInterval(shortRefreshTTL + 3))
+
+        // Relaunch — refresh should fail with 401, session should be cleared
+        launchApp(resetState: false)
+        waitForScreen("LoginPageRoot", timeout: 20)
+        XCTAssertFalse(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
+    }
+
+    /// Verifies that the scheduled token refresh fires automatically before the access
+    /// token expires and increments the token version while the app stays in the foreground.
+    func testScheduledTokenRefreshFiresBeforeExpiry() throws {
+        Self.server.configureTokenPolicy(
+            email: "test@frontegg.com",
+            accessTokenTTL: expiringAccessTokenTTL,
+            refreshTokenTTL: longLivedRefreshTokenTTL
+        )
+
+        launchApp(resetState: true)
+        loginWithPassword()
+        waitForUserEmail("test@frontegg.com")
+        let initialVersion = accessTokenVersion()
+
+        // Wait for the scheduled refresh to fire and produce a new token version.
+        // The SDK schedules refresh at ~80% of TTL (≈16.8s for 21s TTL).
+        let refreshedVersion = waitForAccessTokenVersionChange(from: initialVersion, timeout: 25)
+        XCTAssertGreaterThan(refreshedVersion, initialVersion, screenDebugSummary())
+        XCTAssertTrue(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
+    }
+
+    /// Verifies that relaunching with an expired access token but a valid refresh token
+    /// restores the session via token refresh (not via cached access token validation).
+    func testAuthenticatedRelaunchWithExpiredAccessTokenAndFreshRefreshToken() throws {
+        Self.server.configureTokenPolicy(
+            email: "test@frontegg.com",
+            accessTokenTTL: 3,
+            refreshTokenTTL: longLivedRefreshTokenTTL
+        )
+
+        launchApp(resetState: true)
+        loginWithPassword()
+        waitForUserEmail("test@frontegg.com")
+        let initialVersion = accessTokenVersion()
+
+        // Terminate and wait just long enough for the access token to expire
+        // but NOT the refresh token
+        terminateApp()
+        waitForDuration(5)
+
+        // Relaunch — access token expired, refresh token valid
+        launchApp(resetState: false)
+        waitForUserEmail("test@frontegg.com", timeout: 20)
+
+        // Token version should have increased (refreshed, not reused)
+        let refreshedVersion = accessTokenVersion()
+        XCTAssertGreaterThan(refreshedVersion, initialVersion, screenDebugSummary())
+    }
 }
