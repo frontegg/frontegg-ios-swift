@@ -260,6 +260,10 @@ struct UserPage: View {
                 .font(.system(size: 1))
                 .foregroundColor(.clear)
                 .accessibilityIdentifier("AuthRefreshingTokenValue")
+            Text(diagnostics.isLoading)
+                .font(.system(size: 1))
+                .foregroundColor(.clear)
+                .accessibilityIdentifier("AuthIsLoadingValue")
         }
     }
 
@@ -269,7 +273,8 @@ struct UserPage: View {
         remainingSeconds: String,
         shouldRefresh: String,
         initializing: String,
-        refreshingToken: String
+        refreshingToken: String,
+        isLoading: String
     ) {
         guard let accessToken = fronteggAuth.accessToken,
               let claims = try? JWTHelper.decode(jwtToken: accessToken) else {
@@ -279,7 +284,8 @@ struct UserPage: View {
                 "missing",
                 "missing",
                 fronteggAuth.initializing ? "1" : "0",
-                fronteggAuth.refreshingToken ? "1" : "0"
+                fronteggAuth.refreshingToken ? "1" : "0",
+                fronteggAuth.isLoading ? "1" : "0"
             )
         }
 
@@ -319,7 +325,8 @@ struct UserPage: View {
             remainingSeconds,
             shouldRefresh,
             fronteggAuth.initializing ? "1" : "0",
-            fronteggAuth.refreshingToken ? "1" : "0"
+            fronteggAuth.refreshingToken ? "1" : "0",
+            fronteggAuth.isLoading ? "1" : "0"
         )
     }
 }

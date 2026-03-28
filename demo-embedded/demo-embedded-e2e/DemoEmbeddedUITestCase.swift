@@ -320,6 +320,7 @@ class DemoEmbeddedUITestCase: XCTestCase {
             "shouldRefresh": shouldRefresh,
             "initializing": diagnosticValue(for: "AuthInitializingValue"),
             "refreshingToken": diagnosticValue(for: "AuthRefreshingTokenValue"),
+            "isLoading": diagnosticValue(for: "AuthIsLoadingValue"),
             "offlineMarker": app.staticTexts["AuthenticatedOfflineModeEnabled"].exists ? "1" : "0",
             "message": diagnosticValue(for: "UserPageMessage"),
         ]
