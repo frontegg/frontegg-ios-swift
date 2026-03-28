@@ -55,7 +55,7 @@ extension FronteggAuth {
         }
 
         let redirectUri = SocialLoginUrlGenerator.shared.defaultRedirectUri()
-        queryParams["redirectUri"] = redirectUri.addingPercentEncoding(withAllowedCharacters: .alphanumerics)
+        queryParams["redirectUri"] = redirectUri
 
         // Process state
         if let state = q("state"), !state.isEmpty {
@@ -65,7 +65,7 @@ extension FronteggAuth {
                 dict.removeValue(forKey: "bundleId")
                 if let newData = try? JSONSerialization.data(withJSONObject: dict, options: []),
                    let newState = String(data: newData, encoding: .utf8) {
-                    queryParams["state"] = newState.addingPercentEncoding(withAllowedCharacters: .alphanumerics)
+                    queryParams["state"] = newState
                 }
             } else {
                 // fallback if state is not valid JSON

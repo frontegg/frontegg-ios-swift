@@ -389,7 +389,10 @@ extension FronteggAuth {
         if enableOfflineMode {
             let isNetworkAvailable = await checkNetworkPath(timeout: 300_000_000)
             if !isNetworkAvailable {
-                self.logger.info("getOrRefreshAccessTokenAsync: NWPathMonitor reported offline, but continuing with manual refresh because the path check is advisory")
+                self.logger.info("Network unavailable in getOrRefreshAccessTokenAsync, returning cached token and entering offline mode")
+                await applyConnectivityLossState(enableOfflineMode: enableOfflineMode)
+                self.startOfflineMonitoringAfterManualConnectivityFailure(enableOfflineMode: enableOfflineMode)
+                return self.accessToken
             }
         }
 

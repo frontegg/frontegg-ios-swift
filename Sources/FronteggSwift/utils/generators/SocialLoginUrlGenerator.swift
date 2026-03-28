@@ -452,7 +452,8 @@ public extension SocialLoginUrlGenerator {
             return
         }
 
-        let js = "window.localStorage.setItem('FRONTEGG_CODE_VERIFIER', '\(verifier)')"
+        let escaped = verifier.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
+        let js = "window.localStorage.setItem('FRONTEGG_CODE_VERIFIER', '\(escaped)')"
         do {
             _ = try await webview.evaluateJavaScript(js)
             logger.debug("🔵 [PKCE Debug] Re-injected code verifier into webview localStorage")

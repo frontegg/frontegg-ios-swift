@@ -383,10 +383,15 @@ extension FronteggAuth {
                     )
                 }
             } else {
-                // No offline mode, no tokens: finalize startup without monitoring
-                Task { @MainActor in
-                    self.setIsLoading(false)
-                    self.setInitializing(false)
+                // No offline mode, no tokens: load startup services then finalize
+                Task {
+                    if await NetworkStatusMonitor.isActive {
+                        await self.startPostConnectivityServices()
+                    }
+                    await MainActor.run {
+                        self.setIsLoading(false)
+                        self.setInitializing(false)
+                    }
                 }
             }
         }
