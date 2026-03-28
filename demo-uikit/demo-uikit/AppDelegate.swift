@@ -26,9 +26,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Override point for customization after application launch.
 
         if UIKitTestMode.isEnabled {
-            Task { @MainActor in
-                await UIKitTestBootstrapper.shared.bootstrapIfNeeded()
-            }
+            UIKitTestBootstrapper.shared.bootstrapIfNeeded()
         } else {
             FronteggApp.shared.didFinishLaunchingWithOptions()
         }
@@ -50,4 +48,3 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     
     
 }
-

@@ -34,28 +34,38 @@ class LoginViewController: BaseViewController {
     }
 
     override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
         self.checkSession()
     }
     
     /// Displays the Frontegg login modal or navigates to the main page based on authentication state.
     private func checkSession() {
         self.hideError()
+
+        if UIKitTestMode.isEnabled && !UIKitTestBootstrapper.shared.isReady {
+            return
+        }
+
         let auth = FronteggApp.shared.auth
-        
-        
-        auth.getOrRefreshAccessToken() { result in
-            switch(result){
-            case .success(let accessToken):
-                if(accessToken == nil){
-                    print("Not authenticated")
-                    FronteggAuth.shared.login()
-                } else {
-                    print("Authenticated with valid access token")
-                    self.handlePostLoginFlow()
+
+        auth.getOrRefreshAccessToken() { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+
+                switch(result){
+                case .success(let accessToken):
+                    if(accessToken == nil){
+                        print("Not authenticated")
+                        let loginHint = UIKitTestMode.isEnabled ? UIKitTestMode.passwordEmail : nil
+                        FronteggAuth.shared.login(loginHint: loginHint)
+                    } else {
+                        print("Authenticated with valid access token")
+                        self.handlePostLoginFlow()
+                    }
+                case .failure(let error):
+                    print("Failed to refresh error \(error.localizedDescription)")
+                    self.showError(error: error.localizedDescription)
                 }
-            case .failure(let error):
-                print("Failed to refresh error \(error.localizedDescription)")
-                self.showError(error: error.localizedDescription)
             }
         }
     }
@@ -83,21 +93,13 @@ class LoginViewController: BaseViewController {
     
     /// Handles the post-login navigation flow.
     private func handlePostLoginFlow() {
-        if let _ = sceneDelegate?.window?.rootViewController as? StreamViewController {
-            print("User is already on the main page.")
-        } else {
-            navigateToMainPage()
-        }
+        navigateToMainPage()
     }
     
     /// Navigates to the main page after successful login.
     private func navigateToMainPage() {
-        let storyboard = UIStoryboard(name: "Main", bundle: nil)
-        let mainVC = storyboard.instantiateViewController(withIdentifier: "StreamViewController")
-        sceneDelegate?.window?.rootViewController = mainVC
+        sceneDelegate?.showAuthenticatedRoot()
     }
     
 }
-
-
 

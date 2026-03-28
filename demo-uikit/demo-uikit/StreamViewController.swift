@@ -67,11 +67,9 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
     /// Sets up the UI for the stream view.
     func setupUI(){
         /// Gets the user profile and displays the access token.
-        getUserProfile { success in
-            if success {
-                /// Displays the access token.
-                let accessToken = String(appDelegate.fronteggAuth.accessToken!.suffix(40))
-                self.testLabel.text = "Access Token Valid \n\n\(accessToken)"
+        getUserProfile { accessTokenPreview in
+            if let accessTokenPreview {
+                self.testLabel.text = "Access Token Valid \n\n\(accessTokenPreview)"
             } else {
                 /// Displays a message if the access token is not valid.
                 self.testLabel.text = "No Access"
@@ -81,44 +79,47 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
         
     }
     
-    
-    /// Calculates the optimal delay for refreshing the token based on the expiration time.
+    /// Returns the token lifetime in seconds until the JWT expires.
     /// - Parameter expirationTime: The expiration time of the token in seconds since the Unix epoch.
-    /// - Returns: The calculated offset in seconds before the token should be refreshed. If the remaining time is less than 20 seconds, it returns 0 for immediate refresh.
-    func calculateOffset(expirationTime: Int) -> TimeInterval {
-        let now = Date().timeIntervalSince1970 * 1000 // Current time in milliseconds
-        let remainingTime = (Double(expirationTime) * 1000) - now
-        
-        let minRefreshWindow: Double = 20000 // Minimum 20 seconds before expiration, in milliseconds
-        let adaptiveRefreshTime = remainingTime * 0.8 // 80% of remaining time
-        
-        return remainingTime > minRefreshWindow ? adaptiveRefreshTime / 1000 : max((remainingTime - minRefreshWindow) / 1000, 0)
+    /// - Returns: Seconds until expiration. Values less than or equal to zero mean the token is already expired.
+    func remainingLifetime(expirationTime: Int) -> TimeInterval {
+        TimeInterval(expirationTime) - Date().timeIntervalSince1970
     }
     
     /// Gets the user profile and displays the access token.
-    func getUserProfile(completion: (Bool) -> Void) {
+    func getUserProfile(completion: (String?) -> Void) {
         
         do{
             guard let accessToken = self.appDelegate.fronteggAuth.accessToken else {
                 
                 print("No access token")
-                completion(false)
+                completion(nil)
                 return
             }
             print("Access token found. Attempting to decode JWT...")
             
-            // Decode the access token to get the expiration time
+            // Decode the access token to verify it is still valid before updating the UI.
             let decode = try JWTHelper.decode(jwtToken: accessToken)
-            let expirationTime = decode["exp"] as! Int
+            guard let expirationTime = decode["exp"] as? Int else {
+                print("JWT missing exp claim")
+                completion(nil)
+                return
+            }
             print("JWT decoded successfully. Expiration time: \(expirationTime)")
             
-            let offset = calculateOffset(expirationTime: expirationTime)
-            print("Calculated offset for token refresh: \(offset) seconds")
+            let lifetimeRemaining = remainingLifetime(expirationTime: expirationTime)
+            print("Access token remains valid for \(lifetimeRemaining) seconds")
             
-            completion(offset > 0)
+            guard lifetimeRemaining > 0 else {
+                print("Access token has expired")
+                completion(nil)
+                return
+            }
+            
+            completion(String(accessToken.suffix(40)))
         } catch {
             print("Error access token \(error.localizedDescription)")
-            completion(false)
+            completion(nil)
         }
         
         
@@ -228,20 +229,23 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
     func checkSession() {
         let auth = FronteggApp.shared.auth
         self.loadingLabel.text = "Loading..."
-        auth.getOrRefreshAccessToken() { result in
-            self.loadingLabel.text = "App Ready"
-            switch(result){
-            case .success(let accessToken):
-                if(accessToken == nil){
-                    print("Not authenticated")
-                    self.logoutButton()
-                }else {
-                    self.setupUI()
+        auth.getOrRefreshAccessToken() { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+
+                self.loadingLabel.text = "App Ready"
+                switch(result){
+                case .success(let accessToken):
+                    if(accessToken == nil){
+                        print("Not authenticated")
+                        self.logoutButton()
+                    }else {
+                        self.setupUI()
+                    }
+                case .failure(let error):
+                    self.loadingLabel.text = "Failed to refresh"
+                    print("Failed to refresh error \(error.localizedDescription)")
                 }
-            case .failure(let error):
-                self.loadingLabel.text = "Failed to refresh"
-                print("Failed to refresh error \(error.localizedDescription)")
-                
             }
         }
     }
@@ -341,8 +345,9 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
     
     @IBAction func logoutButton (){
         appDelegate.fronteggAuth.logout() { _ in
-            
-            Constants.resetToLogin()
+            Task { @MainActor in
+                sceneDelegate?.showUnauthenticatedRoot()
+            }
         }
     }
     
@@ -414,4 +419,3 @@ extension StreamViewController{
         }
     }
 }
-

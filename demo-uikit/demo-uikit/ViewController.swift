@@ -25,10 +25,10 @@ class ViewController: UIViewController {
     /// Logs out the user and navigates to the login screen.
     @IBAction func logoutButton (){
         FronteggApp.shared.auth.logout() { _ in
-            self.view.window?.rootViewController = AuthenticationController()
-            self.view.window?.makeKeyAndVisible()
+            Task { @MainActor in
+                sceneDelegate?.showUnauthenticatedRoot()
+            }
         }
     }
     
 }
-

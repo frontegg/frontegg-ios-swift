@@ -25,16 +25,61 @@ enum UIKitTestMode {
     }
 }
 
+enum UIKitTestBootstrapState: Equatable {
+    case idle
+    case bootstrapping
+    case ready
+    case failed(String)
+}
+
 @MainActor
 final class UIKitTestBootstrapper {
     static let shared = UIKitTestBootstrapper()
+    nonisolated static let stateDidChangeNotification = Notification.Name("UIKitTestBootstrapperStateDidChange")
 
-    func bootstrapIfNeeded() async {
-        guard UIKitTestMode.isEnabled else { return }
+    private(set) var state: UIKitTestBootstrapState = UIKitTestMode.isEnabled ? .idle : .ready {
+        didSet {
+            guard oldValue != state else { return }
+            NotificationCenter.default.post(name: Self.stateDidChangeNotification, object: self)
+        }
+    }
 
+    private var bootstrapTask: Task<Void, Never>?
+
+    var isReady: Bool {
+        if case .ready = state {
+            return true
+        }
+        return false
+    }
+
+    func bootstrapIfNeeded() {
+        guard UIKitTestMode.isEnabled else {
+            state = .ready
+            return
+        }
+
+        switch state {
+        case .bootstrapping, .ready:
+            return
+        case .idle, .failed:
+            break
+        }
+
+        state = .bootstrapping
+        bootstrapTask?.cancel()
+        bootstrapTask = Task { @MainActor in
+            await self.bootstrapForTesting()
+            self.bootstrapTask = nil
+        }
+    }
+
+    private func bootstrapForTesting() async {
         guard let baseUrl = UIKitTestMode.baseUrl,
               let clientId = UIKitTestMode.clientId else {
-            assertionFailure("Missing E2E launch environment for demo-uikit")
+            let message = "Missing E2E launch environment for demo-uikit"
+            assertionFailure(message)
+            state = .failed(message)
             return
         }
 
@@ -51,5 +96,6 @@ final class UIKitTestBootstrapper {
             handleLoginWithSSO: true,
             entitlementsEnabled: false
         )
+        state = .ready
     }
 }
