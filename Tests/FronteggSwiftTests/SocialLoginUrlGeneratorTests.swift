@@ -6,6 +6,33 @@
 import XCTest
 @testable import FronteggSwift
 
+private final class MockCustomSocialLoginApi: Api {
+    let customProvidersResponse: CustomSocialLoginProvidersResponse
+    var standardConfig = SocialLoginConfig(options: [])
+    var featureFlagsResponse = "{\"identity-sso-force-pkce\":\"on\"}"
+
+    init(
+        baseUrl: String,
+        clientId: String,
+        customProvidersResponse: CustomSocialLoginProvidersResponse
+    ) {
+        self.customProvidersResponse = customProvidersResponse
+        super.init(baseUrl: baseUrl, clientId: clientId, applicationId: nil)
+    }
+
+    override func getSocialLoginConfig() async throws -> SocialLoginConfig {
+        standardConfig
+    }
+
+    override func getCustomSocialLoginConfig() async throws -> CustomSocialLoginProvidersResponse {
+        customProvidersResponse
+    }
+
+    override func getFeatureFlags() async throws -> String {
+        featureFlagsResponse
+    }
+}
+
 final class SocialLoginUrlGeneratorTests: XCTestCase {
 
     private let testBaseUrl = "https://test.frontegg.com"
@@ -24,6 +51,17 @@ final class SocialLoginUrlGeneratorTests: XCTestCase {
     override func tearDown() {
         PlistHelper.testConfigOverride = nil
         super.tearDown()
+    }
+
+    private func queryItems(from url: URL) -> [String: String] {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let queryItems = components.queryItems else {
+            return [:]
+        }
+
+        return queryItems.reduce(into: [:]) { result, item in
+            result[item.name] = item.value
+        }
     }
 
     // MARK: - ProviderDetails Unit Tests
@@ -147,6 +185,71 @@ final class SocialLoginUrlGeneratorTests: XCTestCase {
         let decoded = try JSONDecoder().decode(SocialLoginUrlGenerator.OAuthState.self, from: data)
 
         XCTAssertEqual(decoded.provider, "custom-oauth")
+    }
+
+    func test_authorizeURL_customProvider_matchesHostedStateAndOmitsPkce() async throws {
+        let provider = CustomSocialLoginProviderConfig(
+            id: "e9a221f3-3d2a-413d-8183-dc9904fc70af",
+            type: "custom",
+            clientId: "561527650079-45kt8nvlrh5sghoqdtkq2g7cpau6used.apps.googleusercontent.com",
+            authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth?prompt=select_account",
+            scopes: "https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email",
+            displayName: "custom",
+            active: true,
+            redirectUrl: "\(testBaseUrl)/oauth/account/social/success"
+        )
+        let mockApi = MockCustomSocialLoginApi(
+            baseUrl: testBaseUrl,
+            clientId: testClientId,
+            customProvidersResponse: CustomSocialLoginProvidersResponse(providers: [provider])
+        )
+        let featureFlagSuiteName = "SocialLoginUrlGeneratorTests.\(UUID().uuidString)"
+        let featureFlagStorage = try XCTUnwrap(UserDefaults(suiteName: featureFlagSuiteName))
+        let auth = FronteggAuth.shared
+        let originalApi = auth.api
+        let originalFeatureFlags = auth.featureFlags
+
+        auth.api = mockApi
+        auth.featureFlags = FeatureFlags(
+            .init(clientId: testClientId, api: mockApi, storage: featureFlagStorage)
+        )
+
+        defer {
+            auth.api = originalApi
+            auth.featureFlags = originalFeatureFlags
+            featureFlagStorage.removePersistentDomain(forName: featureFlagSuiteName)
+        }
+
+        await auth.featureFlags.start()
+        await SocialLoginUrlGenerator.shared.reloadConfigs()
+
+        guard let url = try await SocialLoginUrlGenerator.shared.authorizeURL(
+            forCustomProvider: provider.id,
+            action: .login
+        ) else {
+            return XCTFail("Expected custom provider authorize URL")
+        }
+
+        let params = queryItems(from: url)
+        XCTAssertEqual(params["client_id"], provider.clientId)
+        XCTAssertEqual(params["redirect_uri"], provider.redirectUrl)
+        XCTAssertEqual(params["response_type"], "code")
+        XCTAssertEqual(params["prompt"], "select_account")
+        XCTAssertNil(params["code_challenge"])
+        XCTAssertNil(params["code_challenge_method"])
+
+        let state = try XCTUnwrap(params["state"])
+        let stateData = try XCTUnwrap(state.data(using: .utf8))
+        let stateObject = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: stateData, options: []) as? [String: String]
+        )
+
+        XCTAssertEqual(stateObject["provider"], "custom")
+        XCTAssertEqual(stateObject["action"], "login")
+        XCTAssertEqual(stateObject["bundleId"], FronteggApp.shared.bundleIdentifier)
+        XCTAssertEqual(stateObject["platform"], "ios")
+        XCTAssertNil(stateObject["oauthState"])
+        XCTAssertEqual(stateObject["appId"], "")
     }
 
     // MARK: - defaultRedirectUri / defaultSocialLoginRedirectUri

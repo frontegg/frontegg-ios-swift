@@ -331,20 +331,9 @@ private extension SocialLoginUrlGenerator {
             }
             
             if matchedDetails.requiresPKCE && FronteggAuth.shared.featureFlags.isOn("identity-sso-force-pkce") {
-                do {
-                    // IMPORTANT: For SSO providers configured as custom providers, the canonical PKCE verifier
-                    // is generated in the hosted login page (FRONTEGG_CODE_VERIFIER). Read it from webview to
-                    // ensure the same verifier is used both for the IdP code_challenge and backend postlogin.
-                    let verifier: String = try await Self.getCodeVerifierFromWebview()
-                    let codeChallenge = verifier.s256CodeChallenge()
-                    logger.info("🔵 [PKCE Debug] Generated code_challenge for custom provider \(provider.displayName) (first 20 chars): \(String(codeChallenge.prefix(20)))")
-                    logger.info("🔵 [PKCE Debug] Code verifier used (first 10 chars): \(String(verifier.prefix(10)))")
-                    
-                    comps.addOrReplaceQueryItem(name: "code_challenge", value: codeChallenge)
-                    comps.addOrReplaceQueryItem(name: "code_challenge_method", value: "S256")
-                } catch {
-                    logger.warning("Failed to get code verifier for custom provider \(provider.displayName): \(error)")
-                }
+                logger.debug(
+                    "Skipping PKCE injection for custom provider \(provider.displayName) to match hosted custom social flow"
+                )
             }
         }
         
