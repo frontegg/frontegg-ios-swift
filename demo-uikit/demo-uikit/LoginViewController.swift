@@ -46,6 +46,11 @@ class LoginViewController: BaseViewController {
             return
         }
 
+        if UIKitTestMode.consumeAutoLoginSuppressionIfNeeded() {
+            self.showLoggedOutState()
+            return
+        }
+
         let auth = FronteggApp.shared.auth
 
         auth.getOrRefreshAccessToken() { [weak self] result in
@@ -73,8 +78,10 @@ class LoginViewController: BaseViewController {
     /// Hides the error label, retry button, and loader.
     private func hideError() {
         self.errorLabel.isHidden = true
+        self.errorLabel.text = nil
         self.retryButton.isHidden = true
         self.loader.isHidden = false
+        self.setRetryButtonTitle("Retry Button")
     }
     
     /// Shows the error label, retry button, and loader.
@@ -83,6 +90,24 @@ class LoginViewController: BaseViewController {
         self.retryButton.isHidden = false
         self.loader.isHidden = true
         self.errorLabel.text = error
+        self.setRetryButtonTitle("Retry")
+    }
+
+    /// Shows an idle logged-out state without auto-starting login again.
+    private func showLoggedOutState() {
+        self.errorLabel.isHidden = true
+        self.errorLabel.text = nil
+        self.retryButton.isHidden = false
+        self.loader.isHidden = true
+        self.setRetryButtonTitle("Log In")
+    }
+
+    private func setRetryButtonTitle(_ title: String) {
+        if var configuration = self.retryButton.configuration {
+            configuration.title = title
+            self.retryButton.configuration = configuration
+        }
+        self.retryButton.setTitle(title, for: .normal)
     }
     
     
@@ -102,4 +127,3 @@ class LoginViewController: BaseViewController {
     }
     
 }
-

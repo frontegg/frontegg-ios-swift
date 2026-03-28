@@ -26,6 +26,7 @@ class ViewController: UIViewController {
     @IBAction func logoutButton (){
         FronteggApp.shared.auth.logout() { _ in
             Task { @MainActor in
+                UIKitTestMode.suppressNextAutoLoginAfterExplicitLogout()
                 sceneDelegate?.showUnauthenticatedRoot()
             }
         }

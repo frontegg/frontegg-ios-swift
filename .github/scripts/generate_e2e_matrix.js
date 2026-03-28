@@ -4,6 +4,8 @@
 
 const fs = require("node:fs");
 
+const MAX_TESTS_PER_SHARD = 4;
+
 const APP_CONFIGS = {
   embedded: {
     project: "demo-embedded/demo-embedded.xcodeproj",
@@ -60,7 +62,15 @@ function main() {
     const config = APP_CONFIGS[app];
     const methods = readTestMethods(config.catalog);
 
-    if (shardCount <= 1 || methods.length === 0) {
+    // Determine effective shard count:
+    // - If explicit shard_count > 1, use it
+    // - Otherwise, auto-shard so each shard has at most MAX_TESTS_PER_SHARD tests
+    const autoShards = Math.ceil(methods.length / MAX_TESTS_PER_SHARD);
+    const effectiveShardCount = shardCount > 1
+      ? Math.min(shardCount, methods.length || 1)
+      : Math.max(1, autoShards);
+
+    if (effectiveShardCount <= 1 || methods.length === 0) {
       include.push({
         app,
         project: config.project,
@@ -73,8 +83,7 @@ function main() {
         "only-testing": "",
       });
     } else {
-      const effectiveShards = Math.min(shardCount, methods.length);
-      const shards = splitIntoShards(methods, effectiveShards);
+      const shards = splitIntoShards(methods, effectiveShardCount);
 
       shards.forEach((shard, i) => {
         const onlyTesting = shard
@@ -89,7 +98,7 @@ function main() {
           "test-class": config.testClass,
           catalog: config.catalog,
           "shard-index": i + 1,
-          "shard-total": effectiveShards,
+          "shard-total": effectiveShardCount,
           "only-testing": onlyTesting,
         });
       });

@@ -7,6 +7,7 @@ enum UIKitTestMode {
     static let clientIdEnv = "FRONTEGG_E2E_CLIENT_ID"
     static let resetStateEnv = "FRONTEGG_E2E_RESET_STATE"
     static let passwordEmail = "test@frontegg.com"
+    @MainActor private static var suppressAutoLoginAfterExplicitLogout = false
 
     static var isEnabled: Bool {
         ProcessInfo.processInfo.environment[enabledEnv] == "true"
@@ -22,6 +23,24 @@ enum UIKitTestMode {
 
     static var shouldResetState: Bool {
         ProcessInfo.processInfo.environment[resetStateEnv] == "1"
+    }
+
+    @MainActor
+    static func suppressNextAutoLoginAfterExplicitLogout() {
+        guard isEnabled else { return }
+        suppressAutoLoginAfterExplicitLogout = true
+    }
+
+    @MainActor
+    static func consumeAutoLoginSuppressionIfNeeded() -> Bool {
+        guard isEnabled, suppressAutoLoginAfterExplicitLogout else { return false }
+        suppressAutoLoginAfterExplicitLogout = false
+        return true
+    }
+
+    @MainActor
+    static func resetAutoLoginSuppression() {
+        suppressAutoLoginAfterExplicitLogout = false
     }
 }
 
@@ -82,6 +101,8 @@ final class UIKitTestBootstrapper {
             state = .failed(message)
             return
         }
+
+        UIKitTestMode.resetAutoLoginSuppression()
 
         if UIKitTestMode.shouldResetState {
 #if DEBUG

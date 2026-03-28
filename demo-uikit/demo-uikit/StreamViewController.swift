@@ -346,6 +346,7 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
     @IBAction func logoutButton (){
         appDelegate.fronteggAuth.logout() { _ in
             Task { @MainActor in
+                UIKitTestMode.suppressNextAutoLoginAfterExplicitLogout()
                 sceneDelegate?.showUnauthenticatedRoot()
             }
         }
