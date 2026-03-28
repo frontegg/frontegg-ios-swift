@@ -63,19 +63,23 @@ final class FeatureFlagsTests: XCTestCase {
     var mockApi: MockFeatureFlagsApi!
     var testStorage: UserDefaults!
     var featureFlags: FeatureFlags!
-    let testStorageKey = "featureflags:test-client"
+    var testStorageSuiteName: String!
+    let testClientId = "test-client"
+    var testStorageKey: String { "featureflags:\(testClientId)" }
     
     override func setUp() {
         super.setUp()
         mockApi = MockFeatureFlagsApi()
-        testStorage = UserDefaults.standard
-        // Clean up any existing test data
-        testStorage.removeObject(forKey: testStorageKey)
+        testStorageSuiteName = "FeatureFlagsTests.\(UUID().uuidString)"
+        testStorage = UserDefaults(suiteName: testStorageSuiteName)
+        testStorage.removePersistentDomain(forName: testStorageSuiteName)
     }
     
     override func tearDown() {
-        testStorage.removeObject(forKey: testStorageKey)
+        testStorage.removePersistentDomain(forName: testStorageSuiteName)
+        testStorageSuiteName = nil
         featureFlags = nil
+        testStorage = nil
         mockApi = nil
         super.tearDown()
     }
@@ -84,7 +88,7 @@ final class FeatureFlagsTests: XCTestCase {
     
     func createFeatureFlags() -> FeatureFlags {
         let config = FeatureFlags.Config(
-            clientId: "test-client",
+            clientId: testClientId,
             api: mockApi,
             storage: testStorage
         )
