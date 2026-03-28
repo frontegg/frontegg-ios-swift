@@ -353,4 +353,65 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         app.getWebButton("Continue to Custom SSO").safeTap()
         waitForUserEmail("custom-sso@frontegg.com")
     }
+
+    // MARK: - Offline mode disabled scenarios
+
+    /// Verifies that a cold launch with no tokens and offline mode disabled goes straight to the login
+    /// screen without running the 4.5-second connectivity probe race that offline mode uses.
+    func testColdLaunchWithOfflineModeDisabledReachesLoginQuickly() throws {
+        try Self.server.queueProbeFailures(statusCodes: Array(repeating: 503, count: 6))
+
+        launchApp(resetState: true, enableOfflineMode: false)
+        waitForScreen("LoginPageRoot", timeout: 5)
+
+        // No offline markers should be visible
+        XCTAssertFalse(app.staticTexts["UnauthenticatedOfflineModeEnabled"].exists, screenDebugSummary())
+        XCTAssertFalse(app.staticTexts["OfflineModeBadge"].exists, screenDebugSummary())
+        assertNoConnectionScreenDoesNotAppear(duration: 2)
+    }
+
+    /// Verifies that with offline mode disabled, an authenticated relaunch through transient
+    /// connection failures recovers the session without logging the user out and never shows
+    /// offline mode indicators.
+    func testOfflineModeDisabledPreservesSessionDuringConnectionLossAndRecovers() throws {
+        // 1. Login normally with offline mode disabled, verify profile
+        launchApp(resetState: true, enableOfflineMode: false)
+        loginWithPassword()
+        waitForUserEmail("test@frontegg.com")
+        let initialVersion = accessTokenVersion()
+        XCTAssertGreaterThan(initialVersion, 0, screenDebugSummary())
+
+        // 2. Terminate and queue transient refresh failures.
+        //    The standard refresh (POST /oauth/token) is shared with WebView token exchange,
+        //    so use a small count — enough to exercise the retry path but not so many that
+        //    recovery is blocked for the full test timeout.
+        terminateApp()
+        for path in refreshTokenPaths {
+            try Self.server.queueConnectionDrops(path: path, count: 2)
+        }
+
+        // 3. Relaunch with offline mode DISABLED
+        launchApp(resetState: false, enableOfflineMode: false)
+
+        // 4. The SDK should recover the session and show the profile — the user must NOT be
+        //    logged out. The retry (or WebView-assisted re-auth) should restore the session.
+        waitForUserEmail("test@frontegg.com", timeout: 30)
+        waitForScreen("UserPageRoot")
+
+        // 5. Verify: offline mode markers must NEVER appear (app didn't opt into offline UX)
+        XCTAssertFalse(app.staticTexts["AuthenticatedOfflineModeEnabled"].exists, screenDebugSummary())
+        XCTAssertFalse(app.staticTexts["OfflineModeBadge"].exists, screenDebugSummary())
+
+        // 6. Verify the session was preserved (token was refreshed, not re-created from scratch)
+        let recoveredVersion = accessTokenVersion()
+        XCTAssertGreaterThanOrEqual(recoveredVersion, initialVersion, "Token version should not decrease — session must be preserved, not recreated. \(screenDebugSummary())")
+    }
+
+    /// Verifies that password login completes normally when offline mode is disabled,
+    /// confirming the setting does not interfere with normal auth flows.
+    func testPasswordLoginWorksWithOfflineModeDisabled() throws {
+        launchApp(resetState: true, enableOfflineMode: false)
+        loginWithPassword()
+        waitForUserEmail("test@frontegg.com")
+    }
 }

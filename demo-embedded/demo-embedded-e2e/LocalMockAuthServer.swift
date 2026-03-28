@@ -76,9 +76,10 @@ final class LocalMockAuthServer {
     func launchEnvironment(
         resetState: Bool,
         useTestingWebAuthenticationTransport: Bool = true,
-        forceNetworkPathOffline: Bool = false
+        forceNetworkPathOffline: Bool = false,
+        enableOfflineMode: Bool? = nil
     ) -> [String: String] {
-        [
+        var env: [String: String] = [
             "frontegg-testing": "true",
             "FRONTEGG_E2E_BASE_URL": baseURL.absoluteString,
             "FRONTEGG_E2E_CLIENT_ID": clientId,
@@ -87,6 +88,10 @@ final class LocalMockAuthServer {
             "FRONTEGG_TEST_WEB_AUTH_TRANSPORT": useTestingWebAuthenticationTransport ? "1" : "0",
             "FRONTEGG_TEST_SOCIAL_AUTHORIZE_URL_GOOGLE": "\(baseURL.absoluteString)/idp/google/authorize",
         ]
+        if let enableOfflineMode {
+            env["FRONTEGG_E2E_ENABLE_OFFLINE_MODE"] = enableOfflineMode ? "1" : "0"
+        }
+        return env
     }
 
     func reset() throws {

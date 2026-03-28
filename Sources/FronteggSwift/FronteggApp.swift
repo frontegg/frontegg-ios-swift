@@ -274,6 +274,44 @@ public class FronteggApp {
     public func configureTestingNetworkPathAvailability(_ available: Bool?) {
         auth.setTestNetworkPathAvailabilityOverride(available)
     }
+
+    /// Overrides the `enableOfflineMode` plist setting for E2E testing.
+    /// Pass `nil` to clear the override and use the plist default.
+    /// Must be called **before** `manualInit` so `initializeSubscriptions` reads the override.
+    public func configureTestingOfflineMode(_ enabled: Bool?) {
+        guard var config = try? PlistHelper.fronteggConfig() else { return }
+        if let enabled {
+            let overridden = FronteggPlist(
+                keychainService: config.keychainService,
+                embeddedMode: config.embeddedMode,
+                loginWithSocialLogin: config.loginWithSocialLogin,
+                handleLoginWithCustomSocialLoginProvider: config.handleLoginWithCustomSocialLoginProvider,
+                handleLoginWithSocialProvider: config.handleLoginWithSocialProvider,
+                loginWithSSO: config.loginWithSSO,
+                loginWithCustomSSO: config.loginWithCustomSSO,
+                lateInit: config.lateInit,
+                logLevel: config.logLevel,
+                payload: config.payload,
+                keepUserLoggedInAfterReinstall: config.keepUserLoggedInAfterReinstall,
+                useAsWebAuthenticationForAppleLogin: config.useAsWebAuthenticationForAppleLogin,
+                shouldSuggestSavePassword: config.shouldSuggestSavePassword,
+                backgroundColor: config.backgroundColor,
+                cookieRegex: config.cookieRegex,
+                deleteCookieForHostOnly: config.deleteCookieForHostOnly,
+                enableOfflineMode: enabled,
+                useLegacySocialLoginFlow: config.useLegacySocialLoginFlow,
+                enableSessionPerTenant: config.enableSessionPerTenant,
+                networkMonitoringInterval: config.networkMonitoringInterval,
+                enableSentryLogging: config.enableSentryLogging,
+                sentryMaxQueueSize: config.sentryMaxQueueSize,
+                loginOrganizationAlias: config.loginOrganizationAlias,
+                entitlementsEnabled: config.entitlementsEnabled
+            )
+            PlistHelper.testConfigOverride = overridden
+        } else {
+            PlistHelper.testConfigOverride = nil
+        }
+    }
 #endif
     
     public func manualInit(

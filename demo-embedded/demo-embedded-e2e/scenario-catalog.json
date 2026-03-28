@@ -74,6 +74,21 @@
       "method": "testLogoutTerminateTransientNoConnectionThenCustomSSORecovers",
       "title": "Custom SSO recovers after a transient no-connection relaunch",
       "description": "Logs out, relaunches through a transient no-connection state if it appears, then completes custom SSO and verifies the user is signed in again."
+    },
+    {
+      "method": "testColdLaunchWithOfflineModeDisabledReachesLoginQuickly",
+      "title": "Cold launch with offline mode disabled reaches login quickly",
+      "description": "Queues probe failures, launches with enableOfflineMode=false, and verifies the app reaches the login screen quickly without showing offline or no-connection UI."
+    },
+    {
+      "method": "testOfflineModeDisabledPreservesSessionDuringConnectionLossAndRecovers",
+      "title": "Offline mode disabled preserves session during connection loss and recovers",
+      "description": "Logs in with enableOfflineMode=false, terminates, queues connection drops, relaunches, verifies the session is preserved without offline indicators, then verifies the profile is restored when connection returns."
+    },
+    {
+      "method": "testPasswordLoginWorksWithOfflineModeDisabled",
+      "title": "Password login works with offline mode disabled",
+      "description": "Launches with enableOfflineMode=false and completes a password login, confirming normal auth flows are unaffected."
     }
   ]
 }

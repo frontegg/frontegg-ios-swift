@@ -8,6 +8,7 @@ enum DemoEmbeddedTestMode {
     static let clientIdEnv = "FRONTEGG_E2E_CLIENT_ID"
     static let resetStateEnv = "FRONTEGG_E2E_RESET_STATE"
     static let forceNetworkPathOfflineEnv = "FRONTEGG_E2E_FORCE_NETWORK_PATH_OFFLINE"
+    static let enableOfflineModeEnv = "FRONTEGG_E2E_ENABLE_OFFLINE_MODE"
     static let requestAuthorizeRefreshToken = "signup-refresh-token"
     static let embeddedPasswordEmail = "test@frontegg.com"
     static let embeddedSAMLEmail = "test@saml-domain.com"
@@ -31,6 +32,15 @@ enum DemoEmbeddedTestMode {
 
     static var forcesNetworkPathOffline: Bool {
         ProcessInfo.processInfo.environment[forceNetworkPathOfflineEnv] == "1"
+    }
+
+    /// Returns the override value for `enableOfflineMode`, or `nil` when unset (use plist default).
+    static var enableOfflineModeOverride: Bool? {
+        switch ProcessInfo.processInfo.environment[enableOfflineModeEnv] {
+        case "1": return true
+        case "0": return false
+        default:  return nil
+        }
     }
 
     static var customSSOUrl: String? {
@@ -101,6 +111,12 @@ final class DemoEmbeddedBootstrapper: ObservableObject {
         FronteggApp.shared.configureTestingNetworkPathAvailability(
             DemoEmbeddedTestMode.forcesNetworkPathOffline ? false : nil
         )
+#endif
+
+#if DEBUG
+        if let offlineModeOverride = DemoEmbeddedTestMode.enableOfflineModeOverride {
+            FronteggApp.shared.configureTestingOfflineMode(offlineModeOverride)
+        }
 #endif
 
         FronteggApp.shared.shouldPromptSocialLoginConsent = false

@@ -35,13 +35,15 @@ class DemoEmbeddedUITestCase: XCTestCase {
     func launchApp(
         resetState: Bool = true,
         useTestingWebAuthenticationTransport: Bool = true,
-        forceNetworkPathOffline: Bool = false
+        forceNetworkPathOffline: Bool = false,
+        enableOfflineMode: Bool? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment = Self.server.launchEnvironment(
             resetState: resetState,
             useTestingWebAuthenticationTransport: useTestingWebAuthenticationTransport,
-            forceNetworkPathOffline: forceNetworkPathOffline
+            forceNetworkPathOffline: forceNetworkPathOffline,
+            enableOfflineMode: enableOfflineMode
         )
         app.launch()
         self.app = app
