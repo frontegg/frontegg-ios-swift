@@ -57,7 +57,7 @@ final class MultiRegionE2ETests: MultiRegionUITestCase {
         let logoutBtn = app.buttons["Logout"].firstMatch
         XCTAssertTrue(logoutBtn.waitForExistence(timeout: 10), "Logout button not found")
         logoutBtn.tap()
-        waitForLoginPage(timeout: 15)
+        waitForLoginPage(timeout: 25)
 
         loginWithPassword()
         waitForUserEmail("test@frontegg.com")

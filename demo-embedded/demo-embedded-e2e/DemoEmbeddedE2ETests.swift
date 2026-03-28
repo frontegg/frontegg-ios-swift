@@ -484,7 +484,8 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
 
         // Wait for the scheduled refresh to fire and produce a new token version.
         // The SDK schedules refresh at ~80% of TTL (≈16.8s for 21s TTL).
-        let refreshedVersion = waitForAccessTokenVersionChange(from: initialVersion, timeout: 25)
+        // Use a generous timeout for CI where the simulator may be slower.
+        let refreshedVersion = waitForAccessTokenVersionChange(from: initialVersion, timeout: 35)
         XCTAssertGreaterThan(refreshedVersion, initialVersion, screenDebugSummary())
         XCTAssertTrue(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
     }

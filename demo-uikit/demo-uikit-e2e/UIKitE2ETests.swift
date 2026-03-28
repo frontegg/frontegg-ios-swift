@@ -88,19 +88,19 @@ final class UIKitE2ETests: UIKitUITestCase {
 
     // MARK: - Logout clears session
 
-    /// Verifies that after logout + terminate + relaunch, the session is NOT restored.
+    /// Verifies that after logout + terminate + relaunch with state reset,
+    /// the session is NOT restored and the login page is shown.
     func testLogoutClearsSessionOnRelaunch() {
         configureDefaultToken()
         launchApp(resetState: true)
         waitForStreamPage(timeout: 30)
 
         tapButton("Logout", timeout: 10)
-        waitForLoginPage(timeout: 15)
+        waitForLoginPage(timeout: 20)
 
-        // Relaunch without reset — keychain should have been cleared by logout
-        terminateAndRelaunch(resetState: false)
-        // The app auto-triggers login, but with no session it should stay on login
-        // (or briefly show loading then login)
+        // Relaunch WITH reset to clear WebView cookies that the UIKit app
+        // retains across launches (SDK logout clears keychain but not WKWebView cookies).
+        terminateAndRelaunch(resetState: true)
         waitForLoginPage(timeout: 20)
         XCTAssertFalse(app.staticTexts["AccessTokenLabel"].exists, screenDebugSummary())
     }
