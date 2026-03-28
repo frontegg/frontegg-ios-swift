@@ -460,6 +460,41 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertEqual(auth.user?.email, "refreshed-missing-exp@example.com")
     }
 
+    func test_scheduleTokenRefresh_whileLoginInProgress_retriesAfterLoginCompletes() async throws {
+        _ = try seedAuthenticatedSession(
+            email: "scheduled-refresh@example.com",
+            expirationOffset: -60
+        )
+        let refreshedAccessToken = try makeAccessToken(email: "scheduled-refresh@example.com")
+        api.refreshResult = .success(
+            try makeAuthResponse(
+                accessToken: refreshedAccessToken,
+                refreshToken: "refresh-token-new"
+            )
+        )
+
+        await MainActor.run {
+            auth.isLoginInProgress = true
+        }
+
+        auth.scheduleTokenRefresh(offset: 0.05)
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertEqual(api.refreshCallCount, 0)
+        XCTAssertTrue(auth.hasScheduledTokenRefreshForTesting())
+
+        await MainActor.run {
+            auth.isLoginInProgress = false
+        }
+        await waitForRefreshTokenUpdate(expectedAccessToken: refreshedAccessToken)
+
+        XCTAssertEqual(api.refreshCallCount, 1)
+        XCTAssertEqual(auth.accessToken, refreshedAccessToken)
+        XCTAssertEqual(auth.refreshToken, "refresh-token-new")
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertFalse(auth.isOfflineMode)
+    }
+
     func test_refreshTokenIfNeeded_refreshSucceeds_jwtTenantChanged_fetchesFreshUser() async throws {
         auth.setUser(try makeUser(email: "cached@example.com", tenantId: "tenant-stale"))
         auth.setIsAuthenticated(true)
@@ -652,6 +687,15 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
     private func waitForRefreshCall() async {
         for _ in 0..<50 {
             if api.refreshCallCount > 0, auth.isAuthenticated {
+                return
+            }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+    }
+
+    private func waitForRefreshTokenUpdate(expectedAccessToken: String) async {
+        for _ in 0..<60 {
+            if api.refreshCallCount > 0, auth.accessToken == expectedAccessToken {
                 return
             }
             try? await Task.sleep(nanoseconds: 50_000_000)

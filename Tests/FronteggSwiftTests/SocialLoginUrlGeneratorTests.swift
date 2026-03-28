@@ -258,14 +258,50 @@ final class SocialLoginUrlGeneratorTests: XCTestCase {
 
     func test_defaultSocialLoginRedirectUri_format() {
         let uri = SocialLoginUrlGenerator.shared.defaultSocialLoginRedirectUri()
-        XCTAssertTrue(uri.contains(testBaseUrl), "Should contain base URL")
-        XCTAssertTrue(uri.contains("/oauth/account/social/success"), "Should contain social success path")
+        XCTAssertEqual(uri, "\(testBaseUrl)/oauth/account/social/success")
     }
 
     func test_defaultRedirectUri_format() {
         let uri = SocialLoginUrlGenerator.shared.defaultRedirectUri()
-        XCTAssertTrue(uri.contains(testBaseUrl), "Should contain base URL")
-        XCTAssertTrue(uri.contains("/oauth/account/redirect/ios/"), "Should contain iOS redirect path")
+        XCTAssertEqual(
+            uri,
+            "\(testBaseUrl)/oauth/account/redirect/ios/\(FronteggApp.shared.bundleIdentifier)"
+        )
+    }
+
+    func test_pendingCustomProviderCodeVerifier_isTrackedPerState() async {
+        let firstState = "state-\(UUID().uuidString)"
+        let secondState = "state-\(UUID().uuidString)"
+
+        await SocialLoginUrlGenerator.shared.storePendingCustomProviderCodeVerifier(
+            "verifier-1",
+            for: firstState
+        )
+        await SocialLoginUrlGenerator.shared.storePendingCustomProviderCodeVerifier(
+            "verifier-2",
+            for: secondState
+        )
+
+        let secondVerifier = await SocialLoginUrlGenerator.shared.consumePendingCustomProviderCodeVerifier(
+            for: secondState
+        )
+        let firstVerifier = await SocialLoginUrlGenerator.shared.consumePendingCustomProviderCodeVerifier(
+            for: firstState
+        )
+
+        XCTAssertEqual(secondVerifier, "verifier-2")
+        XCTAssertEqual(firstVerifier, "verifier-1")
+    }
+
+    func test_codeVerifierInjectionScript_usesJSONStringLiteral() throws {
+        let verifier = "line1\n\"quoted\" 'apostrophe' \\\\"
+        let script = try SocialLoginUrlGenerator.shared.codeVerifierInjectionScript(verifier: verifier)
+
+        XCTAssertTrue(
+            script.contains(#""line1\n\"quoted\" 'apostrophe' \\\\""#),
+            "Expected JSON string escaping in script: \(script)"
+        )
+        XCTAssertFalse(script.contains("'line1"), "Verifier should not be wrapped in single quotes")
     }
 
     // MARK: - SocialLoginProvider.details accessor

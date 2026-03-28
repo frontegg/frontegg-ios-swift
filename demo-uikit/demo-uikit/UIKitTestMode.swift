@@ -6,8 +6,10 @@ enum UIKitTestMode {
     static let baseUrlEnv = "FRONTEGG_E2E_BASE_URL"
     static let clientIdEnv = "FRONTEGG_E2E_CLIENT_ID"
     static let resetStateEnv = "FRONTEGG_E2E_RESET_STATE"
+    static let preserveLoggedOutStateEnv = "FRONTEGG_E2E_PRESERVE_LOGGED_OUT_STATE"
     static let passwordEmail = "test@frontegg.com"
-    @MainActor private static var suppressAutoLoginAfterExplicitLogout = false
+    private static let suppressAutoLoginAfterExplicitLogoutKey =
+        "frontegg.testing.suppressAutoLoginAfterExplicitLogout"
 
     static var isEnabled: Bool {
         ProcessInfo.processInfo.environment[enabledEnv] == "true"
@@ -25,22 +27,32 @@ enum UIKitTestMode {
         ProcessInfo.processInfo.environment[resetStateEnv] == "1"
     }
 
-    @MainActor
-    static func suppressNextAutoLoginAfterExplicitLogout() {
-        guard isEnabled else { return }
-        suppressAutoLoginAfterExplicitLogout = true
+    static var shouldPreserveLoggedOutState: Bool {
+        ProcessInfo.processInfo.environment[preserveLoggedOutStateEnv] == "1"
     }
 
     @MainActor
-    static func consumeAutoLoginSuppressionIfNeeded() -> Bool {
-        guard isEnabled, suppressAutoLoginAfterExplicitLogout else { return false }
-        suppressAutoLoginAfterExplicitLogout = false
-        return true
+    static func suppressNextAutoLoginAfterExplicitLogout() {
+        guard isEnabled else { return }
+        UserDefaults.standard.set(true, forKey: suppressAutoLoginAfterExplicitLogoutKey)
+        UserDefaults.standard.synchronize()
+    }
+
+    @MainActor
+    static func isAutoLoginSuppressedAfterExplicitLogout() -> Bool {
+        guard isEnabled else { return false }
+        return UserDefaults.standard.bool(forKey: suppressAutoLoginAfterExplicitLogoutKey)
+    }
+
+    @MainActor
+    static func clearAutoLoginSuppression() {
+        UserDefaults.standard.removeObject(forKey: suppressAutoLoginAfterExplicitLogoutKey)
+        UserDefaults.standard.synchronize()
     }
 
     @MainActor
     static func resetAutoLoginSuppression() {
-        suppressAutoLoginAfterExplicitLogout = false
+        clearAutoLoginSuppression()
     }
 }
 
@@ -102,7 +114,9 @@ final class UIKitTestBootstrapper {
             return
         }
 
-        UIKitTestMode.resetAutoLoginSuppression()
+        if !UIKitTestMode.shouldPreserveLoggedOutState {
+            UIKitTestMode.resetAutoLoginSuppression()
+        }
 
         if UIKitTestMode.shouldResetState {
 #if DEBUG

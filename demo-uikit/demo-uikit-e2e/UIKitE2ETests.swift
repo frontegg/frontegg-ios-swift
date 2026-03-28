@@ -100,8 +100,11 @@ final class UIKitE2ETests: UIKitUITestCase {
 
         // Relaunch WITH reset to clear WebView cookies that the UIKit app
         // retains across launches (SDK logout clears keychain but not WKWebView cookies).
-        terminateAndRelaunch(resetState: true)
+        terminateAndRelaunch(resetState: true, preserveLoggedOutState: true)
         waitForLoginPage(timeout: 20)
+        Thread.sleep(forTimeInterval: 5)
+        XCTAssertTrue(app.otherElements["LoginPageRoot"].exists, screenDebugSummary())
+        XCTAssertFalse(app.buttons["Logout"].exists, screenDebugSummary())
         XCTAssertFalse(app.staticTexts["AccessTokenLabel"].exists, screenDebugSummary())
     }
 

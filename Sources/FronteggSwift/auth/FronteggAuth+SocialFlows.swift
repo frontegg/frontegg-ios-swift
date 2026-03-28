@@ -72,7 +72,8 @@ extension FronteggAuth {
 
         self.logger.debug("OAuth callback URL: \(callbackURL.absoluteString)")
 
-        if let queryItems = getQueryItems(callbackURL.absoluteString),
+        let callbackQueryItems = getQueryItems(callbackURL.absoluteString)
+        if let queryItems = callbackQueryItems,
            let failureDetails = self.oauthFailureDetails(from: queryItems) {
             self.completeSocialLoginFailure(failureDetails, completion: completion)
             return
@@ -105,7 +106,9 @@ extension FronteggAuth {
                 return
             }
             // Re-inject code verifier into webview localStorage before loading success URL
-            await SocialLoginUrlGenerator.shared.reinjectCodeVerifierIntoWebview()
+            await SocialLoginUrlGenerator.shared.reinjectCodeVerifierIntoWebview(
+                for: callbackQueryItems?["state"]
+            )
             self.loadInWebView(finalURL)
         }
     }

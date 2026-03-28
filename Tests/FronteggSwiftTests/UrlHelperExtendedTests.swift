@@ -173,4 +173,18 @@ final class UrlHelperExtendedTests: XCTestCase {
         XCTAssertNotNil(items)
         XCTAssertEqual(items?["redirect_uri"], "https://app.example.com/callback")
     }
+
+    func test_getQueryItems_preservesLiteralPlusCharacters() {
+        let url = "https://example.com?message=JWT+token+size+exceeded"
+        let items = getQueryItems(url)
+
+        XCTAssertEqual(items?["message"], "JWT+token+size+exceeded")
+    }
+
+    func test_getQueryItems_preservesPercentEncodedPlusCharacters() {
+        let url = "https://example.com?email=test%2Buser%40example.com"
+        let items = getQueryItems(url)
+
+        XCTAssertEqual(items?["email"], "test+user@example.com")
+    }
 }

@@ -55,6 +55,7 @@ public class FronteggAuth: FronteggState {
     var offlineDebounceWork: DispatchWorkItem?
     // internal for extension access (FronteggAuth+Connectivity.swift)
     let offlineDebounceDelay: TimeInterval = 0.6
+    let scheduledRefreshDeferredRetryDelay: TimeInterval = 1.0
     let unauthenticatedStartupOfflineCommitWindow: TimeInterval = 4.5
     let unauthenticatedStartupProbeDelay: TimeInterval = 0.5
     let unauthenticatedStartupProbeTimeout: TimeInterval = 1.0

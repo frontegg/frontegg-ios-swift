@@ -226,7 +226,17 @@ class DemoEmbeddedUITestCase: XCTestCase {
     }
 
     func tapButton(_ identifier: String, timeout: TimeInterval = 20, maxScrollAttempts: Int = 6) {
-        let element = app.buttons[identifier].waitUntilExists(timeout: timeout)
+        let element = app.buttons[identifier]
+        if !element.waitForExistence(timeout: timeout) {
+            let predicate = NSPredicate(format: "identifier == %@", identifier)
+            let fallback = app.descendants(matching: .any).matching(predicate).firstMatch
+            XCTAssertTrue(
+                fallback.waitForExistence(timeout: 3),
+                "Button \(identifier) did not appear. \(screenDebugSummary())"
+            )
+            fallback.safeTap()
+            return
+        }
         if element.isHittable {
             element.safeTap()
             return

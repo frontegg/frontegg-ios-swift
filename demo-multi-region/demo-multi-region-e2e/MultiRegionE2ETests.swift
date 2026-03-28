@@ -43,9 +43,7 @@ final class MultiRegionE2ETests: MultiRegionUITestCase {
         launchApp(resetState: true)
         loginWithPassword()
 
-        let logoutBtn = app.buttons["Logout"].firstMatch
-        XCTAssertTrue(logoutBtn.waitForExistence(timeout: 10), "Logout button not found")
-        logoutBtn.tap()
+        tapButton("Logout")
         waitForLoginPage(timeout: 15)
     }
 
@@ -54,9 +52,7 @@ final class MultiRegionE2ETests: MultiRegionUITestCase {
         launchApp(resetState: true)
         loginWithPassword()
 
-        let logoutBtn = app.buttons["Logout"].firstMatch
-        XCTAssertTrue(logoutBtn.waitForExistence(timeout: 10), "Logout button not found")
-        logoutBtn.tap()
+        tapButton("Logout")
         waitForLoginPage(timeout: 25)
 
         loginWithPassword()
@@ -128,9 +124,7 @@ final class MultiRegionE2ETests: MultiRegionUITestCase {
         loginWithPassword()
         waitForUserEmail("test@frontegg.com")
 
-        let logoutBtn = app.buttons["Logout"].firstMatch
-        XCTAssertTrue(logoutBtn.waitForExistence(timeout: 10), "Logout button not found")
-        logoutBtn.tap()
+        tapButton("Logout")
         waitForLoginPage(timeout: 15)
 
         // Relaunch without reset — keychain should have been cleared by logout

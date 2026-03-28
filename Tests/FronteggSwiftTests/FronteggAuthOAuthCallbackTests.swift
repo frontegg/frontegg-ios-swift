@@ -466,8 +466,8 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
 
         let queryItems = getQueryItems(callbackUrl.absoluteString)
 
-        XCTAssertEqual(queryItems?["error"], "   ")
-        XCTAssertEqual(queryItems?["error_description"], "   ")
+        XCTAssertEqual(queryItems?["error"], "+++")
+        XCTAssertEqual(queryItems?["error_description"], "+++")
         XCTAssertNil(auth.oauthFailureDetails(from: queryItems ?? [:]))
     }
 

@@ -173,12 +173,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         launchApp(resetState: true)
         loginWithPassword()
 
-        let logoutButton = app.buttons["LogoutButton"]
-        if logoutButton.exists {
-            logoutButton.tap()
-        } else {
-            app.buttons["Logout"].waitUntilExists().safeTap()
-        }
+        tapButton("LogoutButton")
         waitForScreen("LoginPageRoot")
 
         try Self.server.queueProbeFailures(statusCodes: [503, 503])
@@ -326,12 +321,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         launchApp(resetState: true)
         loginWithPassword()
 
-        let logoutButton = app.buttons["LogoutButton"]
-        if logoutButton.exists {
-            logoutButton.tap()
-        } else {
-            app.buttons["Logout"].waitUntilExists().safeTap()
-        }
+        tapButton("LogoutButton")
         waitForScreen("LoginPageRoot")
 
         try Self.server.queueProbeFailures(statusCodes: [503, 503])
@@ -425,12 +415,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         waitForUserEmail("test@frontegg.com")
 
         // Logout
-        let logoutButton = app.buttons["LogoutButton"]
-        if logoutButton.exists {
-            logoutButton.tap()
-        } else {
-            app.buttons["Logout"].waitUntilExists().safeTap()
-        }
+        tapButton("LogoutButton")
         waitForScreen("LoginPageRoot")
 
         // Relaunch without resetting state — keychain should be cleared by logout

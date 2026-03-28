@@ -87,14 +87,14 @@ class MultiRegionUITestCase: XCTestCase {
         // First try standard buttons query
         let button = app.buttons[identifier]
         if button.waitForExistence(timeout: timeout) {
-            button.tap()
+            button.safeTap()
             return
         }
         // Fall back to descendants search (SwiftUI may propagate identifiers differently)
         let predicate = NSPredicate(format: "identifier == %@", identifier)
         let match = app.descendants(matching: .any).matching(predicate).firstMatch
         XCTAssertTrue(match.waitForExistence(timeout: 3), "Button '\(identifier)' not found")
-        match.tap()
+        match.safeTap()
     }
 
     func loginWithPassword(email: String = "test@frontegg.com") {

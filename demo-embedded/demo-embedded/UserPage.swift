@@ -27,12 +27,10 @@ struct UserPage: View {
                 Color.backgroundColor.ignoresSafeArea()
                 mainContent
             }
-            .accessibilityElement(children: .contain)
             .overlay(FronteggAppBar()
                 .ignoresSafeArea(edges: .top),alignment: .top)
             .overlay(Footer()
                 .ignoresSafeArea(edges: .bottom),alignment: .bottom)
-            .accessibilityIdentifier("UserPageRoot")
         }
     }
     

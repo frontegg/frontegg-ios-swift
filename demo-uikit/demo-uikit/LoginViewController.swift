@@ -39,14 +39,15 @@ class LoginViewController: BaseViewController {
     }
     
     /// Displays the Frontegg login modal or navigates to the main page based on authentication state.
-    private func checkSession() {
+    private func checkSession(allowAutoLogin: Bool = false) {
         self.hideError()
 
         if UIKitTestMode.isEnabled && !UIKitTestBootstrapper.shared.isReady {
             return
         }
 
-        if UIKitTestMode.consumeAutoLoginSuppressionIfNeeded() {
+        if !allowAutoLogin &&
+            (UIKitTestMode.shouldPreserveLoggedOutState || UIKitTestMode.isAutoLoginSuppressedAfterExplicitLogout()) {
             self.showLoggedOutState()
             return
         }
@@ -113,7 +114,8 @@ class LoginViewController: BaseViewController {
     
     
     @IBAction func retryButtonPressed(_ sender: Any) {
-        self.checkSession()
+        UIKitTestMode.clearAutoLoginSuppression()
+        self.checkSession(allowAutoLogin: true)
     }
     
     /// Handles the post-login navigation flow.

@@ -127,13 +127,26 @@ extension FronteggAuth {
 
         var workItem: DispatchWorkItem? = nil
         workItem = DispatchWorkItem { [weak self] in
-            guard let self = self, !(workItem!.isCancelled) else { return }
+            guard let self = self, let workItem, !workItem.isCancelled else { return }
             Task {
+                if await self.isLoginInProgress {
+                    self.logger.info(
+                        "Scheduled token refresh fired during login. Retrying in \(self.scheduledRefreshDeferredRetryDelay)s"
+                    )
+                    self.scheduleTokenRefresh(
+                        offset: self.scheduledRefreshDeferredRetryDelay,
+                        attempts: attempts,
+                        skipNetworkCheck: skipNetworkCheck
+                    )
+                    return
+                }
                 await self.refreshTokenIfNeeded(attempts: attempts, skipNetworkCheck: skipNetworkCheck)
             }
         }
         refreshTokenDispatch = workItem
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + offset, execute: workItem!)
+        if let workItem {
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + offset, execute: workItem)
+        }
 
     }
 

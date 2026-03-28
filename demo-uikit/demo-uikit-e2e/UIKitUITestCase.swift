@@ -37,16 +37,17 @@ class UIKitUITestCase: XCTestCase {
 
     // MARK: - Launch Helpers
 
-    func launchApp(resetState: Bool = true) {
+    func launchApp(resetState: Bool = true, preserveLoggedOutState: Bool = false) {
         var env = Self.mockServer.launchEnvironment(resetState: resetState)
         env["frontegg-testing"] = "true"
+        env["FRONTEGG_E2E_PRESERVE_LOGGED_OUT_STATE"] = preserveLoggedOutState ? "1" : "0"
         app.launchEnvironment = env
         app.launch()
     }
 
-    func terminateAndRelaunch(resetState: Bool = false) {
+    func terminateAndRelaunch(resetState: Bool = false, preserveLoggedOutState: Bool = false) {
         terminateAppIfNeeded(assertOnTimeout: true)
-        launchApp(resetState: resetState)
+        launchApp(resetState: resetState, preserveLoggedOutState: preserveLoggedOutState)
     }
 
     func terminateAppIfNeeded(

@@ -42,8 +42,7 @@ public func getQueryItems(_ urlString: String) -> [String : String]? {
             continue
         }
 
-        let normalizedValue = value.replacingOccurrences(of: "+", with: " ")
-        queryItems[item.name] = normalizedValue.removingPercentEncoding ?? normalizedValue
+        queryItems[item.name] = value.removingPercentEncoding ?? value
     }
     return queryItems
 }
