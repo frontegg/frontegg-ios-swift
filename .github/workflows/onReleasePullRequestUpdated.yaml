@@ -54,7 +54,7 @@ jobs:
       - uses: EndBug/add-and-commit@v9
         with:
           author_name: "${{ github.actor }}"
-          author_email: "${{ github.actor }}@users.noreply.github.com}"
+          author_email: "${{ github.actor }}@users.noreply.github.com"
           committer_name: GitHub <noreply@github.com>
           message: "chore(release): Updated CHANGELOG.md"
           add: "CHANGELOG.md"

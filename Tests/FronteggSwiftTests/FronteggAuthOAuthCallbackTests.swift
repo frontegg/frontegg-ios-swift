@@ -807,6 +807,16 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         XCTAssertFalse(auth.isOfflineMode)
     }
 
+    func test_ensureOfflineMonitoringActive_defaultsToSuppressingInitialEmission() {
+        auth.ensureOfflineMonitoringActive()
+
+        let snapshot = NetworkStatusMonitor._testSnapshot()
+
+        XCTAssertTrue(snapshot.monitoringActive)
+        XCTAssertFalse(snapshot.emitInitialState)
+        XCTAssertEqual(snapshot.handlerCount, 1)
+    }
+
     func test_settleUnauthenticatedStartupConnectivity_transientInitialFalse_doesNotLeaveOfflineFlashBehind() async {
         auth.setIsOfflineMode(false)
 

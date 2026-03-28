@@ -540,6 +540,7 @@ extension NetworkStatusMonitor {
         cachedReachable: Bool,
         hasCachedReachable: Bool,
         monitoringActive: Bool,
+        emitInitialState: Bool,
         hasInitialCheckFired: Bool,
         handlerCount: Int,
         indexMapCount: Int
@@ -552,12 +553,18 @@ extension NetworkStatusMonitor {
                 indexMapCount: _indexMap.count
             )
         }
-        let monitoringActive = _monitoringLock.withLock { _isMonitoringActive }
+        let monitoring = _monitoringLock.withLock {
+            (
+                monitoringActive: _isMonitoringActive,
+                emitInitialState: _emitInitialState
+            )
+        }
         let initialCheckFired = _initialCheckLock.withLock { _hasInitialCheckFired }
         return (
             cachedReachable: state.cachedReachable,
             hasCachedReachable: state.hasCachedReachable,
-            monitoringActive: monitoringActive,
+            monitoringActive: monitoring.monitoringActive,
+            emitInitialState: monitoring.emitInitialState,
             hasInitialCheckFired: initialCheckFired,
             handlerCount: state.handlerCount,
             indexMapCount: state.indexMapCount

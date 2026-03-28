@@ -320,7 +320,7 @@ extension FronteggAuth {
         self.lastAttemptReason = .noNetwork
         self.logger.info("Manual refresh connectivity failure - canceling scheduled token refreshes and starting offline monitoring")
         self.cancelScheduledTokenRefresh()
-        self.ensureOfflineMonitoringActive()
+        self.ensureOfflineMonitoringActive(emitInitialState: false)
     }
 
     // MARK: - Offline-like handler
@@ -369,7 +369,7 @@ extension FronteggAuth {
                 self.logger.info("Offline with tokens - canceling scheduled token refreshes to avoid network abuse")
                 self.cancelScheduledTokenRefresh()
                 // Start monitoring so reconnectedToInternet() fires when network returns
-                self.ensureOfflineMonitoringActive()
+                self.ensureOfflineMonitoringActive(emitInitialState: false)
                 return // Don't schedule another refresh — monitoring will handle reconnection
             }
         } else if isConn {
@@ -402,9 +402,9 @@ extension FronteggAuth {
         scheduleTokenRefresh(offset: retryOffset, attempts: attempts + 1, skipNetworkCheck: skipNetworkCheck)
     }
 
-    /// Starts network monitoring so that `reconnectedToInternet()` fires when connectivity returns.
+    /// Starts network monitoring so that `reconnectedToInternet()` fires on a later connectivity transition.
     /// Safe to call multiple times — stops existing monitoring first to avoid duplicates.
-    func ensureOfflineMonitoringActive(intervalOverride: TimeInterval? = nil, emitInitialState: Bool = true) {
+    func ensureOfflineMonitoringActive(intervalOverride: TimeInterval? = nil, emitInitialState: Bool = false) {
         let config = try? PlistHelper.fronteggConfig()
         let monitoringInterval = intervalOverride ?? config?.networkMonitoringInterval ?? 10
 

@@ -263,6 +263,7 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertTrue(auth.isOfflineMode)
         XCTAssertEqual(auth.user?.email, "path-offline@example.com")
         XCTAssertTrue(snapshot.monitoringActive)
+        XCTAssertFalse(snapshot.emitInitialState)
         await assertOfflineModePersistsBriefly()
     }
 
@@ -311,6 +312,7 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertTrue(auth.isOfflineMode)
         XCTAssertEqual(auth.user?.email, "destination-unreachable@example.com")
         XCTAssertTrue(snapshot.monitoringActive)
+        XCTAssertFalse(snapshot.emitInitialState)
     }
 
     func test_refreshTokenIfNeeded_refreshSucceeds_me401_clearsSession() async throws {
