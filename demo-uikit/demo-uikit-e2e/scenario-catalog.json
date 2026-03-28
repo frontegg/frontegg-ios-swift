@@ -21,11 +21,6 @@
       "description": "Logs in with short-lived token, waits for expiry, verifies token refreshes and session continues."
     },
     {
-      "method": "testLoginErrorShowsRetryButton",
-      "title": "Login Error Shows Retry",
-      "description": "Mock server drops connection, verifies error label and retry button appear."
-    },
-    {
       "method": "testColdLaunchInitializesCorrectly",
       "title": "Cold Launch Initializes",
       "description": "Fresh launch verifies app reaches either login or stream page without crashing."

@@ -34,6 +34,27 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         )
     }
 
+    private func waitForRefreshRecoveryFlowToStart(
+        refreshCountAtLeast count: Int,
+        timeout: TimeInterval = 10
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            let offlineMarkerVisible = app.staticTexts["AuthenticatedOfflineModeEnabled"].exists
+            let refreshingTokenValue = app.staticTexts["AuthRefreshingTokenValue"]
+            let isRefreshingToken = refreshingTokenValue.exists && refreshingTokenValue.label == "1"
+
+            if refreshRequestCount() >= count || offlineMarkerVisible || isRefreshingToken {
+                return
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("Expected refresh recovery flow to start. \(screenDebugSummary())")
+    }
+
     private func queueRefreshConnectionDrops(count: Int = 1) throws {
         for path in refreshTokenPaths {
             try Self.server.queueConnectionDrops(path: path, count: count)
@@ -217,15 +238,21 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
 
         launchApp(resetState: true)
         loginWithPassword()
+        Self.server.clearRequestLog()
 
         waitUntilAccessTokenExpiresWithin(immediateRefreshTriggerWindow, timeout: 15)
         let initialVersion = accessTokenVersion()
+        Self.server.clearRequestLog()
         let initialRefreshCount = refreshRequestCount()
 
         try queueRefreshConnectionDrops()
         try Self.server.queueProbeFailures(statusCodes: Array(repeating: 503, count: 6))
 
         tapGetCurrentAccessTokenButton()
+        waitForRefreshRecoveryFlowToStart(
+            refreshCountAtLeast: initialRefreshCount + 1,
+            timeout: 10
+        )
         waitForRefreshRequestCount(atLeast: initialRefreshCount + 1, timeout: 10)
         waitForAuthenticatedOfflineMode(true, timeout: 30)
         XCTAssertTrue(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
@@ -252,9 +279,11 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
 
         launchApp(resetState: true)
         loginWithPassword()
+        Self.server.clearRequestLog()
 
         waitUntilAccessTokenExpiresWithin(immediateRefreshTriggerWindow, timeout: 15)
         let initialVersion = accessTokenVersion()
+        Self.server.clearRequestLog()
         let initialRefreshCount = refreshRequestCount()
 
         try Self.server.queueProbeFailures(
@@ -263,6 +292,10 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         try queueRefreshConnectionDrops()
 
         tapGetCurrentAccessTokenButton()
+        waitForRefreshRecoveryFlowToStart(
+            refreshCountAtLeast: initialRefreshCount + 1,
+            timeout: 10
+        )
         waitForRefreshRequestCount(atLeast: initialRefreshCount + 1, timeout: 10)
         waitForAuthenticatedOfflineMode(true, timeout: 30)
         XCTAssertTrue(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())

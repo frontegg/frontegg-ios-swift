@@ -9,13 +9,14 @@ on:
     branches:
       - master
 
+
 jobs:
   validate-pr:
     name: "Validate PR Description"
     runs-on: 'ubuntu-latest'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Get Pull Request Description
         env:
@@ -40,7 +41,7 @@ jobs:
     runs-on: 'macos-15-xlarge'
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Check macOS and Xcode versions
         run: |
@@ -78,7 +79,7 @@ jobs:
     runs-on: 'macos-15-xlarge'
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Build for Testing
         run: |

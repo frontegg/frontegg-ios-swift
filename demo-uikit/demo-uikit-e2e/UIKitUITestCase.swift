@@ -30,6 +30,7 @@ class UIKitUITestCase: XCTestCase {
     }
 
     override func tearDown() {
+        terminateAppIfNeeded(assertOnTimeout: false)
         app = nil
         super.tearDown()
     }
@@ -44,8 +45,31 @@ class UIKitUITestCase: XCTestCase {
     }
 
     func terminateAndRelaunch(resetState: Bool = false) {
-        app.terminate()
+        terminateAppIfNeeded(assertOnTimeout: true)
         launchApp(resetState: resetState)
+    }
+
+    func terminateAppIfNeeded(
+        timeout: TimeInterval = 5,
+        assertOnTimeout: Bool = true
+    ) {
+        guard let app else { return }
+        guard app.state != .notRunning else { return }
+
+        app.terminate()
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if app.state == .notRunning {
+                return
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        if assertOnTimeout {
+            XCTFail("App did not terminate within \(timeout)s. Debug: \(screenDebugSummary())")
+        }
     }
 
     // MARK: - Screen Waiters
@@ -70,12 +94,36 @@ class UIKitUITestCase: XCTestCase {
         XCTAssertTrue(label.waitForExistence(timeout: timeout), "AccessTokenLabel did not appear")
     }
 
+    func waitForElementToDisappear(
+        _ element: XCUIElement,
+        description: String,
+        timeout: TimeInterval = 15
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if !element.exists {
+                return
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("\(description) did not disappear within \(timeout)s. Debug: \(screenDebugSummary())")
+    }
+
     // MARK: - Interaction Helpers
 
     func tapButton(_ identifier: String, timeout: TimeInterval = 10) {
         let button = app.buttons[identifier]
-        XCTAssertTrue(button.waitForExistence(timeout: timeout), "Button '\(identifier)' not found")
-        button.tap()
+        if button.waitForExistence(timeout: timeout) {
+            button.safeTap()
+            return
+        }
+
+        let predicate = NSPredicate(format: "identifier == %@", identifier)
+        let match = app.descendants(matching: .any).matching(predicate).firstMatch
+        XCTAssertTrue(match.waitForExistence(timeout: 3), "Button '\(identifier)' not found")
+        match.safeTap()
     }
 
     func configureDefaultToken(email: String = "test@frontegg.com", accessTTL: Int = 3600) {
@@ -92,5 +140,21 @@ class UIKitUITestCase: XCTestCase {
         let texts = app.staticTexts.allElementsBoundByIndex.prefix(20).map { $0.label }
         let buttons = app.buttons.allElementsBoundByIndex.prefix(10).map { $0.label }
         return "Texts: \(texts)\nButtons: \(buttons)"
+    }
+}
+
+extension XCUIElement {
+    @discardableResult
+    func waitUntilExists(
+        timeout: TimeInterval = 10,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> XCUIElement {
+        XCTAssertTrue(waitForExistence(timeout: timeout), file: file, line: line)
+        return self
+    }
+
+    func safeTap() {
+        coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 }

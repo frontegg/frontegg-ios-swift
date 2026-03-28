@@ -39,11 +39,10 @@ final class UIKitE2ETests: UIKitUITestCase {
 
         waitForStreamPage(timeout: 30)
 
-        let logoutButton = app.buttons["Logout"]
-        if logoutButton.waitForExistence(timeout: 5) {
-            logoutButton.tap()
-            waitForLoginPage(timeout: 15)
-        }
+        tapButton("Logout", timeout: 10)
+        waitForLoginPage(timeout: 15)
+        waitForElementToDisappear(app.buttons["Logout"], description: "Logout button", timeout: 5)
+        XCTAssertFalse(app.staticTexts["AccessTokenLabel"].exists, screenDebugSummary())
     }
 
     // MARK: - Token Refresh

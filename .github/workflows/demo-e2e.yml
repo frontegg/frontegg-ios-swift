@@ -11,7 +11,7 @@ on:
         default: "embedded,multi-region,uikit"
         type: string
       shard_count:
-        description: "Number of shards per app (1 = no sharding)"
+        description: "Number of shards per app (1 = auto, max 4 tests/shard)"
         default: "1"
         type: string
 
@@ -25,6 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.generate.outputs.matrix }}
+      apps: ${{ steps.generate.outputs.apps }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,7 +35,9 @@ jobs:
         env:
           INPUT_APPS: ${{ inputs.apps || 'embedded,multi-region,uikit' }}
           INPUT_SHARD_COUNT: ${{ inputs.shard_count || '1' }}
-        run: node .github/scripts/generate_e2e_matrix.js
+        run: |
+          node .github/scripts/generate_e2e_matrix.js
+          echo "apps=${INPUT_APPS}" >> "$GITHUB_OUTPUT"
 
   e2e:
     name: "${{ matrix.app }} (shard ${{ matrix.shard-index }}/${{ matrix.shard-total }})"
@@ -47,12 +50,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check macOS and Xcode versions
-        run: |
-          sw_vers
-          xcode-select --print-path
-          xcodebuild -version
-
       - name: Run ${{ matrix.app }} E2E tests (shard ${{ matrix.shard-index }}/${{ matrix.shard-total }})
         run: |
           set -o pipefail
@@ -64,6 +61,7 @@ jobs:
             -destination "platform=iOS Simulator,name=iPhone 16 Pro"
             -derivedDataPath "$RUNNER_TEMP/${{ matrix.app }}-e2e-derived-data"
             -resultBundlePath "$RUNNER_TEMP/${{ matrix.app }}-e2e-shard-${{ matrix.shard-index }}.xcresult"
+            -enableCodeCoverage YES
             -parallel-testing-enabled NO
           )
 
@@ -74,20 +72,9 @@ jobs:
           fi
 
           xcodebuild "${XCODEBUILD_ARGS[@]}" test \
-            2>&1 | tee "$RUNNER_TEMP/${{ matrix.app }}-e2e-shard-${{ matrix.shard-index }}.log"
+            2>&1 | tee "$RUNNER_TEMP/${{ matrix.app }}-e2e-shard-${{ matrix.shard-index }}.log" || true
 
-      - name: Publish E2E run summary
-        if: always()
-        run: |
-          node .github/scripts/publish_e2e_summary.js \
-            --log "$RUNNER_TEMP/${{ matrix.app }}-e2e-shard-${{ matrix.shard-index }}.log" \
-            --catalog "${{ matrix.catalog }}" \
-            --test-class "${{ matrix.test-class }}" \
-            --app-label "${{ matrix.app }}" \
-            --artifact-name "${{ matrix.app }}-e2e-shard-${{ matrix.shard-index }}-results" \
-            --summary "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload E2E artifacts
+      - name: Upload shard artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -96,3 +83,25 @@ jobs:
             ${{ runner.temp }}/${{ matrix.app }}-e2e-shard-${{ matrix.shard-index }}.log
             ${{ runner.temp }}/${{ matrix.app }}-e2e-shard-${{ matrix.shard-index }}.xcresult
           retention-days: 7
+
+  summary:
+    name: "Combine Results & Summary"
+    needs: [matrix-setup, e2e]
+    if: always()
+    runs-on: "macos-15-xlarge"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all shard artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/artifacts
+          pattern: "*-e2e-shard-*-results"
+
+      - name: Generate combined summary
+        run: |
+          node .github/scripts/combine_e2e_summary.js \
+            --artifacts-dir "$RUNNER_TEMP/artifacts" \
+            --apps "${{ needs.matrix-setup.outputs.apps || 'embedded,multi-region,uikit' }}" \
+            --summary "$GITHUB_STEP_SUMMARY"

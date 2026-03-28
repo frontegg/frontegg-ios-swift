@@ -91,6 +91,10 @@ final class LocalMockAuthServer {
 
     func reset() throws {
         state.reset()
+        clearRequestLog()
+    }
+
+    func clearRequestLog() {
         requestLogLock.lock()
         requestLog.removeAll()
         requestLogLock.unlock()
