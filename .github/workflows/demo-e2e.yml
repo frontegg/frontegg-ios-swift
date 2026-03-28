@@ -28,7 +28,7 @@ jobs:
       apps: ${{ steps.generate.outputs.apps }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Generate matrix
         id: generate
@@ -48,7 +48,7 @@ jobs:
       matrix: ${{ fromJson(needs.matrix-setup.outputs.matrix) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Run ${{ matrix.app }} E2E tests (shard ${{ matrix.shard-index }}/${{ matrix.shard-total }})
         run: |
@@ -72,10 +72,10 @@ jobs:
           fi
 
           xcodebuild "${XCODEBUILD_ARGS[@]}" test \
-            2>&1 | tee "$RUNNER_TEMP/${{ matrix.app }}-e2e-shard-${{ matrix.shard-index }}.log" || true
+            2>&1 | tee "$RUNNER_TEMP/${{ matrix.app }}-e2e-shard-${{ matrix.shard-index }}.log"
 
       - name: Upload shard artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ${{ matrix.app }}-e2e-shard-${{ matrix.shard-index }}-results
@@ -91,10 +91,10 @@ jobs:
     runs-on: "macos-15-xlarge"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download all shard artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: ${{ runner.temp }}/artifacts
           pattern: "*-e2e-shard-*-results"
