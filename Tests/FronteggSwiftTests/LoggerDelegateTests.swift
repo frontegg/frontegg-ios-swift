@@ -62,8 +62,11 @@ final class LoggerDelegateTests: XCTestCase {
         log("error message", as: .error, with: logger)
         log("critical message", as: .critical, with: logger)
 
+        // Filter by tag to isolate from SDK singleton log noise (e.g. FronteggApp.shared
+        // initialized by other tests emitting events via applicationDidBecomeActive)
+        let relevant = spy.events.filter { $0.tag == "ThresholdTest" }
         XCTAssertEqual(
-            spy.events,
+            relevant,
             [
                 .init(message: "trace message", level: .trace, tag: "ThresholdTest"),
                 .init(message: "debug message", level: .debug, tag: "ThresholdTest"),

@@ -374,12 +374,20 @@ extension FronteggAuth {
                 }
             }
         } else {
-            // No tokens found - keep the loader visible while startup connectivity races the offline timeout.
-            Task {
-                let interval = (try? PlistHelper.fronteggConfig())?.networkMonitoringInterval ?? 10
-                _ = await self.completeUnauthenticatedStartupInitialization(
-                    monitoringInterval: interval
-                )
+            if enableOfflineMode {
+                // Offline mode: run connectivity race and start monitoring
+                Task {
+                    let interval = (try? PlistHelper.fronteggConfig())?.networkMonitoringInterval ?? 10
+                    _ = await self.completeUnauthenticatedStartupInitialization(
+                        monitoringInterval: interval
+                    )
+                }
+            } else {
+                // No offline mode, no tokens: finalize startup without monitoring
+                Task { @MainActor in
+                    self.setIsLoading(false)
+                    self.setInitializing(false)
+                }
             }
         }
     }

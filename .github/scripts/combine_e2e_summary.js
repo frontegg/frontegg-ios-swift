@@ -137,7 +137,7 @@ function groupCoverageByFolder(fileMap) {
     if (!folder) { folder = { covered: 0, total: 0, files: [] }; folders.set(sub, folder); }
     folder.covered += covered;
     folder.total += total;
-    folder.files.push({ name: fileName, covered, total, pct: total > 0 ? ((covered / total) * 100).toFixed(1) : "0.0" });
+    folder.files.push({ name: fileName, covered, total, pct: total > 0 ? (covered / total) * 100 : 0 });
   }
   return folders;
 }
@@ -196,22 +196,22 @@ function renderCoverage(folders) {
   lines.push("", "| Folder | Coverage | Lines |", "| --- | --- | --- |");
 
   for (const [folder, v] of sorted) {
-    const pct = v.total > 0 ? ((v.covered / v.total) * 100).toFixed(1) : "0.0";
+    const pct = v.total > 0 ? (v.covered / v.total) * 100 : 0;
     const bar = pct >= 80 ? "🟢" : pct >= 50 ? "🟡" : "🔴";
-    lines.push(`| ${bar} ${esc(folder)} | ${pct}% | ${v.covered}/${v.total} |`);
+    lines.push(`| ${bar} ${esc(folder)} | ${pct.toFixed(1)}% | ${v.covered}/${v.total} |`);
   }
 
   // Accordion per folder with file details
   lines.push("");
   for (const [folder, v] of sorted) {
     if (v.files.length === 0) continue;
-    const pct = v.total > 0 ? ((v.covered / v.total) * 100).toFixed(1) : "0.0";
-    lines.push(`<details><summary>${folder} — ${pct}% (${v.files.length} files)</summary>`, "");
+    const pct = v.total > 0 ? (v.covered / v.total) * 100 : 0;
+    lines.push(`<details><summary>${folder} — ${pct.toFixed(1)}% (${v.files.length} files)</summary>`, "");
     lines.push("| File | Coverage | Lines |", "| --- | --- | --- |");
     const sortedFiles = v.files.sort((a, b) => a.name.localeCompare(b.name));
     for (const f of sortedFiles) {
       const bar = f.pct >= 80 ? "🟢" : f.pct >= 50 ? "🟡" : "🔴";
-      lines.push(`| ${bar} ${esc(f.name)} | ${f.pct}% | ${f.covered}/${f.total} |`);
+      lines.push(`| ${bar} ${esc(f.name)} | ${f.pct.toFixed(1)}% | ${f.covered}/${f.total} |`);
     }
     lines.push("", "</details>");
   }
