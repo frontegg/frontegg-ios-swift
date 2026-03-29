@@ -246,7 +246,7 @@ extension FronteggAuth {
 
             guard isNetworkAvailable else {
                 self.logger.info("Refresh rescheduled due to inactive internet (path check, no /test call)")
-                handleOfflineLikeFailure(
+                await handleOfflineLikeFailure(
                     error: nil,
                     enableOfflineMode: enableOfflineMode,
                     attempts: attempts
@@ -257,7 +257,7 @@ extension FronteggAuth {
             // Offline mode not enabled - use NetworkStatusMonitor.isActive (will make /test call)
             guard await NetworkStatusMonitor.isActive else {
                 self.logger.info("Refresh rescheduled due to inactive internet")
-                handleOfflineLikeFailure(
+                await handleOfflineLikeFailure(
                     error: nil,
                     enableOfflineMode: enableOfflineMode,
                     attempts: attempts
@@ -507,7 +507,7 @@ extension FronteggAuth {
             }
 
             // Everything else → centralized offline-like handler decides
-            handleOfflineLikeFailure(
+            await handleOfflineLikeFailure(
                 error: error,
                 enableOfflineMode: enableOfflineMode,
                 attempts: effectiveAttempts,
@@ -516,7 +516,7 @@ extension FronteggAuth {
             return false
 
         } catch {
-            handleOfflineLikeFailure(
+            await handleOfflineLikeFailure(
                 error: error,
                 enableOfflineMode: enableOfflineMode,
                 attempts: effectiveAttempts,

@@ -351,7 +351,7 @@ extension FronteggAuth {
         enableOfflineMode: Bool,
         attempts: Int,
         skipNetworkCheck: Bool = false
-    ) {
+    ) async {
         // Classify error type
         let isConn = error.map { isConnectivityError($0) } ?? true // treat nil as connectivity (e.g., no active internet path)
 
@@ -374,7 +374,7 @@ extension FronteggAuth {
             if let resolvedUser, self.credentialManager.getOfflineUser() == nil {
                 self.credentialManager.saveOfflineUser(user: resolvedUser)
             }
-            DispatchQueue.main.async {
+            await MainActor.run {
                 self.setUser(resolvedUser)
                 self.setInitializing(false)
                 self.setIsAuthenticated(hasTokens)
@@ -396,7 +396,7 @@ extension FronteggAuth {
             // Preserve isAuthenticated; keep isOfflineMode=false (app didn't opt into offline UX).
             if hasTokens {
                 self.logger.info("Connectivity error with valid tokens (offline mode not enabled). Preserving auth state, keeping isOfflineMode=false.")
-                DispatchQueue.main.async {
+                await MainActor.run {
                     self.setInitializing(false)
                     self.setIsLoading(false)
                 }
