@@ -43,8 +43,9 @@ public class FronteggAuth: FronteggState {
     
     let logger = getLogger("FronteggAuth")
     public let credentialManager: CredentialManager
-    // internal for extension access (FronteggAuth+AdvancedAuth.swift)
+    // internal for extension access (FronteggAuth+MFA.swift)
     var multiFactorAuthenticator: MultiFactorAuthenticator
+    // internal for extension access (FronteggAuth+StepUp.swift)
     var stepUpAuthenticator: StepUpAuthenticator
     public var api: Api
     public var featureFlags: FeatureFlags
@@ -161,6 +162,8 @@ public class FronteggAuth: FronteggState {
     // MARK: Hosted Flows — see FronteggAuth+HostedFlows.swift
     // MARK: Social Flows — see FronteggAuth+SocialFlows.swift
     // MARK: Embedded & DeepLink — see FronteggAuth+EmbeddedAndDeepLink.swift
-    // MARK: Advanced Auth — see FronteggAuth+AdvancedAuth.swift
+    // MARK: MFA — see FronteggAuth+MFA.swift
+    // MARK: Step-Up — see FronteggAuth+StepUp.swift
+    // MARK: Passkeys — see FronteggAuth+Passkeys.swift
 
 }

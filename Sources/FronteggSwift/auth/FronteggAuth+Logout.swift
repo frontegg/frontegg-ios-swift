@@ -45,8 +45,10 @@ extension FronteggAuth {
             }
             CredentialManager.clearPendingOAuthFlows()
 
+            await self.serverLogoutWithTimeout(accessToken: accessTokenForServerLogout, refreshToken: refreshTokenForServerLogout)
+
             if clearCookie {
-                await self.clearCookie()
+                await self.clearCookieWithTimeout()
             }
 
             setIsAuthenticated(false)
@@ -74,10 +76,6 @@ extension FronteggAuth {
 
             setIsLoading(false)
             completion?(.success(true))
-
-            Task {
-                await self.api.logout(accessToken: accessTokenForServerLogout, refreshToken: refreshTokenForServerLogout)
-            }
         }
 
     }
@@ -196,6 +194,72 @@ extension FronteggAuth {
 
         let elapsed = String(format: "%.2fs", Date().timeIntervalSince(start))
         self.logger.info("Cookie cleanup completed. Deleted \(deleted)/\(targets.count) cookies in \(elapsed).")
+    }
+
+    /// Server logout with timeout — silently continues if the request hangs or fails.
+    private func serverLogoutWithTimeout(accessToken: String?, refreshToken: String?, timeout: TimeInterval = 5) async {
+        final class OnceGuard: @unchecked Sendable {
+            private let lock = NSLock()
+            private var fired = false
+            func tryFire() -> Bool {
+                lock.lock()
+                defer { lock.unlock() }
+                guard !fired else { return false }
+                fired = true
+                return true
+            }
+        }
+
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            let guard_ = OnceGuard()
+
+            Task {
+                await self.api.logout(accessToken: accessToken, refreshToken: refreshToken)
+                if guard_.tryFire() { cont.resume() }
+            }
+
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                if guard_.tryFire() {
+                    self?.logger.warning("Server logout timed out after \(timeout)s — proceeding with local cleanup")
+                    cont.resume()
+                }
+            }
+        }
+    }
+
+    /// Wraps `clearCookie()` with a timeout to prevent the logout flow from hanging
+    /// if `WKHTTPCookieStore` callbacks are never delivered (e.g., WebKit process terminated).
+    @MainActor
+    private func clearCookieWithTimeout(timeout: TimeInterval = 5) async {
+        final class OnceGuard: @unchecked Sendable {
+            private let lock = NSLock()
+            private var fired = false
+            func tryFire() -> Bool {
+                lock.lock()
+                defer { lock.unlock() }
+                guard !fired else { return false }
+                fired = true
+                return true
+            }
+        }
+
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            let guard_ = OnceGuard()
+
+            Task { @MainActor in
+                await self.clearCookie()
+                if guard_.tryFire() { cont.resume() }
+            }
+
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                if guard_.tryFire() {
+                    self?.logger.warning("Cookie clearing timed out after \(timeout)s — proceeding with logout")
+                    cont.resume()
+                }
+            }
+        }
     }
 
     public func logout() {
