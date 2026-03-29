@@ -5,7 +5,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { execSync } = require("node:child_process");
+const { execFileSync } = require("node:child_process");
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -111,10 +111,10 @@ function extractCoverage(xcresultPaths) {
   } else {
     // Merge all xcresult bundles for true combined coverage
     const mergedPath = path.join(os.tmpdir(), `combined-${Date.now()}.xcresult`);
-    const quotedPaths = xcresultPaths.map(p => `"${p}"`).join(" ");
     try {
-      execSync(
-        `xcrun xcresulttool merge ${quotedPaths} --output-path "${mergedPath}"`,
+      execFileSync(
+        "xcrun",
+        ["xcresulttool", "merge", ...xcresultPaths, "--output-path", mergedPath],
         { timeout: 120000 }
       );
       reportPath = mergedPath;
@@ -144,7 +144,7 @@ function extractCoverageFallback(xcresultPaths) {
 function extractCoverageFromBundle(xcresultPath) {
   const fileMap = new Map();
   try {
-    const out = execSync(`xcrun xccov view --report --files-for-target FronteggSwift "${xcresultPath}" 2>/dev/null`, { encoding: "utf8", timeout: 30000 });
+    const out = execFileSync("xcrun", ["xccov", "view", "--report", "--files-for-target", "FronteggSwift", xcresultPath], { encoding: "utf8", timeout: 30000, stdio: ["pipe", "pipe", "ignore"] });
     for (const line of out.split("\n")) {
       const match = line.match(/^\s*\d+\s+(\S+\.swift)\s+\d+\s+[\d.]+%\s+\((\d+)\/(\d+)\)/);
       if (match) {

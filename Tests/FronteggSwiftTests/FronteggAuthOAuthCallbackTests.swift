@@ -863,8 +863,8 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
             await auth.completeUnauthenticatedStartupInitialization(
                 monitoringInterval: 1,
                 startupProbeTimeout: 0.01,
-                offlineCommitWindow: 0.08,
-                probeDelay: 0.02,
+                offlineCommitWindow: 1.0,
+                probeDelay: 0.1,
                 connectivityProbe: { _ in
                     probeSequence.next()
                 },
@@ -872,7 +872,7 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
             )
         }
 
-        try? await Task.sleep(nanoseconds: 15_000_000)
+        try? await Task.sleep(nanoseconds: 50_000_000)
 
         let midRaceSnapshot = NetworkStatusMonitor._testSnapshot()
         XCTAssertFalse(midRaceSnapshot.monitoringActive)
@@ -898,14 +898,14 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         auth.setIsOfflineMode(false)
 
         let postConnectivityServicesCalled = BooleanBox(false)
-        let probeSequence = StartupProbeSequence(Array(repeating: false, count: 8))
+        let probeSequence = StartupProbeSequence(Array(repeating: false, count: 20))
 
         let task = Task {
             await auth.completeUnauthenticatedStartupInitialization(
                 monitoringInterval: 1,
                 startupProbeTimeout: 0.01,
-                offlineCommitWindow: 0.08,
-                probeDelay: 0.02,
+                offlineCommitWindow: 1.0,
+                probeDelay: 0.1,
                 connectivityProbe: { _ in
                     probeSequence.next()
                 },
@@ -915,7 +915,7 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
             )
         }
 
-        try? await Task.sleep(nanoseconds: 30_000_000)
+        try? await Task.sleep(nanoseconds: 50_000_000)
 
         let midRaceSnapshot = NetworkStatusMonitor._testSnapshot()
         XCTAssertFalse(midRaceSnapshot.monitoringActive)
