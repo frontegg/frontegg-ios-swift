@@ -13,16 +13,21 @@ struct LoginPage: View {
                 Color.backgroundColor.ignoresSafeArea()
                 
                 ScrollView {
-                    Spacer().frame(height: 150)
+                    Spacer().frame(height: DemoEmbeddedTestMode.isEnabled ? 32 : 150)
                     content
-                    Spacer().frame(height: 200)
+                    Spacer().frame(height: DemoEmbeddedTestMode.isEnabled ? 48 : 200)
                 }
-                
+
             }
             .overlay(FronteggAppBar()
                 .ignoresSafeArea(edges: .top),alignment: .top)
-            .overlay(Footer()
-                .ignoresSafeArea(edges: .bottom),alignment: .bottom)
+            .overlay(alignment: .bottom) {
+                if !DemoEmbeddedTestMode.isEnabled {
+                    Footer()
+                        .ignoresSafeArea(edges: .bottom)
+                }
+            }
+            .accessibilityIdentifier("LoginPageRoot")
         }
         
     }
@@ -71,6 +76,10 @@ struct LoginBody: View {
                             fronteggAuth.login()
                         }
                         .buttonStyle(PrimaryButtonStyle())
+                        .accessibilityIdentifier("NativeLoginButton")
+                        if DemoEmbeddedTestMode.isEnabled {
+                            e2eControls
+                        }
                         Button("Login with popup") {
                             fronteggAuth.directLoginAction(window: nil, type: "social-login", data: "apple", ephemeralSession: true)
                         }
@@ -92,6 +101,7 @@ struct LoginBody: View {
                             .textFieldStyle(.roundedBorder)
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
+                            .accessibilityIdentifier("RequestAuthorizeTokenField")
                         Text("Use refresh token from POST /frontegg/identity/resources/users/v1/signUp (authResponse.refreshToken or Set-Cookie).")
                             .font(.caption)
                             .foregroundColor(.gray600)
@@ -100,10 +110,12 @@ struct LoginBody: View {
                         }
                         .buttonStyle(PrimaryButtonStyle())
                         .disabled(signUpRefreshToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityIdentifier("RequestAuthorizeButton")
                         if let msg = requestAuthorizeMessage {
                             Text(msg)
                                 .font(.caption)
                                 .foregroundColor(requestAuthorizeSuccess ? .green : .red)
+                                .accessibilityIdentifier("RequestAuthorizeMessage")
                         }
                         Button("Login with Organization") {
                             FronteggApp.shared.loginOrganizationAlias = "test"
@@ -144,6 +156,70 @@ struct LoginBody: View {
                 requestAuthorizeSuccess = false
             }
         }
+    }
+
+    @ViewBuilder
+    private var e2eControls: some View {
+        Divider()
+            .padding(.vertical, 16)
+        Text("E2E Controls")
+            .font(.bodyMedium)
+            .foregroundColor(.gray600)
+        Button("E2E Embedded Password Login") {
+            fronteggAuth.login(loginHint: DemoEmbeddedTestMode.embeddedPasswordEmail)
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .accessibilityIdentifier("E2EEmbeddedPasswordButton")
+        Button("E2E Embedded SAML Login") {
+            fronteggAuth.login(loginHint: DemoEmbeddedTestMode.embeddedSAMLEmail)
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .accessibilityIdentifier("E2EEmbeddedSAMLButton")
+        Button("E2E Embedded OIDC Login") {
+            fronteggAuth.login(loginHint: DemoEmbeddedTestMode.embeddedOIDCEmail)
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .accessibilityIdentifier("E2EEmbeddedOIDCButton")
+        Button("E2E Embedded Google Social Login") {
+            startEmbeddedGoogleSocialLogin()
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .accessibilityIdentifier("E2EEmbeddedGoogleSocialButton")
+        Button("Use E2E Request Authorize Token") {
+            signUpRefreshToken = DemoEmbeddedTestMode.requestAuthorizeRefreshToken
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .accessibilityIdentifier("E2ESeedRequestAuthorizeTokenButton")
+        Button("E2E Custom SSO") {
+            guard let ssoUrl = DemoEmbeddedTestMode.customSSOUrl else { return }
+            print("E2E Custom SSO tapped: \(ssoUrl)")
+            fronteggAuth.loginWithCustomSSO(ssoUrl: ssoUrl)
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .accessibilityIdentifier("E2ECustomSSOButton")
+        Button("E2E Direct Social Login") {
+            guard let socialLoginUrl = DemoEmbeddedTestMode.directSocialLoginUrl else { return }
+            fronteggAuth.directLoginAction(
+                window: nil,
+                type: "direct",
+                data: socialLoginUrl,
+                ephemeralSession: true,
+                remainCodeVerifier: true
+            )
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .accessibilityIdentifier("E2EDirectSocialLoginButton")
+    }
+
+    private func startEmbeddedGoogleSocialLogin() {
+        NSLog("E2E startEmbeddedGoogleSocialLogin opening embedded login")
+        fronteggAuth.login()
+        NSLog("E2E startEmbeddedGoogleSocialLogin invoking handleSocialLogin")
+        fronteggAuth.handleSocialLogin(
+            providerString: "google",
+            custom: false,
+            action: .login
+        )
     }
 }
 

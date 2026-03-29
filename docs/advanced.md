@@ -257,6 +257,133 @@ You can configure the log level in your `Frontegg.plist` file:
 
 Available values: `trace`, `debug`, `info`, `warn`, `error`, `critical`
 
+### Logger Delegate
+
+You can forward SDK log events to your own logging pipeline by implementing
+`FronteggLoggerDelegate`.
+
+```swift
+final class SDKLogBridge: FronteggLoggerDelegate {
+    func fronteggSDK(didLog message: String, level: FeLogger.Level, tag: String) {
+        DispatchQueue.global(qos: .utility).async {
+            print("[\(tag)] \(level): \(message)")
+        }
+    }
+}
+
+let bridge = SDKLogBridge()
+
+// Capture logs as early as possible.
+FeLogger.delegate = bridge
+
+// Or set it after SDK initialization.
+FronteggApp.shared.loggerDelegate = bridge
+```
+
+Notes:
+
+- The delegate is stored weakly. Retain your bridge in app code.
+- The delegate is called synchronously on the originating thread.
+- `logLevel` controls the SDK's built-in `os.Logger` output only. The delegate
+  receives all SDK log events.
+- `info`, `warn`, `error`, and `critical` delegate messages are sanitized before
+  delivery.
+- `trace` and `debug` delegate messages are forwarded as-is and may contain
+  sensitive values, so filter them before exporting to production systems.
+- Assign `FeLogger.delegate` before accessing `FronteggApp.shared` if you need
+  bootstrap logs.
+- Avoid expensive work or recursive logging directly in the callback. Dispatch
+  long-running export work to your own queue.
+
+### OAuth Error Presentation and Delegate
+
+The SDK can either render OAuth failures using its built-in toast or delegate
+presentation to your app.
+
+By default, the SDK uses:
+
+```swift
+FronteggApp.shared.oauthErrorPresentation = .toast
+```
+
+In `.toast` mode, the SDK shows its own top toast with a normalized,
+user-facing error message.
+
+If you want full control over the UI, switch to `.delegate` and implement
+`FronteggOAuthErrorDelegate`:
+
+```swift
+import UIKit
+import FronteggSwift
+
+final class OAuthErrorBridge: FronteggOAuthErrorDelegate {
+    weak var presenter: UIViewController?
+
+    init(presenter: UIViewController) {
+        self.presenter = presenter
+    }
+
+    func fronteggSDK(didReceiveOAuthError context: FronteggOAuthErrorContext) {
+        let title: String
+        switch context.flow {
+        case .socialLogin:
+            title = "Social Login Failed"
+        case .sso, .customSSO:
+            title = "SSO Failed"
+        default:
+            title = "Authentication Failed"
+        }
+
+        let alert = UIAlertController(
+            title: title,
+            message: context.displayMessage,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        presenter?.present(alert, animated: true)
+    }
+}
+
+final class LoginViewController: UIViewController {
+    private var oauthErrorBridge: OAuthErrorBridge?
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        let bridge = OAuthErrorBridge(presenter: self)
+        oauthErrorBridge = bridge
+
+        FronteggApp.shared.oauthErrorPresentation = .delegate
+        FronteggApp.shared.oauthErrorDelegate = bridge
+    }
+}
+```
+
+The delegate receives a `FronteggOAuthErrorContext` with:
+
+- `displayMessage`: the user-facing message the SDK would show in toast mode.
+- `errorCode`: the raw OAuth error code, when available.
+- `errorDescription`: the decoded OAuth error description, when available.
+- `error`: the underlying `FronteggError`.
+- `flow`: which OAuth flow failed (`login`, `socialLogin`, `sso`,
+  `customSSO`, `apple`, `mfa`, `stepUp`, `verification`).
+- `embeddedMode`: whether the SDK was running in embedded mode.
+
+Notes:
+
+- `oauthErrorPresentation` defaults to `.toast`.
+- In `.delegate` mode, the SDK does not show its built-in toast.
+- The delegate is stored weakly. Retain it in app code.
+- The delegate callback is delivered on the main thread.
+- User-cancelled OAuth flows are not reported to the delegate and do not show a
+  toast.
+- The auth flow's completion handlers still run. The delegate is only for UI
+  presentation.
+
+SwiftUI apps can use the same delegate approach by updating view state from the
+callback and presenting an `.alert`, `.sheet`, or custom banner using
+`context.displayMessage`.
+
 ### Trace ID Logging
 
 The SDK logs trace IDs from API responses (in the `frontegg-trace-id` header) in two ways:

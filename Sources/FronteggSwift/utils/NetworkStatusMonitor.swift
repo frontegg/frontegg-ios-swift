@@ -107,7 +107,12 @@ private func checkServerConnectivity(
 ) async -> Bool {
     guard var comps = URLComponents(string: baseURLString) else { return false }
     if comps.scheme == nil { comps.scheme = "https" }
-    if comps.scheme?.lowercased() != "https" { return false } // enforce https
+    let scheme = comps.scheme?.lowercased()
+    let host = comps.host?.lowercased()
+    let allowsTestingHTTP = FronteggRuntime.isTesting &&
+        scheme == "http" &&
+        (host == "127.0.0.1" || host == "localhost")
+    if scheme != "https" && !allowsTestingHTTP { return false }
     guard let url = comps.url else { return false }
 
     let cfg = URLSessionConfiguration.ephemeral
@@ -171,11 +176,13 @@ public enum NetworkStatusMonitor {
 
     // Cached state for background monitoring
     private static var _cachedReachable = false
+    private static var _hasCachedReachable = false
     private static var _hasInitialCheckFired = false
     private static let _initialCheckLock = NSLock()
     private static var _isMonitoringActive = false
     private static let _monitoringLock = NSLock()
-    private static var _initialCheckTask: Task<Void, Never>?
+    private static var _probeGeneration: UInt64 = 0
+    private static var _emitInitialState = true
 
     // MARK: Handler storage (token-backed) + stable index mapping
     public struct OnChangeToken: Hashable { fileprivate let id = UUID() }
@@ -252,9 +259,11 @@ public enum NetworkStatusMonitor {
         configuredBaseURLString = baseURLString
     }
 
-    /// Start background monitoring and receive callbacks on changes (and once immediately).
+    /// Start background monitoring and receive callbacks on changes.
+    /// When `emitInitialState` is `true`, handlers also receive the current state once monitoring starts.
     public static func startBackgroundMonitoring(
         interval: TimeInterval = 10,
+        emitInitialState: Bool = true,
         onChange: ((Bool) -> Void)? = nil
     ) {
         // Prevent multiple simultaneous starts - check and set flag atomically
@@ -281,52 +290,35 @@ public enum NetworkStatusMonitor {
         _initialCheckLock.lock()
         _hasInitialCheckFired = false
         _initialCheckLock.unlock()
-        
-        // Cancel any pending initial check task
-        _initialCheckTask?.cancel()
-        _initialCheckTask = nil
+        stateLock.withLock {
+            _cachedReachable = false
+            _hasCachedReachable = false
+        }
+        _monitoringLock.withLock {
+            _probeGeneration &+= 1
+            _emitInitialState = emitInitialState
+        }
         
         // Retain the path monitor
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { path in
             // Use lock to safely check and set the initial check flag atomically
             // This prevents duplicate /test calls when NWPathMonitor fires multiple times rapidly
-            var shouldMakeInitialCheck = false
+            var shouldForceEmit = false
+            var shouldSuppressInitialEmission = false
             _monitoringLock.lock()
-            if !_hasInitialCheckFired && _initialCheckTask == nil {
+            if !_hasInitialCheckFired {
                 _hasInitialCheckFired = true
-                shouldMakeInitialCheck = true
+                shouldForceEmit = _emitInitialState
+                shouldSuppressInitialEmission = !_emitInitialState
             }
             _monitoringLock.unlock()
             
-            // Only make /test call if this is the initial fire
-            if shouldMakeInitialCheck {
-                // This is the initial check - make the /test call
-                if path.status != .satisfied {
-                    updateCached(false, forceEmit: true)
-                } else if let base = configuredBaseURLString {
-                    // Create the task and store it atomically
-                    _monitoringLock.lock()
-                    // Double-check that task doesn't exist (race condition protection)
-                    if _initialCheckTask == nil {
-                        // Network I/O should run on background thread, not main thread
-                        _initialCheckTask = Task {
-                            let ok = await checkServerConnectivity(baseURLString: base)
-                            updateCached(ok, forceEmit: true)
-                            // Clear the task reference when done (use withLock for async-safe locking)
-                            _monitoringLock.withLock {
-                                _initialCheckTask = nil
-                            }
-                        }
-                    }
-                    _monitoringLock.unlock()
-                } else {
-                    updateCached(true, forceEmit: true) // route-only success
-                }
-            } else {
-                // No base URL configured, just use path status
-                updateCached(true)
-            }
+            refreshReachability(
+                for: path,
+                forceEmit: shouldForceEmit,
+                suppressEmit: shouldSuppressInitialEmission
+            )
         }
         pathMonitor = monitor
         monitor.start(queue: pathQueue)
@@ -338,10 +330,8 @@ public enum NetworkStatusMonitor {
             let t = DispatchSource.makeTimerSource(queue: backgroundQueue)
             t.schedule(deadline: .now() + interval, repeating: interval)
             t.setEventHandler {
-                guard let base = configuredBaseURLString else { return }
                 Task {
-                    let ok = await checkServerConnectivity(baseURLString: base)
-                    updateCached(ok)
+                    _ = await probeReachability(forceEmit: false)
                 }
             }
             t.resume()
@@ -354,12 +344,16 @@ public enum NetworkStatusMonitor {
     public static func stopBackgroundMonitoring() {
         _monitoringLock.lock()
         _isMonitoringActive = false
+        _probeGeneration &+= 1
+        _emitInitialState = true
         _monitoringLock.unlock()
-        _initialCheckTask?.cancel()
-        _initialCheckTask = nil
         _initialCheckLock.lock()
         _hasInitialCheckFired = false
         _initialCheckLock.unlock()
+        stateLock.withLock {
+            _cachedReachable = false
+            _hasCachedReachable = false
+        }
         backgroundTimer?.cancel()
         backgroundTimer = nil
         pathMonitor?.cancel()
@@ -376,43 +370,105 @@ public enum NetworkStatusMonitor {
             }
             
             if monitoringActive {
-                // Return cached value when background monitoring is active
-                // This prevents duplicate /test calls during the initial monitoring phase
-                let cached = stateLock.withLock {
-                    return _cachedReachable
+                let snapshot = stateLock.withLock {
+                    return (_hasCachedReachable, _cachedReachable)
                 }
-                return cached
+                if snapshot.0 {
+                    return snapshot.1
+                }
+                return await probeReachability(forceEmit: true)
             }
             
             // When monitoring is not active, perform a fresh check (on-demand)
-            if let base = configuredBaseURLString {
-                let ok = await checkServerConnectivity(baseURLString: base)
-                updateCached(ok, forceEmit: true)
-                return ok
-            } else {
-                let route = await routeIsAvailableOnce()
-                updateCached(route, forceEmit: true)
-                return route
-            }
+            return await probeReachability(forceEmit: true)
         }
+    }
+
+    static func probeConfiguredReachability(
+        timeout: TimeInterval = 3,
+        treatRedirectsAsOffline: Bool = true
+    ) async -> Bool {
+        if let base = configuredBaseURLString {
+            return await checkServerConnectivity(
+                baseURLString: base,
+                timeout: timeout,
+                treatRedirectsAsOffline: treatRedirectsAsOffline
+            )
+        }
+
+        return await routeIsAvailableOnce()
     }
 
     // MARK: - Helpers
 
+    private static func refreshReachability(
+        for path: NWPath,
+        forceEmit: Bool,
+        suppressEmit: Bool = false
+    ) {
+        if path.status != .satisfied {
+            _monitoringLock.withLock {
+                _probeGeneration &+= 1
+            }
+            updateCached(false, forceEmit: forceEmit, suppressEmit: suppressEmit)
+            return
+        }
+
+        if configuredBaseURLString == nil {
+            updateCached(true, forceEmit: forceEmit, suppressEmit: suppressEmit)
+            return
+        }
+
+        Task {
+            _ = await probeReachability(forceEmit: forceEmit, suppressEmit: suppressEmit)
+        }
+    }
+
+    @discardableResult
+    private static func probeReachability(
+        forceEmit: Bool,
+        suppressEmit: Bool = false
+    ) async -> Bool {
+        if let base = configuredBaseURLString {
+            let generation = _monitoringLock.withLock {
+                _probeGeneration &+= 1
+                return _probeGeneration
+            }
+            let ok = await checkServerConnectivity(baseURLString: base)
+            let isCurrentProbe = _monitoringLock.withLock {
+                generation == _probeGeneration
+            }
+            if isCurrentProbe {
+                updateCached(ok, forceEmit: forceEmit, suppressEmit: suppressEmit)
+            }
+            return ok
+        }
+
+        let route = await routeIsAvailableOnce()
+        updateCached(route, forceEmit: forceEmit, suppressEmit: suppressEmit)
+        return route
+    }
+
     /// Update cache and notify all registered handlers on the main queue if changed (or forced).
-    private static func updateCached(_ value: Bool, forceEmit: Bool = false) {
+    private static func updateCached(
+        _ value: Bool,
+        forceEmit: Bool = false,
+        suppressEmit: Bool = false
+    ) {
         var changed = false
         var handlersCopy: [((Bool) -> Void)] = []
 
         stateLock.lock()
         changed = (value != _cachedReachable)
         _cachedReachable = value
-        if changed || forceEmit {
+        _hasCachedReachable = true
+        if !suppressEmit && (changed || forceEmit) {
             // Snapshot all current handlers (values) under lock
             handlersCopy = Array(_onChangeHandlers.values)
         }
         stateLock.unlock()
 
+        guard !suppressEmit else { return }
         guard changed || forceEmit else { return }
         guard !handlersCopy.isEmpty else { return }
 
@@ -432,3 +488,87 @@ public enum NetworkStatusMonitor {
         }
     }
 }
+
+#if DEBUG
+extension NetworkStatusMonitor {
+    static func _testReset() {
+        backgroundTimer?.cancel()
+        backgroundTimer = nil
+        pathMonitor?.cancel()
+        pathMonitor = nil
+        configuredBaseURLString = nil
+
+        stateLock.withLock {
+            _onChangeHandlers.removeAll()
+            _indexMap.removeAll()
+            _cachedReachable = false
+            _hasCachedReachable = false
+        }
+        _monitoringLock.withLock {
+            _isMonitoringActive = false
+            _probeGeneration = 0
+            _emitInitialState = true
+        }
+        _initialCheckLock.withLock {
+            _hasInitialCheckFired = false
+        }
+    }
+
+    static func _testSetState(
+        cachedReachable: Bool,
+        hasCachedReachable: Bool,
+        monitoringActive: Bool,
+        hasInitialCheckFired: Bool = false
+    ) {
+        stateLock.withLock {
+            _cachedReachable = cachedReachable
+            _hasCachedReachable = hasCachedReachable
+        }
+        _monitoringLock.withLock {
+            _isMonitoringActive = monitoringActive
+        }
+        _initialCheckLock.withLock {
+            _hasInitialCheckFired = hasInitialCheckFired
+        }
+    }
+
+    static func _testEmitCached(_ value: Bool, forceEmit: Bool = false) {
+        updateCached(value, forceEmit: forceEmit)
+    }
+
+    static func _testSnapshot() -> (
+        cachedReachable: Bool,
+        hasCachedReachable: Bool,
+        monitoringActive: Bool,
+        emitInitialState: Bool,
+        hasInitialCheckFired: Bool,
+        handlerCount: Int,
+        indexMapCount: Int
+    ) {
+        let state = stateLock.withLock {
+            (
+                cachedReachable: _cachedReachable,
+                hasCachedReachable: _hasCachedReachable,
+                handlerCount: _onChangeHandlers.count,
+                indexMapCount: _indexMap.count
+            )
+        }
+        let monitoring = _monitoringLock.withLock {
+            (
+                monitoringActive: _isMonitoringActive,
+                emitInitialState: _emitInitialState
+            )
+        }
+        let initialCheckFired = _initialCheckLock.withLock { _hasInitialCheckFired }
+        return (
+            cachedReachable: state.cachedReachable,
+            hasCachedReachable: state.hasCachedReachable,
+            monitoringActive: monitoring.monitoringActive,
+            emitInitialState: monitoring.emitInitialState,
+            hasInitialCheckFired: initialCheckFired,
+            handlerCount: state.handlerCount,
+            indexMapCount: state.indexMapCount
+        )
+    }
+}
+#endif

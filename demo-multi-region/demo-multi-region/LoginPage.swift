@@ -23,6 +23,7 @@ struct LoginPage: View {
                 .ignoresSafeArea(edges: .top),alignment: .top)
             .overlay(Footer()
                 .ignoresSafeArea(edges: .bottom),alignment: .bottom)
+            .accessibilityIdentifier("LoginPageRoot")
         }
         
     }
@@ -67,12 +68,21 @@ struct LoginBody: View {
                         Button("Sign in") {
                             fronteggAuth.login()
                         }
+                        .accessibilityIdentifier("NativeLoginButton")
                         .buttonStyle(PrimaryButtonStyle())
-                       
+                    }
+
+                    if MultiRegionTestMode.isEnabled {
+                        Divider().padding(.vertical, 8)
+                        Button("E2E Password Login") {
+                            fronteggAuth.login(loginHint: MultiRegionTestMode.passwordEmail)
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .accessibilityIdentifier("E2EPasswordButton")
                     }
                 }
                 .padding(24)
-                
+
             }
             .padding(.horizontal, 24)
             Spacer()

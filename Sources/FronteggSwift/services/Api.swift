@@ -12,6 +12,8 @@ enum ApiError: Error {
     case invalidUrl(String)
     /// Refresh returned a retryable HTTP status (5xx, 408, 429). Must not clear the session.
     case refreshEndpointTransient(statusCode: Int, message: String)
+    /// /me or /me/tenants returned a non-2xx HTTP status (e.g. proxy blocked the request).
+    case meEndpointFailed(statusCode: Int, path: String)
 }
 
 /// Result of `me()`. When a token re-refresh was performed,
@@ -35,7 +37,9 @@ public class Api {
     internal static let DEFAULT_TIMEOUT: Int = 10
 
     /// HTTP statuses where the refresh token may still be valid; callers should retry instead of logging out.
-    private static func isTransientRefreshHTTPStatus(_ statusCode: Int) -> Bool {
+    /// This is intentionally broad: any 5xx plus 408/429 keeps the session recoverable until
+    /// a definitive auth failure proves the refresh token is invalid.
+    internal static func isTransientRefreshHTTPStatus(_ statusCode: Int) -> Bool {
         if statusCode == 408 || statusCode == 429 { return true }
         return (500...599).contains(statusCode)
     }
@@ -51,7 +55,8 @@ public class Api {
         self.baseUrl = baseUrl
         self.clientId = clientId
         self.applicationId = applicationId
-        self.credentialManager = CredentialManager(serviceKey: "frontegg")
+        let configuredServiceKey = (try? PlistHelper.fronteggConfig())?.keychainService ?? "frontegg"
+        self.credentialManager = CredentialManager(serviceKey: configuredServiceKey)
         
         var clientIdWithoutFirstDash = clientId
         if let firstDashIndex = clientId.firstIndex(of: "-") {
@@ -60,7 +65,7 @@ public class Api {
         self.cookieName = "fe_refresh_\(clientIdWithoutFirstDash)"
     }
 
-    private func addHttpBreadcrumb(
+    internal func addHttpBreadcrumb(
         method: String,
         url: URL?,
         statusCode: Int?,
@@ -107,6 +112,52 @@ public class Api {
         let message = "HTTP \(method) \(path)"
         let level: SentryLevel = (statusCode != nil && !(200...299).contains(statusCode!)) || error != nil ? .warning : .info
         SentryHelper.addBreadcrumb(message, category: "http", level: level, data: data)
+    }
+
+    internal func logHttpError(
+        _ error: Error,
+        method: String,
+        path: String,
+        followRedirect: Bool,
+        statusCode: Int? = nil
+    ) {
+        var httpContext: [String: Any] = [
+            "method": method,
+            "path": path,
+            "followRedirect": followRedirect
+        ]
+        if let statusCode {
+            httpContext["statusCode"] = statusCode
+        }
+
+        SentryHelper.logError(error, context: [
+            "http": httpContext
+        ])
+    }
+
+    internal func performData(
+        for request: URLRequest,
+        timeout: Int,
+        followRedirect: Bool
+    ) async throws -> (Data, URLResponse) {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = TimeInterval(timeout)
+        config.timeoutIntervalForResource = TimeInterval(timeout)
+        config.waitsForConnectivity = false
+
+        let session: URLSession
+        if followRedirect {
+            session = URLSession(configuration: config)
+        } else {
+            let redirectHandler = RedirectHandler()
+            session = URLSession(configuration: config, delegate: redirectHandler, delegateQueue: nil)
+        }
+
+        return try await session.data(for: request)
+    }
+
+    internal func sleepBeforeRetry(attempt: Int) async {
+        try? await Task.sleep(nanoseconds: UInt64(attempt + 1) * 1_000_000_000)
     }
     
     internal func putRequest(
@@ -290,7 +341,8 @@ public class Api {
         refreshToken: String? = nil,
         additionalHeaders: [String: String] = [:],
         followRedirect: Bool = true,
-        timeout: Int = Api.DEFAULT_TIMEOUT
+        timeout: Int = Api.DEFAULT_TIMEOUT,
+        retries: Int = 0
     ) async throws -> (Data, URLResponse) {
         let urlStr = path.starts(with: self.baseUrl)
             ? path
@@ -300,41 +352,63 @@ public class Api {
             throw ApiError.invalidUrl("invalid url: \(urlStr)")
         }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
-        if let accessToken {
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        }
-        if let refreshToken {
-            request.setValue("\(self.cookieName)=\(refreshToken)", forHTTPHeaderField: "Cookie")
-        }
-        if let applicationId = self.applicationId {
-            request.setValue(applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
-        }
-        additionalHeaders.forEach { k, v in request.setValue(v, forHTTPHeaderField: k) }
+        for attempt in 0...retries {
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
+            if let accessToken {
+                request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            }
+            if let refreshToken {
+                request.setValue("\(self.cookieName)=\(refreshToken)", forHTTPHeaderField: "Cookie")
+            }
+            if let applicationId = self.applicationId {
+                request.setValue(applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
+            }
+            additionalHeaders.forEach { k, v in request.setValue(v, forHTTPHeaderField: k) }
 
-        // per-task timeout
-        request.timeoutInterval = TimeInterval(timeout)
+            // per-task timeout
+            request.timeoutInterval = TimeInterval(timeout)
 
-        // session-level timeouts
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = TimeInterval(timeout)
-        config.timeoutIntervalForResource = TimeInterval(timeout)
-        config.waitsForConnectivity = false
+            let start = Date()
+            let responsePayload: (Data, URLResponse)
+            do {
+                responsePayload = try await performData(
+                    for: request,
+                    timeout: timeout,
+                    followRedirect: followRedirect
+                )
+            } catch {
+                let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+                addHttpBreadcrumb(
+                    method: "GET",
+                    url: request.url,
+                    statusCode: nil,
+                    traceId: nil,
+                    durationMs: durationMs,
+                    requestBodySize: nil,
+                    responseBodySize: nil,
+                    followRedirect: followRedirect,
+                    error: error
+                )
+                logHttpError(
+                    error,
+                    method: "GET",
+                    path: path,
+                    followRedirect: followRedirect
+                )
 
-        let session: URLSession
-        if followRedirect {
-            session = URLSession(configuration: config)
-        } else {
-            let redirectHandler = RedirectHandler()
-            session = URLSession(configuration: config, delegate: redirectHandler, delegateQueue: nil)
-        }
+                if attempt < retries {
+                    logger.warning("GET \(path) attempt \(attempt + 1)/\(retries + 1) failed: \(error)")
+                    await sleepBeforeRetry(attempt: attempt)
+                    continue
+                } else {
+                    throw error
+                }
+            }
 
-        let start = Date()
-        do {
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = responsePayload
             let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
             let statusCode = (response as? HTTPURLResponse)?.statusCode
             TraceIdLogger.shared.extractAndLogTraceId(from: response)
@@ -348,29 +422,42 @@ public class Api {
                 responseBodySize: data.count,
                 followRedirect: followRedirect
             )
+
+            // When retries enabled, check HTTP status for retryable errors
+            if retries > 0, let http = response as? HTTPURLResponse {
+                if http.statusCode == 401 {
+                    let error = ApiError.meEndpointFailed(statusCode: 401, path: path)
+                    logHttpError(
+                        error,
+                        method: "GET",
+                        path: path,
+                        followRedirect: followRedirect,
+                        statusCode: http.statusCode
+                    )
+                    throw error
+                }
+                if Api.isTransientRefreshHTTPStatus(http.statusCode) {
+                    let error = ApiError.meEndpointFailed(statusCode: http.statusCode, path: path)
+                    logger.warning("GET \(path) attempt \(attempt + 1)/\(retries + 1) returned \(http.statusCode)")
+                    if attempt < retries {
+                        await sleepBeforeRetry(attempt: attempt)
+                        continue
+                    }
+                    logHttpError(
+                        error,
+                        method: "GET",
+                        path: path,
+                        followRedirect: followRedirect,
+                        statusCode: http.statusCode
+                    )
+                    throw error
+                }
+            }
+
             return (data, response)
-        } catch {
-            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
-            addHttpBreadcrumb(
-                method: "GET",
-                url: request.url,
-                statusCode: nil,
-                traceId: nil,
-                durationMs: durationMs,
-                requestBodySize: nil,
-                responseBodySize: nil,
-                followRedirect: followRedirect,
-                error: error
-            )
-            SentryHelper.logError(error, context: [
-                "http": [
-                    "method": "GET",
-                    "path": path,
-                    "followRedirect": followRedirect
-                ]
-            ])
-            throw error
         }
+
+        preconditionFailure("GET request retry loop exited unexpectedly for \(path)")
     }
 
     
@@ -685,7 +772,7 @@ public class Api {
             }
             return nil
         } catch {
-            print(error)
+            self.logger.error("refreshTokenForMfa failed: \(error)")
             return nil
         }
     }
@@ -720,101 +807,108 @@ public class Api {
     }
     
     internal func me(accessToken: String, refreshToken: String) async throws -> MeResult {
-        let (meData, _) = try await getRequest(path: "identity/resources/users/v2/me", accessToken: accessToken)
-        
-        var meObj = try JSONSerialization.jsonObject(with: meData, options: [])  as! [String: Any]
-        
-        // Retry /me/tenants once with 1s delay to handle webhook race conditions where
-        // customer prehooks/webhooks change the user's tenant during authentication,
-        // causing the first /me/tenants call to return an error (e.g., ER-00004).
-        var tenantsObj: [String: Any] = [:]
-        var tenantsFetched = false
+        try await loadMeResult(accessToken: accessToken, refreshToken: refreshToken)
+    }
 
-        for attempt in 1...2 {
-            do {
-                let (tenantsData, _) = try await getRequest(path: "identity/resources/users/v3/me/tenants", accessToken: accessToken)
-                let parsed = try JSONSerialization.jsonObject(with: tenantsData, options: []) as! [String: Any]
+    internal func me(accessToken: String) async throws -> User? {
+        let result = try await loadMeResult(accessToken: accessToken, refreshToken: nil)
+        return result.user
+    }
 
-                if parsed["tenants"] != nil {
-                    tenantsObj = parsed
-                    tenantsFetched = true
-                    break
-                } else {
-                    self.logger.warning("No tenants array found in API response (attempt \(attempt)/2): \(parsed)")
-                    if attempt == 1 {
-                        try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
-                    }
-                }
-            } catch {
-                self.logger.warning("Failed to fetch tenants (attempt \(attempt)/2): \(error.localizedDescription)")
-                if attempt == 1 {
-                    try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
-                }
+    private func loadMeResult(accessToken: String, refreshToken: String?) async throws -> MeResult {
+        func parseObject(_ data: Data, path: String) throws -> [String: Any] {
+            guard let object = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
+                throw ApiError.meEndpointFailed(statusCode: 0, path: path)
+            }
+            return object
+        }
+
+        func isValidTenantsPayload(_ object: [String: Any]) -> Bool {
+            object["tenants"] as? [[String: Any]] != nil && object["activeTenant"] as? [String: Any] != nil
+        }
+
+        let mePath = "identity/resources/users/v2/me"
+        let (meData, _) = try await getRequest(path: mePath, accessToken: accessToken, retries: 3)
+
+        var meObj = try parseObject(meData, path: mePath)
+
+        let tenantsPath = "identity/resources/users/v3/me/tenants"
+        var tenantsObj: [String: Any]? = nil
+
+        let (tenantsData, _) = try await getRequest(path: tenantsPath, accessToken: accessToken, retries: 3)
+        let initialTenantsObj = try parseObject(tenantsData, path: tenantsPath)
+
+        if isValidTenantsPayload(initialTenantsObj) {
+            tenantsObj = initialTenantsObj
+        } else {
+            self.logger.warning("Invalid /me/tenants payload (attempt 1/2): \(initialTenantsObj)")
+            await sleepBeforeRetry(attempt: 0)
+
+            let (retryTenantsData, _) = try await getRequest(path: tenantsPath, accessToken: accessToken, retries: 3)
+            let retryTenantsObj = try parseObject(retryTenantsData, path: tenantsPath)
+
+            if isValidTenantsPayload(retryTenantsObj) {
+                tenantsObj = retryTenantsObj
+            } else {
+                self.logger.warning("Invalid /me/tenants payload (attempt 2/2): \(retryTenantsObj)")
             }
         }
 
-        // If tenants still weren't fetched, the JWT's tenantId may not match the user's
-        // actual tenant (prehook changed it during JWT generation). Re-refresh the token
-        // to get a new JWT with the correct tenantId, then retry /me/tenants.
         var reRefreshedAuth: AuthResponse? = nil
-
-        if !tenantsFetched {
+        if tenantsObj == nil, let refreshToken {
             self.logger.warning("Tenants not fetched after retry with same token. Attempting token re-refresh for corrected JWT.")
-            do {
-                let newAuth = try await self.refreshToken(refreshToken: refreshToken, tenantId: nil)
+            let newAuth = try await self.refreshToken(refreshToken: refreshToken, tenantId: nil)
+            reRefreshedAuth = newAuth
 
-                // Token persistence is handled by the caller via MeResult.refreshedTokens.
-                // We do NOT save to keychain here because Api's credentialManager may use
-                // a different service key than the app's configured keychainService.
-                reRefreshedAuth = newAuth
-
-                do {
-                    let (retryTenantsData, _) = try await getRequest(
-                        path: "identity/resources/users/v3/me/tenants",
-                        accessToken: newAuth.access_token
-                    )
-                    let retryParsed = try JSONSerialization.jsonObject(with: retryTenantsData, options: []) as! [String: Any]
-                    if retryParsed["tenants"] != nil {
-                        tenantsObj = retryParsed
-                        tenantsFetched = true
-                        self.logger.info("Tenants fetched successfully after token re-refresh")
-                        // Re-fetch /me with the corrected token for consistency
-                        let (freshMeData, _) = try await getRequest(
-                            path: "identity/resources/users/v2/me",
-                            accessToken: newAuth.access_token
-                        )
-                        meObj = try JSONSerialization.jsonObject(with: freshMeData, options: []) as! [String: Any]
-                    }
-                } catch {
-                    self.logger.error("Tenant retry after re-refresh failed: \(error.localizedDescription)")
-                }
-            } catch {
-                self.logger.error("Token re-refresh failed: \(error.localizedDescription)")
+            let (retryTenantsData, _) = try await getRequest(
+                path: tenantsPath,
+                accessToken: newAuth.access_token,
+                retries: 3
+            )
+            let retryTenantsObj = try parseObject(retryTenantsData, path: tenantsPath)
+            guard isValidTenantsPayload(retryTenantsObj) else {
+                self.logger.error("Invalid /me/tenants payload after token re-refresh: \(retryTenantsObj)")
+                throw ApiError.meEndpointFailed(statusCode: 0, path: tenantsPath)
             }
+
+            tenantsObj = retryTenantsObj
+            self.logger.info("Tenants fetched successfully after token re-refresh")
+
+            let (freshMeData, _) = try await getRequest(
+                path: mePath,
+                accessToken: newAuth.access_token,
+                retries: 3
+            )
+            meObj = try parseObject(freshMeData, path: mePath)
         }
 
-        if tenantsFetched {
-            if let tenants = tenantsObj["tenants"] as? [[String: Any]] {
-                self.logger.info("Found \(tenants.count) tenant(s) from API")
-                for tenant in tenants {
-                    if let name = tenant["name"] as? String, let id = tenant["id"] as? String {
-                        self.logger.info("  - Tenant: \(name) (ID: \(id))")
-                    }
-                }
-            }
+        guard let tenantsObj else {
+            throw ApiError.meEndpointFailed(statusCode: 0, path: tenantsPath)
         }
 
-        meObj["tenants"] = tenantsObj["tenants"]
-        meObj["activeTenant"] = tenantsObj["activeTenant"]
-        
-        let mergedData = try JSONSerialization.data(withJSONObject: meObj)
+        var mergedObj = meObj
 
+        if let tenants = tenantsObj["tenants"] as? [[String: Any]] {
+            self.logger.info("Found \(tenants.count) tenant(s) from API")
+            for tenant in tenants {
+                if let name = tenant["name"] as? String, let id = tenant["id"] as? String {
+                    self.logger.info("  - Tenant: \(name) (ID: \(id))")
+                }
+            }
+        } else {
+            self.logger.warning("No tenants array found in API response: \(tenantsObj)")
+        }
+
+        mergedObj["tenants"] = tenantsObj["tenants"]
+        mergedObj["activeTenant"] = tenantsObj["activeTenant"]
+
+        let mergedData = try JSONSerialization.data(withJSONObject: mergedObj)
 
         var user = try JSONDecoder().decode(User.self, from: mergedData)
 
-        // Validate activeTenant is still in the user's tenant list.
-        // The /me/tenants response may return a stale activeTenant based on
-        // the JWT's tenantId if the user was removed from that tenant.
+        // Some backend races can return an active tenant that is no longer present
+        // in the tenant list. Normalize to the first valid tenant instead of
+        // leaving the app with a self-inconsistent user object.
         if !user.tenants.contains(where: { $0.id == user.activeTenant.id }),
            let firstTenant = user.tenants.first {
             self.logger.warning("activeTenant \(user.activeTenant.id) not in tenants list, correcting to \(firstTenant.id)")
@@ -1057,7 +1151,7 @@ public class Api {
     
     
     internal func getFeatureFlags() async throws -> String {
-        let (stringData, _) = try await FronteggAuth.shared.api.getRequest(path: "/flags", accessToken: nil)
+        let (stringData, _) = try await self.getRequest(path: "/flags", accessToken: nil)
         
         return String(data: stringData, encoding: .utf8) ?? ""
     }

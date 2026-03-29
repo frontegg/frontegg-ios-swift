@@ -15,7 +15,7 @@ jobs:
       CHANGELOG_FILE: ./CHANGELOG.md
       CHANGELOG_OLD_FILE: ./CHANGELOG.old.md
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.ref }}
@@ -53,7 +53,8 @@ jobs:
 
       - uses: EndBug/add-and-commit@v9
         with:
-          author: "${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>"
+          author_name: "${{ github.actor }}"
+          author_email: "${{ github.actor }}@users.noreply.github.com"
           committer_name: GitHub <noreply@github.com>
           message: "chore(release): Updated CHANGELOG.md"
           add: "CHANGELOG.md"

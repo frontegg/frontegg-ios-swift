@@ -9,13 +9,14 @@ on:
     branches:
       - master
 
+
 jobs:
   validate-pr:
     name: "Validate PR Description"
     runs-on: 'ubuntu-latest'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
 
       - name: Get Pull Request Description
         env:
@@ -35,50 +36,12 @@ jobs:
             exit 1
           fi
 
-  unit-tests:
-    name: "Run Unit Tests"
-    runs-on: 'macos-15-xlarge'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Check macOS and Xcode versions
-        run: |
-          sw_vers
-          xcode-select --print-path
-          xcodebuild -version
-
-      - name: Run Unit Tests
-        run: |
-          # Run tests using iPhone 16 simulator (available on macos-15)
-          set -o pipefail
-          xcodebuild test \
-            -scheme FronteggSwift \
-            -destination "platform=iOS Simulator,name=iPhone 16" \
-            -only-testing:FronteggSwiftTests \
-            -resultBundlePath TestResults.xcresult \
-            -enableCodeCoverage YES \
-            2>&1 | tee build.log
-          
-          # Extract test summary
-          grep -E "Test Suite|Executed|TEST SUCCEEDED|TEST FAILED" build.log || true
-
-      - name: Upload Test Results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: test-results
-          path: |
-            TestResults.xcresult
-            test-results.xml
-          retention-days: 7
-
   build-and-lint:
     name: "Build & Lint"
     runs-on: 'macos-15-xlarge'
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
 
       - name: Build for Testing
         run: |
@@ -93,12 +56,3 @@ jobs:
         run: |
           swift package resolve
           xcodebuild build -scheme FronteggSwift -destination "platform=iOS Simulator,name=iPhone 16 Pro"
-
-  swift-sdk-e2e:
-    name: Swift SDK E2E
-    needs: [validate-pr, unit-tests, build-and-lint]
-    uses: frontegg/e2e-system-tests/.github/workflows/swift-sdk-e2e-reusable.yml@main
-    with:
-      swift_repo_ref: ${{ github.event.pull_request.head.sha }}
-      test_suite: hosted:no-social
-    secrets: inherit

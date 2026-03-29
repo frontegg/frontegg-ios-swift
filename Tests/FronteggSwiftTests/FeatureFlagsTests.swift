@@ -28,24 +28,58 @@ class MockFeatureFlagsApi: Api {
     }
 }
 
+private final class RequestBackedFeatureFlagsApi: Api {
+    private(set) var requestedPaths: [String] = []
+    var responseBody = "{\"instance-flag\": \"on\"}"
+
+    init() {
+        super.init(baseUrl: "https://test.example.com", clientId: "test-client", applicationId: nil)
+    }
+
+    override func getRequest(
+        path: String,
+        accessToken: String?,
+        refreshToken: String? = nil,
+        additionalHeaders: [String: String] = [:],
+        followRedirect: Bool = true,
+        timeout: Int = Api.DEFAULT_TIMEOUT,
+        retries: Int = 0
+    ) async throws -> (Data, URLResponse) {
+        let normalizedPath = path.hasPrefix("/") ? path : "/\(path)"
+        requestedPaths.append(normalizedPath)
+
+        let url = URL(string: "https://test.example.com\(normalizedPath)")!
+        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        return (Data(responseBody.utf8), response)
+    }
+
+    func callSuperGetFeatureFlags() async throws -> String {
+        try await super.getFeatureFlags()
+    }
+}
+
 final class FeatureFlagsTests: XCTestCase {
     
     var mockApi: MockFeatureFlagsApi!
     var testStorage: UserDefaults!
     var featureFlags: FeatureFlags!
-    let testStorageKey = "featureflags:test-client"
+    var testStorageSuiteName: String!
+    let testClientId = "test-client"
+    var testStorageKey: String { "featureflags:\(testClientId)" }
     
     override func setUp() {
         super.setUp()
         mockApi = MockFeatureFlagsApi()
-        testStorage = UserDefaults.standard
-        // Clean up any existing test data
-        testStorage.removeObject(forKey: testStorageKey)
+        testStorageSuiteName = "FeatureFlagsTests.\(UUID().uuidString)"
+        testStorage = UserDefaults(suiteName: testStorageSuiteName)
+        testStorage.removePersistentDomain(forName: testStorageSuiteName)
     }
     
     override func tearDown() {
-        testStorage.removeObject(forKey: testStorageKey)
+        testStorage.removePersistentDomain(forName: testStorageSuiteName)
+        testStorageSuiteName = nil
         featureFlags = nil
+        testStorage = nil
         mockApi = nil
         super.tearDown()
     }
@@ -54,7 +88,7 @@ final class FeatureFlagsTests: XCTestCase {
     
     func createFeatureFlags() -> FeatureFlags {
         let config = FeatureFlags.Config(
-            clientId: "test-client",
+            clientId: testClientId,
             api: mockApi,
             storage: testStorage
         )
@@ -189,6 +223,15 @@ final class FeatureFlagsTests: XCTestCase {
         let result = await featureFlags.fetchFeatureFlags()
         
         XCTAssertTrue(result)
+    }
+
+    func test_apiGetFeatureFlags_usesCurrentApiInstance() async throws {
+        let api = RequestBackedFeatureFlagsApi()
+
+        let flags = try await api.callSuperGetFeatureFlags()
+
+        XCTAssertEqual(flags, "{\"instance-flag\": \"on\"}")
+        XCTAssertEqual(api.requestedPaths, ["/flags"])
     }
     
     // MARK: - Multiple Flags Tests

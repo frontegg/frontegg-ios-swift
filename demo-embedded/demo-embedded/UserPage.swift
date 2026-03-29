@@ -44,6 +44,10 @@ struct UserPage: View {
             Spacer().frame(height: 16)
             if fronteggAuth.isOfflineMode {
                 Text("Offline Mode")
+                    .accessibilityIdentifier("OfflineModeBadge")
+            }
+            if DemoEmbeddedTestMode.isEnabled {
+                testAccessTokenDiagnostics
             }
             userContent
             Spacer(minLength: 220)
@@ -79,6 +83,7 @@ struct UserPage: View {
         }
         .buttonStyle(PrimaryButtonStyle())
         .padding(.horizontal, 8)
+        .accessibilityIdentifier("SensitiveActionButton")
     }
     
     private var getAccessTokenButton: some View {
@@ -99,6 +104,7 @@ struct UserPage: View {
         }
         .buttonStyle(PrimaryButtonStyle())
         .padding(.horizontal, 8)
+        .accessibilityIdentifier("GetCurrentAccessTokenButton")
     }
 
     private var entitlementsSection: some View {
@@ -224,6 +230,103 @@ struct UserPage: View {
             message = nil
         }
     }
+
+    private var testAccessTokenDiagnostics: some View {
+        let diagnostics = currentAccessTokenDiagnostics
+        return VStack(spacing: 0) {
+            Text(diagnostics.version)
+                .font(.system(size: 1))
+                .foregroundColor(.clear)
+                .accessibilityIdentifier("AccessTokenVersionValue")
+            Text(diagnostics.exp)
+                .font(.system(size: 1))
+                .foregroundColor(.clear)
+                .accessibilityIdentifier("AccessTokenExpValue")
+            Text(diagnostics.remainingSeconds)
+                .font(.system(size: 1))
+                .foregroundColor(.clear)
+                .accessibilityIdentifier("AccessTokenRemainingSecondsValue")
+            Text(diagnostics.shouldRefresh)
+                .font(.system(size: 1))
+                .foregroundColor(.clear)
+                .accessibilityIdentifier("AccessTokenShouldRefreshValue")
+            Text(diagnostics.initializing)
+                .font(.system(size: 1))
+                .foregroundColor(.clear)
+                .accessibilityIdentifier("AuthInitializingValue")
+            Text(diagnostics.refreshingToken)
+                .font(.system(size: 1))
+                .foregroundColor(.clear)
+                .accessibilityIdentifier("AuthRefreshingTokenValue")
+            Text(diagnostics.isLoading)
+                .font(.system(size: 1))
+                .foregroundColor(.clear)
+                .accessibilityIdentifier("AuthIsLoadingValue")
+        }
+    }
+
+    private var currentAccessTokenDiagnostics: (
+        version: String,
+        exp: String,
+        remainingSeconds: String,
+        shouldRefresh: String,
+        initializing: String,
+        refreshingToken: String,
+        isLoading: String
+    ) {
+        guard let accessToken = fronteggAuth.accessToken,
+              let claims = try? JWTHelper.decode(jwtToken: accessToken) else {
+            return (
+                "missing",
+                "missing",
+                "missing",
+                "missing",
+                fronteggAuth.initializing ? "1" : "0",
+                fronteggAuth.refreshingToken ? "1" : "0",
+                fronteggAuth.isLoading ? "1" : "0"
+            )
+        }
+
+        let version: String
+        if let tokenVersion = claims["token_version"] as? Int {
+            version = String(tokenVersion)
+        } else {
+            version = "missing"
+        }
+
+        let exp: String
+        if let expValue = claims["exp"] as? Int {
+            exp = String(expValue)
+        } else {
+            exp = "missing"
+        }
+
+        let remainingSeconds: String
+        let shouldRefresh: String
+        if let expValue = claims["exp"] as? Int {
+            let remaining = expValue - Int(Date().timeIntervalSince1970)
+            remainingSeconds = String(remaining)
+
+            let remainingMilliseconds = (Double(expValue) * 1000) - (Date().timeIntervalSince1970 * 1000)
+            let refreshOffset = remainingMilliseconds > 20_000
+                ? (remainingMilliseconds * 0.8) / 1000
+                : max((remainingMilliseconds - 20_000) / 1000, 0)
+            shouldRefresh = refreshOffset <= 15 ? "1" : "0"
+        } else {
+            remainingSeconds = "missing"
+            shouldRefresh = "missing"
+        }
+
+        return (
+            version,
+            exp,
+            remainingSeconds,
+            shouldRefresh,
+            fronteggAuth.initializing ? "1" : "0",
+            fronteggAuth.refreshingToken ? "1" : "0",
+            fronteggAuth.isLoading ? "1" : "0"
+        )
+    }
 }
 
 struct MessageView: View {
@@ -249,6 +352,7 @@ struct MessageView: View {
         .background(bacground)
         .cornerRadius(16)
         .padding(.horizontal, 24)
+        .accessibilityIdentifier("UserPageMessage")
     }
 }
 
@@ -314,6 +418,7 @@ struct UserInfoView: View {
                         .font(.bodyMedium)
                         .foregroundColor(Color(hex: "7A7C81"))
                         .lineLimit(1)
+                        .accessibilityIdentifier("UserEmailValue")
                     Text(user.roles.isEmpty ? "No roles assigned" : user.roles.map { $0.name }.joined(separator: ", "))
                         .font(.bodyMedium)
                         .foregroundColor(Color(hex: "7A7C81"))
@@ -504,4 +609,3 @@ struct TenantDropdown: View {
 #Preview {
     UserPage()
 }
-

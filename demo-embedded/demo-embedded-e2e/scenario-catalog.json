@@ -1,0 +1,114 @@
+{
+  "tests": [
+    {
+      "method": "testPasswordLoginAndSessionRestore",
+      "title": "Password login survives relaunch",
+      "description": "Logs in with the embedded password flow, relaunches the app without resetting state, and verifies the authenticated session is restored."
+    },
+    {
+      "method": "testEmbeddedSamlLogin",
+      "title": "Embedded SAML login succeeds",
+      "description": "Opens the embedded SAML flow, completes the mock Okta SAML handoff, and verifies the SAML user is signed in."
+    },
+    {
+      "method": "testEmbeddedOidcLogin",
+      "title": "Embedded OIDC login succeeds",
+      "description": "Opens the embedded OIDC flow, completes the mock Okta OIDC handoff, and verifies the OIDC user is signed in."
+    },
+    {
+      "method": "testRequestAuthorizeFlow",
+      "title": "Request authorize flow signs in seeded user",
+      "description": "Seeds the request-authorize token, starts the authorize flow, and verifies the seeded signup user is authenticated."
+    },
+    {
+      "method": "testCustomSSOBrowserHandoff",
+      "title": "Custom SSO browser handoff returns to app",
+      "description": "Starts the custom SSO browser flow, completes the mock IdP handoff, and verifies the custom SSO user is signed in."
+    },
+    {
+      "method": "testDirectSocialBrowserHandoff",
+      "title": "Direct social browser handoff returns to app",
+      "description": "Starts the direct social browser flow, completes the mock social provider handoff, and verifies the social user is signed in."
+    },
+    {
+      "method": "testEmbeddedGoogleSocialLoginWithSystemWebAuthenticationSession",
+      "title": "Embedded Google social login succeeds with system web auth",
+      "description": "Runs the embedded Google social flow through the real system web authentication session and verifies the Google social user is signed in."
+    },
+    {
+      "method": "testEmbeddedGoogleSocialLoginOAuthErrorShowsToastAndKeepsLoginOpen",
+      "title": "Embedded Google OAuth error keeps login open",
+      "description": "Queues an OAuth error from the Google social callback, verifies the OAuth error toast is shown, and confirms the login UI stays open without authenticating the user."
+    },
+    {
+      "method": "testColdLaunchTransientProbeTimeoutsDoNotBlinkNoConnectionPage",
+      "title": "Cold launch probe timeouts do not blink no-connection UI",
+      "description": "Queues transient startup probe timeouts and verifies the app stays on the login experience without flashing the no-connection screen."
+    },
+    {
+      "method": "testLogoutTerminateTransientProbeFailureDoesNotBlinkNoConnectionPage",
+      "title": "Post-logout relaunch transient probe failure does not blink no-connection UI",
+      "description": "Logs out, queues transient startup probe failures, relaunches, and verifies the app returns to the login experience without flashing the no-connection screen."
+    },
+    {
+      "method": "testAuthenticatedOfflineModeWhenNetworkPathUnavailable",
+      "title": "Authenticated relaunch enters offline mode when the network path is unavailable",
+      "description": "Logs in, relaunches with the network path forced offline, and verifies the existing session stays available with authenticated offline indicators and no retry UI."
+    },
+    {
+      "method": "testExpiredAccessTokenRefreshesOnAuthenticatedRelaunch",
+      "title": "Expired access token refreshes on authenticated relaunch",
+      "description": "Configures a short-lived access token, relaunches after expiry, and verifies the token refreshes successfully without entering offline mode."
+    },
+    {
+      "method": "testAuthenticatedOfflineModeRecoversToOnlineAndRefreshesToken",
+      "title": "Offline mode recovers to online and refreshes the token",
+      "description": "Forces a refresh failure plus probe failures near expiry, verifies authenticated offline mode is entered, then verifies recovery back online with a refreshed token."
+    },
+    {
+      "method": "testAuthenticatedOfflineModeKeepsUserLoggedInUntilReconnectRefreshesExpiredToken",
+      "title": "Offline mode keeps the user signed in until reconnect refreshes an expired token",
+      "description": "Forces a prolonged offline window, lets the access token expire while offline, verifies the user stays signed in, and verifies reconnect refreshes the token successfully."
+    },
+    {
+      "method": "testLogoutTerminateTransientNoConnectionThenCustomSSORecovers",
+      "title": "Custom SSO recovers after a transient no-connection relaunch",
+      "description": "Logs out, relaunches through a transient no-connection state if it appears, then completes custom SSO and verifies the user is signed in again."
+    },
+    {
+      "method": "testColdLaunchWithOfflineModeDisabledReachesLoginQuickly",
+      "title": "Cold launch with offline mode disabled reaches login quickly",
+      "description": "Queues probe failures, launches with enableOfflineMode=false, and verifies the app reaches the login screen quickly without showing offline or no-connection UI."
+    },
+    {
+      "method": "testOfflineModeDisabledPreservesSessionDuringConnectionLossAndRecovers",
+      "title": "Offline mode disabled preserves session during connection loss and recovers",
+      "description": "Logs in with enableOfflineMode=false, terminates, queues connection drops, relaunches, verifies the session is preserved without offline indicators, then verifies the profile is restored when connection returns."
+    },
+    {
+      "method": "testPasswordLoginWorksWithOfflineModeDisabled",
+      "title": "Password login works with offline mode disabled",
+      "description": "Launches with enableOfflineMode=false and completes a password login, confirming normal auth flows are unaffected."
+    },
+    {
+      "method": "testLogoutClearsSessionAndRelaunchShowsLogin",
+      "title": "Logout clears session so relaunch shows login",
+      "description": "Logs in, logs out, terminates, relaunches without reset, and verifies the login page appears (keychain cleared by logout)."
+    },
+    {
+      "method": "testExpiredRefreshTokenClearsSessionAndShowsLogin",
+      "title": "Expired refresh token clears session and shows login",
+      "description": "Logs in with a very short refresh token TTL, waits for both tokens to expire, relaunches, and verifies the app clears credentials and shows login."
+    },
+    {
+      "method": "testScheduledTokenRefreshFiresBeforeExpiry",
+      "title": "Scheduled token refresh fires before expiry",
+      "description": "Logs in with a short access token TTL and verifies the SDK's scheduled refresh fires automatically, incrementing the token version while the app stays in the foreground."
+    },
+    {
+      "method": "testAuthenticatedRelaunchWithExpiredAccessTokenAndFreshRefreshToken",
+      "title": "Relaunch with expired access token refreshes via valid refresh token",
+      "description": "Logs in with a very short access TTL, terminates after access expires but before refresh expires, relaunches, and verifies the token is refreshed."
+    }
+  ]
+}

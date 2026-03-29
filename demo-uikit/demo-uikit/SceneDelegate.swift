@@ -10,72 +10,45 @@ import FronteggSwift
 
 /// A scene delegate for the demo application.
 /// This component handles the scene delegate for the demo application.
+@MainActor
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+    private enum RootDestination: Equatable {
+        case bootstrapLoading
+        case bootstrapError(String)
+        case login
+        case stream
+        case authenticationCallback
+    }
     
     let fronteggAuth = FronteggAuth.shared
     var window: UIWindow?
+    private var bootstrapObserver: NSObjectProtocol?
+    private var currentRootDestination: RootDestination?
     
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
-        // Use this method to optionally configure and attach the UIWindow `window` to the provided UIWindowScene `scene`.
-        // If using a storyboard, the `window` property will automatically be initialized and attached to the scene.
-        // This delegate does not imply the connecting scene or session are new (see `application:configurationForConnectingSceneSession` instead).
-        //        guard let _ = (scene as? UIWindowScene) else { return }
-        //        
-        
-        let storyboard = UIStoryboard(name: "Main", bundle: nil)
-        if let windowScene = scene as? UIWindowScene {
-            let window = UIWindow(windowScene: windowScene)
-            let initialVC: UIViewController
-            
-            if fronteggAuth.isAuthenticated {
-                /// If the user is authenticated, the initial view controller is the stream view controller.
-                initialVC = storyboard.instantiateViewController(withIdentifier: "StreamViewController")
-            } else {
-                /// If the user is not authenticated, the initial view controller is the login view controller.
-                initialVC = storyboard.instantiateViewController(withIdentifier: "LoginViewController")
-            }
-            
-            window.rootViewController = UINavigationController(rootViewController: initialVC)
-            self.window = window
-            window.makeKeyAndVisible()
-        }
+        guard let windowScene = scene as? UIWindowScene else { return }
+
+        let window = UIWindow(windowScene: windowScene)
+        self.window = window
+        currentRootDestination = nil
+        observeBootstrapStateIfNeeded()
+        updateRootForCurrentState()
+        window.makeKeyAndVisible()
     }
     
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
-        if let url = URLContexts.first?.url,
-           url.startAccessingSecurityScopedResource() {
-            defer  {
-                url.stopAccessingSecurityScopedResource()
-            }
-            if url.absoluteString.hasPrefix( FronteggApp.shared.baseUrl ) {
-                if(FronteggApp.shared.auth.handleOpenUrl(url)){
-                    // Display your own Authentication View Controller
-                    // to handle after oauth callback
-                    window?.rootViewController = AuthenticationController()
-                    window?.makeKeyAndVisible()
-                    return
-                }
-            }
-            
-        }
+        guard let url = URLContexts.first?.url else { return }
+        handleIncomingAuthURL(url)
     }
+
     func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
-        if let url = userActivity.webpageURL {
-            if(FronteggApp.shared.auth.handleOpenUrl(url)){
-                // Display your own Authentication View Controller
-                // to handle after oauth callback
-                window?.rootViewController = AuthenticationController()
-                window?.makeKeyAndVisible()
-                return
-            }
-        }
+        guard let url = userActivity.webpageURL else { return }
+        handleIncomingAuthURL(url)
     }
     
     func sceneDidDisconnect(_ scene: UIScene) {
-        // Called as the scene is being released by the system.
-        // This occurs shortly after the scene enters the background, or when its session is discarded.
-        // Release any resources associated with this scene that can be re-created the next time the scene connects.
-        // The scene may re-connect later, as its session was not necessarily discarded (see `application:didDiscardSceneSessions` instead).
+        currentRootDestination = nil
+        removeBootstrapObserver()
     }
     
     func sceneDidBecomeActive(_ scene: UIScene) {
@@ -98,7 +71,159 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Use this method to save data, release shared resources, and store enough scene-specific state information
         // to restore the scene back to its current state.
     }
-    
-    
+
+    func showAuthenticatedRoot() {
+        setRootDestination(.stream)
+    }
+
+    func showUnauthenticatedRoot() {
+        setRootDestination(.login)
+    }
+
+    private func observeBootstrapStateIfNeeded() {
+        guard bootstrapObserver == nil else { return }
+
+        bootstrapObserver = NotificationCenter.default.addObserver(
+            forName: UIKitTestBootstrapper.stateDidChangeNotification,
+            object: UIKitTestBootstrapper.shared,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateRootForCurrentState()
+            }
+        }
+    }
+
+    private func removeBootstrapObserver() {
+        guard let bootstrapObserver else { return }
+        NotificationCenter.default.removeObserver(bootstrapObserver)
+        self.bootstrapObserver = nil
+    }
+
+    private func updateRootForCurrentState() {
+        guard window != nil else { return }
+
+        if UIKitTestMode.isEnabled {
+            switch UIKitTestBootstrapper.shared.state {
+            case .idle, .bootstrapping:
+                setRootDestination(.bootstrapLoading)
+                UIKitTestBootstrapper.shared.bootstrapIfNeeded()
+            case .failed(let message):
+                setRootDestination(.bootstrapError(message))
+            case .ready:
+                showCurrentAuthenticationRoot()
+            }
+            return
+        }
+
+        showCurrentAuthenticationRoot()
+    }
+
+    private func showCurrentAuthenticationRoot() {
+        if fronteggAuth.isAuthenticated {
+            showAuthenticatedRoot()
+        } else {
+            showUnauthenticatedRoot()
+        }
+    }
+
+    private func showAuthenticationCallbackBridge() {
+        setRootDestination(.authenticationCallback)
+    }
+
+    private func handleIncomingAuthURL(_ url: URL) {
+        guard FronteggApp.shared.auth.handleOpenUrl(url) else { return }
+        showAuthenticationCallbackBridge()
+    }
+
+    private func setRootDestination(_ destination: RootDestination) {
+        guard currentRootDestination != destination else { return }
+
+        currentRootDestination = destination
+        window?.rootViewController = makeRootViewController(for: destination)
+        window?.makeKeyAndVisible()
+    }
+
+    private func makeRootViewController(for destination: RootDestination) -> UIViewController {
+        switch destination {
+        case .bootstrapLoading:
+            return UIKitBootstrapViewController(
+                message: "Preparing demo...",
+                showsActivityIndicator: true
+            )
+        case .bootstrapError(let message):
+            return UIKitBootstrapViewController(
+                message: message,
+                showsActivityIndicator: false
+            )
+        case .login:
+            return makeNavigationRoot(storyboardIdentifier: "LoginViewController")
+        case .stream:
+            return makeNavigationRoot(storyboardIdentifier: "StreamViewController")
+        case .authenticationCallback:
+            return AuthenticationController()
+        }
+    }
+
+    private func makeNavigationRoot(storyboardIdentifier: String) -> UIViewController {
+        let storyboard = UIStoryboard(name: "Main", bundle: nil)
+        let rootViewController = storyboard.instantiateViewController(withIdentifier: storyboardIdentifier)
+        let navigationController = MainNavController(rootViewController: rootViewController)
+        navigationController.setNavigationBarHidden(true, animated: false)
+        return navigationController
+    }
 }
 
+private final class UIKitBootstrapViewController: UIViewController {
+    private let message: String
+    private let showsActivityIndicator: Bool
+
+    init(message: String, showsActivityIndicator: Bool) {
+        self.message = message
+        self.showsActivityIndicator = showsActivityIndicator
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        view.backgroundColor = .systemBackground
+        view.accessibilityIdentifier = showsActivityIndicator
+            ? "BootstrapLoaderView"
+            : "BootstrapErrorView"
+
+        let stackView = UIStackView()
+        stackView.axis = .vertical
+        stackView.alignment = .center
+        stackView.spacing = 16
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+
+        if showsActivityIndicator {
+            let activityIndicator = UIActivityIndicatorView(style: .large)
+            activityIndicator.startAnimating()
+            activityIndicator.accessibilityIdentifier = "BootstrapActivityIndicator"
+            stackView.addArrangedSubview(activityIndicator)
+        }
+
+        let label = UILabel()
+        label.text = message
+        label.numberOfLines = 0
+        label.textAlignment = .center
+        label.accessibilityIdentifier = "BootstrapMessageLabel"
+        stackView.addArrangedSubview(label)
+
+        view.addSubview(stackView)
+
+        NSLayoutConstraint.activate([
+            stackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stackView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            stackView.leadingAnchor.constraint(greaterThanOrEqualTo: view.layoutMarginsGuide.leadingAnchor),
+            stackView.trailingAnchor.constraint(lessThanOrEqualTo: view.layoutMarginsGuide.trailingAnchor),
+        ])
+    }
+}

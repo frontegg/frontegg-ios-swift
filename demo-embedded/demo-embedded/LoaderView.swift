@@ -11,14 +11,16 @@ import SwiftUI
 /// This component shows a loading spinner and a message while the app is loading.
 struct LoaderView: View {
     var body: some View {
-        Color(red: 0.95, green:  0.95, blue:  0.95).ignoresSafeArea(.all)
-        VStack {
-            Image("SplashIcon")
-                .resizable()
-                .frame(width: 100, height: 100)
-            ProgressView()
-                
+        ZStack {
+            Color(red: 0.95, green:  0.95, blue:  0.95).ignoresSafeArea(.all)
+            VStack {
+                Image("SplashIcon")
+                    .resizable()
+                    .frame(width: 100, height: 100)
+                ProgressView()
+            }
         }
+        .accessibilityIdentifier("LoaderView")
     }
 }
 

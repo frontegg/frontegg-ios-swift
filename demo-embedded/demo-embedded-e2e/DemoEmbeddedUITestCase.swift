@@ -1,0 +1,494 @@
+import XCTest
+
+class DemoEmbeddedUITestCase: XCTestCase {
+    static var server: LocalMockAuthServer!
+    private let knownScreenIdentifiers = ["LoginPageRoot", "NoConnectionPageRoot", "UserPageRoot", "AuthenticatedOfflineRoot"]
+
+    var app: XCUIApplication!
+    var allowsUnexpectedNoConnectionScreen = false
+
+    override class func setUp() {
+        super.setUp()
+        if server == nil {
+            server = try! LocalMockAuthServer()
+        }
+    }
+
+    override class func tearDown() {
+        server?.stop()
+        server = nil
+        super.tearDown()
+    }
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        allowsUnexpectedNoConnectionScreen = false
+        try Self.server.reset()
+    }
+
+    override func tearDownWithError() throws {
+        assertNoUnexpectedNoConnectionScreenSeen()
+        app?.terminate()
+    }
+
+    @discardableResult
+    func launchApp(
+        resetState: Bool = true,
+        useTestingWebAuthenticationTransport: Bool = true,
+        forceNetworkPathOffline: Bool = false,
+        enableOfflineMode: Bool? = nil
+    ) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchEnvironment = Self.server.launchEnvironment(
+            resetState: resetState,
+            useTestingWebAuthenticationTransport: useTestingWebAuthenticationTransport,
+            forceNetworkPathOffline: forceNetworkPathOffline,
+            enableOfflineMode: enableOfflineMode
+        )
+        app.launch()
+        self.app = app
+        return app
+    }
+
+    @discardableResult
+    func waitForScreen(_ identifier: String, timeout: TimeInterval = 20) -> XCUIElement {
+        let element = screenAnchor(for: identifier)
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            if !allowsUnexpectedNoConnectionScreen,
+               identifier != "NoConnectionPageRoot",
+               unexpectedNoConnectionScreenWasSeen() {
+                XCTFail("Unexpected NoConnectionPageRoot appeared while waiting for \(identifier). \(screenDebugSummary())")
+                return element
+            }
+
+            if element.exists {
+                return element
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("Expected screen \(identifier). \(screenDebugSummary())")
+        return element
+    }
+
+    func waitForUserEmail(_ email: String, timeout: TimeInterval = 20) {
+        waitForScreen("UserPageRoot", timeout: timeout)
+        XCTAssertTrue(app.staticTexts[email].waitForExistence(timeout: timeout), "Expected user email \(email)")
+        assertNoUnexpectedNoConnectionScreenSeen()
+    }
+
+    func assertNoConnectionScreenDoesNotAppear(duration: TimeInterval, pollInterval: TimeInterval = 0.1) {
+        let deadline = Date().addingTimeInterval(duration)
+        while Date() < deadline {
+            if unexpectedNoConnectionScreenWasSeen() {
+                XCTFail("Unexpected NoConnectionPageRoot appeared. \(screenDebugSummary())")
+                return
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
+        }
+    }
+
+    func waitForAuthenticatedOfflineMode(_ enabled: Bool, timeout: TimeInterval = 20) {
+        let offlineMarker = app.staticTexts["AuthenticatedOfflineModeEnabled"]
+        let offlineBadge = app.staticTexts["OfflineModeBadge"]
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            if !allowsUnexpectedNoConnectionScreen,
+               unexpectedNoConnectionScreenWasSeen() {
+                XCTFail("Unexpected NoConnectionPageRoot appeared while waiting for authenticated offline mode \(enabled). \(screenDebugSummary())")
+                return
+            }
+
+            let conditionSatisfied = enabled
+                ? (offlineMarker.exists && offlineBadge.exists)
+                : (!offlineMarker.exists && !offlineBadge.exists)
+            if conditionSatisfied {
+                return
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("Expected authenticated offline mode \(enabled). \(screenDebugSummary())")
+    }
+
+    func tapGetCurrentAccessTokenButton() {
+        let button = app.buttons["GetCurrentAccessTokenButton"]
+        if button.waitForExistence(timeout: 5) {
+            button.safeTap()
+            return
+        }
+
+        app.buttons["Get Current Access Token"].waitUntilExists(timeout: 5).safeTap()
+    }
+
+    func accessTokenVersion(timeout: TimeInterval = 10) -> Int {
+        let value = textValue(for: "AccessTokenVersionValue", timeout: timeout)
+        guard let version = Int(value) else {
+            XCTFail("Expected integer token version, got \(value). \(screenDebugSummary())")
+            return -1
+        }
+        return version
+    }
+
+    func accessTokenExpiration(timeout: TimeInterval = 10) -> Int {
+        let value = textValue(for: "AccessTokenExpValue", timeout: timeout)
+        guard let expiration = Int(value) else {
+            XCTFail("Expected integer token expiration, got \(value). \(screenDebugSummary())")
+            return -1
+        }
+        return expiration
+    }
+
+    @discardableResult
+    func waitForAccessTokenVersionChange(from initialVersion: Int, timeout: TimeInterval = 20) -> Int {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            let currentVersion = accessTokenVersion(timeout: 2)
+            if currentVersion != initialVersion {
+                return currentVersion
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("Expected access token version to change from \(initialVersion). \(screenDebugSummary())")
+        return initialVersion
+    }
+
+    func waitUntilAccessTokenExpiresWithin(_ seconds: Int, timeout: TimeInterval = 10) {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            let expiration = accessTokenExpiration(timeout: 2)
+            let now = Int(Date().timeIntervalSince1970)
+            if expiration - now <= seconds {
+                return
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("Expected access token to expire within \(seconds)s. \(screenDebugSummary())")
+    }
+
+    @discardableResult
+    func waitForOAuthErrorToast(timeout: TimeInterval = 20) -> XCUIElement {
+        let anyToast = app.descendants(matching: .any).matching(identifier: "OAuthErrorToast").firstMatch
+        let staticToast = app.staticTexts["OAuthErrorToast"]
+        let otherToast = app.otherElements["OAuthErrorToast"]
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            for candidate in [anyToast, staticToast, otherToast] where candidate.exists {
+                return candidate
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("Expected OAuth error toast within \(timeout)s. \(screenDebugSummary())")
+        return anyToast
+    }
+
+    @discardableResult
+    func waitForOAuthErrorMessage(_ substring: String, timeout: TimeInterval = 20) -> XCUIElement {
+        let message = app.staticTexts["OAuthErrorLastMessage"].waitUntilExists(timeout: timeout)
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            if message.label.contains(substring) {
+                return message
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("Expected OAuth error message containing '\(substring)' within \(timeout)s. \(screenDebugSummary())")
+        return message
+    }
+
+    func waitForDuration(_ duration: TimeInterval, pollInterval: TimeInterval = 0.1) {
+        let deadline = Date().addingTimeInterval(duration)
+        while Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
+        }
+    }
+
+    func openEmbeddedLogin() {
+        waitForScreen("LoginPageRoot")
+        app.buttons["NativeLoginButton"].waitUntilExists(timeout: 20).safeTap()
+    }
+
+    func tapButton(_ identifier: String, timeout: TimeInterval = 20, maxScrollAttempts: Int = 6) {
+        let element = app.buttons[identifier]
+        if !element.waitForExistence(timeout: timeout) {
+            let predicate = NSPredicate(format: "identifier == %@", identifier)
+            let fallback = app.descendants(matching: .any).matching(predicate).firstMatch
+            XCTAssertTrue(
+                fallback.waitForExistence(timeout: 3),
+                "Button \(identifier) did not appear. \(screenDebugSummary())"
+            )
+            fallback.safeTap()
+            return
+        }
+        if element.isHittable {
+            element.safeTap()
+            return
+        }
+
+        for _ in 0..<maxScrollAttempts {
+            if element.isHittable {
+                element.safeTap()
+                return
+            }
+            app.swipeUp()
+        }
+
+        if element.isHittable {
+            element.safeTap()
+            return
+        }
+
+        XCTFail("Button \(identifier) was not hittable after scrolling. \(screenDebugSummary())")
+    }
+
+    func loginWithPassword(email: String = "test@frontegg.com", password: String = "Testpassword1!") {
+        waitForScreen("LoginPageRoot")
+
+        if email == "test@frontegg.com" {
+            guard app.buttons["E2EEmbeddedPasswordButton"].waitForExistence(timeout: 5) else {
+                XCTFail("Expected E2EEmbeddedPasswordButton for default password login. \(screenDebugSummary())")
+                return
+            }
+
+            tapButton("E2EEmbeddedPasswordButton", timeout: 5)
+            waitForUserEmail(email)
+            return
+        }
+
+        openEmbeddedLogin()
+        waitForWebElement(elementType: .textField, text: "Email is required").safeTypeText(email)
+        waitForWebElement(elementType: .button, text: "Continue").safeTap()
+        waitForWebElement(elementType: .secureTextField, text: "Password is required").safeTypeText(password)
+        waitForWebElement(elementType: .button, text: "Sign in").safeTap()
+        waitForUserEmail(email)
+    }
+
+    func acceptSystemDialogIfNeeded(timeout: TimeInterval = 3) {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let buttonTitles = ["Continue", "Open", "Allow", "OK"]
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            for title in buttonTitles {
+                let button = springboard.buttons[title]
+                if button.exists {
+                    button.tap()
+                    return
+                }
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+    }
+
+    func screenDebugSummary() -> String {
+        let visibleScreens = knownScreenIdentifiers.compactMap { identifier -> String? in
+            let element = screenAnchor(for: identifier)
+            guard element.exists else { return nil }
+
+            if let value = element.value as? String, !value.isEmpty {
+                return "\(identifier)[\(value)]"
+            }
+            return identifier
+        }
+
+        let prominentTexts = [
+            "Sign in",
+            "No internet connection",
+            "Authenticated (offline)",
+            "Welcome!",
+        ].filter { app.staticTexts[$0].exists }
+
+        let tokenExp = diagnosticValue(for: "AccessTokenExpValue").flatMap(Int.init)
+        let remainingSeconds = tokenExp.map { String($0 - Int(Date().timeIntervalSince1970)) }
+        let shouldRefresh = tokenExp.map { expiration in
+            let nowMilliseconds = Date().timeIntervalSince1970 * 1000
+            let remainingMilliseconds = (Double(expiration) * 1000) - nowMilliseconds
+            let refreshOffset = remainingMilliseconds > 20_000
+                ? (remainingMilliseconds * 0.8) / 1000
+                : max((remainingMilliseconds - 20_000) / 1000, 0)
+            return refreshOffset <= 15 ? "1" : "0"
+        }
+
+        let diagnostics = [
+            "tokenVersion": diagnosticValue(for: "AccessTokenVersionValue"),
+            "tokenExp": diagnosticValue(for: "AccessTokenExpValue"),
+            "remaining": remainingSeconds,
+            "shouldRefresh": shouldRefresh,
+            "initializing": diagnosticValue(for: "AuthInitializingValue"),
+            "refreshingToken": diagnosticValue(for: "AuthRefreshingTokenValue"),
+            "isLoading": diagnosticValue(for: "AuthIsLoadingValue"),
+            "offlineMarker": app.staticTexts["AuthenticatedOfflineModeEnabled"].exists ? "1" : "0",
+            "message": diagnosticValue(for: "UserPageMessage"),
+        ]
+            .compactMap { key, value in value.map { "\(key)=\($0)" } }
+            .joined(separator: ", ")
+
+        return "Visible screens: \(visibleScreens.joined(separator: ", ")); prominent texts: \(prominentTexts.joined(separator: ", ")); diagnostics: \(diagnostics); webViews: \(app.webViews.count); buttons: \(app.buttons.count)"
+    }
+
+    func terminateApp() {
+        assertNoUnexpectedNoConnectionScreenSeen()
+        app?.terminate()
+    }
+
+    private func assertNoUnexpectedNoConnectionScreenSeen() {
+        guard !allowsUnexpectedNoConnectionScreen else { return }
+        guard app != nil else { return }
+        if unexpectedNoConnectionScreenWasSeen() {
+            XCTFail("Unexpected NoConnectionPageRoot appeared during the test. \(screenDebugSummary())")
+        }
+    }
+
+    private func unexpectedNoConnectionScreenWasSeen() -> Bool {
+        let currentScreenVisible = app.buttons["RetryConnectionButton"].exists
+        let stickyMarkerVisible = app.staticTexts["NoConnectionPageSeenEver"].exists
+        return currentScreenVisible || stickyMarkerVisible
+    }
+
+    private func textValue(for identifier: String, timeout: TimeInterval) -> String {
+        app.staticTexts[identifier].waitUntilExists(timeout: timeout).label
+    }
+
+    private func diagnosticValue(for identifier: String) -> String? {
+        let element = app.staticTexts[identifier]
+        return element.exists ? element.label : nil
+    }
+
+    private func waitForWebElement(
+        elementType: XCUIElement.ElementType,
+        text: String,
+        timeout: TimeInterval = 20
+    ) -> XCUIElement {
+        let predicate = NSPredicate(format: "label == %@ OR identifier == %@", text, text)
+        let query = app.webViews.descendants(matching: elementType).matching(predicate)
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            let matches = query.allElementsBoundByIndex.filter(\.exists)
+            if let hittableMatch = matches.last(where: \.isHittable) {
+                return hittableMatch
+            }
+            if let visibleMatch = matches.last {
+                return visibleMatch
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("Expected web element \(text) of type \(elementType) within \(timeout)s. \(screenDebugSummary())")
+        return query.firstMatch
+    }
+
+    private func screenAnchor(for identifier: String) -> XCUIElement {
+        switch identifier {
+        case "LoginPageRoot":
+            return app.buttons["NativeLoginButton"]
+        case "NoConnectionPageRoot":
+            return app.buttons["RetryConnectionButton"]
+        case "UserPageRoot":
+            return app.staticTexts["UserEmailValue"]
+        case "AuthenticatedOfflineRoot":
+            return app.staticTexts["Authenticated (offline)"]
+        case "BootstrapLoaderView":
+            return app.otherElements["BootstrapLoaderView"]
+        case "DefaultLoaderRoot":
+            return app.otherElements["DefaultLoaderRoot"]
+        case "LoaderView":
+            return app.otherElements["LoaderView"]
+        default:
+            return app.otherElements[identifier]
+        }
+    }
+}
+
+extension XCUIApplication {
+    func getWebButton(_ text: String) -> XCUIElement {
+        preferredWebElement(
+            elementType: .button,
+            text: text
+        )
+    }
+
+    func getWebInput(_ text: String) -> XCUIElement {
+        preferredWebElement(
+            elementType: .textField,
+            text: text
+        )
+    }
+
+    func getWebPasswordInput(_ text: String) -> XCUIElement {
+        preferredWebElement(
+            elementType: .secureTextField,
+            text: text
+        )
+    }
+
+    func getWebLabel(_ text: String) -> XCUIElement {
+        preferredWebElement(
+            elementType: .staticText,
+            text: text
+        )
+    }
+
+    private func preferredWebElement(
+        elementType: XCUIElement.ElementType,
+        text: String,
+        timeout: TimeInterval = 20
+    ) -> XCUIElement {
+        let predicate = NSPredicate(format: "label == %@ OR identifier == %@", text, text)
+        let query = webViews.descendants(matching: elementType).matching(predicate)
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            let matches = query.allElementsBoundByIndex.filter(\.exists)
+            if let hittableMatch = matches.last(where: \.isHittable) {
+                return hittableMatch
+            }
+            if let visibleMatch = matches.last {
+                return visibleMatch
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("Expected web element \(text) of type \(elementType) within \(timeout)s")
+        return query.firstMatch
+    }
+}
+
+extension XCUIElement {
+    @discardableResult
+    func waitUntilExists(timeout: TimeInterval = 20, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+        XCTAssertTrue(waitForExistence(timeout: timeout), file: file, line: line)
+        return self
+    }
+
+    func safeTap() {
+        if isHittable {
+            coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            return
+        }
+
+        let normalized = coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        normalized.tap()
+    }
+
+    func safeTypeText(_ text: String) {
+        tap()
+        typeText(text)
+    }
+}

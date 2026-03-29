@@ -34,7 +34,7 @@ runs:
           e2e-system-tests
 
     - name: "Trigger E2E tests"
-      uses: actions/github-script@v5
+      uses: actions/github-script@v7
       env:
         version: ${{ inputs.version }}
         sha: ${{ inputs.sha }}

@@ -41,6 +41,7 @@ struct SelectRegionView: View {
                             .padding(.bottom, 8)
                     }
                 }
+                .accessibilityIdentifier("RegionButton_\(item.key)")
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
@@ -50,6 +51,7 @@ struct SelectRegionView: View {
         }
         .padding()
         .navigationTitle("Region")
+        .accessibilityIdentifier("SelectRegionRoot")
     }
 }
 

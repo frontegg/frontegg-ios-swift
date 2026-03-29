@@ -2,6 +2,77 @@
 
 The `FronteggAuth` interface provides all the core authentication functionalities for iOS apps using the Frontegg SDK. This includes login, logout, token handling, tenant switching, region management, and support for passkeys.
 
+## FronteggApp
+
+### Delegate and presentation properties
+
+| Property | Description |
+|----------|-------------|
+| `loggerDelegate` | Convenience alias over `FeLogger.delegate`. Receives all SDK log events, is stored weakly, and is called synchronously on the originating thread. |
+| `oauthErrorPresentation` | Controls OAuth failure UI. Defaults to `.toast`. Set to `.delegate` to suppress the SDK toast and render errors in app code. |
+| `oauthErrorDelegate` | Weak delegate used when `oauthErrorPresentation == .delegate`. Called on the main thread with a `FronteggOAuthErrorContext`. User-cancelled OAuth flows are not reported. |
+
+### Logger delegate
+
+#### `FronteggLoggerDelegate`
+
+```swift
+func fronteggSDK(didLog message: String, level: FeLogger.Level, tag: String)
+```
+
+- Receives all SDK log events, including events below the configured `logLevel`.
+- `trace` and `debug` messages are forwarded as-is.
+- `info`, `warning`, `error`, and `critical` messages are sanitized before delivery.
+- Retain your delegate in app code; the SDK stores it weakly.
+
+#### `FeLogger.delegate`
+
+Global logger delegate. Assign this before accessing `FronteggApp.shared` if you
+need bootstrap logs.
+
+### OAuth error presentation
+
+#### `FronteggOAuthErrorPresentation`
+
+| Case | Description |
+|------|-------------|
+| `.toast` | The SDK shows its built-in top toast for OAuth failures. |
+| `.delegate` | The SDK suppresses its built-in toast and forwards failures to `oauthErrorDelegate`. |
+
+#### `FronteggOAuthErrorDelegate`
+
+```swift
+func fronteggSDK(didReceiveOAuthError context: FronteggOAuthErrorContext)
+```
+
+- Called on the main thread when the SDK wants the host app to render an OAuth error.
+- Used only when `oauthErrorPresentation` is set to `.delegate`.
+- User-cancelled OAuth flows are not reported.
+- Auth flow completion callbacks still run independently of the delegate.
+
+#### `FronteggOAuthErrorContext`
+
+| Property | Description |
+|----------|-------------|
+| `displayMessage` | The user-facing message the SDK would show in toast mode. |
+| `errorCode` | The raw OAuth error code, when available. |
+| `errorDescription` | The decoded OAuth error description, when available. |
+| `error` | The underlying `FronteggError`. |
+| `flow` | Which OAuth flow failed. |
+| `embeddedMode` | Whether the SDK was running in embedded mode when the error occurred. |
+
+#### `FronteggOAuthFlow`
+
+| Case | Description |
+|------|-------------|
+| `.login` | Standard login and hosted login callbacks. |
+| `.socialLogin` | Social login, such as Google or GitHub. |
+| `.sso` | Standard SSO flows. |
+| `.customSSO` | Custom SSO flows. |
+| `.apple` | Sign in with Apple. |
+| `.mfa` | MFA verification flows. |
+| `.stepUp` | Step-up authentication flows. |
+| `.verification` | Verification or email confirmation flows. |
 
 ## FronteggAuth
 
@@ -123,4 +194,3 @@ Requests authorization for the current user session.
 - `refreshToken`: Token to validate (from identity-server, e.g. sign-up response).
 - `deviceTokenCookie`: Optional device ID.
 - `completion`: Callback with result.
-

@@ -5,7 +5,7 @@
 //  Created by David Frontegg on 22/12/2022.
 //
 
-public struct UserRolePermission: Codable, Equatable {
+public struct UserRolePermission: Codable, Equatable, Sendable {
     public var id: String
     public var key: String
     public var name: String

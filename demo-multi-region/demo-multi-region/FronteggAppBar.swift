@@ -42,6 +42,10 @@ struct FronteggAppBar: View {
                             .frame(minWidth: 40, maxWidth: 120, minHeight: 32, maxHeight: 32)
                             .background(Color.backgroundColor)
                     }
+                    .contentShape(Rectangle())
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Logout")
+                    .accessibilityIdentifier("LogoutButton")
                     .padding(.trailing, 24)
                 }
             }.padding(.top, 60)

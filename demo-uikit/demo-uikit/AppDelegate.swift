@@ -24,8 +24,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.
-        
-        FronteggApp.shared.didFinishLaunchingWithOptions()
+
+        if UIKitTestMode.isEnabled {
+            UIKitTestBootstrapper.shared.bootstrapIfNeeded()
+        } else {
+            FronteggApp.shared.didFinishLaunchingWithOptions()
+        }
         return true
     }
     // MARK: UISceneSession Lifecycle
@@ -44,4 +48,3 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     
     
 }
-

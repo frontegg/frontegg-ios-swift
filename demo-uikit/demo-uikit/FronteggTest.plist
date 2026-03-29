@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>baseUrl</key>
+	<string>https://test-placeholder.frontegg.com</string>
+	<key>clientId</key>
+	<string>test-placeholder-client-id</string>
+	<key>lateInit</key>
+	<true/>
+	<key>embeddedMode</key>
+	<true/>
+	<key>enableOfflineMode</key>
+	<true/>
+	<key>logLevel</key>
+	<string>trace</string>
+</dict>
+</plist>

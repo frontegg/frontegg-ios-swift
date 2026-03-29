@@ -56,17 +56,24 @@ class StepUpAuthenticator {
             }
         }
 
-        let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(
+        let (authorizeUrl, _) = AuthorizeUrlGenerator.shared.generate(
             stepUp: true,
             maxAge: maxAge
         )
         
-        CredentialManager.saveCodeVerifier(codeVerifier)
         DispatchQueue.main.async {
             FronteggAuth.shared.setIsStepUpAuthorization(true)
             FronteggAuth.shared.setIsLoading(false)
-            let oauthCallback = FronteggAuth.shared.createOauthCallbackHandler(updatedCompletion)
+            let oauthCallback = FronteggAuth.shared.createOauthCallbackHandler(
+                updatedCompletion,
+                pendingOAuthState: Self.pendingOAuthState(from: authorizeUrl),
+                flow: .stepUp
+            )
             WebAuthenticator.shared.start(authorizeUrl, completionHandler: oauthCallback)
         }
+    }
+
+    private static func pendingOAuthState(from url: URL) -> String? {
+        CredentialManager.pendingOAuthState(from: url)
     }
 }

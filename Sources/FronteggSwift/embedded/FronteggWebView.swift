@@ -21,6 +21,9 @@ public struct FronteggWebView: UIViewRepresentable {
 
     public func makeUIView(context: Context) -> WKWebView {
         logger.trace("FronteggWebView::makeUIView::start")
+        FronteggRuntime.testingLog(
+            "E2E FronteggWebView makeUIView start baseUrl=\(fronteggAuth.baseUrl) pendingAppLink=\(String(describing: fronteggAuth.pendingAppLink)) loginHint=\(String(describing: fronteggAuth.loginHint))"
+        )
         let controller: FronteggWKContentController = FronteggWKContentController()
         let userContentController: WKUserContentController = WKUserContentController()
         userContentController.add(controller, name: "FronteggNativeBridge")
@@ -119,6 +122,7 @@ public struct FronteggWebView: UIViewRepresentable {
 
         
         let request = URLRequest(url: url, cachePolicy: .reloadRevalidatingCacheData)
+        FronteggRuntime.testingLog("E2E FronteggWebView loading url=\(url.absoluteString)")
         webView.load(request)
 
         logger.trace("FronteggWebView::makeUIView::end")

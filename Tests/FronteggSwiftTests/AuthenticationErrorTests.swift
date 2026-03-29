@@ -54,6 +54,11 @@ final class AuthenticationErrorTests: XCTestCase {
         let error = FronteggError.authError(.codeVerifierNotFound)
         XCTAssertEqual(error.errorDescription, "Code verifier not found")
     }
+
+    func test_invalidOAuthState_errorDescription() {
+        let error = FronteggError.authError(.invalidOAuthState)
+        XCTAssertEqual(error.errorDescription, "Invalid or stale OAuth state")
+    }
     
     func test_couldNotFindRootViewController_errorDescription() {
         let error = FronteggError.authError(.couldNotFindRootViewController)
@@ -153,6 +158,11 @@ final class AuthenticationErrorTests: XCTestCase {
     func test_codeVerifierNotFound_failureReason() {
         let error = FronteggError.Authentication.codeVerifierNotFound
         XCTAssertEqual(error.failureReason, "codeVerifierNotFound")
+    }
+
+    func test_invalidOAuthState_failureReason() {
+        let error = FronteggError.Authentication.invalidOAuthState
+        XCTAssertEqual(error.failureReason, "invalidOAuthState")
     }
     
     func test_couldNotFindRootViewController_failureReason() {

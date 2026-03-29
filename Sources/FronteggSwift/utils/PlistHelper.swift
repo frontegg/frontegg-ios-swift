@@ -12,6 +12,9 @@ struct PlistHelper {
     private static var logLevelCache: FeLogger.Level? = nil
     private static var logger = getLogger("PlistHelper")
     private static let decoder = PropertyListDecoder()
+#if DEBUG
+    static var testConfigOverride: FronteggPlist? = nil
+#endif
 
     /// Decodes the Frontegg configuration plist and logs any error that occurs
     /// - Returns: the decoded model (``FronteggPlist``)
@@ -28,8 +31,13 @@ struct PlistHelper {
     /// Decodes the Frontegg configuration plist
     /// - Returns: the decoded model (``FronteggPlist``)
     private static func plist() throws -> FronteggPlist {
+#if DEBUG
+        if let testConfigOverride {
+            return testConfigOverride
+        }
+#endif
 
-        let resourceName = (getenv("frontegg-testing") != nil) ? "FronteggTest" : "Frontegg"
+        let resourceName = FronteggRuntime.isTesting ? "FronteggTest" : "Frontegg"
 
         guard
             let url = Bundle.main.url(forResource: resourceName, withExtension: "plist"),

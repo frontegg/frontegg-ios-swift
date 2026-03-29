@@ -9,7 +9,7 @@
 	<key>embeddedMode</key>
 	<true/>
 	<key>enableOfflineMode</key>
-	<false/>
+	<true/>
 	<key>entitlementsEnabled</key>
 	<true/>
 	<key>logLevel</key>
