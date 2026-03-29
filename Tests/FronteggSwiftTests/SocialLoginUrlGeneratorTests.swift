@@ -220,7 +220,6 @@ final class SocialLoginUrlGeneratorTests: XCTestCase {
             featureFlagStorage.removePersistentDomain(forName: featureFlagSuiteName)
         }
 
-        await auth.featureFlags.start()
         await SocialLoginUrlGenerator.shared.reloadConfigs()
 
         guard let url = try await SocialLoginUrlGenerator.shared.authorizeURL(
