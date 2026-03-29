@@ -3,6 +3,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { execSync } = require("node:child_process");
 
@@ -102,25 +103,56 @@ function mergeResults(allParsed) {
 // ── Coverage ────────────────────────────────────────────────────────────────
 
 function extractCoverage(xcresultPaths) {
-  const fileMap = new Map(); // path -> { covered, total }
+  if (xcresultPaths.length === 0) return new Map();
 
-  for (const xc of xcresultPaths) {
+  let reportPath;
+  if (xcresultPaths.length === 1) {
+    reportPath = xcresultPaths[0];
+  } else {
+    // Merge all xcresult bundles for true combined coverage
+    const mergedPath = path.join(os.tmpdir(), `combined-${Date.now()}.xcresult`);
+    const quotedPaths = xcresultPaths.map(p => `"${p}"`).join(" ");
     try {
-      const out = execSync(`xcrun xccov view --report --files-for-target FronteggSwift "${xc}" 2>/dev/null`, { encoding: "utf8", timeout: 30000 });
-      for (const line of out.split("\n")) {
-        // Format: "N  /path/to/File.swift  M  X.XX% (covered/total)"
-        const match = line.match(/^\s*\d+\s+(\S+\.swift)\s+\d+\s+[\d.]+%\s+\((\d+)\/(\d+)\)/);
-        if (match) {
-          const [, filePath, covered, total] = match;
-          const existing = fileMap.get(filePath);
-          const c = parseInt(covered), t = parseInt(total);
-          if (!existing || c > existing.covered) {
-            fileMap.set(filePath, { covered: c, total: t });
-          }
-        }
-      }
-    } catch { /* xcresult may not have FronteggSwift target */ }
+      execSync(
+        `xcrun xcresulttool merge ${quotedPaths} --output-path "${mergedPath}"`,
+        { timeout: 120000 }
+      );
+      reportPath = mergedPath;
+    } catch (e) {
+      console.error("xcresulttool merge failed, falling back to individual reports:", e.message || e);
+      // Fallback: extract from each individually, take best per file
+      return extractCoverageFallback(xcresultPaths);
+    }
   }
+
+  return extractCoverageFromBundle(reportPath);
+}
+
+function extractCoverageFallback(xcresultPaths) {
+  const fileMap = new Map();
+  for (const xc of xcresultPaths) {
+    for (const [filePath, data] of extractCoverageFromBundle(xc)) {
+      const existing = fileMap.get(filePath);
+      if (!existing || data.covered > existing.covered) {
+        fileMap.set(filePath, data);
+      }
+    }
+  }
+  return fileMap;
+}
+
+function extractCoverageFromBundle(xcresultPath) {
+  const fileMap = new Map();
+  try {
+    const out = execSync(`xcrun xccov view --report --files-for-target FronteggSwift "${xcresultPath}" 2>/dev/null`, { encoding: "utf8", timeout: 30000 });
+    for (const line of out.split("\n")) {
+      const match = line.match(/^\s*\d+\s+(\S+\.swift)\s+\d+\s+[\d.]+%\s+\((\d+)\/(\d+)\)/);
+      if (match) {
+        const [, filePath, covered, total] = match;
+        fileMap.set(filePath, { covered: parseInt(covered), total: parseInt(total) });
+      }
+    }
+  } catch { /* xcresult may not have FronteggSwift target */ }
   return fileMap;
 }
 
@@ -219,6 +251,101 @@ function renderCoverage(folders) {
   return lines.join("\n");
 }
 
+// ── Unit Tests ──────────────────────────────────────────────────────────────
+
+function parseUnitTestLog(logPath) {
+  const tcRe = /^Test Case '-\[[^ ]+ (?<method>[^\]]+)]' (?<status>started|passed|failed)(?: \((?<duration>[0-9.]+) seconds\))?\.$/;
+  const suiteStartRe = /^Test Suite '(?<suite>[^']+)' started/;
+  const failRe = /^.+error: -\[[^ ]+ (?<method>[^\]]+)] : (?<message>.+)$/;
+
+  const classes = new Map(); // className -> { passed, failed, incomplete, tests: [] }
+  let currentClass = null;
+
+  for (const raw of fs.readFileSync(logPath, "utf8").split(/\r?\n/)) {
+    const line = strip(raw).trim();
+    if (!line) continue;
+
+    const sm = line.match(suiteStartRe);
+    if (sm && sm.groups.suite !== "All tests" && sm.groups.suite !== "Selected tests" && !sm.groups.suite.endsWith(".xctest")) {
+      currentClass = sm.groups.suite;
+      if (!classes.has(currentClass)) {
+        classes.set(currentClass, { passed: 0, failed: 0, incomplete: 0, tests: [] });
+      }
+      continue;
+    }
+
+    const tm = line.match(tcRe);
+    if (tm) {
+      const { method, status, duration } = tm.groups;
+      if (status === "started") continue;
+      const cls = classes.get(currentClass) || { passed: 0, failed: 0, incomplete: 0, tests: [] };
+      if (!classes.has(currentClass)) classes.set(currentClass || "Unknown", cls);
+      cls[status === "passed" ? "passed" : "failed"]++;
+      cls.tests.push({ method, status, dur: duration ? parseFloat(duration) : null, fail: null });
+      continue;
+    }
+
+    const fm = line.match(failRe);
+    if (fm) {
+      const { method, message } = fm.groups;
+      const cls = classes.get(currentClass);
+      if (cls) {
+        const test = cls.tests.find(t => t.method === method);
+        if (test && !test.fail) test.fail = message.trim();
+      }
+    }
+  }
+
+  return classes;
+}
+
+function renderUnitTestSection(classes) {
+  const lines = [];
+  let totalPassed = 0, totalFailed = 0;
+
+  for (const [, cls] of classes) {
+    totalPassed += cls.passed;
+    totalFailed += cls.failed;
+  }
+  const total = totalPassed + totalFailed;
+
+  if (total === 0) {
+    lines.push("No unit test executions recorded.");
+    return lines.join("\n");
+  }
+
+  const icon = totalFailed > 0 ? "❌" : "✅";
+  lines.push(`${icon} **${total}** tests — ${totalPassed} passed, ${totalFailed} failed`);
+
+  // Collapsible per-class breakdown
+  const sorted = [...classes.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  lines.push("");
+  lines.push("<details><summary>Per-class breakdown</summary>", "");
+  lines.push("| Status | Test Class | Passed | Failed |", "| --- | --- | --- | --- |");
+  for (const [name, cls] of sorted) {
+    const si = cls.failed > 0 ? "❌" : "✅";
+    lines.push(`| ${si} | ${esc(name)} | ${cls.passed} | ${cls.failed} |`);
+  }
+  lines.push("", "</details>");
+
+  // Failure details
+  const failures = [];
+  for (const [name, cls] of sorted) {
+    for (const t of cls.tests) {
+      if (t.status === "failed") failures.push({ className: name, ...t });
+    }
+  }
+  if (failures.length > 0) {
+    lines.push("", "<details><summary>Failure Details</summary>", "");
+    for (const f of failures) {
+      lines.push(`- **${f.className}.${f.method}**: ${f.fail || "No excerpt found"}`);
+    }
+    lines.push("", "</details>");
+  }
+
+  return lines.join("\n");
+}
+
 // ── Main ────────────────────────────────────────────────────────────────────
 
 function main() {
@@ -226,9 +353,39 @@ function main() {
   const artifactsDir = opts["artifacts-dir"];
   const appsInput = opts["apps"] || "embedded,multi-region,uikit";
   const apps = appsInput.split(",").map(s => s.trim()).filter(s => APP_CONFIGS[s]);
+  const includeUnitTests = opts["include-unit-tests"] === "true";
 
-  const lines = ["# Demo E2E Test Results", ""];
+  const lines = ["# Test Results", ""];
   const xcresultPaths = [];
+
+  // ── Unit Tests ──
+  if (includeUnitTests) {
+    const unitDir = path.join(artifactsDir, "unit-tests-results");
+    if (fs.existsSync(unitDir)) {
+      // Collect unit test xcresult for coverage
+      const unitXcresults = fs.readdirSync(unitDir).filter(f => f.endsWith(".xcresult"));
+      for (const xc of unitXcresults) xcresultPaths.push(path.join(unitDir, xc));
+
+      // Parse unit test log for results
+      const unitLogs = fs.readdirSync(unitDir).filter(f => f.endsWith(".log"));
+      let unitClasses = new Map();
+      for (const log of unitLogs) {
+        const parsed = parseUnitTestLog(path.join(unitDir, log));
+        for (const [name, cls] of parsed) {
+          unitClasses.set(name, cls);
+        }
+      }
+
+      lines.push("## Unit Tests");
+      lines.push("");
+      lines.push(renderUnitTestSection(unitClasses));
+      lines.push("");
+    }
+  }
+
+  // ── E2E Tests ──
+  lines.push("## E2E Tests");
+  lines.push("");
 
   for (const app of apps) {
     const config = APP_CONFIGS[app];
@@ -264,7 +421,7 @@ function main() {
     lines.push("");
   }
 
-  // Coverage from all xcresult bundles
+  // Combined coverage from all xcresult bundles (unit + E2E)
   const fileMap = extractCoverage(xcresultPaths);
   const folders = groupCoverageByFolder(fileMap);
   const coverageSection = renderCoverage(folders);
