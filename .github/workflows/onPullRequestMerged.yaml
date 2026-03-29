@@ -125,6 +125,7 @@ jobs:
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ secrets.GITHUB_WORKSPACE }}
           commit-message: "Update v${{ steps.incremented-version.outputs.result }}"
           committer: GitHub <noreply@github.com>
           author: "${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>"
