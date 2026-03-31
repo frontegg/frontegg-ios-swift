@@ -96,6 +96,138 @@ final class CustomWebViewTests: XCTestCase {
         XCTAssertEqual(matched.source, "state_match")
     }
 
+    // MARK: - OIDC SSO Flow Tests
+    //
+    // SSO OIDC (enterprise SSO via Auth0, Okta, etc.) uses Frontegg's standard OAuth PKCE flow.
+    // The code_verifier must come from CredentialManager (state-matched), NOT from webview localStorage.
+    // webview localStorage holds FRONTEGG_CODE_VERIFIER which is for social login PKCE (Google/Microsoft).
+    // See: https://github.com/frontegg/frontegg-ios-swift — "Invalid_code_verifier" fix.
+
+    func test_oidcSso_usesCredentialManagerVerifier_notWebviewLocalStorage() async {
+        // Simulate: SDK generated authorize URL with state=S and codeVerifier=A
+        let nativeVerifier = "native-verifier-from-authorize-url"
+        let oauthState = "oidc-sso-state-123"
+        CredentialManager.registerPendingOAuth(state: oauthState, codeVerifier: nativeVerifier)
+
+        // OIDC SSO flow: isSocialLogin must be false — the OIDC callback should NOT set isSocialLoginFlow
+        let resolution = await CustomWebView.resolveHostedCallbackCodeVerifier(
+            isMagicLink: false,
+            isSocialLogin: false, // OIDC SSO is NOT social login
+            oauthState: oauthState,
+            socialVerifierProvider: {
+                XCTFail("OIDC SSO must NOT read code_verifier from webview localStorage")
+                return "wrong-webview-verifier"
+            }
+        )
+
+        XCTAssertEqual(resolution.codeVerifier, nativeVerifier,
+                        "OIDC SSO must use the code_verifier from CredentialManager that matches the code_challenge in /oauth/authorize")
+        XCTAssertEqual(resolution.source, "state_match")
+        XCTAssertNil(resolution.providerError)
+    }
+
+    func test_oidcSso_withMismatchedState_returnsNil() async {
+        // Simulate: SDK registered state=S1 but callback returned state=S2 (should not happen, but tests safety)
+        CredentialManager.registerPendingOAuth(state: "registered-state", codeVerifier: "registered-verifier")
+
+        let resolution = await CustomWebView.resolveHostedCallbackCodeVerifier(
+            isMagicLink: false,
+            isSocialLogin: false,
+            oauthState: "different-state-from-callback",
+            socialVerifierProvider: {
+                XCTFail("OIDC SSO must NOT read code_verifier from webview localStorage")
+                return "wrong-webview-verifier"
+            }
+        )
+
+        XCTAssertNil(resolution.codeVerifier,
+                      "When state doesn't match and isSocialLogin is false, code_verifier must be nil (no fallback)")
+        XCTAssertEqual(resolution.source, "missing")
+    }
+
+    func test_oidcSso_treatedAsSocialLogin_wouldUseWrongVerifier() async {
+        // This test documents the bug that was fixed:
+        // If isSocialLogin were true (the old buggy behavior), the webview localStorage verifier
+        // would be used instead of the CredentialManager one, causing "Invalid_code_verifier".
+        let nativeVerifier = "correct-native-verifier"
+        let webviewVerifier = "wrong-webview-verifier"
+        let oauthState = "oidc-state-456"
+        CredentialManager.registerPendingOAuth(state: oauthState, codeVerifier: nativeVerifier)
+
+        // Simulating the OLD buggy behavior where isSocialLogin was incorrectly true
+        let buggyResolution = await CustomWebView.resolveHostedCallbackCodeVerifier(
+            isMagicLink: false,
+            isSocialLogin: true, // BUG: this was the old behavior for OIDC SSO
+            oauthState: oauthState,
+            socialVerifierProvider: {
+                return webviewVerifier
+            }
+        )
+
+        // The CORRECT behavior (isSocialLogin: false)
+        let correctResolution = await CustomWebView.resolveHostedCallbackCodeVerifier(
+            isMagicLink: false,
+            isSocialLogin: false, // FIX: OIDC SSO should not be treated as social login
+            oauthState: oauthState,
+            socialVerifierProvider: {
+                XCTFail("Should not be called when isSocialLogin is false")
+                return webviewVerifier
+            }
+        )
+
+        // Document that the two behaviors produce different verifiers
+        XCTAssertEqual(buggyResolution.codeVerifier, webviewVerifier,
+                        "When incorrectly treated as social login, the wrong verifier from webview is used")
+        XCTAssertEqual(buggyResolution.source, "webview_local_storage")
+
+        XCTAssertEqual(correctResolution.codeVerifier, nativeVerifier,
+                        "When correctly treated as regular OAuth, the native verifier from CredentialManager is used")
+        XCTAssertEqual(correctResolution.source, "state_match")
+
+        XCTAssertNotEqual(buggyResolution.codeVerifier, correctResolution.codeVerifier,
+                           "The bug caused a different (wrong) code_verifier to be sent to /oauth/token")
+    }
+
+    func test_socialLogin_stillUsesWebviewVerifier() async {
+        // Regression test: actual social logins (Google, Microsoft) should still use webview localStorage
+        let nativeVerifier = "native-verifier"
+        let webviewVerifier = "social-pkce-webview-verifier"
+        CredentialManager.registerPendingOAuth(state: "social-state", codeVerifier: nativeVerifier)
+
+        let resolution = await CustomWebView.resolveHostedCallbackCodeVerifier(
+            isMagicLink: false,
+            isSocialLogin: true, // Social login correctly identified
+            oauthState: "social-state",
+            socialVerifierProvider: {
+                return webviewVerifier
+            }
+        )
+
+        XCTAssertEqual(resolution.codeVerifier, webviewVerifier,
+                        "Social login flows should use the code_verifier from webview localStorage")
+        XCTAssertEqual(resolution.source, "webview_local_storage")
+    }
+
+    func test_socialLogin_fallsBackToCredentialManager_whenWebviewFails() async {
+        // If webview localStorage is unavailable, social login should fall back to CredentialManager
+        let nativeVerifier = "fallback-native-verifier"
+        CredentialManager.registerPendingOAuth(state: "social-state", codeVerifier: nativeVerifier)
+
+        let resolution = await CustomWebView.resolveHostedCallbackCodeVerifier(
+            isMagicLink: false,
+            isSocialLogin: true,
+            oauthState: "social-state",
+            socialVerifierProvider: {
+                throw URLError(.cannotFindHost)
+            }
+        )
+
+        XCTAssertEqual(resolution.codeVerifier, nativeVerifier,
+                        "When webview localStorage fails, social login should fall back to CredentialManager")
+        XCTAssertEqual(resolution.source, "state_match")
+        XCTAssertNotNil(resolution.providerError)
+    }
+
     private func clearOAuthState() {
         UserDefaults.standard.removeObject(forKey: KeychainKeys.codeVerifier.rawValue)
         UserDefaults.standard.removeObject(forKey: KeychainKeys.oauthStateVerifiers.rawValue)
