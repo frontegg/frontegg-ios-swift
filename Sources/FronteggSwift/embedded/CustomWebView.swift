@@ -474,7 +474,10 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                             "queryKeys": queryKeys
                         ]
                     )
-                    isSocialLoginFlow = true
+                    // Do NOT set isSocialLoginFlow here — OIDC SSO uses Frontegg's standard
+                    // OAuth PKCE flow. The code_verifier must come from CredentialManager
+                    // (the one matching the code_challenge in the original /oauth/authorize request),
+                    // not from webview localStorage (which holds a different verifier for social login PKCE).
                     return .allow
                 }
                 
