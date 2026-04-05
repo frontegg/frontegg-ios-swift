@@ -108,7 +108,10 @@ extension FronteggAuth {
         Task {
             // Use provided redirectUri or generate default one.
             // For magic link flow, use the redirectUri from the callback URL.
-            let redirectUri = redirectUri ?? generateRedirectUri()
+            let redirectUri = redirectUri ?? generateRedirectUri(
+                baseUrl: self.baseUrl,
+                bundleIdentifier: currentAppBundleIdentifier()
+            )
 
             await MainActor.run {
                 self.setIsLoading(true)
@@ -542,16 +545,11 @@ extension FronteggAuth {
     }
 
     func matchesGeneratedRedirectUri(_ url: URL) -> Bool {
-        guard
-            let expected = URLComponents(string: generateRedirectUri()),
-            let actual = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        else {
-            return false
-        }
-
-        return actual.scheme == expected.scheme
-            && actual.host == expected.host
-            && actual.path == expected.path
+        matchedGeneratedRedirectUri(
+            url,
+            baseUrl: self.baseUrl,
+            bundleIdentifier: currentAppBundleIdentifier()
+        ) != nil
     }
 
     internal func createOauthCallbackHandler(
@@ -602,6 +600,11 @@ extension FronteggAuth {
             }
 
             let oauthState = queryItems["state"]
+            let resolvedRedirectUriOverride = matchedGeneratedRedirectUri(
+                url,
+                baseUrl: self.baseUrl,
+                bundleIdentifier: currentAppBundleIdentifier()
+            ) ?? redirectUriOverride
 
             if let failureDetails = self.oauthFailureDetails(from: queryItems) {
                 clearRelevantPendingOAuthState(callbackState: oauthState)
@@ -658,7 +661,7 @@ extension FronteggAuth {
                 code,
                 codeVerifier,
                 oauthState: oauthState,
-                redirectUri: redirectUriOverride,
+                redirectUri: resolvedRedirectUriOverride,
                 flow: flow,
                 completePendingFlowOnSuccess: true,
                 matchedPendingOAuthState: resolution.source == .stateMatch,

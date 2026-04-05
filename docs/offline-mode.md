@@ -2,7 +2,7 @@
 
 This guide explains how to integrate `enableOfflineMode` with an app-owned offline screen and how to validate the expected behavior in offline, reconnect, and logout scenarios.
 
-Use this page when validating an integration such as SkyPath's:
+Use this page when validating a host-app integration with:
 
 - custom unauthenticated offline UI
 - authenticated offline behavior

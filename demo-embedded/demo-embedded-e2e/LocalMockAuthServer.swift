@@ -7,9 +7,12 @@ final class LocalMockAuthServer {
     private let listenerQueue = DispatchQueue(label: "com.frontegg.demo-embedded-e2e.mock-server")
     private let state = MockAuthState()
     private let requestLogLock = NSLock()
+    private let configurationLock = NSLock()
     private var requestLog: [LoggedRequest] = []
     private let port: UInt16 = 49381
     private var listener: NWListener?
+    private var configuredBasePathPrefix: String = ""
+    private var useRootGeneratedCallbackAlias: Bool = false
 
     let clientId = "demo-embedded-e2e-client"
     let baseURL = URL(string: "http://127.0.0.1:49381")!
@@ -77,16 +80,26 @@ final class LocalMockAuthServer {
         resetState: Bool,
         useTestingWebAuthenticationTransport: Bool = true,
         forceNetworkPathOffline: Bool = false,
-        enableOfflineMode: Bool? = nil
+        enableOfflineMode: Bool? = nil,
+        basePathPrefix: String = "",
+        useRootGeneratedCallbackAlias: Bool = false
     ) -> [String: String] {
+        let normalizedBasePathPrefix = normalizeBasePathPrefix(basePathPrefix)
+        let appBaseURL = configuredAppBaseURL(basePathPrefix: normalizedBasePathPrefix)
+
+        configurationLock.lock()
+        configuredBasePathPrefix = normalizedBasePathPrefix
+        self.useRootGeneratedCallbackAlias = useRootGeneratedCallbackAlias
+        configurationLock.unlock()
+
         var env: [String: String] = [
             "frontegg-testing": "true",
-            "FRONTEGG_E2E_BASE_URL": baseURL.absoluteString,
+            "FRONTEGG_E2E_BASE_URL": appBaseURL.absoluteString,
             "FRONTEGG_E2E_CLIENT_ID": clientId,
             "FRONTEGG_E2E_RESET_STATE": resetState ? "1" : "0",
             "FRONTEGG_E2E_FORCE_NETWORK_PATH_OFFLINE": forceNetworkPathOffline ? "1" : "0",
             "FRONTEGG_TEST_WEB_AUTH_TRANSPORT": useTestingWebAuthenticationTransport ? "1" : "0",
-            "FRONTEGG_TEST_SOCIAL_AUTHORIZE_URL_GOOGLE": "\(baseURL.absoluteString)/idp/google/authorize",
+            "FRONTEGG_TEST_SOCIAL_AUTHORIZE_URL_GOOGLE": "\(appBaseURL.absoluteString)/idp/google/authorize",
         ]
         if let enableOfflineMode {
             env["FRONTEGG_E2E_ENABLE_OFFLINE_MODE"] = enableOfflineMode ? "1" : "0"
@@ -97,6 +110,10 @@ final class LocalMockAuthServer {
     func reset() throws {
         state.reset()
         clearRequestLog()
+        configurationLock.lock()
+        configuredBasePathPrefix = ""
+        useRootGeneratedCallbackAlias = false
+        configurationLock.unlock()
     }
 
     func clearRequestLog() {
@@ -166,6 +183,14 @@ final class LocalMockAuthServer {
             errorCode: errorCode,
             errorDescription: errorDescription
         )
+    }
+
+    func queueEmbeddedSocialSuccessStall(count: Int = 1) {
+        state.queueEmbeddedSocialSuccessStall(count: count)
+    }
+
+    func queueEmbeddedSocialSuccessDashboardRedirect(count: Int = 1) {
+        state.queueEmbeddedSocialSuccessDashboardRedirect(count: count)
     }
 
     func waitForRequest(
@@ -289,7 +314,7 @@ final class LocalMockAuthServer {
         let body = buffer.subdata(in: bodyStart..<(bodyStart + contentLength))
         let targetURLString = target.hasPrefix("http") ? target : "http://127.0.0.1\(target)"
         let components = URLComponents(string: targetURLString)
-        let path = normalizePath(components?.path ?? "/")
+        let path = routedPath(components?.path ?? "/")
 
         var query: [String: [String]] = [:]
         for item in components?.queryItems ?? [] {
@@ -475,7 +500,7 @@ final class LocalMockAuthServer {
             loginHint: loginHint
         )
 
-        var components = URLComponents(url: baseURL.appendingPathComponent("oauth/prelogin"), resolvingAgainstBaseURL: false)
+        var components = URLComponents(url: currentAppBaseURL().appendingPathComponent("oauth/prelogin"), resolvingAgainstBaseURL: false)
         components?.queryItems = [
             URLQueryItem(name: "client_id", value: clientId),
             URLQueryItem(name: "redirect_uri", value: redirectURI),
@@ -485,7 +510,7 @@ final class LocalMockAuthServer {
             components?.queryItems?.append(URLQueryItem(name: "login_hint", value: loginHint))
         }
 
-        return redirectResponse(location: components?.string ?? "\(baseURL.absoluteString)/oauth/prelogin?state=\(hostedState)")
+        return redirectResponse(location: components?.string ?? "\(currentAppBaseURL().absoluteString)/oauth/prelogin?state=\(hostedState)")
     }
 
     private func handleHostedPrelogin(query: [String: [String]]) -> HTTPResponse {
@@ -881,8 +906,8 @@ final class LocalMockAuthServer {
                 "active": true,
                 "customised": false,
                 "clientId": "mock-google-client-id",
-                "redirectUrl": "\(baseURL.absoluteString)/oauth/account/social/success",
-                "redirectUrlPattern": "\(baseURL.absoluteString)/oauth/account/social/success",
+                "redirectUrl": "\(currentAppBaseURL().absoluteString)/oauth/account/social/success",
+                "redirectUrlPattern": "\(currentAppBaseURL().absoluteString)/oauth/account/social/success",
                 "options": [
                     "verifyEmail": false,
                 ],
@@ -1045,7 +1070,7 @@ final class LocalMockAuthServer {
     }
 
     private func handleMockGoogleAuthorize(query: [String: [String]]) -> HTTPResponse {
-        let redirectURI = firstValue(query, key: "redirect_uri")
+        let redirectURI = rewrittenGeneratedCallbackRedirectURI(firstValue(query, key: "redirect_uri"))
         let stateValue = firstValue(query, key: "state")
         guard !redirectURI.isEmpty, !stateValue.isEmpty else {
             return htmlResponse(status: 400, title: "Invalid mock Google request", body: "<h1>Invalid mock Google request</h1>")
@@ -1100,6 +1125,23 @@ final class LocalMockAuthServer {
         let redirectURI = firstValue(query, key: "redirectUri")
         guard !redirectURI.isEmpty else {
             return jsonResponse(status: 400, payload: ["error": "missing_social_redirect_uri"])
+        }
+
+        if state.consumeEmbeddedSocialSuccessDashboardRedirect() {
+            let issuedRefreshToken = state.issueRefreshToken(email: "google-social@frontegg.com")
+            let cookieValue = "fe_refresh_demo_embedded_e2e=\(issuedRefreshToken.token); Path=/; HttpOnly; SameSite=Lax"
+            return redirectResponse(
+                location: currentAppBaseURL().appendingPathComponent("dashboard").absoluteString,
+                additionalHeaders: ["Set-Cookie": cookieValue]
+            )
+        }
+
+        if state.consumeEmbeddedSocialSuccessStall() {
+            return HTTPResponse(
+                statusCode: 200,
+                headers: ["Content-Type": "text/html; charset=utf-8"],
+                body: Data("<!DOCTYPE html><html><body style='background:#fff'></body></html>".utf8)
+            )
         }
 
         if let pendingError = state.consumeEmbeddedSocialSuccessOAuthError() {
@@ -1328,10 +1370,15 @@ final class LocalMockAuthServer {
         )
     }
 
-    private func redirectResponse(location: String) -> HTTPResponse {
-        HTTPResponse(
+    private func redirectResponse(
+        location: String,
+        additionalHeaders: [String: String] = [:]
+    ) -> HTTPResponse {
+        var headers = ["Location": location]
+        additionalHeaders.forEach { headers[$0.key] = $0.value }
+        return HTTPResponse(
             statusCode: 302,
-            headers: ["Location": location],
+            headers: headers,
             body: Data()
         )
     }
@@ -1379,7 +1426,7 @@ final class LocalMockAuthServer {
         var components = URLComponents()
         components.scheme = bundleIdentifier.lowercased()
         components.host = baseURL.host
-        components.path = "/ios/oauth/callback"
+        components.path = generatedRedirectCallbackPath()
 
         var queryItems = [
             URLQueryItem(name: "error", value: error),
@@ -1389,7 +1436,7 @@ final class LocalMockAuthServer {
             queryItems.append(URLQueryItem(name: "state", value: state))
         }
         components.queryItems = queryItems
-        return components.string ?? "\(bundleIdentifier.lowercased())://\(baseURL.host ?? "")/ios/oauth/callback"
+        return components.string ?? "\(bundleIdentifier.lowercased())://\(baseURL.host ?? "")\(generatedRedirectCallbackPath())"
     }
 
     private func buildGeneratedRedirectCodeCallbackURL(
@@ -1400,13 +1447,13 @@ final class LocalMockAuthServer {
         var components = URLComponents()
         components.scheme = bundleIdentifier.lowercased()
         components.host = baseURL.host
-        components.path = "/ios/oauth/callback"
+        components.path = generatedRedirectCallbackPath()
         components.queryItems = [
             URLQueryItem(name: "state", value: state),
             URLQueryItem(name: "code", value: code),
             URLQueryItem(name: "social-login-callback", value: "true")
         ]
-        return components.string ?? "\(bundleIdentifier.lowercased())://\(baseURL.host ?? "")/ios/oauth/callback"
+        return components.string ?? "\(bundleIdentifier.lowercased())://\(baseURL.host ?? "")\(generatedRedirectCallbackPath())"
     }
 
     private func parseJSONDictionary(_ data: Data) -> [String: Any] {
@@ -1600,10 +1647,98 @@ final class LocalMockAuthServer {
         query[key]?.first ?? defaultValue
     }
 
+    private func normalizeBasePathPrefix(_ path: String) -> String {
+        guard !path.isEmpty, path != "/" else { return "" }
+
+        var normalized = path
+        if !normalized.hasPrefix("/") {
+            normalized = "/\(normalized)"
+        }
+
+        while normalized.count > 1 && normalized.hasSuffix("/") {
+            normalized.removeLast()
+        }
+
+        return normalized
+    }
+
+    private func configuredAppBaseURL(basePathPrefix: String) -> URL {
+        guard !basePathPrefix.isEmpty else {
+            return baseURL
+        }
+
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        components?.path = basePathPrefix
+        return components?.url ?? baseURL
+    }
+
+    private func currentAppBaseURL() -> URL {
+        configurationLock.lock()
+        let basePathPrefix = configuredBasePathPrefix
+        configurationLock.unlock()
+        return configuredAppBaseURL(basePathPrefix: basePathPrefix)
+    }
+
     private func normalizePath(_ path: String) -> String {
         if path.isEmpty { return "/" }
         if path.hasPrefix("/") { return path }
         return "/\(path)"
+    }
+
+    private func routedPath(_ rawPath: String) -> String {
+        let normalized = normalizePath(rawPath)
+        configurationLock.lock()
+        let basePathPrefix = configuredBasePathPrefix
+        configurationLock.unlock()
+
+        guard !basePathPrefix.isEmpty else {
+            return normalized
+        }
+
+        if normalized == basePathPrefix {
+            return "/"
+        }
+
+        let prefixWithSlash = "\(basePathPrefix)/"
+        if normalized.hasPrefix(prefixWithSlash) {
+            return "/\(normalized.dropFirst(prefixWithSlash.count))"
+        }
+
+        return normalized
+    }
+
+    private func generatedRedirectCallbackPath() -> String {
+        configurationLock.lock()
+        let configuration = (configuredBasePathPrefix, useRootGeneratedCallbackAlias)
+        configurationLock.unlock()
+
+        if !configuration.0.isEmpty && !configuration.1 {
+            return "\(configuration.0)/ios/oauth/callback"
+        }
+
+        return "/ios/oauth/callback"
+    }
+
+    private func rewrittenGeneratedCallbackRedirectURI(_ redirectURI: String) -> String {
+        configurationLock.lock()
+        let configuration = (configuredBasePathPrefix, useRootGeneratedCallbackAlias)
+        configurationLock.unlock()
+
+        guard configuration.1, !configuration.0.isEmpty else {
+            return redirectURI
+        }
+
+        guard var components = URLComponents(string: redirectURI) else {
+            return redirectURI
+        }
+
+        let canonicalPath = "\(configuration.0)/ios/oauth/callback"
+        guard components.path == canonicalPath else {
+            return redirectURI
+        }
+
+        components.path = "/ios/oauth/callback"
+        return components.string ?? redirectURI
     }
 
     private func htmlEscaped(_ string: String) -> String {
@@ -1758,6 +1893,8 @@ private final class MockAuthState {
     private var refreshTokens: [String: RefreshTokenRecord] = [:]
     private var tokenPolicies: [String: TokenPolicy] = [:]
     private var pendingEmbeddedSocialSuccessOAuthError: PendingEmbeddedSocialSuccessOAuthError?
+    private var pendingEmbeddedSocialSuccessStallCount: Int = 0
+    private var pendingEmbeddedSocialSuccessDashboardRedirectCount: Int = 0
 
     init() {
         reset()
@@ -1779,6 +1916,8 @@ private final class MockAuthState {
                 ),
             ]
             pendingEmbeddedSocialSuccessOAuthError = nil
+            pendingEmbeddedSocialSuccessStallCount = 0
+            pendingEmbeddedSocialSuccessDashboardRedirectCount = 0
         }
     }
 
@@ -1926,11 +2065,47 @@ private final class MockAuthState {
         }
     }
 
+    func queueEmbeddedSocialSuccessStall(count: Int) {
+        queue.sync {
+            pendingEmbeddedSocialSuccessStallCount += count
+        }
+    }
+
+    func queueEmbeddedSocialSuccessDashboardRedirect(count: Int) {
+        guard count > 0 else { return }
+
+        queue.sync {
+            pendingEmbeddedSocialSuccessDashboardRedirectCount += count
+        }
+    }
+
     func consumeEmbeddedSocialSuccessOAuthError() -> PendingEmbeddedSocialSuccessOAuthError? {
         queue.sync {
             let pendingError = pendingEmbeddedSocialSuccessOAuthError
             pendingEmbeddedSocialSuccessOAuthError = nil
             return pendingError
+        }
+    }
+
+    func consumeEmbeddedSocialSuccessStall() -> Bool {
+        queue.sync {
+            guard pendingEmbeddedSocialSuccessStallCount > 0 else {
+                return false
+            }
+
+            pendingEmbeddedSocialSuccessStallCount -= 1
+            return true
+        }
+    }
+
+    func consumeEmbeddedSocialSuccessDashboardRedirect() -> Bool {
+        queue.sync {
+            guard pendingEmbeddedSocialSuccessDashboardRedirectCount > 0 else {
+                return false
+            }
+
+            pendingEmbeddedSocialSuccessDashboardRedirectCount -= 1
+            return true
         }
     }
 

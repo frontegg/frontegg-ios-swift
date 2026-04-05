@@ -325,17 +325,10 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
     }
 
     func test_handleSocialLoginCallback_errorCallback_returnsNil() {
-#if DEBUG
-        PlistHelper.testConfigOverride = makeSharedAppConfig()
-#endif
-        let app = FronteggApp.shared
-        let previousBaseUrl = app.baseUrl
-        let previousBundleIdentifier = app.bundleIdentifier
-        app.baseUrl = "https://test.example.com"
-        app.bundleIdentifier = "com.frontegg.demo"
+        let previousBaseUrl = auth.baseUrl
+        auth.baseUrl = "https://test.example.com"
         defer {
-            app.baseUrl = previousBaseUrl
-            app.bundleIdentifier = previousBundleIdentifier
+            auth.baseUrl = previousBaseUrl
         }
 
         let callbackUrl = makeGeneratedRedirectCallbackUrl(
@@ -345,6 +338,43 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         )
 
         XCTAssertNil(auth.handleSocialLoginCallback(callbackUrl))
+    }
+
+    func test_handleSocialLoginCallback_generatedRedirectAliasWithBasePath_preservesActualCallbackAlias() throws {
+        let bundleIdentifier = currentTestBundleIdentifier()
+        let previousBaseUrl = auth.baseUrl
+        auth.baseUrl = "https://test.example.com/fe-auth"
+        defer {
+            auth.baseUrl = previousBaseUrl
+        }
+
+        let rawSocialState = try makeRawSocialState(
+            provider: "google",
+            appId: "app-1",
+            action: "login"
+        )
+        let callbackUrl = makeGeneratedRedirectCallbackUrl(
+            bundleIdentifier: bundleIdentifier,
+            path: "/ios/oauth/callback",
+            code: "code-123",
+            state: rawSocialState
+        )
+
+        let finalUrl = auth.handleSocialLoginCallback(callbackUrl)
+        let queryItems = finalUrl.flatMap { getQueryItems($0.absoluteString) }
+
+        XCTAssertEqual(finalUrl?.path, "/fe-auth/oauth/account/social/success")
+        XCTAssertEqual(
+            queryItems?["redirectUri"],
+            "\(bundleIdentifier)://test.example.com/ios/oauth/callback"
+        )
+        let returnedState = queryItems?["state"]?.data(using: .utf8)
+        let returnedStateObject = returnedState.flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [String: String]
+        }
+        XCTAssertEqual(returnedStateObject?["provider"], "google")
+        XCTAssertEqual(returnedStateObject?["appId"], "app-1")
+        XCTAssertEqual(returnedStateObject?["action"], "login")
     }
 
     func test_handleSocialLoginOAuthCallback_errorCompletesFailure() async {
@@ -456,6 +486,46 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         XCTAssertEqual(delegate.contexts.first?.errorDescription, "JWT token size exceeded")
         XCTAssertEqual(delegate.contexts.first?.flow, .socialLogin)
         XCTAssertEqual(delegate.contexts.first?.embeddedMode, false)
+    }
+
+    func test_createOauthCallbackHandler_generatedRedirectAliasWithBasePath_usesActualCallbackAliasForExchange() async throws {
+        let accessToken = try makeAccessToken()
+        api.exchangeTokenResponse = try makeAuthResponse(
+            accessToken: accessToken,
+            refreshToken: "refresh-token-base-path"
+        )
+        api.meResult = .success(try makeUser())
+
+        let bundleIdentifier = currentTestBundleIdentifier()
+        let previousAuthBaseUrl = auth.baseUrl
+        auth.baseUrl = "https://test.example.com/fe-auth"
+        defer {
+            auth.baseUrl = previousAuthBaseUrl
+        }
+
+        CredentialManager.registerPendingOAuth(state: "expected-state", codeVerifier: "expected-verifier")
+
+        let result = await executeCallback(
+            allowFallback: false,
+            url: makeGeneratedRedirectCallbackUrl(
+                bundleIdentifier: bundleIdentifier,
+                path: "/ios/oauth/callback",
+                code: "code-123",
+                state: "expected-state"
+            )
+        )
+
+        switch result {
+        case .success(let user):
+            XCTAssertEqual(user.email, "test@example.com")
+        case .failure(let error):
+            XCTFail("Expected success, got \(error)")
+        }
+
+        XCTAssertEqual(
+            api.lastExchangeInput?.redirectUrl,
+            "\(bundleIdentifier)://test.example.com/ios/oauth/callback"
+        )
     }
 
     func test_getQueryItems_plusOnlyOAuthErrorValues_doNotProduceFailureDetails() {
@@ -965,6 +1035,27 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         XCTAssertTrue(NetworkStatusMonitor._testSnapshot().monitoringActive)
     }
 
+    func test_recheckConnection_unauthenticatedOffline_returnsToLoginStateWhenNetworkIsBack() async {
+        NetworkStatusMonitor._testSetReachabilityOverride(true)
+
+        auth.setIsAuthenticated(false)
+        auth.setUser(nil)
+        auth.setAccessToken(nil)
+        auth.setRefreshToken(nil)
+        auth.setIsOfflineMode(true)
+        auth.setIsLoading(false)
+        auth.setInitializing(false)
+
+        auth.recheckConnection()
+        for _ in 0..<20 where auth.isOfflineMode {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        XCTAssertFalse(auth.isOfflineMode)
+        XCTAssertFalse(auth.isAuthenticated)
+        XCTAssertNil(auth.user)
+    }
+
     func test_ensureOfflineMonitoringActive_defaultsToSuppressingInitialEmission() {
         auth.ensureOfflineMonitoringActive()
 
@@ -1169,8 +1260,9 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
     }
 
     private func makeGeneratedRedirectCallbackUrl(
-        bundleIdentifier: String = "com.frontegg.demo",
+        bundleIdentifier: String = Bundle.main.bundleIdentifier?.lowercased() ?? "com.frontegg.demo",
         host: String = "test.example.com",
+        path: String = "/ios/oauth/callback",
         code: String? = nil,
         state: String? = nil,
         errorMessage: String? = nil,
@@ -1179,7 +1271,7 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         var components = URLComponents()
         components.scheme = bundleIdentifier.lowercased()
         components.host = host
-        components.path = "/ios/oauth/callback"
+        components.path = path
 
         var items: [URLQueryItem] = []
         if let code {
@@ -1196,6 +1288,10 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         }
         components.queryItems = items
         return components.url!
+    }
+
+    private func currentTestBundleIdentifier() -> String {
+        Bundle.main.bundleIdentifier?.lowercased() ?? "com.frontegg.demo"
     }
 
     private func waitForOAuthErrorDispatch() async {

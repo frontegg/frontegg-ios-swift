@@ -44,14 +44,18 @@ class DemoEmbeddedUITestCase: XCTestCase {
         resetState: Bool = true,
         useTestingWebAuthenticationTransport: Bool = true,
         forceNetworkPathOffline: Bool = false,
-        enableOfflineMode: Bool? = nil
+        enableOfflineMode: Bool? = nil,
+        basePathPrefix: String = "",
+        useRootGeneratedCallbackAlias: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment = Self.server.launchEnvironment(
             resetState: resetState,
             useTestingWebAuthenticationTransport: useTestingWebAuthenticationTransport,
             forceNetworkPathOffline: forceNetworkPathOffline,
-            enableOfflineMode: enableOfflineMode
+            enableOfflineMode: enableOfflineMode,
+            basePathPrefix: basePathPrefix,
+            useRootGeneratedCallbackAlias: useRootGeneratedCallbackAlias
         )
         app.launch()
         self.app = app
@@ -86,6 +90,33 @@ class DemoEmbeddedUITestCase: XCTestCase {
         waitForScreen("UserPageRoot", timeout: timeout)
         XCTAssertTrue(app.staticTexts[email].waitForExistence(timeout: timeout), "Expected user email \(email)")
         assertNoUnexpectedNoConnectionScreenSeen()
+    }
+
+    func waitForUserEmailWithoutOAuthError(
+        _ email: String,
+        timeout: TimeInterval = 20,
+        postAppearanceGuard: TimeInterval = 2
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        let userPageRoot = app.descendants(matching: .any)["UserPageRoot"]
+        let emailLabel = app.staticTexts[email]
+
+        while Date() < deadline {
+            if oauthErrorToastIsVisible() {
+                XCTFail("Unexpected OAuth error toast appeared while waiting for user email \(email). \(screenDebugSummary())")
+                return
+            }
+
+            if userPageRoot.exists && emailLabel.exists {
+                assertNoOAuthErrorToastAppears(duration: postAppearanceGuard)
+                assertNoUnexpectedNoConnectionScreenSeen()
+                return
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("Expected user email \(email) without OAuth error. \(screenDebugSummary())")
     }
 
     func assertNoConnectionScreenDoesNotAppear(duration: TimeInterval, pollInterval: TimeInterval = 0.1) {
@@ -219,6 +250,21 @@ class DemoEmbeddedUITestCase: XCTestCase {
 
         XCTFail("Expected OAuth error message containing '\(substring)' within \(timeout)s. \(screenDebugSummary())")
         return message
+    }
+
+    func assertNoOAuthErrorToastAppears(
+        duration: TimeInterval,
+        pollInterval: TimeInterval = 0.1
+    ) {
+        let deadline = Date().addingTimeInterval(duration)
+        while Date() < deadline {
+            if oauthErrorToastIsVisible() {
+                XCTFail("Unexpected OAuth error toast appeared. \(screenDebugSummary())")
+                return
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
+        }
     }
 
     func waitForDuration(_ duration: TimeInterval, pollInterval: TimeInterval = 0.1) {
@@ -377,22 +423,33 @@ class DemoEmbeddedUITestCase: XCTestCase {
         return currentScreenVisible || stickyMarkerVisible
     }
 
+    private func oauthErrorToastIsVisible() -> Bool {
+        let candidates: [XCUIElement] = [
+            app.descendants(matching: .any).matching(identifier: "OAuthErrorToast").firstMatch,
+            app.staticTexts["OAuthErrorToast"],
+            app.otherElements["OAuthErrorToast"],
+        ]
+
+        return candidates.contains { $0.exists }
+    }
+
     func noConnectionScreen() -> XCUIElement {
         screenAnchor(for: "NoConnectionPageRoot")
     }
 
     func retryConnectionControl() -> XCUIElement {
-        let identifiedButton = app.buttons["RetryConnectionButton"]
-        if identifiedButton.exists {
-            return identifiedButton
+        let candidates: [XCUIElement] = [
+            app.buttons["RetryConnectionButton"],
+            app.buttons["Retry"],
+            app.otherElements["RetryConnectionButton"],
+            app.otherElements["Retry"],
+        ]
+
+        for candidate in candidates where candidate.exists {
+            return candidate
         }
 
-        let labeledButton = app.buttons["Retry"]
-        if labeledButton.exists {
-            return labeledButton
-        }
-
-        return identifiedButton
+        return candidates[0]
     }
 
     private func textValue(for identifier: String, timeout: TimeInterval) -> String {

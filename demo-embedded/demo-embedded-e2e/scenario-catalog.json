@@ -36,6 +36,16 @@
       "description": "Runs the embedded Google social flow through the real system web authentication session and verifies the Google social user is signed in."
     },
     {
+      "method": "testEmbeddedGoogleSocialLoginDoesNotShowOAuthErrorToastOnSuccess",
+      "title": "Embedded Google social success shows no OAuth error toast",
+      "description": "Runs the embedded Google social flow through the base-path callback alias and verifies the user signs in without any stale OAuth error toast appearing."
+    },
+    {
+      "method": "testEmbeddedGoogleSocialLoginCompletesWhenExistingSessionRedirectsToDashboard",
+      "title": "Embedded Google social login completes when an existing session redirects to dashboard",
+      "description": "Queues the existing-session dashboard redirect path after social success, verifies the SDK extracts the hosted refresh cookie, and confirms the user still signs in."
+    },
+    {
       "method": "testEmbeddedGoogleSocialLoginOAuthErrorShowsToastAndKeepsLoginOpen",
       "title": "Embedded Google OAuth error keeps login open",
       "description": "Queues an OAuth error from the Google social callback, verifies the OAuth error toast is shown, and confirms the login UI stays open without authenticating the user."
@@ -74,6 +84,11 @@
       "method": "testLogoutWhileAuthenticatedOfflineShowsNoConnectionPage",
       "title": "Logout from authenticated offline mode shows the custom no-connection page",
       "description": "Forces authenticated offline mode, logs out, and verifies the app lands on the unauthenticated custom no-connection screen instead of a hosted error or stuck transition."
+    },
+    {
+      "method": "testLogoutDuringTransientConnectivityLossRecoversBackToLoginWhenNetworkReturns",
+      "title": "Logout during transient connectivity loss recovers back to login",
+      "description": "Drops connectivity during logout, verifies the app can enter the custom no-connection state, then restores connectivity and confirms the app recovers back to the login screen without a stuck blank state."
     },
     {
       "method": "testLogoutTerminateTransientNoConnectionThenCustomSSORecovers",

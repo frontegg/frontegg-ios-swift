@@ -508,7 +508,61 @@ extension FronteggAuth {
                     self.logger.info("No network connection")
                     return
                 }
-                self.logger.info("Netowrk is back, refreshing...")
+
+                if self.isOfflineMode {
+                    let hasRuntimeSession = self.isAuthenticated
+                        || self.accessToken != nil
+                        || self.refreshToken != nil
+
+                    if !hasRuntimeSession {
+                        self.logger.info("Network is back, clearing unauthenticated offline state")
+                        self.cancelPendingOfflineDebounce()
+                        self.lastAttemptReason = nil
+                        await MainActor.run {
+                            self.setUser(nil)
+                            self.setIsOfflineMode(false)
+                            self.setIsLoading(false)
+                            self.setWebLoading(false)
+                            self.setInitializing(false)
+                            self.setShowLoader(false)
+                            self.setAppLink(false)
+                            self.setExternalLink(false)
+                        }
+                        return
+                    }
+
+                    let config = try? PlistHelper.fronteggConfig()
+                    let storedArtifacts = self.resolveStoredSessionArtifacts(
+                        enableSessionPerTenant: config?.enableSessionPerTenant ?? false
+                    )
+                    let hasStoredTokens = self.accessToken != nil
+                        || self.refreshToken != nil
+                        || storedArtifacts.accessToken != nil
+                        || storedArtifacts.refreshToken != nil
+
+                    if !hasStoredTokens && !self.isAuthenticated {
+                        self.logger.info("Network is back, clearing unauthenticated offline state")
+                        self.cancelPendingOfflineDebounce()
+                        self.lastAttemptReason = nil
+                        await MainActor.run {
+                            self.setUser(nil)
+                            self.setIsOfflineMode(false)
+                            self.setIsLoading(false)
+                            self.setWebLoading(false)
+                            self.setInitializing(false)
+                            self.setShowLoader(false)
+                            self.setAppLink(false)
+                            self.setExternalLink(false)
+                        }
+                        return
+                    }
+
+                    self.logger.info("Network is back, settling offline state through reconnect handling")
+                    self.reconnectedToInternet()
+                    return
+                }
+
+                self.logger.info("Network is back, refreshing...")
                 _ = await self.refreshTokenIfNeeded()
             }
         }
