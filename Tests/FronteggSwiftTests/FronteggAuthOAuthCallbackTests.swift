@@ -718,6 +718,74 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         }
     }
 
+    func test_handleHostedLoginCallback_socialLoginSuccess_clearsPendingSocialVerifierState() async throws {
+        let rawSocialState = try makeRawSocialState(
+            provider: "google",
+            appId: "app-1",
+            action: "login"
+        )
+        let canonicalSocialState = SocialLoginUrlGenerator.canonicalizeSocialState(rawSocialState)
+        let accessToken = try makeAccessToken()
+        api.exchangeTokenResponse = try makeAuthResponse(
+            accessToken: accessToken,
+            refreshToken: "refresh-token-social-success"
+        )
+        api.meResult = .success(try makeUser())
+        SocialLoginUrlGenerator.shared.storePendingSocialCodeVerifier(
+            "pending-social-verifier",
+            for: rawSocialState
+        )
+
+        let result = await withCheckedContinuation { continuation in
+            auth.handleHostedLoginCallback(
+                "code-social-success",
+                "verifier-social-success",
+                oauthState: canonicalSocialState,
+                redirectUri: "test://callback",
+                flow: .socialLogin,
+                completePendingFlowOnSuccess: false
+            ) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success(let user):
+            XCTAssertEqual(user.email, "test@example.com")
+        case .failure(let error):
+            XCTFail("Expected social login success, got \(error)")
+        }
+
+        XCTAssertNil(SocialLoginUrlGenerator.shared.pendingSocialCodeVerifier(for: rawSocialState))
+        XCTAssertNil(SocialLoginUrlGenerator.shared.pendingSocialCodeVerifier(for: canonicalSocialState))
+    }
+
+    func test_handleSocialLoginOAuthCallback_failure_clearsPendingSocialVerifierState() async throws {
+        let rawSocialState = try SocialLoginUrlGenerator.createState(
+            provider: .google,
+            appId: "app-2",
+            action: .login
+        )
+        SocialLoginUrlGenerator.shared.storePendingSocialCodeVerifier(
+            "pending-social-verifier",
+            for: rawSocialState
+        )
+
+        let result = await executeSocialLoginOAuthCallback(
+            url: nil,
+            error: URLError(.cannotConnectToHost)
+        )
+
+        switch result {
+        case .success:
+            XCTFail("Expected social login callback failure")
+        case .failure:
+            break
+        }
+
+        XCTAssertNil(SocialLoginUrlGenerator.shared.pendingSocialCodeVerifier(for: rawSocialState))
+    }
+
     func test_logout_clearsLoginInProgressWhileHostedLoginCallbackIsInFlight() async {
         api.exchangeTokenError = FronteggError.authError(.failedToAuthenticate)
         api.setExchangeTokenBlocked(true)
@@ -805,6 +873,96 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 900_000_000)
 
         XCTAssertFalse(auth.isOfflineMode)
+    }
+
+    func test_handleHostedLoginCallback_onlineSuccess_cancelsPendingOfflineDebounce() async throws {
+        let accessToken = try makeAccessToken()
+        api.exchangeTokenResponse = try makeAuthResponse(
+            accessToken: accessToken,
+            refreshToken: "refresh-token-online-success"
+        )
+        api.meResult = .success(try makeUser())
+
+        auth.setIsOfflineMode(false)
+        auth.disconnectedFromInternet()
+
+        let result = await executeHostedLoginCallback(
+            code: "code-online-success",
+            codeVerifier: "verifier-online-success"
+        )
+
+        switch result {
+        case .success(let user):
+            XCTAssertEqual(user.email, "test@example.com")
+        case .failure(let error):
+            XCTFail("Expected hosted login callback success, got \(error)")
+        }
+
+        try? await Task.sleep(nanoseconds: 900_000_000)
+
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertFalse(auth.isOfflineMode)
+    }
+
+    func test_logout_whileOffline_keepsUnauthenticatedOfflineModeEnabled() async throws {
+        PlistHelper.testConfigOverride = makeOfflineConfig(serviceKey: serviceKey)
+        NetworkStatusMonitor._testSetReachabilityOverride(false)
+
+        auth.setAccessToken("access-token")
+        auth.setRefreshToken("refresh-token")
+        auth.setUser(try makeUser())
+        auth.setIsAuthenticated(true)
+        auth.setIsOfflineMode(true)
+
+        let result = await withCheckedContinuation { continuation in
+            auth.logout(clearCookie: false) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success(let didLogout):
+            XCTAssertTrue(didLogout)
+        case .failure(let error):
+            XCTFail("Expected logout success, got \(error)")
+        }
+
+        XCTAssertFalse(auth.isAuthenticated)
+        XCTAssertNil(auth.accessToken)
+        XCTAssertNil(auth.refreshToken)
+        XCTAssertTrue(auth.isOfflineMode)
+        XCTAssertTrue(NetworkStatusMonitor._testSnapshot().monitoringActive)
+    }
+
+    func test_logout_online_ignoresPendingOfflineDebounceFromPreviousMonitoring() async throws {
+        PlistHelper.testConfigOverride = makeOfflineConfig(serviceKey: serviceKey)
+        NetworkStatusMonitor._testSetReachabilityOverride(true)
+
+        auth.setAccessToken("access-token")
+        auth.setRefreshToken("refresh-token")
+        auth.setUser(try makeUser())
+        auth.setIsAuthenticated(true)
+        auth.setIsOfflineMode(false)
+        auth.disconnectedFromInternet()
+
+        let result = await withCheckedContinuation { continuation in
+            auth.logout(clearCookie: false) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success(let didLogout):
+            XCTAssertTrue(didLogout)
+        case .failure(let error):
+            XCTFail("Expected logout success, got \(error)")
+        }
+
+        try? await Task.sleep(nanoseconds: 900_000_000)
+
+        XCTAssertFalse(auth.isAuthenticated)
+        XCTAssertFalse(auth.isOfflineMode)
+        XCTAssertTrue(NetworkStatusMonitor._testSnapshot().monitoringActive)
     }
 
     func test_ensureOfflineMonitoringActive_defaultsToSuppressingInitialEmission() {
@@ -1120,6 +1278,29 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
     private func clearOAuthState() {
         UserDefaults.standard.removeObject(forKey: KeychainKeys.codeVerifier.rawValue)
         UserDefaults.standard.removeObject(forKey: KeychainKeys.oauthStateVerifiers.rawValue)
+        SocialLoginUrlGenerator.shared.clearPendingSocialCodeVerifiers()
+    }
+
+    private func makeRawSocialState(
+        provider: String,
+        appId: String,
+        action: String,
+        oauthState: String? = nil
+    ) throws -> String {
+        var payload: [String: String] = [
+            "provider": provider,
+            "appId": appId,
+            "action": action,
+            "bundleId": "com.frontegg.tests",
+            "platform": "ios"
+        ]
+
+        if let oauthState {
+            payload["oauthState"] = oauthState
+        }
+
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        return try XCTUnwrap(String(data: data, encoding: .utf8))
     }
 
     private func assertOfflineModePersistsBriefly(

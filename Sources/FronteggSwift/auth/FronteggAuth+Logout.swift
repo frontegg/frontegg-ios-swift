@@ -9,8 +9,55 @@ import WebKit
 
 extension FronteggAuth {
 
+    private func finalizeLoggedOutOfflineState(
+        enableOfflineMode: Bool,
+        preserveOfflineState: Bool
+    ) async {
+        guard enableOfflineMode else {
+            await MainActor.run {
+                self.setIsOfflineMode(false)
+            }
+            return
+        }
+
+        if preserveOfflineState {
+            await MainActor.run {
+                self.setIsOfflineMode(true)
+            }
+            self.logger.info("Logout preserved unauthenticated offline mode from the previous authenticated offline state")
+            ensureOfflineMonitoringActive(emitInitialState: true)
+            return
+        }
+
+        let initialNetworkAvailable = await NetworkStatusMonitor.isActive
+        let settledOnline = await settleUnauthenticatedStartupConnectivity(
+            initialNetworkAvailable: initialNetworkAvailable,
+            debounceDelay: 0.1,
+            recoveryProbeCount: 1,
+            connectivityProbe: { [weak self] in
+                guard let self = self else { return false }
+                return await NetworkStatusMonitor.probeConfiguredReachability(
+                    timeout: self.unauthenticatedStartupProbeTimeout
+                )
+            }
+        )
+
+        self.logger.info(
+            "Logout settled unauthenticated connectivity \(settledOnline ? "online" : "offline")"
+        )
+        ensureOfflineMonitoringActive(emitInitialState: false)
+    }
+
     public func logout(clearCookie: Bool = true, _ completion: FronteggAuth.LogoutHandler? = nil) {
         Task { @MainActor in
+            self.logoutTransitionLock.withLock {
+                self.logoutInProgress = true
+            }
+            defer {
+                self.logoutTransitionLock.withLock {
+                    self.logoutInProgress = false
+                }
+            }
 
             setIsLoading(true)
 
@@ -32,6 +79,14 @@ extension FronteggAuth {
             // This ensures each device maintains its own tenant context even after logout
             let config = try? PlistHelper.fronteggConfig()
             let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
+            let enableOfflineMode = config?.enableOfflineMode ?? false
+            let wasOfflineBeforeLogout = self.isOfflineMode
+
+            // Logout owns the connectivity transition. Stop current monitoring immediately so
+            // stale callbacks cannot race while server logout or cookie cleanup is still running.
+            cancelScheduledTokenRefresh()
+            invalidateConnectivityObservers()
+            stopOfflineMonitoring()
 
             if enableSessionPerTenant {
                 let preservedTenantId = credentialManager.getLastActiveTenantId()
@@ -44,6 +99,7 @@ extension FronteggAuth {
                 self.credentialManager.clear()
             }
             CredentialManager.clearPendingOAuthFlows()
+            SocialLoginUrlGenerator.shared.clearPendingSocialCodeVerifiers()
 
             await self.serverLogoutWithTimeout(accessToken: accessTokenForServerLogout, refreshToken: refreshTokenForServerLogout)
 
@@ -57,22 +113,16 @@ extension FronteggAuth {
             setRefreshToken(nil)
             setInitializing(false)
             setAppLink(false)
-            setIsOfflineMode(false)
             self.isLoginInProgress = false
             setRefreshingToken(false)
             setIsStepUpAuthorization(false)
             self.lastAttemptReason = nil
             entitlements.clear()
 
-            // Cancel scheduled tasks and stop monitoring
-            cancelScheduledTokenRefresh()
-            offlineDebounceWork?.cancel()
-            offlineDebounceWork = nil
-            NetworkStatusMonitor.stopBackgroundMonitoring()
-            if let token = self.networkMonitoringToken {
-                NetworkStatusMonitor.removeOnChange(token)
-                self.networkMonitoringToken = nil
-            }
+            await self.finalizeLoggedOutOfflineState(
+                enableOfflineMode: enableOfflineMode,
+                preserveOfflineState: wasOfflineBeforeLogout
+            )
 
             setIsLoading(false)
             completion?(.success(true))

@@ -71,6 +71,11 @@
       "description": "Forces a prolonged offline window, lets the access token expire while offline, verifies the user stays signed in, and verifies reconnect refreshes the token successfully."
     },
     {
+      "method": "testLogoutWhileAuthenticatedOfflineShowsNoConnectionPage",
+      "title": "Logout from authenticated offline mode shows the custom no-connection page",
+      "description": "Forces authenticated offline mode, logs out, and verifies the app lands on the unauthenticated custom no-connection screen instead of a hosted error or stuck transition."
+    },
+    {
       "method": "testLogoutTerminateTransientNoConnectionThenCustomSSORecovers",
       "title": "Custom SSO recovers after a transient no-connection relaunch",
       "description": "Logs out, relaunches through a transient no-connection state if it appears, then completes custom SSO and verifies the user is signed in again."

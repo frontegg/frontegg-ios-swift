@@ -59,18 +59,7 @@ extension FronteggAuth {
 
         // Process state
         if let state = q("state"), !state.isEmpty {
-            if let data = state.data(using: .utf8),
-               var dict = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
-                dict.removeValue(forKey: "platform")
-                dict.removeValue(forKey: "bundleId")
-                if let newData = try? JSONSerialization.data(withJSONObject: dict, options: []),
-                   let newState = String(data: newData, encoding: .utf8) {
-                    queryParams["state"] = newState
-                }
-            } else {
-                // fallback if state is not valid JSON
-                queryParams["state"] = state
-            }
+            queryParams["state"] = SocialLoginUrlGenerator.canonicalizeSocialState(state)
         }
 
         if let s = WebAuthenticator.shared.session {

@@ -23,12 +23,54 @@ extension FronteggAuth {
         self.warmingWebViewAsync()
     }
 
-    public func reconnectedToInternet() {
+    @discardableResult
+    func advanceConnectivityGeneration() -> UInt64 {
+        connectivityGenerationLock.withLock {
+            connectivityGeneration &+= 1
+            return connectivityGeneration
+        }
+    }
+
+    func isConnectivityGenerationCurrent(_ generation: UInt64) -> Bool {
+        connectivityGenerationLock.withLock {
+            connectivityGeneration == generation
+        }
+    }
+
+    func cancelPendingOfflineDebounce() {
+        offlineDebounceWork?.cancel()
+        offlineDebounceWork = nil
+    }
+
+    func stopOfflineMonitoring() {
+        NetworkStatusMonitor.stopBackgroundMonitoring()
+        if let token = self.networkMonitoringToken {
+            NetworkStatusMonitor.removeOnChange(token)
+            self.networkMonitoringToken = nil
+        }
+    }
+
+    func invalidateConnectivityObservers() {
+        cancelPendingOfflineDebounce()
+        _ = advanceConnectivityGeneration()
+    }
+
+    func clearTransientConnectivityStateAfterAuthenticatedSuccess() {
+        invalidateConnectivityObservers()
+        stopOfflineMonitoring()
+        lastAttemptReason = nil
+    }
+
+    public func reconnectedToInternet(expectedGeneration: UInt64? = nil) {
+        if let expectedGeneration,
+           !isConnectivityGenerationCurrent(expectedGeneration) {
+            return
+        }
+
         // Always cancel a pending debounced offline transition first.
         // Quick reconnects during startup can otherwise leave a stale work item
         // that flips `isOfflineMode` to true after reachability has already recovered.
-        offlineDebounceWork?.cancel()
-        offlineDebounceWork = nil
+        cancelPendingOfflineDebounce()
 
         if(self.isOfflineMode == false){
             return;
@@ -46,13 +88,19 @@ extension FronteggAuth {
             await self.startPostConnectivityServices()
         }
     }
-    public func disconnectedFromInternet() {
+    public func disconnectedFromInternet(expectedGeneration: UInt64? = nil) {
+        if let expectedGeneration,
+           !isConnectivityGenerationCurrent(expectedGeneration) {
+            return
+        }
 
         self.logger.info("Disconnected from the internet (debounced)")
         // Debounce setting offline to avoid brief flicker on quick reconnects
-        offlineDebounceWork?.cancel()
+        cancelPendingOfflineDebounce()
+        let generation = expectedGeneration ?? connectivityGenerationLock.withLock { connectivityGeneration }
         let work = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
+            guard self.isConnectivityGenerationCurrent(generation) else { return }
             // Only set offline if still disconnected (best effort via lastAttemptReason or state)
             // We rely on reconnectedToInternet() to cancel this when path is back.
             self.setIsOfflineMode(true)
@@ -428,18 +476,16 @@ extension FronteggAuth {
         let monitoringInterval = intervalOverride ?? config?.networkMonitoringInterval ?? 10
 
         // Stop existing monitoring to avoid duplicates
-        NetworkStatusMonitor.stopBackgroundMonitoring()
-        if let token = self.networkMonitoringToken {
-            NetworkStatusMonitor.removeOnChange(token)
-            self.networkMonitoringToken = nil
-        }
+        stopOfflineMonitoring()
+        cancelPendingOfflineDebounce()
+        let generation = advanceConnectivityGeneration()
 
         let token = NetworkStatusMonitor.addOnChangeReturningToken { [weak self] reachable in
             guard let self = self else { return }
             if reachable {
-                self.reconnectedToInternet()
+                self.reconnectedToInternet(expectedGeneration: generation)
             } else {
-                self.disconnectedFromInternet()
+                self.disconnectedFromInternet(expectedGeneration: generation)
             }
         }
         self.networkMonitoringToken = token

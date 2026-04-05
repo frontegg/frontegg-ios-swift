@@ -34,13 +34,24 @@ extension FronteggAuth {
         activeEmbeddedOAuthFlow = .login
         loginHint = nil
         loginCompletion = nil
+        pendingOAuthErrorPresentationWorkItem?.cancel()
+        pendingOAuthErrorPresentationWorkItem = nil
+        pendingEmbeddedOAuthErrorFallbackWorkItem?.cancel()
+        pendingEmbeddedOAuthErrorFallbackWorkItem = nil
+        pendingOAuthErrorContext = nil
+        pendingOAuthErrorPresentationMode = nil
+        pendingOAuthErrorDelegateBox = nil
         lastAttemptReason = nil
         webview = nil
         Self.testNetworkPathAvailabilityOverride = nil
+        logoutTransitionLock.withLock {
+            logoutInProgress = false
+        }
 
         credentialManager.deleteLastActiveTenantId()
         credentialManager.clear()
         CredentialManager.clearPendingOAuthFlows()
+        SocialLoginUrlGenerator.shared.clearPendingSocialCodeVerifiers()
         UserDefaults.standard.removeObject(forKey: KeychainKeys.region.rawValue)
 
         setIsAuthenticated(false)

@@ -23,6 +23,7 @@ extension FronteggAuth {
         errorDescription: String? = nil,
         completion: @escaping FronteggAuth.CompletionHandler
     ) {
+        SocialLoginUrlGenerator.shared.clearPendingSocialCodeVerifiers()
         DispatchQueue.main.async {
             self.activeEmbeddedOAuthFlow = .login
             self.reportOAuthFailure(
@@ -39,6 +40,7 @@ extension FronteggAuth {
         _ details: OAuthFailureDetails,
         completion: @escaping FronteggAuth.CompletionHandler
     ) {
+        SocialLoginUrlGenerator.shared.clearPendingSocialCodeVerifiers()
         DispatchQueue.main.async {
             self.activeEmbeddedOAuthFlow = .login
             self.reportOAuthFailure(details: details, flow: .socialLogin)

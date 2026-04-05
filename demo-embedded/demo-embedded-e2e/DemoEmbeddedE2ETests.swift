@@ -195,7 +195,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         XCTAssertTrue(app.staticTexts["AuthenticatedOfflineModeEnabled"].waitForExistence(timeout: 5), screenDebugSummary())
         XCTAssertTrue(app.staticTexts["OfflineModeBadge"].waitForExistence(timeout: 5), screenDebugSummary())
         XCTAssertEqual(accessTokenVersion(), initialVersion, screenDebugSummary())
-        XCTAssertFalse(app.buttons["RetryConnectionButton"].exists, screenDebugSummary())
+        XCTAssertFalse(noConnectionScreen().exists, screenDebugSummary())
     }
 
     func testExpiredAccessTokenRefreshesOnAuthenticatedRelaunch() throws {
@@ -221,7 +221,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         XCTAssertGreaterThan(refreshedVersion, initialVersion, screenDebugSummary())
         XCTAssertGreaterThan(refreshRequestCount(), initialRefreshCount, screenDebugSummary())
         XCTAssertFalse(app.staticTexts["AuthenticatedOfflineModeEnabled"].exists, screenDebugSummary())
-        XCTAssertFalse(app.buttons["RetryConnectionButton"].exists, screenDebugSummary())
+        XCTAssertFalse(noConnectionScreen().exists, screenDebugSummary())
     }
 
     func testAuthenticatedOfflineModeRecoversToOnlineAndRefreshesToken() throws {
@@ -251,7 +251,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         waitForRefreshRequestCount(atLeast: initialRefreshCount + 1, timeout: 10)
         waitForAuthenticatedOfflineMode(true, timeout: 30)
         XCTAssertTrue(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
-        XCTAssertFalse(app.buttons["RetryConnectionButton"].exists, screenDebugSummary())
+        XCTAssertFalse(noConnectionScreen().exists, screenDebugSummary())
 
         let recoveredVersion = waitForAccessTokenVersionChange(from: initialVersion, timeout: 25)
         waitForAuthenticatedOfflineMode(false, timeout: 10)
@@ -294,7 +294,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         waitForRefreshRequestCount(atLeast: initialRefreshCount + 1, timeout: 10)
         waitForAuthenticatedOfflineMode(true, timeout: 30)
         XCTAssertTrue(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
-        XCTAssertFalse(app.buttons["RetryConnectionButton"].exists, screenDebugSummary())
+        XCTAssertFalse(noConnectionScreen().exists, screenDebugSummary())
 
         let accessTokenExpiration = accessTokenExpiration()
         let secondsUntilExpiry = max(accessTokenExpiration - Int(Date().timeIntervalSince1970), 0)
@@ -316,6 +316,45 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         XCTAssertTrue(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
     }
 
+    func testLogoutWhileAuthenticatedOfflineShowsNoConnectionPage() throws {
+        allowsUnexpectedNoConnectionScreen = true
+
+        Self.server.configureTokenPolicy(
+            email: "test@frontegg.com",
+            accessTokenTTL: expiringAccessTokenTTL,
+            refreshTokenTTL: longLivedRefreshTokenTTL
+        )
+
+        launchApp(resetState: true)
+        loginWithPassword()
+        Self.server.clearRequestLog()
+
+        waitUntilAccessTokenExpiresWithin(immediateRefreshTriggerWindow, timeout: 15)
+        let initialRefreshCount = refreshRequestCount()
+
+        try Self.server.queueProbeFailures(
+            statusCodes: Array(repeating: 503, count: 25)
+        )
+        try queueRefreshConnectionDrops()
+
+        tapGetCurrentAccessTokenButton()
+        waitForRefreshRecoveryFlowToStart(
+            refreshCountAtLeast: initialRefreshCount + 1,
+            timeout: 10
+        )
+        waitForRefreshRequestCount(atLeast: initialRefreshCount + 1, timeout: 10)
+        waitForAuthenticatedOfflineMode(true, timeout: 30)
+        try Self.server.queueProbeFailures(
+            statusCodes: Array(repeating: 503, count: 80)
+        )
+
+        tapButton("LogoutButton")
+        waitForScreen("NoConnectionPageRoot", timeout: 20)
+
+        XCTAssertTrue(retryConnectionControl().exists, screenDebugSummary())
+        XCTAssertFalse(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
+    }
+
     func testLogoutTerminateTransientNoConnectionThenCustomSSORecovers() throws {
         allowsUnexpectedNoConnectionScreen = true
         launchApp(resetState: true)
@@ -328,8 +367,8 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
 
         app.terminate()
         launchApp(resetState: false)
-        let noConnectionScreen = app.buttons["RetryConnectionButton"]
-        if noConnectionScreen.waitForExistence(timeout: 5) {
+        let noConnectionScreen = retryConnectionControl()
+        if noConnectionScreen.waitForExistence(timeout: 5) || self.noConnectionScreen().exists {
             waitForScreen("NoConnectionPageRoot")
             app.terminate()
             try Self.server.reset()

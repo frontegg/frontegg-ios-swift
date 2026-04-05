@@ -49,6 +49,33 @@ final class CustomWebViewTests: XCTestCase {
         XCTAssertNil(resolution.providerError)
     }
 
+    func test_resolveHostedCallbackCodeVerifier_socialFallsBackToPendingSocialStateStore() async throws {
+        let rawState = try makeRawSocialState(
+            provider: "google",
+            appId: "app-1",
+            action: "login"
+        )
+        let canonicalState = SocialLoginUrlGenerator.canonicalizeSocialState(rawState)
+
+        SocialLoginUrlGenerator.shared.storePendingSocialCodeVerifier(
+            "pending-social-verifier",
+            for: rawState
+        )
+
+        let resolution = await CustomWebView.resolveHostedCallbackCodeVerifier(
+            isMagicLink: false,
+            isSocialLogin: true,
+            oauthState: canonicalState,
+            socialVerifierProvider: {
+                throw URLError(.timedOut)
+            }
+        )
+
+        XCTAssertEqual(resolution.codeVerifier, "pending-social-verifier")
+        XCTAssertEqual(resolution.source, "pending_social_state_store")
+        XCTAssertNotNil(resolution.providerError)
+    }
+
     func test_resolveHostedCallbackCodeVerifier_socialFallsBackToLastGeneratedVerifier() async {
         CredentialManager.registerPendingOAuth(state: "expected-state", codeVerifier: "shared-verifier")
 
@@ -231,5 +258,28 @@ final class CustomWebViewTests: XCTestCase {
     private func clearOAuthState() {
         UserDefaults.standard.removeObject(forKey: KeychainKeys.codeVerifier.rawValue)
         UserDefaults.standard.removeObject(forKey: KeychainKeys.oauthStateVerifiers.rawValue)
+        SocialLoginUrlGenerator.shared.clearPendingSocialCodeVerifiers()
+    }
+
+    private func makeRawSocialState(
+        provider: String,
+        appId: String,
+        action: String,
+        oauthState: String? = nil
+    ) throws -> String {
+        var payload: [String: String] = [
+            "provider": provider,
+            "appId": appId,
+            "action": action,
+            "bundleId": "com.frontegg.tests",
+            "platform": "ios"
+        ]
+
+        if let oauthState {
+            payload["oauthState"] = oauthState
+        }
+
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        return try XCTUnwrap(String(data: data, encoding: .utf8))
     }
 }

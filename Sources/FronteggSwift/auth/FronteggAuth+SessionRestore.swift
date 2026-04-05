@@ -280,25 +280,24 @@ extension FronteggAuth {
                         // After initialization, handle normal token changes
                         if accessToken != nil {
                             // Token was set - ensure monitoring is stopped
-                            NetworkStatusMonitor.stopBackgroundMonitoring()
-                            if let token = self.networkMonitoringToken {
-                                NetworkStatusMonitor.removeOnChange(token)
-                                self.networkMonitoringToken = nil
-                            }
+                            self.clearTransientConnectivityStateAfterAuthenticatedSuccess()
                         } else {
-                            // Token was cleared - start monitoring
-                            NetworkStatusMonitor.stopBackgroundMonitoring()
-                            if let token = self.networkMonitoringToken {
-                                NetworkStatusMonitor.removeOnChange(token)
-                                self.networkMonitoringToken = nil
+                            let logoutInProgress = self.logoutTransitionLock.withLock { self.logoutInProgress }
+                            if logoutInProgress {
+                                return
                             }
+
+                            // Token was cleared - start monitoring
+                            self.stopOfflineMonitoring()
+                            self.cancelPendingOfflineDebounce()
+                            let generation = self.advanceConnectivityGeneration()
                             
                             let token = NetworkStatusMonitor.addOnChangeReturningToken { [weak self] reachable in
                                 guard let self = self else { return }
                                 if reachable {
-                                    self.reconnectedToInternet()
+                                    self.reconnectedToInternet(expectedGeneration: generation)
                                 } else {
-                                    self.disconnectedFromInternet()
+                                    self.disconnectedFromInternet(expectedGeneration: generation)
                                 }
                             }
                             self.networkMonitoringToken = token
@@ -308,11 +307,7 @@ extension FronteggAuth {
                 }.store(in: &subscribers)
             
             if hasTokensInKeychain {
-                NetworkStatusMonitor.stopBackgroundMonitoring()
-                if let token = self.networkMonitoringToken {
-                    NetworkStatusMonitor.removeOnChange(token)
-                    self.networkMonitoringToken = nil
-                }
+                self.stopOfflineMonitoring()
             }
             
             if let _ = refreshToken, let _ = accessToken {
@@ -332,11 +327,7 @@ extension FronteggAuth {
 
         if hasAnySessionArtifacts {
             // Explicitly stop any existing monitoring before setting tokens
-            NetworkStatusMonitor.stopBackgroundMonitoring()
-            if let token = self.networkMonitoringToken {
-                NetworkStatusMonitor.removeOnChange(token)
-                self.networkMonitoringToken = nil
-            }
+            self.clearTransientConnectivityStateAfterAuthenticatedSuccess()
 
             // Set whichever tokens we have
             if let rt = refreshToken { setRefreshToken(rt) }

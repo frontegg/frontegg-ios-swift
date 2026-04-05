@@ -144,6 +144,15 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     hasPendingOAuthStates: CredentialManager.hasPendingOAuthStates()
                 )
             } catch {
+                if let verifier = SocialLoginUrlGenerator.shared.pendingSocialCodeVerifier(for: oauthState) {
+                    return HostedCallbackCodeVerifierResolution(
+                        codeVerifier: verifier,
+                        source: "pending_social_state_store",
+                        providerError: error,
+                        hasPendingOAuthStates: CredentialManager.hasPendingOAuthStates()
+                    )
+                }
+
                 let resolution = CredentialManager.resolveCodeVerifier(
                     for: oauthState,
                     allowFallback: true

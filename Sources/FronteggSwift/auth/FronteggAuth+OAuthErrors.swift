@@ -193,12 +193,17 @@ extension FronteggAuth {
             flow: flow,
             embeddedMode: embeddedMode ?? self.embeddedMode
         )
+        let presentationMode = FronteggOAuthErrorRuntimeSettings.presentation
+        let delegateBox = FronteggWeakOAuthErrorDelegateBox()
+        delegateBox.value = FronteggOAuthErrorRuntimeSettings.delegateBox.value
 
         Task { @MainActor in
             FronteggRuntime.testingLog(
                 "E2E queued OAuth error flow=\(context.flow) embedded=\(context.embeddedMode) code=\(context.errorCode ?? "nil") message=\(context.displayMessage)"
             )
             self.pendingOAuthErrorContext = context
+            self.pendingOAuthErrorPresentationMode = presentationMode
+            self.pendingOAuthErrorDelegateBox = delegateBox
             let shouldDeferEmbeddedPresentation = context.embeddedMode && self.webview != nil
             if shouldDeferEmbeddedPresentation {
                 self.pendingOAuthErrorPresentationWorkItem?.cancel()
@@ -215,8 +220,9 @@ extension FronteggAuth {
 
     @MainActor
     func flushPendingOAuthErrorPresentationIfNeeded(delayIfNeeded: Bool = false) {
+        let presentationMode = pendingOAuthErrorPresentationMode ?? FronteggOAuthErrorRuntimeSettings.presentation
         let requiresForegroundWindow =
-            FronteggOAuthErrorRuntimeSettings.presentation == .toast
+            presentationMode == .toast
 
         guard !requiresForegroundWindow || UIApplication.shared.applicationState != .background else {
             return
@@ -225,17 +231,24 @@ extension FronteggAuth {
         guard let context = pendingOAuthErrorContext else {
             pendingEmbeddedOAuthErrorFallbackWorkItem?.cancel()
             pendingEmbeddedOAuthErrorFallbackWorkItem = nil
+            pendingOAuthErrorPresentationMode = nil
+            pendingOAuthErrorDelegateBox = nil
             return
         }
 
         pendingEmbeddedOAuthErrorFallbackWorkItem?.cancel()
         pendingEmbeddedOAuthErrorFallbackWorkItem = nil
+        let delegateBox = pendingOAuthErrorDelegateBox
         pendingOAuthErrorContext = nil
+        pendingOAuthErrorPresentationMode = nil
+        pendingOAuthErrorDelegateBox = nil
         FronteggRuntime.testingLog(
             "E2E flushing OAuth error flow=\(context.flow) embedded=\(context.embeddedMode) delay=\(delayIfNeeded)"
         )
         scheduleOAuthErrorPresentation(
             context,
+            presentation: presentationMode,
+            delegateBox: delegateBox,
             delay: delayIfNeeded ? oauthErrorPresentationDelay : 0
         )
     }
@@ -243,22 +256,24 @@ extension FronteggAuth {
     @MainActor
     func scheduleOAuthErrorPresentation(
         _ context: FronteggOAuthErrorContext,
+        presentation: FronteggOAuthErrorPresentation,
+        delegateBox: FronteggWeakOAuthErrorDelegateBox?,
         delay: TimeInterval
     ) {
         pendingOAuthErrorPresentationWorkItem?.cancel()
 
         let shouldPresentImmediately =
-            delay <= 0 && FronteggOAuthErrorRuntimeSettings.presentation == .delegate
+            delay <= 0 && presentation == .delegate
         if shouldPresentImmediately {
             pendingOAuthErrorPresentationWorkItem = nil
-            presentOAuthError(context)
+            presentOAuthError(context, presentation: presentation, delegateBox: delegateBox)
             return
         }
 
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.pendingOAuthErrorPresentationWorkItem = nil
-            self.presentOAuthError(context)
+            self.presentOAuthError(context, presentation: presentation, delegateBox: delegateBox)
         }
 
         pendingOAuthErrorPresentationWorkItem = workItem
@@ -307,11 +322,15 @@ extension FronteggAuth {
     }
 
     @MainActor
-    func presentOAuthError(_ context: FronteggOAuthErrorContext) {
+    func presentOAuthError(
+        _ context: FronteggOAuthErrorContext,
+        presentation: FronteggOAuthErrorPresentation,
+        delegateBox: FronteggWeakOAuthErrorDelegateBox?
+    ) {
         FronteggRuntime.testingLog(
             "E2E presenting OAuth error flow=\(context.flow) embedded=\(context.embeddedMode) message=\(context.displayMessage)"
         )
-        switch FronteggOAuthErrorRuntimeSettings.presentation {
+        switch presentation {
         case .toast:
             let window = self.resolveOAuthErrorPresentationWindow()
             if window == nil {
@@ -319,7 +338,7 @@ extension FronteggAuth {
             }
             FronteggOAuthToastPresenter.shared.show(message: context.displayMessage, in: window)
         case .delegate:
-            FronteggOAuthErrorRuntimeSettings.delegateBox.value?.fronteggSDK(didReceiveOAuthError: context)
+            delegateBox?.value?.fronteggSDK(didReceiveOAuthError: context)
         }
     }
 

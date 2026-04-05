@@ -167,6 +167,9 @@ private func checkServerConnectivity(
 public enum NetworkStatusMonitor {
     // Configuration
     private static var configuredBaseURLString: String?
+#if DEBUG
+    private static var testReachabilityOverride: Bool?
+#endif
 
     // Strong refs (retain these!)
     private static var pathMonitor: NWPathMonitor?
@@ -388,6 +391,11 @@ public enum NetworkStatusMonitor {
         timeout: TimeInterval = 3,
         treatRedirectsAsOffline: Bool = true
     ) async -> Bool {
+#if DEBUG
+        if let override = testReachabilityOverride {
+            return override
+        }
+#endif
         if let base = configuredBaseURLString {
             return await checkServerConnectivity(
                 baseURLString: base,
@@ -429,6 +437,12 @@ public enum NetworkStatusMonitor {
         forceEmit: Bool,
         suppressEmit: Bool = false
     ) async -> Bool {
+#if DEBUG
+        if let override = testReachabilityOverride {
+            updateCached(override, forceEmit: forceEmit, suppressEmit: suppressEmit)
+            return override
+        }
+#endif
         if let base = configuredBaseURLString {
             let generation = _monitoringLock.withLock {
                 _probeGeneration &+= 1
@@ -497,6 +511,7 @@ extension NetworkStatusMonitor {
         pathMonitor?.cancel()
         pathMonitor = nil
         configuredBaseURLString = nil
+        testReachabilityOverride = nil
 
         stateLock.withLock {
             _onChangeHandlers.removeAll()
@@ -530,6 +545,10 @@ extension NetworkStatusMonitor {
         _initialCheckLock.withLock {
             _hasInitialCheckFired = hasInitialCheckFired
         }
+    }
+
+    static func _testSetReachabilityOverride(_ available: Bool?) {
+        testReachabilityOverride = available
     }
 
     static func _testEmitCached(_ value: Bool, forceEmit: Bool = false) {

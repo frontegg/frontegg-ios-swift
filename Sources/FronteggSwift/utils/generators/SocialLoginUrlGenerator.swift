@@ -86,18 +86,33 @@ internal struct ProviderDetails {
     }
 }
 
-private actor PendingCustomProviderCodeVerifierStore {
+private final class PendingSocialProviderCodeVerifierStore {
+    private let lock = NSLock()
     private var verifiersByState: [String: String] = [:]
 
-    func store(_ verifier: String, for oauthState: String) {
-        verifiersByState[oauthState] = verifier
+    func store(_ verifier: String, for oauthStates: [String]) {
+        lock.withLock {
+            for oauthState in oauthStates where !oauthState.isEmpty {
+                verifiersByState[oauthState] = verifier
+            }
+        }
     }
 
-    func take(for oauthState: String) -> String? {
-        defer {
-            verifiersByState.removeValue(forKey: oauthState)
+    func verifier(for oauthStates: [String]) -> String? {
+        lock.withLock {
+            for oauthState in oauthStates {
+                if let verifier = verifiersByState[oauthState] {
+                    return verifier
+                }
+            }
+            return nil
         }
-        return verifiersByState[oauthState]
+    }
+
+    func clearAll() {
+        lock.withLock {
+            verifiersByState.removeAll()
+        }
     }
 }
 
@@ -109,7 +124,7 @@ public final class SocialLoginUrlGenerator {
     private var socialLoginConfig: SocialLoginConfig?
     private var customSocialLoginConfigs: [CustomSocialLoginProviderConfig]?
     private let logger = getLogger("SocialLoginUrlGenerator")
-    private let pendingCustomProviderCodeVerifiers = PendingCustomProviderCodeVerifierStore()
+    private let pendingSocialProviderCodeVerifiers = PendingSocialProviderCodeVerifierStore()
     
     
     /// Generates an authorization URL for a standard social login provider.
@@ -289,6 +304,7 @@ private extension SocialLoginUrlGenerator {
             // and the verifier used on the backend, we MUST always read the verifier
             // from the webview (localStorage) here.
             let verifier: String = try await Self.getCodeVerifierFromWebview()
+            storePendingSocialCodeVerifier(verifier, for: state)
             
             let codeChallenge = verifier.s256CodeChallenge()
             logger.info("🔵 [PKCE Debug] Generated code_challenge for \(provider.rawValue) (first 20 chars): \(String(codeChallenge.prefix(20)))")
@@ -363,7 +379,7 @@ private extension SocialLoginUrlGenerator {
                 do {
                     let verifier: String = try await Self.getCodeVerifierFromWebview()
                     logger.info("🔵 [PKCE Debug] Captured code verifier for custom provider \(provider.displayName) (first 10 chars): \(String(verifier.prefix(10)))")
-                    await storePendingCustomProviderCodeVerifier(verifier, for: state)
+                    storePendingSocialCodeVerifier(verifier, for: state)
                 } catch {
                     logger.warning("Failed to capture code verifier for custom provider \(provider.displayName): \(error)")
                 }
@@ -388,6 +404,13 @@ public extension SocialLoginUrlGenerator {
         let platform: String
         let oauthState: String?
     }
+
+    struct CanonicalOAuthState: Codable {
+        let provider: String
+        let appId: String
+        let action: String
+        let oauthState: String?
+    }
     
     static func createState(provider: SocialLoginProvider, appId: String?, action: SocialLoginAction, oauthState: String? = nil) throws -> String {
         return try createState(provider: provider.rawValue, appId: appId, action: action, oauthState: oauthState)
@@ -404,6 +427,122 @@ public extension SocialLoginUrlGenerator {
         )
         let data = try JSONEncoder().encode(stateObject)
         return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    static func canonicalizeSocialState(_ state: String) -> String {
+        guard let components = decodeSocialStateComponents(from: state) else {
+            return state
+        }
+
+        return encodeCanonicalSocialState(
+            provider: components.provider,
+            appId: components.appId,
+            action: components.action,
+            oauthState: components.oauthState
+        ) ?? state
+    }
+
+    static func socialStateLookupKeys(for state: String?) -> [String] {
+        guard let state, !state.isEmpty else {
+            return []
+        }
+
+        var lookupKeys = [state]
+
+        if let components = decodeSocialStateComponents(from: state) {
+            if let canonicalState = encodeCanonicalSocialState(
+                provider: components.provider,
+                appId: components.appId,
+                action: components.action,
+                oauthState: components.oauthState
+            ), canonicalState != state {
+                lookupKeys.append(canonicalState)
+            }
+
+            lookupKeys.append(
+                normalizedSocialStateLookupKey(
+                    provider: components.provider,
+                    appId: components.appId,
+                    action: components.action,
+                    oauthState: components.oauthState
+                )
+            )
+        }
+
+        return uniqueLookupKeys(lookupKeys)
+    }
+
+    private static func encodeCanonicalSocialState(
+        provider: String,
+        appId: String,
+        action: String,
+        oauthState: String?
+    ) -> String? {
+        let canonicalState = CanonicalOAuthState(
+            provider: provider,
+            appId: appId,
+            action: action,
+            oauthState: oauthState
+        )
+        guard let data = try? JSONEncoder().encode(canonicalState) else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private static func decodeSocialStateComponents(
+        from state: String
+    ) -> (provider: String, appId: String, action: String, oauthState: String?)? {
+        guard let data = state.data(using: .utf8) else {
+            return nil
+        }
+
+        if let oauthState = try? JSONDecoder().decode(OAuthState.self, from: data) {
+            return (
+                provider: oauthState.provider,
+                appId: oauthState.appId,
+                action: oauthState.action,
+                oauthState: oauthState.oauthState
+            )
+        }
+
+        if let canonicalState = try? JSONDecoder().decode(CanonicalOAuthState.self, from: data) {
+            return (
+                provider: canonicalState.provider,
+                appId: canonicalState.appId,
+                action: canonicalState.action,
+                oauthState: canonicalState.oauthState
+            )
+        }
+
+        return nil
+    }
+
+    private static func normalizedSocialStateLookupKey(
+        provider: String,
+        appId: String,
+        action: String,
+        oauthState: String?
+    ) -> String {
+        [
+            "provider=\(provider)",
+            "appId=\(appId)",
+            "action=\(action)",
+            "oauthState=\(oauthState ?? "")"
+        ].joined(separator: "&")
+    }
+
+    private static func uniqueLookupKeys(_ keys: [String]) -> [String] {
+        var seen = Set<String>()
+        var deduped: [String] = []
+
+        for key in keys where !key.isEmpty {
+            if seen.insert(key).inserted {
+                deduped.append(key)
+            }
+        }
+
+        return deduped
     }
 
     /// Reads the OAuth session state keys from webview localStorage and returns a base64-encoded JSON string.
@@ -460,7 +599,7 @@ public extension SocialLoginUrlGenerator {
         guard let oauthState, !oauthState.isEmpty else {
             return
         }
-        guard let verifier = await consumePendingCustomProviderCodeVerifier(for: oauthState) else {
+        guard let verifier = pendingSocialCodeVerifier(for: oauthState) else {
             return
         }
 
@@ -493,12 +632,21 @@ public extension SocialLoginUrlGenerator {
         return baseRedirectUri
     }
 
-    func storePendingCustomProviderCodeVerifier(_ verifier: String, for oauthState: String) async {
-        await pendingCustomProviderCodeVerifiers.store(verifier, for: oauthState)
+    func storePendingSocialCodeVerifier(_ verifier: String, for oauthState: String) {
+        pendingSocialProviderCodeVerifiers.store(
+            verifier,
+            for: Self.socialStateLookupKeys(for: oauthState)
+        )
     }
 
-    func consumePendingCustomProviderCodeVerifier(for oauthState: String) async -> String? {
-        await pendingCustomProviderCodeVerifiers.take(for: oauthState)
+    func pendingSocialCodeVerifier(for oauthState: String?) -> String? {
+        pendingSocialProviderCodeVerifiers.verifier(
+            for: Self.socialStateLookupKeys(for: oauthState)
+        )
+    }
+
+    func clearPendingSocialCodeVerifiers() {
+        pendingSocialProviderCodeVerifiers.clearAll()
     }
 
     func codeVerifierInjectionScript(verifier: String) throws -> String {

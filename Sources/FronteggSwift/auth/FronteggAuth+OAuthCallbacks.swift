@@ -100,6 +100,10 @@ extension FronteggAuth {
         matchedPendingOAuthState: Bool = false,
         completion: @escaping FronteggAuth.CompletionHandler
     ) {
+        func clearPendingSocialVerifierIfNeeded() {
+            guard flow == .socialLogin else { return }
+            SocialLoginUrlGenerator.shared.clearPendingSocialCodeVerifiers()
+        }
 
         Task {
             // Use provided redirectUri or generate default one.
@@ -141,6 +145,7 @@ extension FronteggAuth {
                     matchedPendingOAuthState: matchedPendingOAuthState,
                     managePendingOAuthFlow: completePendingFlowOnSuccess
                 )
+                clearPendingSocialVerifierIfNeeded()
                 self.reportOAuthFailure(error: error, flow: flow)
                 await MainActor.run {
                     self.isLoginInProgress = false
@@ -160,6 +165,7 @@ extension FronteggAuth {
                     matchedPendingOAuthState: matchedPendingOAuthState,
                     managePendingOAuthFlow: completePendingFlowOnSuccess
                 )
+                clearPendingSocialVerifierIfNeeded()
                 self.reportOAuthFailure(error: authError, flow: flow)
                 await MainActor.run {
                     self.isLoginInProgress = false
@@ -189,6 +195,7 @@ extension FronteggAuth {
                         matchedPendingOAuthState: matchedPendingOAuthState,
                         managePendingOAuthFlow: completePendingFlowOnSuccess
                     )
+                    clearPendingSocialVerifierIfNeeded()
                     self.reportOAuthFailure(error: authError, flow: flow)
                     await MainActor.run {
                         self.isLoginInProgress = false
@@ -210,6 +217,7 @@ extension FronteggAuth {
                     matchedPendingOAuthState: matchedPendingOAuthState,
                     completePendingFlowOnSuccess: completePendingFlowOnSuccess
                 )
+                clearPendingSocialVerifierIfNeeded()
 
                 // Call completion on main thread to avoid race conditions
                 // This ensures the completion handler always runs on the main thread
@@ -250,6 +258,7 @@ extension FronteggAuth {
                             matchedPendingOAuthState: matchedPendingOAuthState,
                             managePendingOAuthFlow: completePendingFlowOnSuccess
                         )
+                        clearPendingSocialVerifierIfNeeded()
                         self.reportOAuthFailure(error: authError, flow: flow)
                         await MainActor.run {
                             self.isLoginInProgress = false
@@ -278,6 +287,7 @@ extension FronteggAuth {
                             matchedPendingOAuthState: matchedPendingOAuthState,
                             managePendingOAuthFlow: completePendingFlowOnSuccess
                         )
+                        clearPendingSocialVerifierIfNeeded()
                         self.reportOAuthFailure(error: authError, flow: flow)
                         await MainActor.run {
                             self.isLoginInProgress = false
@@ -297,6 +307,7 @@ extension FronteggAuth {
                         matchedPendingOAuthState: matchedPendingOAuthState,
                         completePendingFlowOnSuccess: completePendingFlowOnSuccess
                     )
+                    clearPendingSocialVerifierIfNeeded()
                     await MainActor.run {
                         self.isLoginInProgress = false
                         self.setWebLoading(false)
@@ -310,6 +321,7 @@ extension FronteggAuth {
                         matchedPendingOAuthState: matchedPendingOAuthState,
                         managePendingOAuthFlow: completePendingFlowOnSuccess
                     )
+                    clearPendingSocialVerifierIfNeeded()
                     self.reportOAuthFailure(error: authError, flow: flow)
                     await MainActor.run {
                         self.isLoginInProgress = false
