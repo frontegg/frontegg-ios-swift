@@ -56,6 +56,11 @@
       "description": "Queues the existing-session dashboard redirect path after social success, verifies the SDK extracts the hosted refresh cookie, and confirms the user still signs in."
     },
     {
+      "method": "testEmbeddedGoogleSocialLoginCompletesWhenExistingSessionRedirectsToHostedRoot",
+      "title": "Embedded Google social login completes when an existing session redirects to hosted root",
+      "description": "Queues the existing-session hosted-root redirect path after social success in a base-path deployment, verifies the SDK still recovers the hosted session, and confirms the user signs in."
+    },
+    {
       "method": "testEmbeddedGoogleSocialLoginRecoversFromStalledSocialSuccessPage",
       "title": "Embedded Google social login recovers from a stalled social success page",
       "description": "Queues a blank embedded social-success page after the system web authentication session closes and verifies the SDK recovers and completes login."

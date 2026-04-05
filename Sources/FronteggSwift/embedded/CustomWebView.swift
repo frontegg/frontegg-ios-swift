@@ -735,9 +735,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                    previousRoutedPath!.contains("/oauth/account/oidc/callback")
                )) {
                 // Check if current URL is a dashboard/tenant selection page
-                let isDashboardOrTenantSelection = url.path.contains("/dashboard") ||
-                                                   url.path.contains("/tenant") ||
-                                                   (url.path == "/" && !url.path.contains("/oauth/") && !url.path.contains("/login"))
+                let isDashboardOrTenantSelection = routedPath.contains("/dashboard") ||
+                                                   routedPath.contains("/tenant") ||
+                                                   (routedPath == "/" && !routedPath.contains("/oauth/") && !routedPath.contains("/login"))
                 
                 if isDashboardOrTenantSelection && url.absoluteString.starts(with: fronteggAuth.baseUrl) {
                     logger.info("Detected redirect to dashboard/tenant selection after social login. Previous URL: \(previousUrl?.absoluteString ?? "nil"), Current URL: \(url.absoluteString)")

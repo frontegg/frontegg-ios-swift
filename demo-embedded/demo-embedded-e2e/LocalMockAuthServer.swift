@@ -193,6 +193,10 @@ final class LocalMockAuthServer {
         state.queueEmbeddedSocialSuccessDashboardRedirect(count: count)
     }
 
+    func queueEmbeddedSocialSuccessRootRedirect(count: Int = 1) {
+        state.queueEmbeddedSocialSuccessRootRedirect(count: count)
+    }
+
     func waitForRequest(
         method: String? = nil,
         path: String,
@@ -1136,6 +1140,15 @@ final class LocalMockAuthServer {
             )
         }
 
+        if state.consumeEmbeddedSocialSuccessRootRedirect() {
+            let issuedRefreshToken = state.issueRefreshToken(email: "google-social@frontegg.com")
+            let cookieValue = "fe_refresh_demo_embedded_e2e=\(issuedRefreshToken.token); Path=/; HttpOnly; SameSite=Lax"
+            return redirectResponse(
+                location: currentAppBaseURL().absoluteString,
+                additionalHeaders: ["Set-Cookie": cookieValue]
+            )
+        }
+
         if state.consumeEmbeddedSocialSuccessStall() {
             return HTTPResponse(
                 statusCode: 200,
@@ -1895,6 +1908,7 @@ private final class MockAuthState {
     private var pendingEmbeddedSocialSuccessOAuthError: PendingEmbeddedSocialSuccessOAuthError?
     private var pendingEmbeddedSocialSuccessStallCount: Int = 0
     private var pendingEmbeddedSocialSuccessDashboardRedirectCount: Int = 0
+    private var pendingEmbeddedSocialSuccessRootRedirectCount: Int = 0
 
     init() {
         reset()
@@ -1918,6 +1932,7 @@ private final class MockAuthState {
             pendingEmbeddedSocialSuccessOAuthError = nil
             pendingEmbeddedSocialSuccessStallCount = 0
             pendingEmbeddedSocialSuccessDashboardRedirectCount = 0
+            pendingEmbeddedSocialSuccessRootRedirectCount = 0
         }
     }
 
@@ -2079,6 +2094,14 @@ private final class MockAuthState {
         }
     }
 
+    func queueEmbeddedSocialSuccessRootRedirect(count: Int) {
+        guard count > 0 else { return }
+
+        queue.sync {
+            pendingEmbeddedSocialSuccessRootRedirectCount += count
+        }
+    }
+
     func consumeEmbeddedSocialSuccessOAuthError() -> PendingEmbeddedSocialSuccessOAuthError? {
         queue.sync {
             let pendingError = pendingEmbeddedSocialSuccessOAuthError
@@ -2105,6 +2128,17 @@ private final class MockAuthState {
             }
 
             pendingEmbeddedSocialSuccessDashboardRedirectCount -= 1
+            return true
+        }
+    }
+
+    func consumeEmbeddedSocialSuccessRootRedirect() -> Bool {
+        queue.sync {
+            guard pendingEmbeddedSocialSuccessRootRedirectCount > 0 else {
+                return false
+            }
+
+            pendingEmbeddedSocialSuccessRootRedirectCount -= 1
             return true
         }
     }

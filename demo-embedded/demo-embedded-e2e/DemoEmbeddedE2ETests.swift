@@ -212,6 +212,32 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         waitForUserEmailWithoutOAuthError("google-social@frontegg.com", timeout: 30)
     }
 
+    func testEmbeddedGoogleSocialLoginCompletesWhenExistingSessionRedirectsToHostedRoot() throws {
+        Self.server.queueEmbeddedSocialSuccessRootRedirect()
+
+        launchApp(
+            resetState: true,
+            useTestingWebAuthenticationTransport: false,
+            basePathPrefix: "/fe-auth",
+            useRootGeneratedCallbackAlias: true
+        )
+        waitForScreen("LoginPageRoot")
+        tapButton("E2EEmbeddedGoogleSocialButton")
+
+        acceptSystemDialogIfNeeded(timeout: 10)
+        XCTAssertTrue(Self.server.waitForRequest(path: "/idp/google/authorize", timeout: 10))
+
+        app.getWebLabel("Mock Google Login").waitUntilExists(timeout: 20)
+        app.getWebButton("Continue with Mock Google").safeTap()
+        acceptSystemDialogIfNeeded(timeout: 10)
+
+        XCTAssertTrue(
+            Self.server.waitForRequest(method: "POST", path: "/frontegg/oauth/authorize/silent", timeout: 20),
+            screenDebugSummary()
+        )
+        waitForUserEmailWithoutOAuthError("google-social@frontegg.com", timeout: 30)
+    }
+
     func testEmbeddedGoogleSocialLoginRecoversFromStalledSocialSuccessPage() throws {
         Self.server.queueEmbeddedSocialSuccessStall()
 
