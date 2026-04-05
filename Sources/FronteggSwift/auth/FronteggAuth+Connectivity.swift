@@ -531,32 +531,6 @@ extension FronteggAuth {
                         return
                     }
 
-                    let config = try? PlistHelper.fronteggConfig()
-                    let storedArtifacts = self.resolveStoredSessionArtifacts(
-                        enableSessionPerTenant: config?.enableSessionPerTenant ?? false
-                    )
-                    let hasStoredTokens = self.accessToken != nil
-                        || self.refreshToken != nil
-                        || storedArtifacts.accessToken != nil
-                        || storedArtifacts.refreshToken != nil
-
-                    if !hasStoredTokens && !self.isAuthenticated {
-                        self.logger.info("Network is back, clearing unauthenticated offline state")
-                        self.cancelPendingOfflineDebounce()
-                        self.lastAttemptReason = nil
-                        await MainActor.run {
-                            self.setUser(nil)
-                            self.setIsOfflineMode(false)
-                            self.setIsLoading(false)
-                            self.setWebLoading(false)
-                            self.setInitializing(false)
-                            self.setShowLoader(false)
-                            self.setAppLink(false)
-                            self.setExternalLink(false)
-                        }
-                        return
-                    }
-
                     self.logger.info("Network is back, settling offline state through reconnect handling")
                     self.reconnectedToInternet()
                     return
