@@ -238,14 +238,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         embeddedMode: Bool
     ) -> (redirectUri: String, isMagicLink: Bool) {
         if Self.isIOSRedirectPath(url.path) {
-            if let urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false) {
-                var redirectUriComponents = URLComponents()
-                redirectUriComponents.scheme = urlComponents.scheme
-                redirectUriComponents.host = urlComponents.host
-                redirectUriComponents.path = urlComponents.path
-                if let extractedRedirectUri = redirectUriComponents.url {
-                    return (extractedRedirectUri.absoluteString, true)
-                }
+            if let extractedRedirectUri = Self.extractIntermediateRedirectUri(url) {
+                return (extractedRedirectUri, true)
             }
 
             let fallbackRedirectUri = magicLinkRedirectUri
@@ -1056,15 +1050,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 
                 if hasCode {
                     // This is magic link flow - extract redirect_uri from this intermediate URL (without query parameters)
-                    if let urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false) {
-                        var redirectUriComponents = URLComponents()
-                        redirectUriComponents.scheme = urlComponents.scheme
-                        redirectUriComponents.host = urlComponents.host
-                        redirectUriComponents.path = urlComponents.path
-                        if let redirectUri = redirectUriComponents.url {
-                            self.magicLinkRedirectUri = redirectUri.absoluteString
-                            logger.trace("Detected magic link redirect_uri: \(self.magicLinkRedirectUri!)")
-                        }
+                    if let redirectUri = Self.extractIntermediateRedirectUri(url) {
+                        self.magicLinkRedirectUri = redirectUri
+                        logger.trace("Detected magic link redirect_uri: \(self.magicLinkRedirectUri!)")
                     }
                 } else {
                     // This is unlock account flow - clear any existing magicLinkRedirectUri and reset state
@@ -1771,5 +1759,17 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     
     override open var safeAreaInsets: UIEdgeInsets {
         return UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+    }
+}
+
+extension CustomWebView {
+    internal static func extractIntermediateRedirectUri(_ url: URL) -> String? {
+        guard var urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+
+        urlComponents.query = nil
+        urlComponents.fragment = nil
+        return urlComponents.url?.absoluteString
     }
 }

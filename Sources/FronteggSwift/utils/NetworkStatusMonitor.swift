@@ -200,6 +200,12 @@ public enum NetworkStatusMonitor {
 
     private static let stateLock = NSLock()
 
+#if DEBUG
+    private static func currentTestReachabilityOverride() -> Bool? {
+        stateLock.withLock { testReachabilityOverride }
+    }
+#endif
+
     // MARK: - Public API
 
     /// Register an additional on-change handler at runtime.
@@ -408,7 +414,7 @@ public enum NetworkStatusMonitor {
         treatRedirectsAsOffline: Bool = true
     ) async -> Bool {
 #if DEBUG
-        if let override = testReachabilityOverride {
+        if let override = currentTestReachabilityOverride() {
             return override
         }
 #endif
@@ -437,6 +443,13 @@ public enum NetworkStatusMonitor {
             }
             guard isCurrentSession else { return }
         }
+
+#if DEBUG
+        if let override = currentTestReachabilityOverride() {
+            updateCached(override, forceEmit: forceEmit, suppressEmit: suppressEmit)
+            return
+        }
+#endif
 
         if path.status != .satisfied {
             _monitoringLock.withLock {
@@ -467,7 +480,7 @@ public enum NetworkStatusMonitor {
         expectedMonitoringGeneration: UInt64? = nil
     ) async -> Bool {
 #if DEBUG
-        if let override = testReachabilityOverride {
+        if let override = currentTestReachabilityOverride() {
             if let expectedMonitoringGeneration {
                 let isCurrentSession = _monitoringLock.withLock {
                     _isMonitoringActive && expectedMonitoringGeneration == _monitorSessionGeneration
@@ -556,9 +569,9 @@ extension NetworkStatusMonitor {
         pathMonitor?.cancel()
         pathMonitor = nil
         configuredBaseURLString = nil
-        testReachabilityOverride = nil
 
         stateLock.withLock {
+            testReachabilityOverride = nil
             _onChangeHandlers.removeAll()
             _indexMap.removeAll()
             _cachedReachable = false
@@ -594,7 +607,9 @@ extension NetworkStatusMonitor {
     }
 
     static func _testSetReachabilityOverride(_ available: Bool?) {
-        testReachabilityOverride = available
+        stateLock.withLock {
+            testReachabilityOverride = available
+        }
     }
 
     static func _testCurrentMonitoringGeneration() -> UInt64 {

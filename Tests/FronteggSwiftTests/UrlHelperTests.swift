@@ -7,6 +7,23 @@ import XCTest
 @testable import FronteggSwift
 
 final class UrlHelperTests: XCTestCase {
+    private let testBaseUrl = "https://auth.example.com"
+    private let testClientId = "test-url-helper-client"
+
+    override func setUp() {
+        super.setUp()
+        PlistHelper.testConfigOverride = FronteggPlist(
+            lateInit: true,
+            payload: .singleRegion(.init(baseUrl: testBaseUrl, clientId: testClientId)),
+            keepUserLoggedInAfterReinstall: false
+        )
+        FronteggApp.shared.manualInit(baseUrl: testBaseUrl, cliendId: testClientId)
+    }
+
+    override func tearDown() {
+        PlistHelper.testConfigOverride = nil
+        super.tearDown()
+    }
 
     // MARK: - getCallbackType
 
@@ -121,6 +138,30 @@ final class UrlHelperTests: XCTestCase {
         XCTAssertEqual(
             generateRedirectUri(),
             "com.override.bundle://auth.example.com/fe-auth/ios/oauth/callback"
+        )
+    }
+
+    func test_generateRedirectUri_returnsInvalidSentinel_whenBaseUrlCannotBeParsed() {
+        let redirectUri = generateRedirectUri(
+            baseUrl: "not a valid url",
+            bundleIdentifier: "com.frontegg.demo"
+        )
+
+        XCTAssertEqual(
+            redirectUri,
+            "com.frontegg.demo://invalid/ios/oauth/callback"
+        )
+    }
+
+    func test_generateRedirectUri_returnsDefaultInvalidSentinel_whenBundleIdentifierIsEmpty() {
+        let redirectUri = generateRedirectUri(
+            baseUrl: "not a valid url",
+            bundleIdentifier: ""
+        )
+
+        XCTAssertEqual(
+            redirectUri,
+            "frontegg-invalid://invalid/ios/oauth/callback"
         )
     }
 

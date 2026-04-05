@@ -213,11 +213,30 @@ func generateRedirectUri(
         baseUrl: baseUrl,
         bundleIdentifier: bundleIdentifier
     ).first else {
-        print("Failed to generate redirect uri, baseUrl: \(baseUrl)")
-        exit(1)
+        let logger = getLogger("UrlHelper")
+        let message = "Failed to generate redirect uri, baseUrl: \(baseUrl), bundleIdentifier: \(bundleIdentifier)"
+        logger.error(message)
+#if DEBUG
+        if !FronteggRuntime.isTesting && !FronteggRuntime.isRunningUnderXCTest {
+            assertionFailure(message)
+        }
+#endif
+        return invalidGeneratedRedirectUri(bundleIdentifier: bundleIdentifier)
     }
 
     return redirectUri
+}
+
+func invalidGeneratedRedirectUri(bundleIdentifier: String) -> String {
+    let fallbackScheme = bundleIdentifier.isEmpty
+        ? "frontegg-invalid"
+        : bundleIdentifier.lowercased()
+
+    var components = URLComponents()
+    components.scheme = fallbackScheme
+    components.host = "invalid"
+    components.path = "/ios/oauth/callback"
+    return components.url?.absoluteString ?? "frontegg-invalid://invalid/ios/oauth/callback"
 }
 
 public func generateRedirectUri() -> String {

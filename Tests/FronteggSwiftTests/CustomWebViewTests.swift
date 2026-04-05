@@ -201,6 +201,24 @@ final class CustomWebViewTests: XCTestCase {
         XCTAssertTrue(resolution.isMagicLink)
     }
 
+    func test_resolveHostedCallbackRedirect_intermediateRedirectPreservesNonDefaultPort() {
+        let resolution = CustomWebView.resolveHostedCallbackRedirect(
+            url: URL(
+                string: "https://auth.example.com:8443/fe-auth/oauth/account/redirect/ios/com.frontegg.demo/google?code=123"
+            )!,
+            magicLinkRedirectUri: nil,
+            baseUrl: "https://auth.example.com:8443/fe-auth",
+            bundleIdentifier: "com.frontegg.demo",
+            embeddedMode: true
+        )
+
+        XCTAssertEqual(
+            resolution.redirectUri,
+            "https://auth.example.com:8443/fe-auth/oauth/account/redirect/ios/com.frontegg.demo/google"
+        )
+        XCTAssertTrue(resolution.isMagicLink)
+    }
+
     // MARK: - OIDC SSO Flow Tests
     //
     // SSO OIDC (enterprise SSO via Auth0, Okta, etc.) uses Frontegg's standard OAuth PKCE flow.
