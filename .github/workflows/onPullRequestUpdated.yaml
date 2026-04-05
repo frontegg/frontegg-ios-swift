@@ -43,6 +43,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Reset SwiftPM artifact cache
+        run: bash .github/scripts/reset_swiftpm_artifact_cache.sh
+
       - name: Build for Testing
         run: |
           xcodebuild CC=clang CPLUSPLUS=clang++ LD=clang LDPLUSPLUS=clang++ \

@@ -161,6 +161,28 @@ final class CustomWebViewTests: XCTestCase {
         XCTAssertFalse(resolution.isMagicLink)
     }
 
+    func test_resolveHostedCallbackRedirect_socialSuccessFallsBackWhenRedirectUriQueryIsUnexpected() {
+        let encodedRedirectUri = "com.bad.actor://evil.example.com/ios/oauth/callback"
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let url = URL(
+            string: "https://auth.example.com/fe-auth/oauth/account/social/success?code=123&redirectUri=\(encodedRedirectUri)"
+        )!
+
+        let resolution = CustomWebView.resolveHostedCallbackRedirect(
+            url: url,
+            magicLinkRedirectUri: nil,
+            baseUrl: "https://auth.example.com/fe-auth",
+            bundleIdentifier: "com.frontegg.demo",
+            embeddedMode: true
+        )
+
+        XCTAssertEqual(
+            resolution.redirectUri,
+            "com.frontegg.demo://auth.example.com/fe-auth/ios/oauth/callback"
+        )
+        XCTAssertFalse(resolution.isMagicLink)
+    }
+
     func test_resolveHostedCallbackRedirect_intermediateRedirectUsesExactPath() {
         let resolution = CustomWebView.resolveHostedCallbackRedirect(
             url: URL(

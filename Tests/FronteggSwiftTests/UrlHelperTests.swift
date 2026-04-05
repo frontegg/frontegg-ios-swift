@@ -96,6 +96,34 @@ final class UrlHelperTests: XCTestCase {
         )
     }
 
+    func test_currentAppBundleIdentifier_prefersRuntimeOverrideWhenPresent() {
+        let app = FronteggApp.shared
+        let previousBundleIdentifier = app.bundleIdentifier
+        defer { app.bundleIdentifier = previousBundleIdentifier }
+
+        app.bundleIdentifier = "Com.Override.Bundle"
+
+        XCTAssertEqual(currentAppBundleIdentifier(), "com.override.bundle")
+    }
+
+    func test_generateRedirectUri_usesRuntimeBundleIdentifierOverride() {
+        let app = FronteggApp.shared
+        let previousBaseUrl = app.baseUrl
+        let previousBundleIdentifier = app.bundleIdentifier
+        defer {
+            app.baseUrl = previousBaseUrl
+            app.bundleIdentifier = previousBundleIdentifier
+        }
+
+        app.baseUrl = "https://auth.example.com/fe-auth"
+        app.bundleIdentifier = "Com.Override.Bundle"
+
+        XCTAssertEqual(
+            generateRedirectUri(),
+            "com.override.bundle://auth.example.com/fe-auth/ios/oauth/callback"
+        )
+    }
+
     func test_supportedGeneratedRedirectUris_withoutBasePath_returnsOnlyCanonicalCallback() {
         let uris = supportedGeneratedRedirectUris(
             baseUrl: "https://auth.example.com",

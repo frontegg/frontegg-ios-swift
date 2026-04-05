@@ -48,7 +48,7 @@ class WebAuthenticator: NSObject, ObservableObject, ASWebAuthenticationPresentat
         testingSession = nil
 #endif
         
-        let bundleIdentifier = FronteggApp.shared.bundleIdentifier
+        let bundleIdentifier = currentAppBundleIdentifier()
 
         #if DEBUG
         if FronteggRuntime.allowsTestingWebAuthenticationTransport {

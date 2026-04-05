@@ -516,7 +516,8 @@ extension FronteggAuth {
 
                     if !hasRuntimeSession {
                         self.logger.info("Network is back, clearing unauthenticated offline state")
-                        self.cancelPendingOfflineDebounce()
+                        self.invalidateConnectivityObservers()
+                        self.stopOfflineMonitoring()
                         self.lastAttemptReason = nil
                         await MainActor.run {
                             self.setUser(nil)

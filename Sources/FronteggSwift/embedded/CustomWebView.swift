@@ -264,8 +264,22 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             let queryItems = getQueryItems(url.absoluteString)
             if let redirectUri = queryItems?["redirectUri"]?.trimmingCharacters(in: .whitespacesAndNewlines),
                !redirectUri.isEmpty {
-                return (redirectUri, false)
+                if let matchedRedirectUri = matchedGeneratedRedirectUri(
+                    redirectUri,
+                    baseUrl: baseUrl,
+                    bundleIdentifier: bundleIdentifier
+                ) {
+                    return (matchedRedirectUri, false)
+                }
+
+                let logger = getLogger("CustomWebView")
+                logger.warning("Ignoring unexpected redirectUri from social success payload: \(redirectUri)")
             }
+
+            return (
+                generateRedirectUri(baseUrl: baseUrl, bundleIdentifier: bundleIdentifier),
+                false
+            )
         }
 
         if let actualRedirectUri = matchedGeneratedRedirectUri(

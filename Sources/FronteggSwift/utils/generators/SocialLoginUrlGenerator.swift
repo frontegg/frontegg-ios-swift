@@ -421,7 +421,7 @@ public extension SocialLoginUrlGenerator {
             provider: provider,
             appId: appId ?? "",
             action: action.rawValue,
-            bundleId: FronteggApp.shared.bundleIdentifier,
+            bundleId: currentAppBundleIdentifier(),
             platform: "ios",
             oauthState: oauthState
         )
@@ -626,7 +626,7 @@ public extension SocialLoginUrlGenerator {
     
     func defaultRedirectUri() -> String {
         let base = FronteggAuth.shared.baseUrl
-        let bundleId = FronteggApp.shared.bundleIdentifier
+        let bundleId = currentAppBundleIdentifier()
         let baseRedirectUri = "\(base)/oauth/account/redirect/ios/\(bundleId)"
 
         return baseRedirectUri

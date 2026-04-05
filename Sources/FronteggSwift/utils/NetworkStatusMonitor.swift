@@ -184,6 +184,7 @@ public enum NetworkStatusMonitor {
     private static let _initialCheckLock = NSLock()
     private static var _isMonitoringActive = false
     private static let _monitoringLock = NSLock()
+    private static var _monitorSessionGeneration: UInt64 = 0
     private static var _probeGeneration: UInt64 = 0
     private static var _emitInitialState = true
 
@@ -270,12 +271,17 @@ public enum NetworkStatusMonitor {
         onChange: ((Bool) -> Void)? = nil
     ) {
         // Prevent multiple simultaneous starts - check and set flag atomically
+        var sessionGeneration: UInt64 = 0
         _monitoringLock.lock()
         if _isMonitoringActive {
             _monitoringLock.unlock()
             return // Already monitoring, skip duplicate start
         }
         _isMonitoringActive = true
+        _monitorSessionGeneration &+= 1
+        sessionGeneration = _monitorSessionGeneration
+        _probeGeneration &+= 1
+        _emitInitialState = emitInitialState
         _monitoringLock.unlock()
         
         // Stop any existing monitoring resources (defensive cleanup)
@@ -297,14 +303,14 @@ public enum NetworkStatusMonitor {
             _cachedReachable = false
             _hasCachedReachable = false
         }
-        _monitoringLock.withLock {
-            _probeGeneration &+= 1
-            _emitInitialState = emitInitialState
-        }
-        
         // Retain the path monitor
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { path in
+            let isCurrentSession = _monitoringLock.withLock {
+                _isMonitoringActive && sessionGeneration == _monitorSessionGeneration
+            }
+            guard isCurrentSession else { return }
+
             // Use lock to safely check and set the initial check flag atomically
             // This prevents duplicate /test calls when NWPathMonitor fires multiple times rapidly
             var shouldForceEmit = false
@@ -320,7 +326,8 @@ public enum NetworkStatusMonitor {
             refreshReachability(
                 for: path,
                 forceEmit: shouldForceEmit,
-                suppressEmit: shouldSuppressInitialEmission
+                suppressEmit: shouldSuppressInitialEmission,
+                expectedMonitoringGeneration: sessionGeneration
             )
         }
         pathMonitor = monitor
@@ -333,8 +340,16 @@ public enum NetworkStatusMonitor {
             let t = DispatchSource.makeTimerSource(queue: backgroundQueue)
             t.schedule(deadline: .now() + interval, repeating: interval)
             t.setEventHandler {
+                let isCurrentSession = _monitoringLock.withLock {
+                    _isMonitoringActive && sessionGeneration == _monitorSessionGeneration
+                }
+                guard isCurrentSession else { return }
+
                 Task {
-                    _ = await probeReachability(forceEmit: false)
+                    _ = await probeReachability(
+                        forceEmit: false,
+                        expectedMonitoringGeneration: sessionGeneration
+                    )
                 }
             }
             t.resume()
@@ -347,6 +362,7 @@ public enum NetworkStatusMonitor {
     public static func stopBackgroundMonitoring() {
         _monitoringLock.lock()
         _isMonitoringActive = false
+        _monitorSessionGeneration &+= 1
         _probeGeneration &+= 1
         _emitInitialState = true
         _monitoringLock.unlock()
@@ -412,8 +428,16 @@ public enum NetworkStatusMonitor {
     private static func refreshReachability(
         for path: NWPath,
         forceEmit: Bool,
-        suppressEmit: Bool = false
+        suppressEmit: Bool = false,
+        expectedMonitoringGeneration: UInt64? = nil
     ) {
+        if let expectedMonitoringGeneration {
+            let isCurrentSession = _monitoringLock.withLock {
+                _isMonitoringActive && expectedMonitoringGeneration == _monitorSessionGeneration
+            }
+            guard isCurrentSession else { return }
+        }
+
         if path.status != .satisfied {
             _monitoringLock.withLock {
                 _probeGeneration &+= 1
@@ -428,17 +452,28 @@ public enum NetworkStatusMonitor {
         }
 
         Task {
-            _ = await probeReachability(forceEmit: forceEmit, suppressEmit: suppressEmit)
+            _ = await probeReachability(
+                forceEmit: forceEmit,
+                suppressEmit: suppressEmit,
+                expectedMonitoringGeneration: expectedMonitoringGeneration
+            )
         }
     }
 
     @discardableResult
     private static func probeReachability(
         forceEmit: Bool,
-        suppressEmit: Bool = false
+        suppressEmit: Bool = false,
+        expectedMonitoringGeneration: UInt64? = nil
     ) async -> Bool {
 #if DEBUG
         if let override = testReachabilityOverride {
+            if let expectedMonitoringGeneration {
+                let isCurrentSession = _monitoringLock.withLock {
+                    _isMonitoringActive && expectedMonitoringGeneration == _monitorSessionGeneration
+                }
+                guard isCurrentSession else { return override }
+            }
             updateCached(override, forceEmit: forceEmit, suppressEmit: suppressEmit)
             return override
         }
@@ -449,16 +484,26 @@ public enum NetworkStatusMonitor {
                 return _probeGeneration
             }
             let ok = await checkServerConnectivity(baseURLString: base)
-            let isCurrentProbe = _monitoringLock.withLock {
-                generation == _probeGeneration
+            let (isCurrentProbe, isCurrentSession) = _monitoringLock.withLock {
+                (
+                    generation == _probeGeneration,
+                    expectedMonitoringGeneration == nil
+                        || (_isMonitoringActive && expectedMonitoringGeneration == _monitorSessionGeneration)
+                )
             }
-            if isCurrentProbe {
+            if isCurrentProbe && isCurrentSession {
                 updateCached(ok, forceEmit: forceEmit, suppressEmit: suppressEmit)
             }
             return ok
         }
 
         let route = await routeIsAvailableOnce()
+        if let expectedMonitoringGeneration {
+            let isCurrentSession = _monitoringLock.withLock {
+                _isMonitoringActive && expectedMonitoringGeneration == _monitorSessionGeneration
+            }
+            guard isCurrentSession else { return route }
+        }
         updateCached(route, forceEmit: forceEmit, suppressEmit: suppressEmit)
         return route
     }
@@ -521,6 +566,7 @@ extension NetworkStatusMonitor {
         }
         _monitoringLock.withLock {
             _isMonitoringActive = false
+            _monitorSessionGeneration = 0
             _probeGeneration = 0
             _emitInitialState = true
         }
@@ -549,6 +595,22 @@ extension NetworkStatusMonitor {
 
     static func _testSetReachabilityOverride(_ available: Bool?) {
         testReachabilityOverride = available
+    }
+
+    static func _testCurrentMonitoringGeneration() -> UInt64 {
+        _monitoringLock.withLock { _monitorSessionGeneration }
+    }
+
+    static func _testEmitCachedForMonitoringGeneration(
+        _ value: Bool,
+        expectedGeneration: UInt64,
+        forceEmit: Bool = false
+    ) {
+        let isCurrentSession = _monitoringLock.withLock {
+            _isMonitoringActive && expectedGeneration == _monitorSessionGeneration
+        }
+        guard isCurrentSession else { return }
+        updateCached(value, forceEmit: forceEmit)
     }
 
     static func _testEmitCached(_ value: Bool, forceEmit: Bool = false) {

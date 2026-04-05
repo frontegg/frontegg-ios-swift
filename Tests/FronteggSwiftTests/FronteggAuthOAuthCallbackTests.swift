@@ -377,6 +377,39 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         XCTAssertEqual(returnedStateObject?["action"], "login")
     }
 
+    func test_handleSocialLoginCallback_runtimeBundleIdentifierOverride_preservesActualCallbackAlias() throws {
+        let app = FronteggApp.shared
+        let previousBundleIdentifier = app.bundleIdentifier
+        let previousBaseUrl = auth.baseUrl
+        app.bundleIdentifier = "com.override.bundle"
+        auth.baseUrl = "https://test.example.com/fe-auth"
+        defer {
+            app.bundleIdentifier = previousBundleIdentifier
+            auth.baseUrl = previousBaseUrl
+        }
+
+        let rawSocialState = try makeRawSocialState(
+            provider: "google",
+            appId: "app-override",
+            action: "login"
+        )
+        let callbackUrl = makeGeneratedRedirectCallbackUrl(
+            bundleIdentifier: "com.override.bundle",
+            path: "/ios/oauth/callback",
+            code: "code-override",
+            state: rawSocialState
+        )
+
+        let finalUrl = auth.handleSocialLoginCallback(callbackUrl)
+        let queryItems = finalUrl.flatMap { getQueryItems($0.absoluteString) }
+
+        XCTAssertEqual(finalUrl?.path, "/fe-auth/oauth/account/social/success")
+        XCTAssertEqual(
+            queryItems?["redirectUri"],
+            "com.override.bundle://test.example.com/ios/oauth/callback"
+        )
+    }
+
     func test_handleSocialLoginOAuthCallback_errorCompletesFailure() async {
         let result = await executeSocialLoginOAuthCallback(
             url: nil,
@@ -447,6 +480,33 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
                 return XCTFail("Expected unknown auth error, got \(authError)")
             }
         }
+    }
+
+    func test_handleSocialLogin_newAttemptClearsPendingSocialVerifierState() async throws {
+        let rawSocialState = try makeRawSocialState(
+            provider: "google",
+            appId: "app-pending-cleanup",
+            action: "login"
+        )
+        SocialLoginUrlGenerator.shared.storePendingSocialCodeVerifier(
+            "stale-social-verifier",
+            for: rawSocialState
+        )
+
+        let result = await withCheckedContinuation { continuation in
+            auth.handleSocialLogin(providerString: "not-a-provider", custom: false) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success:
+            XCTFail("Expected social login to fail for an unknown provider")
+        case .failure:
+            break
+        }
+
+        XCTAssertNil(SocialLoginUrlGenerator.shared.pendingSocialCodeVerifier(for: rawSocialState))
     }
 
     func test_handleOpenUrl_generatedRedirectError_reportsDecodedErrorDescriptionToDelegate() async {
@@ -525,6 +585,49 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         XCTAssertEqual(
             api.lastExchangeInput?.redirectUrl,
             "\(bundleIdentifier)://test.example.com/ios/oauth/callback"
+        )
+    }
+
+    func test_createOauthCallbackHandler_runtimeBundleIdentifierOverride_usesOverrideForExchange() async throws {
+        let accessToken = try makeAccessToken()
+        api.exchangeTokenResponse = try makeAuthResponse(
+            accessToken: accessToken,
+            refreshToken: "refresh-token-runtime-override"
+        )
+        api.meResult = .success(try makeUser())
+
+        let app = FronteggApp.shared
+        let previousBundleIdentifier = app.bundleIdentifier
+        let previousAuthBaseUrl = auth.baseUrl
+        app.bundleIdentifier = "com.override.bundle"
+        auth.baseUrl = "https://test.example.com/fe-auth"
+        defer {
+            app.bundleIdentifier = previousBundleIdentifier
+            auth.baseUrl = previousAuthBaseUrl
+        }
+
+        CredentialManager.registerPendingOAuth(state: "override-state", codeVerifier: "override-verifier")
+
+        let result = await executeCallback(
+            allowFallback: false,
+            url: makeGeneratedRedirectCallbackUrl(
+                bundleIdentifier: "com.override.bundle",
+                path: "/ios/oauth/callback",
+                code: "code-override",
+                state: "override-state"
+            )
+        )
+
+        switch result {
+        case .success(let user):
+            XCTAssertEqual(user.email, "test@example.com")
+        case .failure(let error):
+            XCTFail("Expected success, got \(error)")
+        }
+
+        XCTAssertEqual(
+            api.lastExchangeInput?.redirectUrl,
+            "com.override.bundle://test.example.com/ios/oauth/callback"
         )
     }
 
@@ -1045,15 +1148,19 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         auth.setIsOfflineMode(true)
         auth.setIsLoading(false)
         auth.setInitializing(false)
+        auth.ensureOfflineMonitoringActive()
 
         auth.recheckConnection()
         for _ in 0..<20 where auth.isOfflineMode {
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
 
+        let snapshot = NetworkStatusMonitor._testSnapshot()
         XCTAssertFalse(auth.isOfflineMode)
         XCTAssertFalse(auth.isAuthenticated)
         XCTAssertNil(auth.user)
+        XCTAssertFalse(snapshot.monitoringActive)
+        XCTAssertEqual(snapshot.handlerCount, 0)
     }
 
     func test_ensureOfflineMonitoringActive_defaultsToSuppressingInitialEmission() {
@@ -1260,7 +1367,7 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
     }
 
     private func makeGeneratedRedirectCallbackUrl(
-        bundleIdentifier: String = Bundle.main.bundleIdentifier?.lowercased() ?? "com.frontegg.demo",
+        bundleIdentifier: String = currentAppBundleIdentifier(),
         host: String = "test.example.com",
         path: String = "/ios/oauth/callback",
         code: String? = nil,
@@ -1291,7 +1398,7 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
     }
 
     private func currentTestBundleIdentifier() -> String {
-        Bundle.main.bundleIdentifier?.lowercased() ?? "com.frontegg.demo"
+        currentAppBundleIdentifier()
     }
 
     private func waitForOAuthErrorDispatch() async {

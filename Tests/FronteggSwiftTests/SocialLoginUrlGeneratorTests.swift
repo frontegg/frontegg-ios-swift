@@ -189,6 +189,25 @@ final class SocialLoginUrlGeneratorTests: XCTestCase {
         XCTAssertEqual(decoded.provider, "custom-oauth")
     }
 
+    func test_createState_usesRuntimeBundleIdentifierOverride() throws {
+        let app = FronteggApp.shared
+        let previousBundleIdentifier = app.bundleIdentifier
+        defer { app.bundleIdentifier = previousBundleIdentifier }
+
+        app.bundleIdentifier = "Com.Override.Bundle"
+
+        let state = try SocialLoginUrlGenerator.createState(
+            provider: .google,
+            appId: "override-app-id",
+            action: .login
+        )
+
+        let data = try XCTUnwrap(state.data(using: .utf8))
+        let decoded = try JSONDecoder().decode(SocialLoginUrlGenerator.OAuthState.self, from: data)
+
+        XCTAssertEqual(decoded.bundleId, "com.override.bundle")
+    }
+
     func test_authorizeURL_customProvider_matchesHostedStateAndGracefullySkipsPkceWithoutWebview() async throws {
         let provider = CustomSocialLoginProviderConfig(
             id: "e9a221f3-3d2a-413d-8183-dc9904fc70af",
@@ -267,6 +286,26 @@ final class SocialLoginUrlGeneratorTests: XCTestCase {
         XCTAssertEqual(
             uri,
             "\(testBaseUrl)/oauth/account/redirect/ios/\(FronteggApp.shared.bundleIdentifier)"
+        )
+    }
+
+    func test_defaultRedirectUri_usesRuntimeBundleIdentifierOverride() {
+        let app = FronteggApp.shared
+        let previousBaseUrl = FronteggAuth.shared.baseUrl
+        let previousBundleIdentifier = app.bundleIdentifier
+        defer {
+            FronteggAuth.shared.baseUrl = previousBaseUrl
+            app.bundleIdentifier = previousBundleIdentifier
+        }
+
+        FronteggAuth.shared.baseUrl = "https://override.example.com/fe-auth"
+        app.bundleIdentifier = "Com.Override.Bundle"
+
+        let uri = SocialLoginUrlGenerator.shared.defaultRedirectUri()
+
+        XCTAssertEqual(
+            uri,
+            "https://override.example.com/fe-auth/oauth/account/redirect/ios/com.override.bundle"
         )
     }
 

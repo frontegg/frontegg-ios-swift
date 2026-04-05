@@ -138,6 +138,10 @@ extension FronteggAuth {
             return
         }
 
+        // Social login flows are single-flight. Drop any stale verifier state from a
+        // previous abandoned attempt before generating the next authorize URL.
+        SocialLoginUrlGenerator.shared.clearPendingSocialCodeVerifiers()
+
         let oauthCallback: (URL?, Error?) -> Void = { [weak self] callbackURL, error in
             guard let self else { return }
             self.handleSocialLoginOAuthCallback(

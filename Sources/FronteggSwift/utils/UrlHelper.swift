@@ -74,7 +74,11 @@ func normalizedBasePath(_ path: String) -> String {
 }
 
 func currentAppBundleIdentifier() -> String {
-    Bundle.main.bundleIdentifier?.lowercased() ?? ""
+    if !FronteggApp.shared.bundleIdentifier.isEmpty {
+        return FronteggApp.shared.bundleIdentifier.lowercased()
+    }
+
+    return Bundle.main.bundleIdentifier?.lowercased() ?? ""
 }
 
 func routedAppPath(
@@ -185,6 +189,22 @@ func matchedGeneratedRedirectUri(
     return nil
 }
 
+func matchedGeneratedRedirectUri(
+    _ redirectUri: String,
+    baseUrl: String = FronteggApp.shared.baseUrl,
+    bundleIdentifier: String = currentAppBundleIdentifier()
+) -> String? {
+    guard let url = URL(string: redirectUri) else {
+        return nil
+    }
+
+    return matchedGeneratedRedirectUri(
+        url,
+        baseUrl: baseUrl,
+        bundleIdentifier: bundleIdentifier
+    )
+}
+
 func generateRedirectUri(
     baseUrl: String,
     bundleIdentifier: String
@@ -203,7 +223,7 @@ func generateRedirectUri(
 public func generateRedirectUri() -> String {
 
     let baseUrl = FronteggApp.shared.baseUrl
-    let bundleIdentifier = FronteggApp.shared.bundleIdentifier
+    let bundleIdentifier = currentAppBundleIdentifier()
 
     let redirectUri = generateRedirectUri(
         baseUrl: baseUrl,
