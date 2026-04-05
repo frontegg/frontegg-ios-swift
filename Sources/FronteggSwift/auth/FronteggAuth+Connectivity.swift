@@ -43,11 +43,12 @@ extension FronteggAuth {
     }
 
     func stopOfflineMonitoring() {
-        NetworkStatusMonitor.stopBackgroundMonitoring()
-        if let token = self.networkMonitoringToken {
+        let token = self.networkMonitoringToken
+        self.networkMonitoringToken = nil
+        if let token {
             NetworkStatusMonitor.removeOnChange(token)
-            self.networkMonitoringToken = nil
         }
+        NetworkStatusMonitor.stopBackgroundMonitoring()
     }
 
     func invalidateConnectivityObservers() {
@@ -504,12 +505,15 @@ extension FronteggAuth {
         DispatchQueue.global(qos: .background).async {
 
             Task {
-                guard await NetworkStatusMonitor.isActive else {
-                    self.logger.info("No network connection")
-                    return
-                }
-
                 if self.isOfflineMode {
+                    let networkAvailable = await NetworkStatusMonitor.probeConfiguredReachability(
+                        timeout: self.unauthenticatedStartupProbeTimeout
+                    )
+                    guard networkAvailable else {
+                        self.logger.info("No network connection")
+                        return
+                    }
+
                     let hasRuntimeSession = self.isAuthenticated
                         || self.accessToken != nil
                         || self.refreshToken != nil
@@ -534,6 +538,11 @@ extension FronteggAuth {
 
                     self.logger.info("Network is back, settling offline state through reconnect handling")
                     self.reconnectedToInternet()
+                    return
+                }
+
+                guard await NetworkStatusMonitor.isActive else {
+                    self.logger.info("No network connection")
                     return
                 }
 

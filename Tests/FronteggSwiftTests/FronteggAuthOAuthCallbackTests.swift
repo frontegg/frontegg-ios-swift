@@ -1163,6 +1163,47 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         XCTAssertEqual(snapshot.handlerCount, 0)
     }
 
+    func test_recheckConnection_unauthenticatedOffline_ignoresStaleOfflineMonitorCacheWhenProbeSucceeds() async {
+        NetworkStatusMonitor._testSetReachabilityOverride(true)
+
+        auth.setIsAuthenticated(false)
+        auth.setUser(nil)
+        auth.setAccessToken(nil)
+        auth.setRefreshToken(nil)
+        auth.setIsOfflineMode(true)
+        auth.setIsLoading(false)
+        auth.setInitializing(false)
+        auth.ensureOfflineMonitoringActive()
+
+        // Simulate a stale cached offline result from background monitoring without
+        // letting a live path monitor race the manual Retry flow.
+        NetworkStatusMonitor.stopBackgroundMonitoring()
+        NetworkStatusMonitor._testSetState(
+            cachedReachable: false,
+            hasCachedReachable: true,
+            monitoringActive: true,
+            hasInitialCheckFired: true
+        )
+
+        let initialSnapshot = NetworkStatusMonitor._testSnapshot()
+        XCTAssertTrue(initialSnapshot.monitoringActive)
+        XCTAssertEqual(initialSnapshot.handlerCount, 1)
+        XCTAssertFalse(initialSnapshot.cachedReachable)
+        XCTAssertTrue(initialSnapshot.hasCachedReachable)
+
+        auth.recheckConnection()
+        for _ in 0..<20 where auth.isOfflineMode {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        let snapshot = NetworkStatusMonitor._testSnapshot()
+        XCTAssertFalse(auth.isOfflineMode)
+        XCTAssertFalse(auth.isAuthenticated)
+        XCTAssertNil(auth.user)
+        XCTAssertFalse(snapshot.monitoringActive)
+        XCTAssertEqual(snapshot.handlerCount, 0)
+    }
+
     func test_ensureOfflineMonitoringActive_defaultsToSuppressingInitialEmission() {
         auth.ensureOfflineMonitoringActive()
 
