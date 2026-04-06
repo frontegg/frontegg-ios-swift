@@ -26,7 +26,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     private var previousUrl: URL? = nil
     private var isSocialLoginFlow: Bool = false
     private var socialSuccessWatchdogWorkItem: DispatchWorkItem? = nil
-    private let socialSuccessWatchdogDelay: TimeInterval = 1.25
+    private let socialSuccessWatchdogDelay: TimeInterval = 5.0
+    private var socialSuccessRetryCount: Int = 0
+    private let socialSuccessMaxRetries: Int = 2
 
     func setActiveOAuthFlow(_ flow: FronteggOAuthFlow) {
         fronteggAuth.activeEmbeddedOAuthFlow = flow
@@ -74,32 +76,46 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     private func cancelSocialSuccessWatchdog() {
         socialSuccessWatchdogWorkItem?.cancel()
         socialSuccessWatchdogWorkItem = nil
+        socialSuccessRetryCount = 0
     }
 
     private func scheduleSocialSuccessWatchdog(for webView: WKWebView, url: URL) {
         cancelSocialSuccessWatchdog()
 
         let workItem = DispatchWorkItem { [weak self, weak webView] in
-            guard let self = self else { return }
-            let currentUrl = webView?.url ?? url
+            guard let self = self, let webView = webView else { return }
+            let currentUrl = webView.url ?? url
 
             guard currentUrl.path.contains("/oauth/account/social/success") else {
                 return
             }
 
-            // The social success page is still showing after the timeout. This means
-            // the server-side code exchange (e.g. Google → Frontegg) either failed or
-            // is still in progress. The page may contain an error message that the
-            // loading overlay is hiding. Hide the loader so the user can see the
-            // server's response. Do NOT extract the provider code and send it to
-            // /oauth/token — that endpoint expects a Frontegg authorization code,
-            // not a provider code.
-            self.logger.warning(
-                "Social login success page stalled, hiding loader to reveal server response for \(currentUrl.absoluteString)"
-            )
-            DispatchQueue.main.async { [weak self] in
-                self?.fronteggAuth.setWebLoading(false)
-                self?.fronteggAuth.setLoginBoxLoading(false)
+            // The social success page is still showing after the timeout. The
+            // server-side provider code exchange (e.g. Google → Frontegg) either
+            // failed or stalled. Do NOT extract the provider code and send it to
+            // /oauth/token — that endpoint expects a Frontegg authorization code.
+            // Instead, retry by reloading the page so the server can re-attempt
+            // the exchange. After max retries, hide the loader to reveal any
+            // server-rendered error message.
+            if self.socialSuccessRetryCount < self.socialSuccessMaxRetries {
+                self.socialSuccessRetryCount += 1
+                self.logger.warning(
+                    "Social login success page stalled (attempt \(self.socialSuccessRetryCount)/\(self.socialSuccessMaxRetries)), reloading to retry server-side exchange"
+                )
+                DispatchQueue.main.async { [weak self, weak webView] in
+                    guard let webView = webView else { return }
+                    webView.reload()
+                    // Re-schedule watchdog for the reload
+                    self?.scheduleSocialSuccessWatchdog(for: webView, url: url)
+                }
+            } else {
+                self.logger.warning(
+                    "Social login success page stalled after \(self.socialSuccessMaxRetries) retries, hiding loader to reveal server response"
+                )
+                DispatchQueue.main.async { [weak self] in
+                    self?.fronteggAuth.setWebLoading(false)
+                    self?.fronteggAuth.setLoginBoxLoading(false)
+                }
             }
         }
 

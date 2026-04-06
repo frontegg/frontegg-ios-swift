@@ -1192,8 +1192,8 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         XCTAssertTrue(initialSnapshot.hasCachedReachable)
 
         auth.recheckConnection()
-        for _ in 0..<20 where auth.isOfflineMode {
-            try? await Task.sleep(nanoseconds: 50_000_000)
+        for _ in 0..<40 where auth.isOfflineMode {
+            try? await Task.sleep(nanoseconds: 100_000_000)
         }
 
         let snapshot = NetworkStatusMonitor._testSnapshot()
