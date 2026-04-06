@@ -46,9 +46,11 @@ final class SocialLoginUrlGeneratorTests: XCTestCase {
             keepUserLoggedInAfterReinstall: false
         )
         FronteggApp.shared.manualInit(baseUrl: testBaseUrl, cliendId: testClientId)
+        SocialLoginUrlGenerator.shared.clearPendingSocialCodeVerifiers()
     }
 
     override func tearDown() {
+        SocialLoginUrlGenerator.shared.clearPendingSocialCodeVerifiers()
         PlistHelper.testConfigOverride = nil
         super.tearDown()
     }
@@ -187,6 +189,25 @@ final class SocialLoginUrlGeneratorTests: XCTestCase {
         XCTAssertEqual(decoded.provider, "custom-oauth")
     }
 
+    func test_createState_usesRuntimeBundleIdentifierOverride() throws {
+        let app = FronteggApp.shared
+        let previousBundleIdentifier = app.bundleIdentifier
+        defer { app.bundleIdentifier = previousBundleIdentifier }
+
+        app.bundleIdentifier = "Com.Override.Bundle"
+
+        let state = try SocialLoginUrlGenerator.createState(
+            provider: .google,
+            appId: "override-app-id",
+            action: .login
+        )
+
+        let data = try XCTUnwrap(state.data(using: .utf8))
+        let decoded = try JSONDecoder().decode(SocialLoginUrlGenerator.OAuthState.self, from: data)
+
+        XCTAssertEqual(decoded.bundleId, "com.override.bundle")
+    }
+
     func test_authorizeURL_customProvider_matchesHostedStateAndGracefullySkipsPkceWithoutWebview() async throws {
         let provider = CustomSocialLoginProviderConfig(
             id: "e9a221f3-3d2a-413d-8183-dc9904fc70af",
@@ -268,28 +289,87 @@ final class SocialLoginUrlGeneratorTests: XCTestCase {
         )
     }
 
-    func test_pendingCustomProviderCodeVerifier_isTrackedPerState() async {
+    func test_defaultRedirectUri_usesRuntimeBundleIdentifierOverride() {
+        let app = FronteggApp.shared
+        let previousBaseUrl = FronteggAuth.shared.baseUrl
+        let previousBundleIdentifier = app.bundleIdentifier
+        defer {
+            FronteggAuth.shared.baseUrl = previousBaseUrl
+            app.bundleIdentifier = previousBundleIdentifier
+        }
+
+        FronteggAuth.shared.baseUrl = "https://override.example.com/fe-auth"
+        app.bundleIdentifier = "Com.Override.Bundle"
+
+        let uri = SocialLoginUrlGenerator.shared.defaultRedirectUri()
+
+        XCTAssertEqual(
+            uri,
+            "https://override.example.com/fe-auth/oauth/account/redirect/ios/com.override.bundle"
+        )
+    }
+
+    func test_pendingSocialCodeVerifier_isTrackedPerState() {
         let firstState = "state-\(UUID().uuidString)"
         let secondState = "state-\(UUID().uuidString)"
 
-        await SocialLoginUrlGenerator.shared.storePendingCustomProviderCodeVerifier(
+        SocialLoginUrlGenerator.shared.storePendingSocialCodeVerifier(
             "verifier-1",
             for: firstState
         )
-        await SocialLoginUrlGenerator.shared.storePendingCustomProviderCodeVerifier(
+        SocialLoginUrlGenerator.shared.storePendingSocialCodeVerifier(
             "verifier-2",
             for: secondState
         )
 
-        let secondVerifier = await SocialLoginUrlGenerator.shared.consumePendingCustomProviderCodeVerifier(
-            for: secondState
-        )
-        let firstVerifier = await SocialLoginUrlGenerator.shared.consumePendingCustomProviderCodeVerifier(
-            for: firstState
-        )
+        let secondVerifier = SocialLoginUrlGenerator.shared.pendingSocialCodeVerifier(for: secondState)
+        let firstVerifier = SocialLoginUrlGenerator.shared.pendingSocialCodeVerifier(for: firstState)
 
         XCTAssertEqual(secondVerifier, "verifier-2")
         XCTAssertEqual(firstVerifier, "verifier-1")
+    }
+
+    func test_canonicalizeSocialState_removesBundleMetadata_deterministically() throws {
+        let rawState = try SocialLoginUrlGenerator.createState(
+            provider: .google,
+            appId: "app-1",
+            action: .login
+        )
+
+        let canonicalState = SocialLoginUrlGenerator.canonicalizeSocialState(rawState)
+        let data = try XCTUnwrap(canonicalState.data(using: .utf8))
+        let decoded = try JSONDecoder().decode(
+            SocialLoginUrlGenerator.CanonicalOAuthState.self,
+            from: data
+        )
+
+        XCTAssertEqual(decoded.provider, "google")
+        XCTAssertEqual(decoded.appId, "app-1")
+        XCTAssertEqual(decoded.action, "login")
+        XCTAssertNil(decoded.oauthState)
+    }
+
+    func test_pendingSocialCodeVerifier_supportsRawAndCanonicalStateLookup() throws {
+        let rawState = try SocialLoginUrlGenerator.createState(
+            provider: .google,
+            appId: "app-2",
+            action: .login
+        )
+        let canonicalState = SocialLoginUrlGenerator.canonicalizeSocialState(rawState)
+
+        SocialLoginUrlGenerator.shared.storePendingSocialCodeVerifier(
+            "verifier-raw-canonical",
+            for: rawState
+        )
+
+        XCTAssertEqual(
+            SocialLoginUrlGenerator.shared.pendingSocialCodeVerifier(for: rawState),
+            "verifier-raw-canonical"
+        )
+        XCTAssertEqual(
+            SocialLoginUrlGenerator.shared.pendingSocialCodeVerifier(for: canonicalState),
+            "verifier-raw-canonical"
+        )
     }
 
     func test_codeVerifierInjectionScript_usesJSONStringLiteral() throws {

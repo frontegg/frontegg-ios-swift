@@ -16,6 +16,7 @@ This repository includes:
 - An [API Reference](https://ios-swift-guide.frontegg.com/#/api) for detailed SDK functionality
 - [Usage Examples](https://ios-swift-guide.frontegg.com/#/usage) with common implementation patterns
 - [Advanced Topics](https://ios-swift-guide.frontegg.com/#/advanced) for complex integration scenarios
+- An [Offline Mode](https://ios-swift-guide.frontegg.com/#/offline-mode) guide for custom offline UI, reconnect behavior, and logout expectations
 - A [Hosted](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo), [Embedded](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-embedded), [Application-Id](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-application-id), and [Multi-Region](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-multi-region) example projects to help you get started quickly
 
 For full documentation, visit the Frontegg Developer Portal:  

@@ -15,7 +15,7 @@ extension FronteggAuth {
         }
 
         // 1) Host must match Frontegg base URL host
-        guard let allowedHost = URL(string: FronteggAuth.shared.baseUrl)?.host else {
+        guard let allowedHost = URL(string: self.baseUrl)?.host else {
             return nil
         }
 
@@ -23,15 +23,21 @@ extension FronteggAuth {
             return nil
         }
 
-        // 2) Path: /oauth/account/redirect/ios/{bundleId}/{provider}
-        let prefix = "/oauth/account/redirect/ios/"
-        let path = comps.path
-        guard path.hasPrefix(prefix) || path.hasPrefix("/ios/oauth/callback") else {
+        let bundleId = currentAppBundleIdentifier()
+        guard !bundleId.isEmpty else {
             return nil
         }
 
-        let bundleId = FronteggApp.shared.bundleIdentifier
-        guard !bundleId.isEmpty else {
+        let matchedCallbackRedirectUri = matchedGeneratedRedirectUri(
+            url,
+            baseUrl: self.baseUrl,
+            bundleIdentifier: bundleId
+        )
+
+        // 2) Path: /oauth/account/redirect/ios/{bundleId}/{provider}
+        let prefix = "/oauth/account/redirect/ios/"
+        let path = comps.path
+        guard path.hasPrefix(prefix) || matchedCallbackRedirectUri != nil else {
             return nil
         }
 
@@ -54,23 +60,13 @@ extension FronteggAuth {
             queryParams["id_token"] = idToken
         }
 
-        let redirectUri = SocialLoginUrlGenerator.shared.defaultRedirectUri()
+        let redirectUri = matchedCallbackRedirectUri
+            ?? generateRedirectUri(baseUrl: self.baseUrl, bundleIdentifier: bundleId)
         queryParams["redirectUri"] = redirectUri
 
         // Process state
         if let state = q("state"), !state.isEmpty {
-            if let data = state.data(using: .utf8),
-               var dict = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
-                dict.removeValue(forKey: "platform")
-                dict.removeValue(forKey: "bundleId")
-                if let newData = try? JSONSerialization.data(withJSONObject: dict, options: []),
-                   let newState = String(data: newData, encoding: .utf8) {
-                    queryParams["state"] = newState
-                }
-            } else {
-                // fallback if state is not valid JSON
-                queryParams["state"] = state
-            }
+            queryParams["state"] = SocialLoginUrlGenerator.canonicalizeSocialState(state)
         }
 
         if let s = WebAuthenticator.shared.session {
@@ -81,7 +77,7 @@ extension FronteggAuth {
         var compsOut = URLComponents()
         compsOut.queryItems = queryParams.map { URLQueryItem(name: $0.key, value: $0.value) }
 
-        let finalUrl = URL(string: "\(FronteggAuth.shared.baseUrl)/oauth/account/social/success?\(compsOut.query ?? "")")
+        let finalUrl = URL(string: "\(self.baseUrl)/oauth/account/social/success?\(compsOut.query ?? "")")
 
         return finalUrl
     }

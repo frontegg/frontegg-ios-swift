@@ -54,6 +54,10 @@ public class FronteggAuth: FronteggState {
     // internal for extension access (Refresh, Testing, Connectivity)
     var refreshTokenDispatch: DispatchWorkItem?
     var offlineDebounceWork: DispatchWorkItem?
+    let connectivityGenerationLock = NSLock()
+    var connectivityGeneration: UInt64 = 0
+    let logoutTransitionLock = NSLock()
+    var logoutInProgress = false
     // internal for extension access (FronteggAuth+Connectivity.swift)
     let offlineDebounceDelay: TimeInterval = 0.6
     let scheduledRefreshDeferredRetryDelay: TimeInterval = 1.0
@@ -65,6 +69,8 @@ public class FronteggAuth: FronteggState {
     var networkMonitoringToken: NetworkStatusMonitor.OnChangeToken?
     // internal for extension access (FronteggAuth+OAuthErrors.swift)
     var pendingOAuthErrorContext: FronteggOAuthErrorContext?
+    var pendingOAuthErrorPresentationMode: FronteggOAuthErrorPresentation?
+    var pendingOAuthErrorDelegateBox: FronteggWeakOAuthErrorDelegateBox?
     var pendingOAuthErrorPresentationWorkItem: DispatchWorkItem?
     var pendingEmbeddedOAuthErrorFallbackWorkItem: DispatchWorkItem?
     let oauthErrorPresentationDelay: TimeInterval = 0.35

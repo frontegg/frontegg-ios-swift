@@ -4,3 +4,4 @@
 - [API Reference](api.md)
 - [Usage Examples](usage.md)
 - [Advanced Topics](advanced.md)
+- [Offline Mode](offline-mode.md)

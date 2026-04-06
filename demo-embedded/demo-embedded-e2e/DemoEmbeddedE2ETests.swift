@@ -130,6 +130,135 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         waitForUserEmail("google-social@frontegg.com", timeout: 30)
     }
 
+    func testEmbeddedGoogleSocialLoginSupportsBasePathRootCallbackAlias() throws {
+        launchApp(
+            resetState: true,
+            useTestingWebAuthenticationTransport: false,
+            basePathPrefix: "/fe-auth",
+            useRootGeneratedCallbackAlias: true
+        )
+        waitForScreen("LoginPageRoot")
+        tapButton("E2EEmbeddedGoogleSocialButton")
+
+        acceptSystemDialogIfNeeded(timeout: 10)
+        XCTAssertTrue(Self.server.waitForRequest(path: "/idp/google/authorize", timeout: 10))
+
+        app.getWebLabel("Mock Google Login").waitUntilExists(timeout: 20)
+        app.getWebButton("Continue with Mock Google").safeTap()
+        acceptSystemDialogIfNeeded(timeout: 10)
+        waitForUserEmail("google-social@frontegg.com", timeout: 30)
+    }
+
+    func testEmbeddedGoogleSocialLoginSupportsBasePathCanonicalCallbackAlias() throws {
+        launchApp(
+            resetState: true,
+            useTestingWebAuthenticationTransport: false,
+            basePathPrefix: "/fe-auth"
+        )
+        waitForScreen("LoginPageRoot")
+        tapButton("E2EEmbeddedGoogleSocialButton")
+
+        acceptSystemDialogIfNeeded(timeout: 10)
+        XCTAssertTrue(Self.server.waitForRequest(path: "/idp/google/authorize", timeout: 10))
+
+        app.getWebLabel("Mock Google Login").waitUntilExists(timeout: 20)
+        app.getWebButton("Continue with Mock Google").safeTap()
+        acceptSystemDialogIfNeeded(timeout: 10)
+        waitForUserEmail("google-social@frontegg.com", timeout: 30)
+    }
+
+    func testEmbeddedGoogleSocialLoginDoesNotShowOAuthErrorToastOnSuccess() throws {
+        launchApp(
+            resetState: true,
+            useTestingWebAuthenticationTransport: false,
+            basePathPrefix: "/fe-auth",
+            useRootGeneratedCallbackAlias: true
+        )
+        waitForScreen("LoginPageRoot")
+        tapButton("E2EEmbeddedGoogleSocialButton")
+
+        acceptSystemDialogIfNeeded(timeout: 10)
+        XCTAssertTrue(Self.server.waitForRequest(path: "/idp/google/authorize", timeout: 10))
+
+        app.getWebLabel("Mock Google Login").waitUntilExists(timeout: 20)
+        app.getWebButton("Continue with Mock Google").safeTap()
+        acceptSystemDialogIfNeeded(timeout: 10)
+        waitForUserEmailWithoutOAuthError("google-social@frontegg.com", timeout: 30)
+    }
+
+    func testEmbeddedGoogleSocialLoginCompletesWhenExistingSessionRedirectsToDashboard() throws {
+        Self.server.queueEmbeddedSocialSuccessDashboardRedirect()
+
+        launchApp(
+            resetState: true,
+            useTestingWebAuthenticationTransport: false,
+            basePathPrefix: "/fe-auth",
+            useRootGeneratedCallbackAlias: true
+        )
+        waitForScreen("LoginPageRoot")
+        tapButton("E2EEmbeddedGoogleSocialButton")
+
+        acceptSystemDialogIfNeeded(timeout: 10)
+        XCTAssertTrue(Self.server.waitForRequest(path: "/idp/google/authorize", timeout: 10))
+
+        app.getWebLabel("Mock Google Login").waitUntilExists(timeout: 20)
+        app.getWebButton("Continue with Mock Google").safeTap()
+        acceptSystemDialogIfNeeded(timeout: 10)
+
+        XCTAssertTrue(
+            Self.server.waitForRequest(method: "POST", path: "/frontegg/oauth/authorize/silent", timeout: 20),
+            screenDebugSummary()
+        )
+        waitForUserEmailWithoutOAuthError("google-social@frontegg.com", timeout: 30)
+    }
+
+    func testEmbeddedGoogleSocialLoginCompletesWhenExistingSessionRedirectsToHostedRoot() throws {
+        Self.server.queueEmbeddedSocialSuccessRootRedirect()
+
+        launchApp(
+            resetState: true,
+            useTestingWebAuthenticationTransport: false,
+            basePathPrefix: "/fe-auth",
+            useRootGeneratedCallbackAlias: true
+        )
+        waitForScreen("LoginPageRoot")
+        tapButton("E2EEmbeddedGoogleSocialButton")
+
+        acceptSystemDialogIfNeeded(timeout: 10)
+        XCTAssertTrue(Self.server.waitForRequest(path: "/idp/google/authorize", timeout: 10))
+
+        app.getWebLabel("Mock Google Login").waitUntilExists(timeout: 20)
+        app.getWebButton("Continue with Mock Google").safeTap()
+        acceptSystemDialogIfNeeded(timeout: 10)
+
+        XCTAssertTrue(
+            Self.server.waitForRequest(method: "POST", path: "/frontegg/oauth/authorize/silent", timeout: 20),
+            screenDebugSummary()
+        )
+        waitForUserEmailWithoutOAuthError("google-social@frontegg.com", timeout: 30)
+    }
+
+    func testEmbeddedGoogleSocialLoginRecoversFromStalledSocialSuccessPage() throws {
+        Self.server.queueEmbeddedSocialSuccessStall()
+
+        launchApp(
+            resetState: true,
+            useTestingWebAuthenticationTransport: false,
+            basePathPrefix: "/fe-auth",
+            useRootGeneratedCallbackAlias: true
+        )
+        waitForScreen("LoginPageRoot")
+        tapButton("E2EEmbeddedGoogleSocialButton")
+
+        acceptSystemDialogIfNeeded(timeout: 10)
+        XCTAssertTrue(Self.server.waitForRequest(path: "/idp/google/authorize", timeout: 10))
+
+        app.getWebLabel("Mock Google Login").waitUntilExists(timeout: 20)
+        app.getWebButton("Continue with Mock Google").safeTap()
+        acceptSystemDialogIfNeeded(timeout: 10)
+        waitForUserEmail("google-social@frontegg.com", timeout: 30)
+    }
+
     func testEmbeddedGoogleSocialLoginOAuthErrorShowsToastAndKeepsLoginOpen() throws {
         Self.server.queueEmbeddedSocialSuccessOAuthError(
             errorCode: "ER-05001",
@@ -195,7 +324,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         XCTAssertTrue(app.staticTexts["AuthenticatedOfflineModeEnabled"].waitForExistence(timeout: 5), screenDebugSummary())
         XCTAssertTrue(app.staticTexts["OfflineModeBadge"].waitForExistence(timeout: 5), screenDebugSummary())
         XCTAssertEqual(accessTokenVersion(), initialVersion, screenDebugSummary())
-        XCTAssertFalse(app.buttons["RetryConnectionButton"].exists, screenDebugSummary())
+        XCTAssertFalse(noConnectionScreen().exists, screenDebugSummary())
     }
 
     func testExpiredAccessTokenRefreshesOnAuthenticatedRelaunch() throws {
@@ -221,7 +350,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         XCTAssertGreaterThan(refreshedVersion, initialVersion, screenDebugSummary())
         XCTAssertGreaterThan(refreshRequestCount(), initialRefreshCount, screenDebugSummary())
         XCTAssertFalse(app.staticTexts["AuthenticatedOfflineModeEnabled"].exists, screenDebugSummary())
-        XCTAssertFalse(app.buttons["RetryConnectionButton"].exists, screenDebugSummary())
+        XCTAssertFalse(noConnectionScreen().exists, screenDebugSummary())
     }
 
     func testAuthenticatedOfflineModeRecoversToOnlineAndRefreshesToken() throws {
@@ -251,7 +380,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         waitForRefreshRequestCount(atLeast: initialRefreshCount + 1, timeout: 10)
         waitForAuthenticatedOfflineMode(true, timeout: 30)
         XCTAssertTrue(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
-        XCTAssertFalse(app.buttons["RetryConnectionButton"].exists, screenDebugSummary())
+        XCTAssertFalse(noConnectionScreen().exists, screenDebugSummary())
 
         let recoveredVersion = waitForAccessTokenVersionChange(from: initialVersion, timeout: 25)
         waitForAuthenticatedOfflineMode(false, timeout: 10)
@@ -294,7 +423,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         waitForRefreshRequestCount(atLeast: initialRefreshCount + 1, timeout: 10)
         waitForAuthenticatedOfflineMode(true, timeout: 30)
         XCTAssertTrue(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
-        XCTAssertFalse(app.buttons["RetryConnectionButton"].exists, screenDebugSummary())
+        XCTAssertFalse(noConnectionScreen().exists, screenDebugSummary())
 
         let accessTokenExpiration = accessTokenExpiration()
         let secondsUntilExpiry = max(accessTokenExpiration - Int(Date().timeIntervalSince1970), 0)
@@ -316,6 +445,125 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         XCTAssertTrue(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
     }
 
+    func testLogoutWhileAuthenticatedOfflineShowsNoConnectionPage() throws {
+        allowsUnexpectedNoConnectionScreen = true
+
+        Self.server.configureTokenPolicy(
+            email: "test@frontegg.com",
+            accessTokenTTL: expiringAccessTokenTTL,
+            refreshTokenTTL: longLivedRefreshTokenTTL
+        )
+
+        launchApp(resetState: true)
+        loginWithPassword()
+        Self.server.clearRequestLog()
+
+        waitUntilAccessTokenExpiresWithin(immediateRefreshTriggerWindow, timeout: 15)
+        let initialRefreshCount = refreshRequestCount()
+
+        try Self.server.queueProbeFailures(
+            statusCodes: Array(repeating: 503, count: 25)
+        )
+        try queueRefreshConnectionDrops()
+
+        tapGetCurrentAccessTokenButton()
+        waitForRefreshRecoveryFlowToStart(
+            refreshCountAtLeast: initialRefreshCount + 1,
+            timeout: 10
+        )
+        waitForRefreshRequestCount(atLeast: initialRefreshCount + 1, timeout: 10)
+        waitForAuthenticatedOfflineMode(true, timeout: 30)
+        try Self.server.queueProbeFailures(
+            statusCodes: Array(repeating: 503, count: 80)
+        )
+
+        tapButton("LogoutButton")
+        waitForScreen("NoConnectionPageRoot", timeout: 20)
+
+        XCTAssertTrue(retryConnectionControl().exists, screenDebugSummary())
+        XCTAssertFalse(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
+    }
+
+    func testRetryFromUnauthenticatedOfflineScreenReturnsToLoginWhenNetworkRecovers() throws {
+        allowsUnexpectedNoConnectionScreen = true
+
+        Self.server.configureTokenPolicy(
+            email: "test@frontegg.com",
+            accessTokenTTL: expiringAccessTokenTTL,
+            refreshTokenTTL: longLivedRefreshTokenTTL
+        )
+
+        launchApp(resetState: true)
+        loginWithPassword()
+        Self.server.clearRequestLog()
+
+        waitUntilAccessTokenExpiresWithin(immediateRefreshTriggerWindow, timeout: 15)
+        let initialRefreshCount = refreshRequestCount()
+
+        try Self.server.queueProbeFailures(
+            statusCodes: Array(repeating: 503, count: 25)
+        )
+        try queueRefreshConnectionDrops()
+
+        tapGetCurrentAccessTokenButton()
+        waitForRefreshRecoveryFlowToStart(
+            refreshCountAtLeast: initialRefreshCount + 1,
+            timeout: 10
+        )
+        waitForRefreshRequestCount(atLeast: initialRefreshCount + 1, timeout: 10)
+        waitForAuthenticatedOfflineMode(true, timeout: 30)
+
+        tapButton("LogoutButton")
+        waitForScreen("NoConnectionPageRoot", timeout: 20)
+        try Self.server.reset()
+
+        let recoveryDeadline = Date().addingTimeInterval(10)
+        while Date() < recoveryDeadline {
+            if app.descendants(matching: .any)["LoginPageRoot"].exists {
+                break
+            }
+
+            let retryControl = retryConnectionControl()
+            if retryControl.exists {
+                retryControl.safeTap()
+                break
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        waitForScreen("LoginPageRoot", timeout: 20)
+        XCTAssertFalse(noConnectionScreen().exists, screenDebugSummary())
+    }
+
+    func testOnlineLogoutReturnsToLoginWithoutOfflineScreen() throws {
+        launchApp(resetState: true)
+        loginWithPassword()
+
+        tapButton("LogoutButton")
+        waitForScreen("LoginPageRoot")
+        XCTAssertFalse(noConnectionScreen().exists, screenDebugSummary())
+    }
+
+    func testLogoutDuringTransientConnectivityLossRecoversBackToLoginWhenNetworkReturns() throws {
+        allowsUnexpectedNoConnectionScreen = true
+
+        launchApp(resetState: true)
+        loginWithPassword()
+
+        try Self.server.queueConnectionDrops(path: "/oauth/logout/token")
+        try Self.server.queueProbeFailures(statusCodes: Array(repeating: 503, count: 25))
+
+        tapButton("LogoutButton")
+        waitForScreen("NoConnectionPageRoot", timeout: 20)
+
+        try Self.server.reset()
+
+        waitForScreen("LoginPageRoot", timeout: 30)
+        XCTAssertFalse(noConnectionScreen().exists, screenDebugSummary())
+        XCTAssertFalse(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
+    }
+
     func testLogoutTerminateTransientNoConnectionThenCustomSSORecovers() throws {
         allowsUnexpectedNoConnectionScreen = true
         launchApp(resetState: true)
@@ -328,8 +576,8 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
 
         app.terminate()
         launchApp(resetState: false)
-        let noConnectionScreen = app.buttons["RetryConnectionButton"]
-        if noConnectionScreen.waitForExistence(timeout: 5) {
+        let noConnectionScreen = retryConnectionControl()
+        if noConnectionScreen.waitForExistence(timeout: 5) || self.noConnectionScreen().exists {
             waitForScreen("NoConnectionPageRoot")
             app.terminate()
             try Self.server.reset()

@@ -84,11 +84,12 @@ func fronteggSDK(didReceiveOAuthError context: FronteggOAuthErrorContext)
 | `refreshToken` | `ReadOnlyObservableValue<String?>` – The refresh token. `nil` if unauthorized. |
 | `user` | `ReadOnlyObservableValue<User?>` – Authenticated user info. `nil` if unauthorized. |
 | `isAuthenticated` | `ReadOnlyObservableValue<Bool>` – `true` if the user is logged in. |
-| `isLoading` | `ReadOnlyObservableValue<Bool>` – `true` while login or logout is in progress. |
-| `initializing` | `ReadOnlyObservableValue<Bool>` – `true` while SDK is initializing. |
-| `showLoader` | `ReadOnlyObservableValue<Bool>` – Indicates whether loading UI should be shown. |
+| `isLoading` | `ReadOnlyObservableValue<Bool>` – `true` while login, logout, or authenticated session transitions are in progress. |
+| `initializing` | `ReadOnlyObservableValue<Bool>` – `true` while the SDK is bootstrapping or restoring session state. |
+| `showLoader` | `ReadOnlyObservableValue<Bool>` – Indicates whether `FronteggWrapper` should keep showing loader UI. |
 | `refreshingToken` | `ReadOnlyObservableValue<Bool>` – Indicates whether a token refresh is ongoing. |
-| `isOfflineMode` | `ReadOnlyObservableValue<Bool>` – `true` when the device has no connectivity to Frontegg servers. |
+| `appLink` | `ReadOnlyObservableValue<Bool>` – Indicates that the SDK is in an app-link callback transition. |
+| `isOfflineMode` | `ReadOnlyObservableValue<Bool>` – `true` when the SDK has committed to offline mode for the current session state. When authenticated, the app should usually stay in the authenticated area. When unauthenticated and offline mode is enabled, the host app can route to a custom no-connection screen. |
 | `lastAttemptReason` | `AttemptReasonType?` – The reason for the last token refresh attempt result: `.noNetwork` (connectivity error) or `.unknown` (other error). `nil` after a successful refresh. |
 
 ## Configuration properties
@@ -117,10 +118,19 @@ Logs in the user. This will open the Frontegg login page in either an embedded w
 - `loginHint`: Optional. Pre-fills the login email.
 
 
-#### `logout(_ completion: @escaping (Result<Bool, FronteggError>) -> Void)`
+#### `logout(clearCookie: Bool = true, _ completion: FronteggAuth.LogoutHandler? = nil)`
 Logs the user out and clears session data.
 
-- `completion`: Called after logout completes.
+- `clearCookie`: Whether to remove matching hosted-session cookies from `WKHTTPCookieStore`.
+- `completion`: Called after logout finalization completes.
+
+When `enableOfflineMode` is `true`, the final unauthenticated screen depends on connectivity after logout:
+
+- if connectivity is available, the app should settle on the login screen
+- if the user logs out while offline, `isOfflineMode` may remain `true` so the app can render its custom unauthenticated offline screen
+
+#### `logout()`
+Convenience overload for `logout(clearCookie: true, ...)`.
 
 
 ### Account (tenant) management
@@ -143,7 +153,7 @@ Refreshes the access token if needed.
 #### `getOrRefreshAccessTokenAsync() async throws -> String?`
 Returns a valid access token for use in API calls. If the current token is near expiry, attempts to refresh it.
 
-When `enableOfflineMode` is `true` and the device is offline, returns the cached access token without attempting a network refresh. Returns `nil` if no cached token is available.
+When `enableOfflineMode` is `true` and the device is offline, returns the cached access token without attempting a network refresh. Returns `nil` if no cached token is available. The cached token may already be expired, which is expected while the app is offline.
 
 - **Returns**: A valid access token string, or `nil` if unavailable.
 - **Throws**: `FronteggError.authError(.failedToAuthenticate)` after exhausting retries (online only).
@@ -152,6 +162,11 @@ When `enableOfflineMode` is `true` and the device is offline, returns the cached
 Callback-based version of `getOrRefreshAccessTokenAsync()`.
 
 - `completion`: Called with `.success(token)` or `.failure(error)`.
+
+#### `recheckConnection()`
+Triggers a manual connectivity recovery attempt for custom offline UI flows.
+
+Call this from the Retry button on your app-owned offline screen. If network connectivity is back, the SDK will try to resume normal online operation.
 
 
 ### Passkeys authentication

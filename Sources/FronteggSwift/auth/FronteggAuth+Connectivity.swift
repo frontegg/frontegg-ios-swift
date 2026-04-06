@@ -23,12 +23,55 @@ extension FronteggAuth {
         self.warmingWebViewAsync()
     }
 
-    public func reconnectedToInternet() {
+    @discardableResult
+    func advanceConnectivityGeneration() -> UInt64 {
+        connectivityGenerationLock.withLock {
+            connectivityGeneration &+= 1
+            return connectivityGeneration
+        }
+    }
+
+    func isConnectivityGenerationCurrent(_ generation: UInt64) -> Bool {
+        connectivityGenerationLock.withLock {
+            connectivityGeneration == generation
+        }
+    }
+
+    func cancelPendingOfflineDebounce() {
+        offlineDebounceWork?.cancel()
+        offlineDebounceWork = nil
+    }
+
+    func stopOfflineMonitoring() {
+        let token = self.networkMonitoringToken
+        self.networkMonitoringToken = nil
+        if let token {
+            NetworkStatusMonitor.removeOnChange(token)
+        }
+        NetworkStatusMonitor.stopBackgroundMonitoring()
+    }
+
+    func invalidateConnectivityObservers() {
+        cancelPendingOfflineDebounce()
+        _ = advanceConnectivityGeneration()
+    }
+
+    func clearTransientConnectivityStateAfterAuthenticatedSuccess() {
+        invalidateConnectivityObservers()
+        stopOfflineMonitoring()
+        lastAttemptReason = nil
+    }
+
+    public func reconnectedToInternet(expectedGeneration: UInt64? = nil) {
+        if let expectedGeneration,
+           !isConnectivityGenerationCurrent(expectedGeneration) {
+            return
+        }
+
         // Always cancel a pending debounced offline transition first.
         // Quick reconnects during startup can otherwise leave a stale work item
         // that flips `isOfflineMode` to true after reachability has already recovered.
-        offlineDebounceWork?.cancel()
-        offlineDebounceWork = nil
+        cancelPendingOfflineDebounce()
 
         if(self.isOfflineMode == false){
             return;
@@ -46,13 +89,19 @@ extension FronteggAuth {
             await self.startPostConnectivityServices()
         }
     }
-    public func disconnectedFromInternet() {
+    public func disconnectedFromInternet(expectedGeneration: UInt64? = nil) {
+        if let expectedGeneration,
+           !isConnectivityGenerationCurrent(expectedGeneration) {
+            return
+        }
 
         self.logger.info("Disconnected from the internet (debounced)")
         // Debounce setting offline to avoid brief flicker on quick reconnects
-        offlineDebounceWork?.cancel()
+        cancelPendingOfflineDebounce()
+        let generation = expectedGeneration ?? connectivityGenerationLock.withLock { connectivityGeneration }
         let work = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
+            guard self.isConnectivityGenerationCurrent(generation) else { return }
             // Only set offline if still disconnected (best effort via lastAttemptReason or state)
             // We rely on reconnectedToInternet() to cancel this when path is back.
             self.setIsOfflineMode(true)
@@ -428,18 +477,16 @@ extension FronteggAuth {
         let monitoringInterval = intervalOverride ?? config?.networkMonitoringInterval ?? 10
 
         // Stop existing monitoring to avoid duplicates
-        NetworkStatusMonitor.stopBackgroundMonitoring()
-        if let token = self.networkMonitoringToken {
-            NetworkStatusMonitor.removeOnChange(token)
-            self.networkMonitoringToken = nil
-        }
+        stopOfflineMonitoring()
+        cancelPendingOfflineDebounce()
+        let generation = advanceConnectivityGeneration()
 
         let token = NetworkStatusMonitor.addOnChangeReturningToken { [weak self] reachable in
             guard let self = self else { return }
             if reachable {
-                self.reconnectedToInternet()
+                self.reconnectedToInternet(expectedGeneration: generation)
             } else {
-                self.disconnectedFromInternet()
+                self.disconnectedFromInternet(expectedGeneration: generation)
             }
         }
         self.networkMonitoringToken = token
@@ -455,14 +502,51 @@ extension FronteggAuth {
 
     public func recheckConnection() {
 
-        DispatchQueue.global(qos: .background).async {
+        DispatchQueue.global(qos: .userInitiated).async {
 
             Task {
+                if self.isOfflineMode {
+                    let networkAvailable = await NetworkStatusMonitor.probeConfiguredReachability(
+                        timeout: self.unauthenticatedStartupProbeTimeout
+                    )
+                    guard networkAvailable else {
+                        self.logger.info("No network connection")
+                        return
+                    }
+
+                    let hasRuntimeSession = self.isAuthenticated
+                        || self.accessToken != nil
+                        || self.refreshToken != nil
+
+                    if !hasRuntimeSession {
+                        self.logger.info("Network is back, clearing unauthenticated offline state")
+                        self.invalidateConnectivityObservers()
+                        self.stopOfflineMonitoring()
+                        self.lastAttemptReason = nil
+                        await MainActor.run {
+                            self.setUser(nil)
+                            self.setIsOfflineMode(false)
+                            self.setIsLoading(false)
+                            self.setWebLoading(false)
+                            self.setInitializing(false)
+                            self.setShowLoader(false)
+                            self.setAppLink(false)
+                            self.setExternalLink(false)
+                        }
+                        return
+                    }
+
+                    self.logger.info("Network is back, settling offline state through reconnect handling")
+                    self.reconnectedToInternet()
+                    return
+                }
+
                 guard await NetworkStatusMonitor.isActive else {
                     self.logger.info("No network connection")
                     return
                 }
-                self.logger.info("Netowrk is back, refreshing...")
+
+                self.logger.info("Network is back, refreshing...")
                 _ = await self.refreshTokenIfNeeded()
             }
         }

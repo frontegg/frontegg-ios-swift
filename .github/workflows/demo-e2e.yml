@@ -27,6 +27,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Reset SwiftPM artifact cache
+        run: bash .github/scripts/reset_swiftpm_artifact_cache.sh
+
       - name: Run Unit Tests
         run: |
           set -o pipefail
@@ -36,6 +39,7 @@ jobs:
             -only-testing:FronteggSwiftTests \
             -resultBundlePath "$RUNNER_TEMP/unit-tests.xcresult" \
             -enableCodeCoverage YES \
+            -parallel-testing-enabled NO \
             2>&1 | tee "$RUNNER_TEMP/unit-tests.log"
 
       - name: Upload unit test artifacts
@@ -77,6 +81,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Reset SwiftPM artifact cache
+        run: bash .github/scripts/reset_swiftpm_artifact_cache.sh
 
       - name: Run ${{ matrix.app }} E2E tests (shard ${{ matrix.shard-index }}/${{ matrix.shard-total }})
         run: |

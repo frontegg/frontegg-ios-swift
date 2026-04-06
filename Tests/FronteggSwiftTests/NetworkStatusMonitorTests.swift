@@ -147,4 +147,25 @@ final class NetworkStatusMonitorTests: XCTestCase {
         XCTAssertFalse(snapshot.monitoringActive)
         XCTAssertFalse(snapshot.hasInitialCheckFired)
     }
+
+    func test_staleMonitoringGeneration_doesNotNotifyHandlersAfterStop() {
+        let notCalled = expectation(description: "Stale monitoring generation should not notify")
+        notCalled.isInverted = true
+
+        NetworkStatusMonitor.startBackgroundMonitoring(emitInitialState: false)
+        let staleGeneration = NetworkStatusMonitor._testCurrentMonitoringGeneration()
+        NetworkStatusMonitor.stopBackgroundMonitoring()
+
+        _ = NetworkStatusMonitor.addOnChange { _ in
+            notCalled.fulfill()
+        }
+
+        NetworkStatusMonitor._testEmitCachedForMonitoringGeneration(
+            true,
+            expectedGeneration: staleGeneration,
+            forceEmit: true
+        )
+
+        wait(for: [notCalled], timeout: 0.2)
+    }
 }

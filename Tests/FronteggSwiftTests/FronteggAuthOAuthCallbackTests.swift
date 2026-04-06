@@ -325,17 +325,10 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
     }
 
     func test_handleSocialLoginCallback_errorCallback_returnsNil() {
-#if DEBUG
-        PlistHelper.testConfigOverride = makeSharedAppConfig()
-#endif
-        let app = FronteggApp.shared
-        let previousBaseUrl = app.baseUrl
-        let previousBundleIdentifier = app.bundleIdentifier
-        app.baseUrl = "https://test.example.com"
-        app.bundleIdentifier = "com.frontegg.demo"
+        let previousBaseUrl = auth.baseUrl
+        auth.baseUrl = "https://test.example.com"
         defer {
-            app.baseUrl = previousBaseUrl
-            app.bundleIdentifier = previousBundleIdentifier
+            auth.baseUrl = previousBaseUrl
         }
 
         let callbackUrl = makeGeneratedRedirectCallbackUrl(
@@ -345,6 +338,76 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         )
 
         XCTAssertNil(auth.handleSocialLoginCallback(callbackUrl))
+    }
+
+    func test_handleSocialLoginCallback_generatedRedirectAliasWithBasePath_preservesActualCallbackAlias() throws {
+        let bundleIdentifier = currentTestBundleIdentifier()
+        let previousBaseUrl = auth.baseUrl
+        auth.baseUrl = "https://test.example.com/fe-auth"
+        defer {
+            auth.baseUrl = previousBaseUrl
+        }
+
+        let rawSocialState = try makeRawSocialState(
+            provider: "google",
+            appId: "app-1",
+            action: "login"
+        )
+        let callbackUrl = makeGeneratedRedirectCallbackUrl(
+            bundleIdentifier: bundleIdentifier,
+            path: "/ios/oauth/callback",
+            code: "code-123",
+            state: rawSocialState
+        )
+
+        let finalUrl = auth.handleSocialLoginCallback(callbackUrl)
+        let queryItems = finalUrl.flatMap { getQueryItems($0.absoluteString) }
+
+        XCTAssertEqual(finalUrl?.path, "/fe-auth/oauth/account/social/success")
+        XCTAssertEqual(
+            queryItems?["redirectUri"],
+            "\(bundleIdentifier)://test.example.com/ios/oauth/callback"
+        )
+        let returnedState = queryItems?["state"]?.data(using: .utf8)
+        let returnedStateObject = returnedState.flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [String: String]
+        }
+        XCTAssertEqual(returnedStateObject?["provider"], "google")
+        XCTAssertEqual(returnedStateObject?["appId"], "app-1")
+        XCTAssertEqual(returnedStateObject?["action"], "login")
+    }
+
+    func test_handleSocialLoginCallback_runtimeBundleIdentifierOverride_preservesActualCallbackAlias() throws {
+        let app = FronteggApp.shared
+        let previousBundleIdentifier = app.bundleIdentifier
+        let previousBaseUrl = auth.baseUrl
+        app.bundleIdentifier = "com.override.bundle"
+        auth.baseUrl = "https://test.example.com/fe-auth"
+        defer {
+            app.bundleIdentifier = previousBundleIdentifier
+            auth.baseUrl = previousBaseUrl
+        }
+
+        let rawSocialState = try makeRawSocialState(
+            provider: "google",
+            appId: "app-override",
+            action: "login"
+        )
+        let callbackUrl = makeGeneratedRedirectCallbackUrl(
+            bundleIdentifier: "com.override.bundle",
+            path: "/ios/oauth/callback",
+            code: "code-override",
+            state: rawSocialState
+        )
+
+        let finalUrl = auth.handleSocialLoginCallback(callbackUrl)
+        let queryItems = finalUrl.flatMap { getQueryItems($0.absoluteString) }
+
+        XCTAssertEqual(finalUrl?.path, "/fe-auth/oauth/account/social/success")
+        XCTAssertEqual(
+            queryItems?["redirectUri"],
+            "com.override.bundle://test.example.com/ios/oauth/callback"
+        )
     }
 
     func test_handleSocialLoginOAuthCallback_errorCompletesFailure() async {
@@ -419,6 +482,33 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         }
     }
 
+    func test_handleSocialLogin_newAttemptClearsPendingSocialVerifierState() async throws {
+        let rawSocialState = try makeRawSocialState(
+            provider: "google",
+            appId: "app-pending-cleanup",
+            action: "login"
+        )
+        SocialLoginUrlGenerator.shared.storePendingSocialCodeVerifier(
+            "stale-social-verifier",
+            for: rawSocialState
+        )
+
+        let result = await withCheckedContinuation { continuation in
+            auth.handleSocialLogin(providerString: "not-a-provider", custom: false) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success:
+            XCTFail("Expected social login to fail for an unknown provider")
+        case .failure:
+            break
+        }
+
+        XCTAssertNil(SocialLoginUrlGenerator.shared.pendingSocialCodeVerifier(for: rawSocialState))
+    }
+
     func test_handleOpenUrl_generatedRedirectError_reportsDecodedErrorDescriptionToDelegate() async {
         let delegate = SpyOAuthErrorDelegate()
         FronteggOAuthErrorRuntimeSettings.presentation = .delegate
@@ -456,6 +546,89 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         XCTAssertEqual(delegate.contexts.first?.errorDescription, "JWT token size exceeded")
         XCTAssertEqual(delegate.contexts.first?.flow, .socialLogin)
         XCTAssertEqual(delegate.contexts.first?.embeddedMode, false)
+    }
+
+    func test_createOauthCallbackHandler_generatedRedirectAliasWithBasePath_usesActualCallbackAliasForExchange() async throws {
+        let accessToken = try makeAccessToken()
+        api.exchangeTokenResponse = try makeAuthResponse(
+            accessToken: accessToken,
+            refreshToken: "refresh-token-base-path"
+        )
+        api.meResult = .success(try makeUser())
+
+        let bundleIdentifier = currentTestBundleIdentifier()
+        let previousAuthBaseUrl = auth.baseUrl
+        auth.baseUrl = "https://test.example.com/fe-auth"
+        defer {
+            auth.baseUrl = previousAuthBaseUrl
+        }
+
+        CredentialManager.registerPendingOAuth(state: "expected-state", codeVerifier: "expected-verifier")
+
+        let result = await executeCallback(
+            allowFallback: false,
+            url: makeGeneratedRedirectCallbackUrl(
+                bundleIdentifier: bundleIdentifier,
+                path: "/ios/oauth/callback",
+                code: "code-123",
+                state: "expected-state"
+            )
+        )
+
+        switch result {
+        case .success(let user):
+            XCTAssertEqual(user.email, "test@example.com")
+        case .failure(let error):
+            XCTFail("Expected success, got \(error)")
+        }
+
+        XCTAssertEqual(
+            api.lastExchangeInput?.redirectUrl,
+            "\(bundleIdentifier)://test.example.com/ios/oauth/callback"
+        )
+    }
+
+    func test_createOauthCallbackHandler_runtimeBundleIdentifierOverride_usesOverrideForExchange() async throws {
+        let accessToken = try makeAccessToken()
+        api.exchangeTokenResponse = try makeAuthResponse(
+            accessToken: accessToken,
+            refreshToken: "refresh-token-runtime-override"
+        )
+        api.meResult = .success(try makeUser())
+
+        let app = FronteggApp.shared
+        let previousBundleIdentifier = app.bundleIdentifier
+        let previousAuthBaseUrl = auth.baseUrl
+        app.bundleIdentifier = "com.override.bundle"
+        auth.baseUrl = "https://test.example.com/fe-auth"
+        defer {
+            app.bundleIdentifier = previousBundleIdentifier
+            auth.baseUrl = previousAuthBaseUrl
+        }
+
+        CredentialManager.registerPendingOAuth(state: "override-state", codeVerifier: "override-verifier")
+
+        let result = await executeCallback(
+            allowFallback: false,
+            url: makeGeneratedRedirectCallbackUrl(
+                bundleIdentifier: "com.override.bundle",
+                path: "/ios/oauth/callback",
+                code: "code-override",
+                state: "override-state"
+            )
+        )
+
+        switch result {
+        case .success(let user):
+            XCTAssertEqual(user.email, "test@example.com")
+        case .failure(let error):
+            XCTFail("Expected success, got \(error)")
+        }
+
+        XCTAssertEqual(
+            api.lastExchangeInput?.redirectUrl,
+            "com.override.bundle://test.example.com/ios/oauth/callback"
+        )
     }
 
     func test_getQueryItems_plusOnlyOAuthErrorValues_doNotProduceFailureDetails() {
@@ -718,6 +891,74 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         }
     }
 
+    func test_handleHostedLoginCallback_socialLoginSuccess_clearsPendingSocialVerifierState() async throws {
+        let rawSocialState = try makeRawSocialState(
+            provider: "google",
+            appId: "app-1",
+            action: "login"
+        )
+        let canonicalSocialState = SocialLoginUrlGenerator.canonicalizeSocialState(rawSocialState)
+        let accessToken = try makeAccessToken()
+        api.exchangeTokenResponse = try makeAuthResponse(
+            accessToken: accessToken,
+            refreshToken: "refresh-token-social-success"
+        )
+        api.meResult = .success(try makeUser())
+        SocialLoginUrlGenerator.shared.storePendingSocialCodeVerifier(
+            "pending-social-verifier",
+            for: rawSocialState
+        )
+
+        let result = await withCheckedContinuation { continuation in
+            auth.handleHostedLoginCallback(
+                "code-social-success",
+                "verifier-social-success",
+                oauthState: canonicalSocialState,
+                redirectUri: "test://callback",
+                flow: .socialLogin,
+                completePendingFlowOnSuccess: false
+            ) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success(let user):
+            XCTAssertEqual(user.email, "test@example.com")
+        case .failure(let error):
+            XCTFail("Expected social login success, got \(error)")
+        }
+
+        XCTAssertNil(SocialLoginUrlGenerator.shared.pendingSocialCodeVerifier(for: rawSocialState))
+        XCTAssertNil(SocialLoginUrlGenerator.shared.pendingSocialCodeVerifier(for: canonicalSocialState))
+    }
+
+    func test_handleSocialLoginOAuthCallback_failure_clearsPendingSocialVerifierState() async throws {
+        let rawSocialState = try SocialLoginUrlGenerator.createState(
+            provider: .google,
+            appId: "app-2",
+            action: .login
+        )
+        SocialLoginUrlGenerator.shared.storePendingSocialCodeVerifier(
+            "pending-social-verifier",
+            for: rawSocialState
+        )
+
+        let result = await executeSocialLoginOAuthCallback(
+            url: nil,
+            error: URLError(.cannotConnectToHost)
+        )
+
+        switch result {
+        case .success:
+            XCTFail("Expected social login callback failure")
+        case .failure:
+            break
+        }
+
+        XCTAssertNil(SocialLoginUrlGenerator.shared.pendingSocialCodeVerifier(for: rawSocialState))
+    }
+
     func test_logout_clearsLoginInProgressWhileHostedLoginCallbackIsInFlight() async {
         api.exchangeTokenError = FronteggError.authError(.failedToAuthenticate)
         api.setExchangeTokenBlocked(true)
@@ -805,6 +1046,162 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 900_000_000)
 
         XCTAssertFalse(auth.isOfflineMode)
+    }
+
+    func test_handleHostedLoginCallback_onlineSuccess_cancelsPendingOfflineDebounce() async throws {
+        let accessToken = try makeAccessToken()
+        api.exchangeTokenResponse = try makeAuthResponse(
+            accessToken: accessToken,
+            refreshToken: "refresh-token-online-success"
+        )
+        api.meResult = .success(try makeUser())
+
+        auth.setIsOfflineMode(false)
+        auth.disconnectedFromInternet()
+
+        let result = await executeHostedLoginCallback(
+            code: "code-online-success",
+            codeVerifier: "verifier-online-success"
+        )
+
+        switch result {
+        case .success(let user):
+            XCTAssertEqual(user.email, "test@example.com")
+        case .failure(let error):
+            XCTFail("Expected hosted login callback success, got \(error)")
+        }
+
+        try? await Task.sleep(nanoseconds: 900_000_000)
+
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertFalse(auth.isOfflineMode)
+    }
+
+    func test_logout_whileOffline_keepsUnauthenticatedOfflineModeEnabled() async throws {
+        PlistHelper.testConfigOverride = makeOfflineConfig(serviceKey: serviceKey)
+        NetworkStatusMonitor._testSetReachabilityOverride(false)
+
+        auth.setAccessToken("access-token")
+        auth.setRefreshToken("refresh-token")
+        auth.setUser(try makeUser())
+        auth.setIsAuthenticated(true)
+        auth.setIsOfflineMode(true)
+
+        let result = await withCheckedContinuation { continuation in
+            auth.logout(clearCookie: false) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success(let didLogout):
+            XCTAssertTrue(didLogout)
+        case .failure(let error):
+            XCTFail("Expected logout success, got \(error)")
+        }
+
+        XCTAssertFalse(auth.isAuthenticated)
+        XCTAssertNil(auth.accessToken)
+        XCTAssertNil(auth.refreshToken)
+        XCTAssertTrue(auth.isOfflineMode)
+        XCTAssertTrue(NetworkStatusMonitor._testSnapshot().monitoringActive)
+    }
+
+    func test_logout_online_ignoresPendingOfflineDebounceFromPreviousMonitoring() async throws {
+        PlistHelper.testConfigOverride = makeOfflineConfig(serviceKey: serviceKey)
+        NetworkStatusMonitor._testSetReachabilityOverride(true)
+
+        auth.setAccessToken("access-token")
+        auth.setRefreshToken("refresh-token")
+        auth.setUser(try makeUser())
+        auth.setIsAuthenticated(true)
+        auth.setIsOfflineMode(false)
+        auth.disconnectedFromInternet()
+
+        let result = await withCheckedContinuation { continuation in
+            auth.logout(clearCookie: false) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success(let didLogout):
+            XCTAssertTrue(didLogout)
+        case .failure(let error):
+            XCTFail("Expected logout success, got \(error)")
+        }
+
+        try? await Task.sleep(nanoseconds: 900_000_000)
+
+        XCTAssertFalse(auth.isAuthenticated)
+        XCTAssertFalse(auth.isOfflineMode)
+        XCTAssertTrue(NetworkStatusMonitor._testSnapshot().monitoringActive)
+    }
+
+    func test_recheckConnection_unauthenticatedOffline_returnsToLoginStateWhenNetworkIsBack() async {
+        NetworkStatusMonitor._testSetReachabilityOverride(true)
+
+        auth.setIsAuthenticated(false)
+        auth.setUser(nil)
+        auth.setAccessToken(nil)
+        auth.setRefreshToken(nil)
+        auth.setIsOfflineMode(true)
+        auth.setIsLoading(false)
+        auth.setInitializing(false)
+        auth.ensureOfflineMonitoringActive()
+
+        auth.recheckConnection()
+        for _ in 0..<20 where auth.isOfflineMode {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        let snapshot = NetworkStatusMonitor._testSnapshot()
+        XCTAssertFalse(auth.isOfflineMode)
+        XCTAssertFalse(auth.isAuthenticated)
+        XCTAssertNil(auth.user)
+        XCTAssertFalse(snapshot.monitoringActive)
+        XCTAssertEqual(snapshot.handlerCount, 0)
+    }
+
+    func test_recheckConnection_unauthenticatedOffline_ignoresStaleOfflineMonitorCacheWhenProbeSucceeds() async {
+        NetworkStatusMonitor._testSetReachabilityOverride(true)
+
+        auth.setIsAuthenticated(false)
+        auth.setUser(nil)
+        auth.setAccessToken(nil)
+        auth.setRefreshToken(nil)
+        auth.setIsOfflineMode(true)
+        auth.setIsLoading(false)
+        auth.setInitializing(false)
+        auth.ensureOfflineMonitoringActive()
+
+        // Simulate a stale cached offline result from background monitoring without
+        // letting a live path monitor race the manual Retry flow.
+        NetworkStatusMonitor.stopBackgroundMonitoring()
+        NetworkStatusMonitor._testSetState(
+            cachedReachable: false,
+            hasCachedReachable: true,
+            monitoringActive: true,
+            hasInitialCheckFired: true
+        )
+
+        let initialSnapshot = NetworkStatusMonitor._testSnapshot()
+        XCTAssertTrue(initialSnapshot.monitoringActive)
+        XCTAssertEqual(initialSnapshot.handlerCount, 1)
+        XCTAssertFalse(initialSnapshot.cachedReachable)
+        XCTAssertTrue(initialSnapshot.hasCachedReachable)
+
+        auth.recheckConnection()
+        for _ in 0..<40 where auth.isOfflineMode {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+
+        let snapshot = NetworkStatusMonitor._testSnapshot()
+        XCTAssertFalse(auth.isOfflineMode)
+        XCTAssertFalse(auth.isAuthenticated)
+        XCTAssertNil(auth.user)
+        XCTAssertFalse(snapshot.monitoringActive)
+        XCTAssertEqual(snapshot.handlerCount, 0)
     }
 
     func test_ensureOfflineMonitoringActive_defaultsToSuppressingInitialEmission() {
@@ -1011,8 +1408,9 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
     }
 
     private func makeGeneratedRedirectCallbackUrl(
-        bundleIdentifier: String = "com.frontegg.demo",
+        bundleIdentifier: String = currentAppBundleIdentifier(),
         host: String = "test.example.com",
+        path: String = "/ios/oauth/callback",
         code: String? = nil,
         state: String? = nil,
         errorMessage: String? = nil,
@@ -1021,7 +1419,7 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         var components = URLComponents()
         components.scheme = bundleIdentifier.lowercased()
         components.host = host
-        components.path = "/ios/oauth/callback"
+        components.path = path
 
         var items: [URLQueryItem] = []
         if let code {
@@ -1038,6 +1436,10 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         }
         components.queryItems = items
         return components.url!
+    }
+
+    private func currentTestBundleIdentifier() -> String {
+        currentAppBundleIdentifier()
     }
 
     private func waitForOAuthErrorDispatch() async {
@@ -1120,6 +1522,29 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
     private func clearOAuthState() {
         UserDefaults.standard.removeObject(forKey: KeychainKeys.codeVerifier.rawValue)
         UserDefaults.standard.removeObject(forKey: KeychainKeys.oauthStateVerifiers.rawValue)
+        SocialLoginUrlGenerator.shared.clearPendingSocialCodeVerifiers()
+    }
+
+    private func makeRawSocialState(
+        provider: String,
+        appId: String,
+        action: String,
+        oauthState: String? = nil
+    ) throws -> String {
+        var payload: [String: String] = [
+            "provider": provider,
+            "appId": appId,
+            "action": action,
+            "bundleId": "com.frontegg.tests",
+            "platform": "ios"
+        ]
+
+        if let oauthState {
+            payload["oauthState"] = oauthState
+        }
+
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        return try XCTUnwrap(String(data: data, encoding: .utf8))
     }
 
     private func assertOfflineModePersistsBriefly(

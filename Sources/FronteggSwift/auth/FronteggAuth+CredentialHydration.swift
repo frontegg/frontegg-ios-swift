@@ -231,6 +231,9 @@ extension FronteggAuth {
             let accessTokenToSet = accessToken
             let refreshTokenToSet = refreshToken
             let shouldEnterOfflineMode = hydrationMode == .preserveCachedOrDerivedUser
+            if !shouldEnterOfflineMode {
+                clearTransientConnectivityStateAfterAuthenticatedSuccess()
+            }
             await MainActor.run {
                 setRefreshToken(refreshTokenToSet)
                 setAccessToken(accessTokenToSet)

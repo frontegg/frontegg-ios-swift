@@ -3,9 +3,14 @@ import Foundation
 enum FronteggRuntime {
     static let testingEnvironmentKey = "frontegg-testing"
     static let testingWebAuthenticationTransportEnvironmentKey = "FRONTEGG_TEST_WEB_AUTH_TRANSPORT"
+    static let xctestConfigurationEnvironmentKey = "XCTestConfigurationFilePath"
 
     static var isTesting: Bool {
         ProcessInfo.processInfo.environment[testingEnvironmentKey] == "true"
+    }
+
+    static var isRunningUnderXCTest: Bool {
+        ProcessInfo.processInfo.environment[xctestConfigurationEnvironmentKey] != nil
     }
 
     static func testingLog(_ message: @autoclosure () -> String) {

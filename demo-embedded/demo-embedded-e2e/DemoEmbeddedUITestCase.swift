@@ -2,7 +2,15 @@ import XCTest
 
 class DemoEmbeddedUITestCase: XCTestCase {
     static var server: LocalMockAuthServer!
-    private let knownScreenIdentifiers = ["LoginPageRoot", "NoConnectionPageRoot", "UserPageRoot", "AuthenticatedOfflineRoot"]
+    private let knownScreenIdentifiers = [
+        "LoginPageRoot",
+        "NoConnectionPageRoot",
+        "UserPageRoot",
+        "AuthenticatedOfflineRoot",
+        "BootstrapLoaderView",
+        "DefaultLoaderRoot",
+        "LoaderView",
+    ]
 
     var app: XCUIApplication!
     var allowsUnexpectedNoConnectionScreen = false
@@ -36,14 +44,18 @@ class DemoEmbeddedUITestCase: XCTestCase {
         resetState: Bool = true,
         useTestingWebAuthenticationTransport: Bool = true,
         forceNetworkPathOffline: Bool = false,
-        enableOfflineMode: Bool? = nil
+        enableOfflineMode: Bool? = nil,
+        basePathPrefix: String = "",
+        useRootGeneratedCallbackAlias: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment = Self.server.launchEnvironment(
             resetState: resetState,
             useTestingWebAuthenticationTransport: useTestingWebAuthenticationTransport,
             forceNetworkPathOffline: forceNetworkPathOffline,
-            enableOfflineMode: enableOfflineMode
+            enableOfflineMode: enableOfflineMode,
+            basePathPrefix: basePathPrefix,
+            useRootGeneratedCallbackAlias: useRootGeneratedCallbackAlias
         )
         app.launch()
         self.app = app
@@ -78,6 +90,33 @@ class DemoEmbeddedUITestCase: XCTestCase {
         waitForScreen("UserPageRoot", timeout: timeout)
         XCTAssertTrue(app.staticTexts[email].waitForExistence(timeout: timeout), "Expected user email \(email)")
         assertNoUnexpectedNoConnectionScreenSeen()
+    }
+
+    func waitForUserEmailWithoutOAuthError(
+        _ email: String,
+        timeout: TimeInterval = 20,
+        postAppearanceGuard: TimeInterval = 2
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        let userPageRoot = app.descendants(matching: .any)["UserPageRoot"]
+        let emailLabel = app.staticTexts[email]
+
+        while Date() < deadline {
+            if oauthErrorToastIsVisible() {
+                XCTFail("Unexpected OAuth error toast appeared while waiting for user email \(email). \(screenDebugSummary())")
+                return
+            }
+
+            if userPageRoot.exists && emailLabel.exists {
+                assertNoOAuthErrorToastAppears(duration: postAppearanceGuard)
+                assertNoUnexpectedNoConnectionScreenSeen()
+                return
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("Expected user email \(email) without OAuth error. \(screenDebugSummary())")
     }
 
     func assertNoConnectionScreenDoesNotAppear(duration: TimeInterval, pollInterval: TimeInterval = 0.1) {
@@ -213,6 +252,21 @@ class DemoEmbeddedUITestCase: XCTestCase {
         return message
     }
 
+    func assertNoOAuthErrorToastAppears(
+        duration: TimeInterval,
+        pollInterval: TimeInterval = 0.1
+    ) {
+        let deadline = Date().addingTimeInterval(duration)
+        while Date() < deadline {
+            if oauthErrorToastIsVisible() {
+                XCTFail("Unexpected OAuth error toast appeared. \(screenDebugSummary())")
+                return
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
+        }
+    }
+
     func waitForDuration(_ duration: TimeInterval, pollInterval: TimeInterval = 0.1) {
         let deadline = Date().addingTimeInterval(duration)
         while Date() < deadline {
@@ -309,6 +363,7 @@ class DemoEmbeddedUITestCase: XCTestCase {
 
         let prominentTexts = [
             "Sign in",
+            "No Connection",
             "No internet connection",
             "Authenticated (offline)",
             "Welcome!",
@@ -335,6 +390,13 @@ class DemoEmbeddedUITestCase: XCTestCase {
             "isLoading": diagnosticValue(for: "AuthIsLoadingValue"),
             "offlineMarker": app.staticTexts["AuthenticatedOfflineModeEnabled"].exists ? "1" : "0",
             "message": diagnosticValue(for: "UserPageMessage"),
+            "rootAuth": diagnosticValue(for: "RootIsAuthenticatedValue"),
+            "rootOffline": diagnosticValue(for: "RootIsOfflineModeValue"),
+            "rootLoading": diagnosticValue(for: "RootIsLoadingValue"),
+            "rootInitializing": diagnosticValue(for: "RootInitializingValue"),
+            "rootShowLoader": diagnosticValue(for: "RootShowLoaderValue"),
+            "rootAppLink": diagnosticValue(for: "RootAppLinkValue"),
+            "rootHasUser": diagnosticValue(for: "RootHasUserValue"),
         ]
             .compactMap { key, value in value.map { "\(key)=\($0)" } }
             .joined(separator: ", ")
@@ -356,9 +418,38 @@ class DemoEmbeddedUITestCase: XCTestCase {
     }
 
     private func unexpectedNoConnectionScreenWasSeen() -> Bool {
-        let currentScreenVisible = app.buttons["RetryConnectionButton"].exists
+        let currentScreenVisible = noConnectionScreen().exists
         let stickyMarkerVisible = app.staticTexts["NoConnectionPageSeenEver"].exists
         return currentScreenVisible || stickyMarkerVisible
+    }
+
+    private func oauthErrorToastIsVisible() -> Bool {
+        let candidates: [XCUIElement] = [
+            app.descendants(matching: .any).matching(identifier: "OAuthErrorToast").firstMatch,
+            app.staticTexts["OAuthErrorToast"],
+            app.otherElements["OAuthErrorToast"],
+        ]
+
+        return candidates.contains { $0.exists }
+    }
+
+    func noConnectionScreen() -> XCUIElement {
+        screenAnchor(for: "NoConnectionPageRoot")
+    }
+
+    func retryConnectionControl() -> XCUIElement {
+        let candidates: [XCUIElement] = [
+            app.buttons["RetryConnectionButton"],
+            app.buttons["Retry"],
+            app.otherElements["RetryConnectionButton"],
+            app.otherElements["Retry"],
+        ]
+
+        for candidate in candidates where candidate.exists {
+            return candidate
+        }
+
+        return candidates[0]
     }
 
     private func textValue(for identifier: String, timeout: TimeInterval) -> String {
@@ -395,24 +486,7 @@ class DemoEmbeddedUITestCase: XCTestCase {
     }
 
     private func screenAnchor(for identifier: String) -> XCUIElement {
-        switch identifier {
-        case "LoginPageRoot":
-            return app.buttons["NativeLoginButton"]
-        case "NoConnectionPageRoot":
-            return app.buttons["RetryConnectionButton"]
-        case "UserPageRoot":
-            return app.staticTexts["UserEmailValue"]
-        case "AuthenticatedOfflineRoot":
-            return app.staticTexts["Authenticated (offline)"]
-        case "BootstrapLoaderView":
-            return app.otherElements["BootstrapLoaderView"]
-        case "DefaultLoaderRoot":
-            return app.otherElements["DefaultLoaderRoot"]
-        case "LoaderView":
-            return app.otherElements["LoaderView"]
-        default:
-            return app.otherElements[identifier]
-        }
+        app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 }
 

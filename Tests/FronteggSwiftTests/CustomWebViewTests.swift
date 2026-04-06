@@ -49,6 +49,33 @@ final class CustomWebViewTests: XCTestCase {
         XCTAssertNil(resolution.providerError)
     }
 
+    func test_resolveHostedCallbackCodeVerifier_socialFallsBackToPendingSocialStateStore() async throws {
+        let rawState = try makeRawSocialState(
+            provider: "google",
+            appId: "app-1",
+            action: "login"
+        )
+        let canonicalState = SocialLoginUrlGenerator.canonicalizeSocialState(rawState)
+
+        SocialLoginUrlGenerator.shared.storePendingSocialCodeVerifier(
+            "pending-social-verifier",
+            for: rawState
+        )
+
+        let resolution = await CustomWebView.resolveHostedCallbackCodeVerifier(
+            isMagicLink: false,
+            isSocialLogin: true,
+            oauthState: canonicalState,
+            socialVerifierProvider: {
+                throw URLError(.timedOut)
+            }
+        )
+
+        XCTAssertEqual(resolution.codeVerifier, "pending-social-verifier")
+        XCTAssertEqual(resolution.source, "pending_social_state_store")
+        XCTAssertNotNil(resolution.providerError)
+    }
+
     func test_resolveHostedCallbackCodeVerifier_socialFallsBackToLastGeneratedVerifier() async {
         CredentialManager.registerPendingOAuth(state: "expected-state", codeVerifier: "shared-verifier")
 
@@ -94,6 +121,102 @@ final class CustomWebViewTests: XCTestCase {
 
         XCTAssertEqual(matched.codeVerifier, "expected-verifier")
         XCTAssertEqual(matched.source, "state_match")
+    }
+
+    func test_resolveHostedCallbackRedirect_generatedCallbackAliasUsesActualAlias() {
+        let resolution = CustomWebView.resolveHostedCallbackRedirect(
+            url: URL(string: "com.frontegg.demo://auth.example.com/ios/oauth/callback?code=123")!,
+            magicLinkRedirectUri: nil,
+            baseUrl: "https://auth.example.com/fe-auth",
+            bundleIdentifier: "com.frontegg.demo",
+            embeddedMode: true
+        )
+
+        XCTAssertEqual(
+            resolution.redirectUri,
+            "com.frontegg.demo://auth.example.com/ios/oauth/callback"
+        )
+        XCTAssertFalse(resolution.isMagicLink)
+    }
+
+    func test_resolveHostedCallbackRedirect_socialSuccessUsesRedirectUriQuery() {
+        let encodedRedirectUri = "com.frontegg.demo://auth.example.com/ios/oauth/callback"
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let url = URL(
+            string: "https://auth.example.com/fe-auth/oauth/account/social/success?code=123&redirectUri=\(encodedRedirectUri)"
+        )!
+
+        let resolution = CustomWebView.resolveHostedCallbackRedirect(
+            url: url,
+            magicLinkRedirectUri: nil,
+            baseUrl: "https://auth.example.com/fe-auth",
+            bundleIdentifier: "com.frontegg.demo",
+            embeddedMode: true
+        )
+
+        XCTAssertEqual(
+            resolution.redirectUri,
+            "com.frontegg.demo://auth.example.com/ios/oauth/callback"
+        )
+        XCTAssertFalse(resolution.isMagicLink)
+    }
+
+    func test_resolveHostedCallbackRedirect_socialSuccessFallsBackWhenRedirectUriQueryIsUnexpected() {
+        let encodedRedirectUri = "com.bad.actor://evil.example.com/ios/oauth/callback"
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let url = URL(
+            string: "https://auth.example.com/fe-auth/oauth/account/social/success?code=123&redirectUri=\(encodedRedirectUri)"
+        )!
+
+        let resolution = CustomWebView.resolveHostedCallbackRedirect(
+            url: url,
+            magicLinkRedirectUri: nil,
+            baseUrl: "https://auth.example.com/fe-auth",
+            bundleIdentifier: "com.frontegg.demo",
+            embeddedMode: true
+        )
+
+        XCTAssertEqual(
+            resolution.redirectUri,
+            "com.frontegg.demo://auth.example.com/fe-auth/ios/oauth/callback"
+        )
+        XCTAssertFalse(resolution.isMagicLink)
+    }
+
+    func test_resolveHostedCallbackRedirect_intermediateRedirectUsesExactPath() {
+        let resolution = CustomWebView.resolveHostedCallbackRedirect(
+            url: URL(
+                string: "https://auth.example.com/fe-auth/oauth/account/redirect/ios/com.frontegg.demo/google?code=123"
+            )!,
+            magicLinkRedirectUri: nil,
+            baseUrl: "https://auth.example.com/fe-auth",
+            bundleIdentifier: "com.frontegg.demo",
+            embeddedMode: true
+        )
+
+        XCTAssertEqual(
+            resolution.redirectUri,
+            "https://auth.example.com/fe-auth/oauth/account/redirect/ios/com.frontegg.demo/google"
+        )
+        XCTAssertTrue(resolution.isMagicLink)
+    }
+
+    func test_resolveHostedCallbackRedirect_intermediateRedirectPreservesNonDefaultPort() {
+        let resolution = CustomWebView.resolveHostedCallbackRedirect(
+            url: URL(
+                string: "https://auth.example.com:8443/fe-auth/oauth/account/redirect/ios/com.frontegg.demo/google?code=123"
+            )!,
+            magicLinkRedirectUri: nil,
+            baseUrl: "https://auth.example.com:8443/fe-auth",
+            bundleIdentifier: "com.frontegg.demo",
+            embeddedMode: true
+        )
+
+        XCTAssertEqual(
+            resolution.redirectUri,
+            "https://auth.example.com:8443/fe-auth/oauth/account/redirect/ios/com.frontegg.demo/google"
+        )
+        XCTAssertTrue(resolution.isMagicLink)
     }
 
     // MARK: - OIDC SSO Flow Tests
@@ -231,5 +354,28 @@ final class CustomWebViewTests: XCTestCase {
     private func clearOAuthState() {
         UserDefaults.standard.removeObject(forKey: KeychainKeys.codeVerifier.rawValue)
         UserDefaults.standard.removeObject(forKey: KeychainKeys.oauthStateVerifiers.rawValue)
+        SocialLoginUrlGenerator.shared.clearPendingSocialCodeVerifiers()
+    }
+
+    private func makeRawSocialState(
+        provider: String,
+        appId: String,
+        action: String,
+        oauthState: String? = nil
+    ) throws -> String {
+        var payload: [String: String] = [
+            "provider": provider,
+            "appId": appId,
+            "action": action,
+            "bundleId": "com.frontegg.tests",
+            "platform": "ios"
+        ]
+
+        if let oauthState {
+            payload["oauthState"] = oauthState
+        }
+
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        return try XCTUnwrap(String(data: data, encoding: .utf8))
     }
 }

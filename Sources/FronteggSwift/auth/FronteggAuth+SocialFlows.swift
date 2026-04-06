@@ -23,6 +23,7 @@ extension FronteggAuth {
         errorDescription: String? = nil,
         completion: @escaping FronteggAuth.CompletionHandler
     ) {
+        SocialLoginUrlGenerator.shared.clearPendingSocialCodeVerifiers()
         DispatchQueue.main.async {
             self.activeEmbeddedOAuthFlow = .login
             self.reportOAuthFailure(
@@ -39,6 +40,7 @@ extension FronteggAuth {
         _ details: OAuthFailureDetails,
         completion: @escaping FronteggAuth.CompletionHandler
     ) {
+        SocialLoginUrlGenerator.shared.clearPendingSocialCodeVerifiers()
         DispatchQueue.main.async {
             self.activeEmbeddedOAuthFlow = .login
             self.reportOAuthFailure(details: details, flow: .socialLogin)
@@ -135,6 +137,10 @@ extension FronteggAuth {
             loginWithApple(done)
             return
         }
+
+        // Social login flows are single-flight. Drop any stale verifier state from a
+        // previous abandoned attempt before generating the next authorize URL.
+        SocialLoginUrlGenerator.shared.clearPendingSocialCodeVerifiers()
 
         let oauthCallback: (URL?, Error?) -> Void = { [weak self] callbackURL, error in
             guard let self else { return }

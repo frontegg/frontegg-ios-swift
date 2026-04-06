@@ -73,6 +73,34 @@ struct MyApp: View {
                             : "UnauthenticatedOfflineModeEnabled"
                     )
                 }
+                ScreenValueMarker(
+                    identifier: "RootIsAuthenticatedValue",
+                    value: fronteggAuth.isAuthenticated ? "1" : "0"
+                )
+                ScreenValueMarker(
+                    identifier: "RootIsOfflineModeValue",
+                    value: fronteggAuth.isOfflineMode ? "1" : "0"
+                )
+                ScreenValueMarker(
+                    identifier: "RootIsLoadingValue",
+                    value: fronteggAuth.isLoading ? "1" : "0"
+                )
+                ScreenValueMarker(
+                    identifier: "RootInitializingValue",
+                    value: fronteggAuth.initializing ? "1" : "0"
+                )
+                ScreenValueMarker(
+                    identifier: "RootShowLoaderValue",
+                    value: fronteggAuth.showLoader ? "1" : "0"
+                )
+                ScreenValueMarker(
+                    identifier: "RootAppLinkValue",
+                    value: fronteggAuth.appLink ? "1" : "0"
+                )
+                ScreenValueMarker(
+                    identifier: "RootHasUserValue",
+                    value: fronteggAuth.user != nil ? "1" : "0"
+                )
             }
         }.onAppear() {
             fronteggAuth.$accessToken.sink { accessToken in
@@ -98,6 +126,18 @@ private struct ScreenMarker: View {
 
     var body: some View {
         Text(identifier)
+            .font(.system(size: 1))
+            .foregroundColor(.clear)
+            .accessibilityIdentifier(identifier)
+    }
+}
+
+private struct ScreenValueMarker: View {
+    let identifier: String
+    let value: String
+
+    var body: some View {
+        Text(value)
             .font(.system(size: 1))
             .foregroundColor(.clear)
             .accessibilityIdentifier(identifier)
