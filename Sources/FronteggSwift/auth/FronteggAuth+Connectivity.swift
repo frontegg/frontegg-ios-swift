@@ -502,7 +502,7 @@ extension FronteggAuth {
 
     public func recheckConnection() {
 
-        DispatchQueue.global(qos: .background).async {
+        DispatchQueue.global(qos: .userInitiated).async {
 
             Task {
                 if self.isOfflineMode {

@@ -174,7 +174,7 @@ final class LoggerDelegateTests: XCTestCase {
         logger.logLevel = .trace
         weak var weakDelegate: SpyLoggerDelegate?
 
-        do {
+        autoreleasepool {
             let delegate = SpyLoggerDelegate()
             weakDelegate = delegate
             FeLogger.delegate = delegate

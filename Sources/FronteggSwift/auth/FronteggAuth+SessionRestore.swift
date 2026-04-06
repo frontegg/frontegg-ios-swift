@@ -274,9 +274,13 @@ extension FronteggAuth {
                 .dropFirst(dropCount)
                 .sink { [weak self] accessToken in
                     guard let self = self else { return }
+                    // Capture generation before async dispatch so we can detect stale
+                    // callbacks (e.g. logout advancing the generation while this dispatch
+                    // is still queued).
+                    let capturedGeneration = self.connectivityGenerationLock.withLock { self.connectivityGeneration }
                     DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                         guard let self = self else { return }
-                        
+
                         // After initialization, handle normal token changes
                         if accessToken != nil {
                             // Token was set - ensure monitoring is stopped
@@ -284,6 +288,12 @@ extension FronteggAuth {
                         } else {
                             let logoutInProgress = self.logoutTransitionLock.withLock { self.logoutInProgress }
                             if logoutInProgress {
+                                return
+                            }
+
+                            // If the generation changed since we captured it, another
+                            // transition (e.g. logout) already set up monitoring — skip.
+                            guard self.isConnectivityGenerationCurrent(capturedGeneration) else {
                                 return
                             }
 
