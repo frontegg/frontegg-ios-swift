@@ -80,7 +80,10 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     }
 
     private func scheduleSocialSuccessWatchdog(for webView: WKWebView, url: URL) {
-        cancelSocialSuccessWatchdog()
+        // Cancel the pending work item without resetting retryCount
+        // so that retry calls can track cumulative attempts.
+        socialSuccessWatchdogWorkItem?.cancel()
+        socialSuccessWatchdogWorkItem = nil
 
         let workItem = DispatchWorkItem { [weak self, weak webView] in
             guard let self = self, let webView = webView else { return }
@@ -652,6 +655,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                         } else {
                             logger.info("🔵 [Social Login Debug] /social/success detected as intermediate page (Google case, previousUrl was HTTPS/nil) - allowing normal navigation")
                             isSocialLoginFlow = true
+                            socialSuccessRetryCount = 0  // Fresh flow — reset before scheduling
                             scheduleSocialSuccessWatchdog(for: webView, url: url)
                             return .allow
                         }

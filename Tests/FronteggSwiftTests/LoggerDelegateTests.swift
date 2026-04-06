@@ -175,10 +175,11 @@ final class LoggerDelegateTests: XCTestCase {
         weak var weakDelegate: SpyLoggerDelegate?
 
         autoreleasepool {
-            let delegate = SpyLoggerDelegate()
+            var delegate: SpyLoggerDelegate? = SpyLoggerDelegate()
             weakDelegate = delegate
             FeLogger.delegate = delegate
             XCTAssertNotNil(FeLogger.delegate)
+            delegate = nil  // Explicitly release the strong reference
         }
 
         XCTAssertNil(weakDelegate)
