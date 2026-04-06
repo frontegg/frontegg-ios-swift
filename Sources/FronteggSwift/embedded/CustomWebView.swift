@@ -80,31 +80,26 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         cancelSocialSuccessWatchdog()
 
         let workItem = DispatchWorkItem { [weak self, weak webView] in
-            guard let self = self, let webView = webView else { return }
-            let currentUrl = webView.url ?? url
-            let queryItems = getQueryItems(currentUrl.absoluteString)
+            guard let self = self else { return }
+            let currentUrl = webView?.url ?? url
 
             guard currentUrl.path.contains("/oauth/account/social/success") else {
                 return
             }
 
-            if queryItems?["code"] != nil {
-                self.logger.warning(
-                    "Social login success page stalled, handling callback directly for \(currentUrl.absoluteString)"
-                )
-                DispatchQueue.main.async { [weak self, weak webView] in
-                    guard let self = self, let webView = webView else { return }
-                    webView.stopLoading()
-                    _ = self.handleHostedLoginCallback(webView, currentUrl)
-                }
-                return
-            }
-
+            // The social success page is still showing after the timeout. This means
+            // the server-side code exchange (e.g. Google → Frontegg) either failed or
+            // is still in progress. The page may contain an error message that the
+            // loading overlay is hiding. Hide the loader so the user can see the
+            // server's response. Do NOT extract the provider code and send it to
+            // /oauth/token — that endpoint expects a Frontegg authorization code,
+            // not a provider code.
             self.logger.warning(
-                "Social login success page stalled without code, reloading fresh login page"
+                "Social login success page stalled, hiding loader to reveal server response for \(currentUrl.absoluteString)"
             )
             DispatchQueue.main.async { [weak self] in
-                self?.reloadFreshLoginPage()
+                self?.fronteggAuth.setWebLoading(false)
+                self?.fronteggAuth.setLoginBoxLoading(false)
             }
         }
 
