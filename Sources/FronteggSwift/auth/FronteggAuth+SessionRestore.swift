@@ -283,6 +283,11 @@ extension FronteggAuth {
 
                         // After initialization, handle normal token changes
                         if accessToken != nil {
+                            // If the generation changed since we captured it, another
+                            // transition already owns the connectivity state — skip.
+                            guard self.isConnectivityGenerationCurrent(capturedGeneration) else {
+                                return
+                            }
                             // Token was set - ensure monitoring is stopped
                             self.clearTransientConnectivityStateAfterAuthenticatedSuccess()
                         } else {
