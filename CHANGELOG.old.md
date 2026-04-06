@@ -1,3 +1,12 @@
+## v1.2.79
+- Require Swift SDK E2E workflow for release PRs
+**Changed**
+- Token refresh: HTTP 408, 429, and 5xx on refresh (oauth/token and tenant refresh) are treated as transient and retried via the existing offline/retry path instead of mapping to failedToRefreshToken (which cleared the session).
+- Connectivity classification: isConnectivityError recognizes ApiError.refreshEndpointTransient so behavior matches other retryable failures
+
+**Fixed**
+- Intermittent logout and auth state issues when the network is poor or the API briefly returns gateway/rate-limit responses during refresh, while 401 and other non-transient failures still end the session as before.
+
 ## v1.2.78
 **Entitlements support**
 - Adds support for Frontegg Entitlements so apps can load and check user features and permissions.
