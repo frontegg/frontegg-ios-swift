@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>embeddedMode</key>
+	<true/>
+	<key>enableOfflineMode</key>
+	<true/>
+	<key>enableSentryLogging</key>
+	<false/>
+	<key>entitlementsEnabled</key>
+	<false/>
+	<key>handleLoginWithCustomSocialLoginProvider</key>
+	<true/>
+	<key>handleLoginWithSocialProvider</key>
+	<true/>
+	<key>keychainService</key>
+	<string>frontegg-demo-auto-login-e2e</string>
+	<key>lateInit</key>
+	<true/>
+	<key>loginWithCustomSSO</key>
+	<true/>
+	<key>loginWithSSO</key>
+	<true/>
+	<key>loginWithSocialLogin</key>
+	<true/>
+	<key>logLevel</key>
+	<string>trace</string>
+	<key>networkMonitoringInterval</key>
+	<real>1</real>
+	<key>shouldSuggestSavePassword</key>
+	<true/>
+</dict>
+</plist>
