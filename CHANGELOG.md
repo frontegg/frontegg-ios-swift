@@ -1,52 +1,29 @@
-## v1.2.80
-<!-- CURSOR_SUMMARY -->
-> [!NOTE]
-> **Medium Risk**
-> Touches core auth/token hydration and tenant resolution flows; incorrect handling could lead to token/keychain desync or users being assigned the wrong active tenant. Changes are scoped but affect login/refresh paths and token rotation behavior.
-> 
-> **Overview**
-> Prevents unexpected logouts caused by tenant retrieval failures during auth by making `Api.me` return a `MeResult` that can include **re-refreshed tokens** when `/me/tenants` fails after retry (e.g., webhook/prehook race changing tenant during JWT issuance).
-> 
-> Updates credential hydration in `FronteggAuth` to **adopt tokens returned by `me()`**, and to fetch fresh user data on refresh when the JWT `tenantId` no longer matches the cached user; social login now also uses the potentially re-refreshed tokens. The demo `Frontegg.plist` config is updated (base URL/client ID).
-> 
-> <sup>Written by [Cursor Bugbot](https://cursor.com/dashboard?tab=bugbot) for commit 9a3259cff2d042c468ea169dc3fd6c95b7410512. This will update automatically on new commits. Configure [here](https://cursor.com/dashboard?tab=bugbot).</sup>
-<!-- /CURSOR_SUMMARY -->
-<!-- CURSOR_SUMMARY -->
-> [!NOTE]
-> **Low Risk**
-> Low risk change limited to CI workflow behavior, but it could affect automated release PR creation if the action’s v8 defaults/inputs differ from v3.5.1.
-> 
-> **Overview**
-> Updates the release automation workflow to use `peter-evans/create-pull-request@v8` instead of `v3.5.1` when creating the post-merge release pull request.
-> 
-> <sup>Written by [Cursor Bugbot](https://cursor.com/dashboard?tab=bugbot) for commit ce0385e08fd48f4dd43c6dc7afd04bd79b04090b. This will update automatically on new commits. Configure [here](https://cursor.com/dashboard?tab=bugbot).</sup>
-<!-- /CURSOR_SUMMARY -->
-<!-- CURSOR_SUMMARY -->
-> [!NOTE]
-> **Medium Risk**
-> Touches embedded OAuth/PKCE callback handling; incorrect flow classification could break SSO sign-in or token exchange, though the change is small and covered by new unit tests.
-> 
-> **Overview**
-> Prevents OIDC SSO (`/oauth/account/oidc/callback`) navigation from setting `isSocialLoginFlow`, so token exchange uses the state-matched PKCE `code_verifier` from `CredentialManager` instead of the social-login verifier stored in webview localStorage.
-> 
-> Adds a focused `CustomWebView.resolveHostedCallbackCodeVerifier` test suite covering OIDC SSO (correct verifier source, no fallback on state mismatch) plus regressions ensuring social login behavior and fallback remain unchanged.
-> 
-> <sup>Written by [Cursor Bugbot](https://cursor.com/dashboard?tab=bugbot) for commit 5210af715ad564d2acfd7bead90a2833b29eff3a. This will update automatically on new commits. Configure [here](https://cursor.com/dashboard?tab=bugbot).</sup>
-<!-- /CURSOR_SUMMARY -->
-<!-- CURSOR_SUMMARY -->
-> [!NOTE]
-> **Medium Risk**
-> Touches authentication/session lifecycle (logout, token refresh, OAuth callback routing) and network monitoring concurrency; regressions could strand users in offline/unauthenticated states or break social/OIDC login redirects.
-> 
-> **Overview**
-> **Improves offline-mode correctness and race-safety** by introducing generation-based invalidation for connectivity callbacks, centralizing monitor/debounce cleanup, and adding explicit logout transition ownership (prevents stale offline transitions during logout/token changes and adds better unauthenticated-offline recovery via `recheckConnection`).
-> 
-> **Hardens OAuth/social login flows** by normalizing redirect-uri generation to support base-path and root callback aliases, canonicalizing social `state`, tracking/clearing pending social PKCE verifiers, adding a watchdog to recover from stalled `/oauth/account/social/success` pages, and ensuring queued OAuth-error presentation uses captured runtime settings/delegate.
-> 
-> **CI stability tweaks**: adds a SwiftPM artifact-cache reset step to macOS workflows and disables Xcode parallel testing for unit/E2E runs; expands unit/E2E test coverage for the new redirect/offline behaviors.
-> 
-> <sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit 884a7888e051446774dec494953dfadeacb8a399. Bugbot is set up for automated code reviews on this repo. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>
-<!-- /CURSOR_SUMMARY -->
+## v1.3.0
+
+**Added**
+- Offline mode support with authenticated startup session restore, network path assessment, and offline state handling
+- Step-up authentication methods via refactored OAuth state handling
+- Customizable OAuth error handling and presentation
+- Transactional logout process with timeout for cookie clearing
+- Transactional refresh token handling with enhanced diagnostics
+- API retry logic for `/me` and `/me/tenants` endpoints with error handling
+- Social login watchdog to recover from stalled `/oauth/account/social/success` pages
+
+**Changed**
+- Refactored connectivity and refresh handling to use async/await for improved responsiveness
+- Made login progress state actor-safe and enhanced token exchange handling
+- Skip PKCE injection for custom providers to align with hosted social flow
+- Generation-based invalidation for connectivity callbacks to prevent stale offline transitions
+- Enhanced API error handling and logging for GET requests
+- Improved redirect URI extraction with base path and root callback alias support
+
+**Fixed**
+- Prevent incorrect setting of `isSocialLoginFlow` in OIDC SSO process, ensuring correct PKCE `code_verifier` usage
+- Prevent unexpected logout by refreshing token on tenant retrieval failure (FR-22001)
+- Fix tenant ID persistence and credential namespace issues
+- Handle stalled social login success page with retry logic and improved error visibility
+- Skip connectivity state handling if generation has changed during token updates
+- Improve async handling in connectivity checks and token change monitoring
 
 ## v1.2.79
 - Require Swift SDK E2E workflow for release PRs
