@@ -1,4 +1,4 @@
-## v1.2.80
+## v1.3.0
 <!-- CURSOR_SUMMARY -->
 > [!NOTE]
 > **Medium Risk**
