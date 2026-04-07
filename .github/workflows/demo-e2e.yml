@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       apps:
-        description: "Apps to test (comma-separated: embedded,multi-region,uikit)"
-        default: "embedded,multi-region,uikit"
+        description: "Apps to test (comma-separated: embedded,multi-region,uikit,auto-login)"
+        default: "embedded,multi-region,uikit,auto-login"
         type: string
       shard_count:
         description: "Number of shards per app (1 = auto, max 4 tests/shard)"

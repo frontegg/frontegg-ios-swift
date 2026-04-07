@@ -31,6 +31,14 @@ const APP_CONFIGS = {
     catalog: "demo-uikit/demo-uikit-e2e/scenario-catalog.json",
     testSources: ["demo-uikit/demo-uikit-e2e/UIKitE2ETests.swift"],
   },
+  "auto-login": {
+    project: "demo-auto-login/demo-auto-login.xcodeproj",
+    scheme: "demo-auto-login",
+    testTarget: "demo-auto-login-e2e",
+    testClass: "AutoLoginE2ETests",
+    catalog: "demo-auto-login/demo-auto-login-e2e/scenario-catalog.json",
+    testSources: ["demo-auto-login/demo-auto-login-e2e/AutoLoginE2ETests.swift"],
+  },
 };
 
 function readCatalogMethods(catalogPath) {
@@ -84,7 +92,7 @@ function splitIntoShards(items, shardCount) {
 }
 
 function main() {
-  const appsInput = process.env.INPUT_APPS || "embedded,multi-region,uikit";
+  const appsInput = process.env.INPUT_APPS || "embedded,multi-region,uikit,auto-login";
   const parsed = parseInt(process.env.INPUT_SHARD_COUNT || "1", 10);
   const shardCount = Number.isNaN(parsed) ? 1 : Math.max(1, parsed);
 
