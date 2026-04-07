@@ -1150,6 +1150,11 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         auth.setInitializing(false)
         auth.ensureOfflineMonitoringActive()
 
+        // Stop the live path monitor to prevent it from triggering reconnectedToInternet
+        // (which would attempt token refresh against test.example.com and fail DNS on CI).
+        // The handler stays registered for recheckConnection to clean up.
+        NetworkStatusMonitor.stopBackgroundMonitoring()
+
         auth.recheckConnection()
         for _ in 0..<60 where auth.isOfflineMode {
             try? await Task.sleep(nanoseconds: 100_000_000)
