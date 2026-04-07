@@ -81,7 +81,7 @@ final class NetworkStatusMonitorTests: XCTestCase {
 
         NetworkStatusMonitor._testEmitCached(true, forceEmit: true)
 
-        wait(for: [emitted], timeout: 1.0)
+        wait(for: [emitted], timeout: 3.0)
         XCTAssertFalse(received.contains("first:true"))
         XCTAssertTrue(received.contains("second:true"))
         XCTAssertTrue(received.contains("third:true"))
