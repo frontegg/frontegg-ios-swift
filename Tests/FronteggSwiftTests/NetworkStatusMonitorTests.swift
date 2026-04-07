@@ -55,6 +55,7 @@ final class NetworkStatusMonitorTests: XCTestCase {
         XCTAssertFalse(isConnectivityError(URLError(.cancelled)))
     }
 
+    @MainActor
     func test_handlerRemovalByIndex_preservesStableIndicesForRemainingHandlers() {
         let emitted = expectation(description: "Remaining handlers should be called")
         emitted.expectedFulfillmentCount = 2
@@ -87,6 +88,7 @@ final class NetworkStatusMonitorTests: XCTestCase {
         XCTAssertTrue(received.contains("third:true"))
     }
 
+    @MainActor
     func test_removeOnChangeByToken_preventsFurtherNotifications() {
         let notCalled = expectation(description: "Removed token should not receive updates")
         notCalled.isInverted = true
@@ -101,6 +103,7 @@ final class NetworkStatusMonitorTests: XCTestCase {
         wait(for: [notCalled], timeout: 0.2)
     }
 
+    @MainActor
     func test_forceEmit_notifiesHandlersWithoutStateChange() {
         let emitted = expectation(description: "Force emit should notify even without change")
         emitted.expectedFulfillmentCount = 2
@@ -148,6 +151,7 @@ final class NetworkStatusMonitorTests: XCTestCase {
         XCTAssertFalse(snapshot.hasInitialCheckFired)
     }
 
+    @MainActor
     func test_staleMonitoringGeneration_doesNotNotifyHandlersAfterStop() {
         let notCalled = expectation(description: "Stale monitoring generation should not notify")
         notCalled.isInverted = true
