@@ -28,6 +28,8 @@
 	<string>trace</string>
 	<key>networkMonitoringInterval</key>
 	<real>1</real>
+	<key>offlineDebounceDelay</key>
+	<real>0.6</real>
 	<key>shouldSuggestSavePassword</key>
 	<false/>
 </dict>
