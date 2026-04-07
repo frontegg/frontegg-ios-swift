@@ -1491,7 +1491,11 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         return try JSONDecoder().decode(User.self, from: data)
     }
 
-    private func makeOfflineConfig(serviceKey: String) -> FronteggPlist {
+    private func makeOfflineConfig(
+        serviceKey: String,
+        dismissAuthSessionOnOffline: Bool = false,
+        offlineDebounceDelay: TimeInterval = 0.3
+    ) -> FronteggPlist {
         FronteggPlist(
             keychainService: serviceKey,
             embeddedMode: true,
@@ -1515,7 +1519,9 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
             networkMonitoringInterval: 1,
             enableSentryLogging: false,
             sentryMaxQueueSize: 10,
-            entitlementsEnabled: false
+            entitlementsEnabled: false,
+            dismissAuthSessionOnOffline: dismissAuthSessionOnOffline,
+            offlineDebounceDelay: offlineDebounceDelay
         )
     }
 
@@ -1558,5 +1564,141 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
             file: file,
             line: line
         )
+    }
+
+    // MARK: - Offline Session Cancellation Regression Tests
+
+    func test_disconnectedFromInternet_cancelsActiveAuthSession_whenPlistEnabled() async {
+        // Regression: when dismissAuthSessionOnOffline is true and the device goes
+        // offline while an ASWebAuthenticationSession is open, the session must be
+        // cancelled so the offline UI is visible.
+        PlistHelper.testConfigOverride = makeOfflineConfig(
+            serviceKey: serviceKey,
+            dismissAuthSessionOnOffline: true,
+            offlineDebounceDelay: 0.3
+        )
+        let mockSession = MockASWebAuthenticationSession()
+        WebAuthenticator.shared.session = mockSession
+
+        auth.disconnectedFromInternet()
+
+        // Wait for the debounce to fire (test uses 0.3s, wait 0.9s for margin)
+        try? await Task.sleep(nanoseconds: 900_000_000)
+
+        XCTAssertTrue(mockSession.cancelCalled,
+                      "Active ASWebAuthenticationSession must be cancelled when going offline")
+        XCTAssertNil(WebAuthenticator.shared.session,
+                     "Session reference must be nilled after cancel")
+    }
+
+    func test_disconnectedFromInternet_doesNotCancelSession_whenPlistDisabled() async {
+        // When dismissAuthSessionOnOffline is false (default), the auth session
+        // must NOT be cancelled -- avoids flicker during WiFi→cellular handoff.
+        PlistHelper.testConfigOverride = makeOfflineConfig(
+            serviceKey: serviceKey,
+            dismissAuthSessionOnOffline: false,
+            offlineDebounceDelay: 0.3
+        )
+        let mockSession = MockASWebAuthenticationSession()
+        WebAuthenticator.shared.session = mockSession
+
+        auth.disconnectedFromInternet()
+
+        try? await Task.sleep(nanoseconds: 900_000_000)
+
+        XCTAssertFalse(mockSession.cancelCalled,
+                       "Auth session must NOT be cancelled when plist flag is off")
+        XCTAssertTrue(auth.isOfflineMode,
+                      "Offline mode should still be set regardless of session cancel flag")
+    }
+
+    func test_disconnectedFromInternet_noSession_doesNotCrash() async {
+        // Ensure no crash when disconnectedFromInternet fires with no active session.
+        PlistHelper.testConfigOverride = makeOfflineConfig(
+            serviceKey: serviceKey,
+            dismissAuthSessionOnOffline: true,
+            offlineDebounceDelay: 0.3
+        )
+        WebAuthenticator.shared.session = nil
+
+        auth.disconnectedFromInternet()
+
+        try? await Task.sleep(nanoseconds: 900_000_000)
+
+        // Should complete without crash; offline mode should be set
+        XCTAssertTrue(auth.isOfflineMode)
+    }
+
+    func test_offlineDebounceDelay_respectsPlistValue_short() async {
+        // Test that a short debounce (0.3s) fires quickly.
+        PlistHelper.testConfigOverride = makeOfflineConfig(
+            serviceKey: serviceKey,
+            offlineDebounceDelay: 0.3
+        )
+
+        auth.disconnectedFromInternet()
+
+        // Should NOT be offline yet (within debounce window)
+        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+        XCTAssertFalse(auth.isOfflineMode, "Should not be offline during debounce")
+
+        // Should be offline after debounce fires
+        try? await Task.sleep(nanoseconds: 500_000_000) // +0.5s total = 0.6s
+        XCTAssertTrue(auth.isOfflineMode, "Should be offline after 0.3s debounce")
+    }
+
+    func test_offlineDebounceDelay_respectsPlistValue_default() async {
+        // Test the default 2.0s debounce.
+        PlistHelper.testConfigOverride = makeOfflineConfig(
+            serviceKey: serviceKey,
+            offlineDebounceDelay: 2.0
+        )
+
+        auth.disconnectedFromInternet()
+
+        // Should NOT be offline at 1s (within 2s debounce window)
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        XCTAssertFalse(auth.isOfflineMode, "Should not be offline during 2s debounce")
+
+        // Should be offline after 2s debounce fires
+        try? await Task.sleep(nanoseconds: 1_500_000_000) // +1.5s total = 2.5s
+        XCTAssertTrue(auth.isOfflineMode, "Should be offline after 2s debounce")
+    }
+
+    func test_offlineDebounceDelay_respectsPlistValue_long() async {
+        // Test a long debounce (5.0s) -- protects against WiFi→cellular flicker.
+        PlistHelper.testConfigOverride = makeOfflineConfig(
+            serviceKey: serviceKey,
+            offlineDebounceDelay: 5.0
+        )
+
+        auth.disconnectedFromInternet()
+
+        // Should NOT be offline at 3s (within 5s debounce window)
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        XCTAssertFalse(auth.isOfflineMode, "Should not be offline during 5s debounce")
+
+        // Should be offline after 5s debounce fires
+        try? await Task.sleep(nanoseconds: 3_000_000_000) // +3s total = 6s
+        XCTAssertTrue(auth.isOfflineMode, "Should be offline after 5s debounce")
+    }
+}
+
+// MARK: - Mock ASWebAuthenticationSession for offline tests
+
+private final class MockASWebAuthenticationSession: ASWebAuthenticationSession {
+    private(set) var cancelCalled = false
+
+    init() {
+        super.init(
+            url: URL(string: "https://example.com/auth")!,
+            callbackURLScheme: "test",
+            completionHandler: { _, _ in }
+        )
+    }
+
+    override func cancel() {
+        cancelCalled = true
+        super.cancel()
     }
 }

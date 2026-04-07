@@ -36,6 +36,8 @@ struct FronteggPlist: Decodable, Equatable {
     let sentryMaxQueueSize: Int
     var loginOrganizationAlias: String? = nil
     let entitlementsEnabled: Bool
+    let dismissAuthSessionOnOffline: Bool
+    let offlineDebounceDelay: TimeInterval
 
     enum CodingKeys: CodingKey {
         case keychainService
@@ -61,6 +63,8 @@ struct FronteggPlist: Decodable, Equatable {
         case sentryMaxQueueSize
         case loginOrganizationAlias
         case entitlementsEnabled
+        case dismissAuthSessionOnOffline
+        case offlineDebounceDelay
     }
 
     init(
@@ -87,7 +91,9 @@ struct FronteggPlist: Decodable, Equatable {
         enableSentryLogging: Bool = true,
         sentryMaxQueueSize: Int = 30,
         loginOrganizationAlias: String? = nil,
-        entitlementsEnabled: Bool = false
+        entitlementsEnabled: Bool = false,
+        dismissAuthSessionOnOffline: Bool = false,
+        offlineDebounceDelay: TimeInterval = 2.0
     ) {
         self.keychainService = keychainService
         self.embeddedMode = embeddedMode
@@ -113,6 +119,8 @@ struct FronteggPlist: Decodable, Equatable {
         self.sentryMaxQueueSize = sentryMaxQueueSize
         self.loginOrganizationAlias = loginOrganizationAlias
         self.entitlementsEnabled = entitlementsEnabled
+        self.dismissAuthSessionOnOffline = dismissAuthSessionOnOffline
+        self.offlineDebounceDelay = offlineDebounceDelay
     }
 
     init(from decoder: any Decoder) throws {
@@ -186,6 +194,12 @@ struct FronteggPlist: Decodable, Equatable {
 
         let entitlementsEnabled = try container.decodeIfPresent(Bool.self, forKey: .entitlementsEnabled)
         self.entitlementsEnabled = entitlementsEnabled ?? false
+
+        let dismissAuthSessionOnOffline = try container.decodeIfPresent(Bool.self, forKey: .dismissAuthSessionOnOffline)
+        self.dismissAuthSessionOnOffline = dismissAuthSessionOnOffline ?? false
+
+        let offlineDebounceDelay = try container.decodeIfPresent(TimeInterval.self, forKey: .offlineDebounceDelay)
+        self.offlineDebounceDelay = offlineDebounceDelay ?? 2.0
 
         do {
             self.payload = try Payload(from: decoder)

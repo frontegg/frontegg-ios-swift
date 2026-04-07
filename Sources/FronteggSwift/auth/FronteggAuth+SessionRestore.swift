@@ -28,53 +28,52 @@ extension FronteggAuth {
         logger.info("application enter background")
     }
 
-    
-    func warmingWebViewAsync() {
-        DispatchQueue.main.async {
-            self.warmingWebView()
-        }
-    }
-    func warmingWebView() {
-        
-        self.setIsOfflineMode(false)
-        let cfg = WKWebViewConfiguration()
-        // use your shared processPool below
-        cfg.processPool = WebViewShared.processPool
-        // you can even use nonPersistent() if you don't need cookies
-        cfg.websiteDataStore = .default()
-        let wv = CustomWebView(frame: .zero, configuration: cfg)
-        // load a trivial blank page & eval a no-op JS
-        
-        wv.navigationDelegate = wv;
-        wv.uiDelegate = wv;
-        
-        let (url, _) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true, registerPendingFlow: false)
-        wv.load(URLRequest(url: url))
-        wv.evaluateJavaScript("void(0)", completionHandler: nil)
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            // Stop any in-flight work
-            wv.stopLoading()
-
-            // Drop delegates (they're weak, but do it anyway)
-            wv.navigationDelegate = nil
-            wv.uiDelegate = nil
-            wv.scrollView.delegate = nil
-            
-            // Clear scripts / message handlers if you added any
-            wv.configuration.userContentController.removeAllUserScripts()
-            if #available(iOS 14.0, *) {
-                wv.configuration.userContentController.removeAllScriptMessageHandlers()
-            }
-            
-            // Optionally load about:blank to flush page state (not strictly required)
-            wv.loadHTMLString("", baseURL: nil)
-            
-            // Detach from view hierarchy and release
-            wv.removeFromSuperview()
-        }
-    }
-    
+//     func warmingWebViewAsync() {
+//         DispatchQueue.main.async {
+//             self.warmingWebView()
+//         }
+//     }
+//     func warmingWebView() {
+//
+//         self.setIsOfflineMode(false)
+//         let cfg = WKWebViewConfiguration()
+//         // use your shared processPool below
+//         cfg.processPool = WebViewShared.processPool
+//         // you can even use nonPersistent() if you don't need cookies
+//         cfg.websiteDataStore = .default()
+//         let wv = CustomWebView(frame: .zero, configuration: cfg)
+//         // load a trivial blank page & eval a no-op JS
+//
+//         wv.navigationDelegate = wv;
+//         wv.uiDelegate = wv;
+//
+//         let (url, _) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true, registerPendingFlow: false)
+//         wv.load(URLRequest(url: url))
+//         wv.evaluateJavaScript("void(0)", completionHandler: nil)
+//
+//         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+//             // Stop any in-flight work
+//             wv.stopLoading()
+//
+//             // Drop delegates (they're weak, but do it anyway)
+//             wv.navigationDelegate = nil
+//             wv.uiDelegate = nil
+//             wv.scrollView.delegate = nil
+//
+//             // Clear scripts / message handlers if you added any
+//             wv.configuration.userContentController.removeAllUserScripts()
+//             if #available(iOS 14.0, *) {
+//                 wv.configuration.userContentController.removeAllScriptMessageHandlers()
+//             }
+//
+//             // Optionally load about:blank to flush page state (not strictly required)
+//             wv.loadHTMLString("", baseURL: nil)
+//
+//             // Detach from view hierarchy and release
+//             wv.removeFromSuperview()
+//         }
+//     }
+//
     // MARK: Connectivity — see FronteggAuth+Connectivity.swift
 
     func completeAuthenticatedStartupSessionRestore(

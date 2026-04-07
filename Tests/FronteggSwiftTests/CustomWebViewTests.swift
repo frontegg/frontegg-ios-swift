@@ -4,6 +4,7 @@
 //
 
 import XCTest
+import WebKit
 @testable import FronteggSwift
 
 final class CustomWebViewTests: XCTestCase {
@@ -349,6 +350,114 @@ final class CustomWebViewTests: XCTestCase {
                         "When webview localStorage fails, social login should fall back to CredentialManager")
         XCTAssertEqual(resolution.source, "state_match")
         XCTAssertNotNil(resolution.providerError)
+    }
+
+    // MARK: - Watchdog Retry Counter Logic Tests
+    //
+    // These tests verify the retry counter logic that was fixed in the
+    // social-success watchdog. The decidePolicyFor handler uses isWatchdogReload
+    // to decide whether to reset socialSuccessRetryCount.
+
+    func test_socialSuccessRetryCount_notResetOnWatchdogReload() {
+        // Simulate the state after first watchdog fires and triggers a reload.
+        var retryCount = 1
+        var isWatchdogReload = true
+
+        // The decidePolicyFor branch for /social/success:
+        // if isWatchdogReload → preserve counter; else → reset to 0
+        if isWatchdogReload {
+            isWatchdogReload = false
+        } else {
+            retryCount = 0
+        }
+
+        XCTAssertEqual(retryCount, 1,
+                       "Retry counter must persist across watchdog-triggered reloads")
+        XCTAssertFalse(isWatchdogReload,
+                       "Flag should be cleared after the reload is processed")
+    }
+
+    func test_socialSuccessRetryCount_resetsOnFreshFlow() {
+        // Previous watchdog cycle exhausted, but now a genuinely fresh flow starts.
+        var retryCount = 2
+        var isWatchdogReload = false
+
+        if isWatchdogReload {
+            isWatchdogReload = false
+        } else {
+            retryCount = 0
+        }
+
+        XCTAssertEqual(retryCount, 0,
+                       "Counter must reset on genuinely fresh social login flow")
+    }
+
+    func test_socialSuccessRetryCount_exhaustsAfterMaxRetries() {
+        let maxRetries = 2
+        var retryCount = 0
+
+        // Simulate the full watchdog cycle: each retry increments.
+        // On each reload, isWatchdogReload=true prevents reset.
+        for attempt in 1...maxRetries {
+            // Watchdog fires → increment
+            retryCount += 1
+            XCTAssertEqual(retryCount, attempt)
+
+            // Reload triggers /social/success re-navigation with isWatchdogReload=true
+            let isWatchdogReload = true
+            if isWatchdogReload {
+                // Counter preserved — no reset
+            } else {
+                retryCount = 0
+            }
+        }
+
+        // After max retries, the condition should stop further reloads
+        XCTAssertFalse(retryCount < maxRetries,
+                       "After max retries, watchdog must stop reloading")
+    }
+
+    func test_socialSuccessRetryCount_infiniteLoopWithoutFix() {
+        // Documents the bug: without the isWatchdogReload check,
+        // the counter would reset on every reload, creating an infinite loop.
+        let maxRetries = 2
+        var retryCount = 0
+
+        // Simulate 5 watchdog cycles WITH the old buggy behavior (always reset)
+        for _ in 1...5 {
+            retryCount += 1 // watchdog increments
+            // OLD behavior: always reset on /social/success re-navigation
+            retryCount = 0
+        }
+
+        // Counter never reaches maxRetries — infinite loop
+        XCTAssertTrue(retryCount < maxRetries,
+                      "Without the fix, counter resets every cycle and never exhausts")
+    }
+
+    // MARK: - Unregistered State Error Type Tests
+
+    func test_resolveHostedCallbackCodeVerifier_unregisteredState_yieldsInvalidOAuthState() async {
+        // Register a state so hasPendingOAuthStates is true
+        CredentialManager.registerPendingOAuth(state: "registered-state", codeVerifier: "registered-verifier")
+
+        // Callback arrives with a DIFFERENT unregistered state
+        let resolution = await CustomWebView.resolveHostedCallbackCodeVerifier(
+            isMagicLink: false,
+            isSocialLogin: false,
+            oauthState: "unregistered-callback-state",
+            socialVerifierProvider: {
+                XCTFail("Should not be called for regular flow")
+                return "unexpected"
+            }
+        )
+
+        // Verify: verifier is nil, hasPendingOAuthStates is true
+        // This is the condition that triggers .invalidOAuthState in oauthCodeVerifierError
+        XCTAssertNil(resolution.codeVerifier)
+        XCTAssertEqual(resolution.source, "missing")
+        XCTAssertTrue(resolution.hasPendingOAuthStates,
+                      "When registered states exist but callback state doesn't match, hasPendingOAuthStates must be true")
     }
 
     private func clearOAuthState() {

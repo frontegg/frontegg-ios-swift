@@ -445,6 +445,8 @@ This section documents all available configuration keys in `Frontegg.plist`.
 |-----|------|---------|-------------|
 | `enableOfflineMode` | Boolean | `false` | Enable offline mode - keep user logged in when network is unavailable |
 | `networkMonitoringInterval` | Number | `10` | Interval (in seconds) for network status monitoring when offline mode is enabled |
+| `offlineDebounceDelay` | Number | `2.0` | Delay (in seconds) before the SDK commits to offline mode after connectivity loss. Higher values prevent flicker during brief connectivity gaps (e.g. WiFi to cellular handoff). |
+| `dismissAuthSessionOnOffline` | Boolean | `false` | When `true`, the SDK cancels any active Safari authentication sheet (ASWebAuthenticationSession) when the device goes offline. Enable this if your app shows a custom offline UI that would otherwise be hidden behind the auth sheet. Defaults to `false` to avoid dismissing the sheet during brief connectivity gaps. |
 
 ### Offline Mode Usage
 
@@ -568,6 +570,10 @@ Instead of `baseUrl` and `clientId`, you can use a `regions` array for multi-reg
   <true/>
   <key>networkMonitoringInterval</key>
   <real>10</real>
+  <key>offlineDebounceDelay</key>
+  <real>2.0</real>
+  <key>dismissAuthSessionOnOffline</key>
+  <false/>
   
   <!-- Optional: Logging -->
   <key>logLevel</key>

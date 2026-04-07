@@ -193,8 +193,125 @@ final class CredentialManagerTests: XCTestCase {
         XCTAssertNil(CredentialManager.getCodeVerifier(for: "state-clear"))
     }
     
+    // MARK: - PKCE Race Condition Regression Tests
+    //
+    // These tests verify the NSLock fix for the registerPendingOAuth race condition.
+    // Bug: Two concurrent registerPendingOAuth calls could overwrite each other's
+    // state entries in the UserDefaults dictionary because the read-modify-write
+    // was not atomic. This caused "Invalid or stale OAuth state" on first login.
+
+    func test_registerPendingOAuth_twoSequentialStates_bothResolvable() {
+        // Simulates dual makeUIView: two PKCE pairs generated sequentially.
+        // Both states must be resolvable after registration.
+        CredentialManager.registerPendingOAuth(state: "state-A", codeVerifier: "verifier-A")
+        CredentialManager.registerPendingOAuth(state: "state-B", codeVerifier: "verifier-B")
+
+        let resA = CredentialManager.resolveCodeVerifier(for: "state-A", allowFallback: false)
+        let resB = CredentialManager.resolveCodeVerifier(for: "state-B", allowFallback: false)
+
+        XCTAssertEqual(resA.verifier, "verifier-A", "First registered state must be resolvable")
+        XCTAssertEqual(resA.source, .stateMatch)
+        XCTAssertEqual(resB.verifier, "verifier-B", "Second registered state must be resolvable")
+        XCTAssertEqual(resB.source, .stateMatch)
+    }
+
+    func test_registerPendingOAuth_concurrentCalls_allStatesPreserved() {
+        // Stress test: multiple concurrent registerPendingOAuth calls from different
+        // threads must not lose any state entries thanks to the NSLock.
+        let iterations = 50
+        let expectation = XCTestExpectation(description: "All concurrent registrations complete")
+        expectation.expectedFulfillmentCount = iterations
+
+        let states = (0..<iterations).map { "state-\($0)" }
+        let verifiers = (0..<iterations).map { "verifier-\($0)" }
+
+        let queue = DispatchQueue(label: "pkce-race-test", attributes: .concurrent)
+        for i in 0..<iterations {
+            queue.async {
+                CredentialManager.registerPendingOAuth(state: states[i], codeVerifier: verifiers[i])
+                expectation.fulfill()
+            }
+        }
+
+        wait(for: [expectation], timeout: 10)
+
+        // All states must be resolvable
+        for i in 0..<iterations {
+            let resolution = CredentialManager.resolveCodeVerifier(for: states[i], allowFallback: false)
+            XCTAssertEqual(resolution.verifier, verifiers[i],
+                           "State \(states[i]) must be resolvable after concurrent registration")
+            XCTAssertEqual(resolution.source, .stateMatch)
+        }
+    }
+
+    func test_registerPendingOAuth_concurrentRegisterAndResolve_noDataLoss() {
+        // Register two states, then concurrently resolve both while registering a third.
+        // All three must be resolvable.
+        CredentialManager.registerPendingOAuth(state: "state-1", codeVerifier: "verifier-1")
+        CredentialManager.registerPendingOAuth(state: "state-2", codeVerifier: "verifier-2")
+
+        let expectation = XCTestExpectation(description: "Concurrent resolve and register")
+        expectation.expectedFulfillmentCount = 3
+
+        var res1: CredentialManager.CodeVerifierResolution?
+        var res2: CredentialManager.CodeVerifierResolution?
+
+        let queue = DispatchQueue(label: "pkce-resolve-test", attributes: .concurrent)
+        queue.async {
+            res1 = CredentialManager.resolveCodeVerifier(for: "state-1", allowFallback: false)
+            expectation.fulfill()
+        }
+        queue.async {
+            res2 = CredentialManager.resolveCodeVerifier(for: "state-2", allowFallback: false)
+            expectation.fulfill()
+        }
+        queue.async {
+            CredentialManager.registerPendingOAuth(state: "state-3", codeVerifier: "verifier-3")
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 5)
+
+        XCTAssertEqual(res1?.verifier, "verifier-1")
+        XCTAssertEqual(res2?.verifier, "verifier-2")
+
+        let res3 = CredentialManager.resolveCodeVerifier(for: "state-3", allowFallback: false)
+        XCTAssertEqual(res3.verifier, "verifier-3")
+    }
+
+    func test_clearPendingOAuth_duringConcurrentRegister_doesNotCorruptDict() {
+        // Register, then concurrently clear one state while registering another.
+        CredentialManager.registerPendingOAuth(state: "state-keep", codeVerifier: "verifier-keep")
+        CredentialManager.registerPendingOAuth(state: "state-remove", codeVerifier: "verifier-remove")
+
+        let expectation = XCTestExpectation(description: "Concurrent clear and register")
+        expectation.expectedFulfillmentCount = 2
+
+        let queue = DispatchQueue(label: "pkce-clear-test", attributes: .concurrent)
+        queue.async {
+            CredentialManager.clearPendingOAuth(state: "state-remove")
+            expectation.fulfill()
+        }
+        queue.async {
+            CredentialManager.registerPendingOAuth(state: "state-new", codeVerifier: "verifier-new")
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 5)
+
+        // state-remove should be gone, state-keep and state-new should exist
+        let resRemoved = CredentialManager.resolveCodeVerifier(for: "state-remove", allowFallback: false)
+        XCTAssertNil(resRemoved.verifier, "Cleared state must not be resolvable")
+
+        let resKept = CredentialManager.resolveCodeVerifier(for: "state-keep", allowFallback: false)
+        XCTAssertEqual(resKept.verifier, "verifier-keep", "Uncleared state must survive concurrent clear")
+
+        let resNew = CredentialManager.resolveCodeVerifier(for: "state-new", allowFallback: false)
+        XCTAssertEqual(resNew.verifier, "verifier-new", "Newly registered state must survive concurrent clear")
+    }
+
     // MARK: - Selected Region Tests (UserDefaults-based)
-    
+
     func test_saveSelectedRegion_savesValue() {
         CredentialManager.saveSelectedRegion("us-east-1")
         
