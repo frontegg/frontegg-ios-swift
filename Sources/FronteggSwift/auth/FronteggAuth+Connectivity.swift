@@ -512,9 +512,8 @@ extension FronteggAuth {
 
     public func recheckConnection() {
 
-        DispatchQueue.global(qos: .userInitiated).async {
-
-            Task {
+            Task { [weak self] in
+                guard let self = self else { return }
                 if self.isOfflineMode {
                     let networkAvailable = await NetworkStatusMonitor.probeConfiguredReachability(
                         timeout: self.unauthenticatedStartupProbeTimeout
@@ -559,6 +558,5 @@ extension FronteggAuth {
                 self.logger.info("Network is back, refreshing...")
                 _ = await self.refreshTokenIfNeeded()
             }
-        }
     }
 }
