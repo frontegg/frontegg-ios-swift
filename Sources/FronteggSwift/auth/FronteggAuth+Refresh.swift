@@ -7,6 +7,11 @@ import Foundation
 import Dispatch
 
 extension FronteggAuth {
+    func isAutoRefreshBlocked(source: RefreshInvocationSource) -> Bool {
+        let disableAutoRefresh = (try? PlistHelper.fronteggConfig())?.disableAutoRefresh ?? false
+        return disableAutoRefresh && source == .internalAuto
+    }
+
 
     func calculateOffset(expirationTime: Int) -> TimeInterval {
         let now = Date().timeIntervalSince1970 * 1000 // Current time in milliseconds
@@ -19,6 +24,10 @@ extension FronteggAuth {
     }
 
     func refreshTokenWhenNeeded() {
+        if isAutoRefreshBlocked(source: .internalAuto) {
+            logger.info("Skipping auto refresh (disableAutoRefresh=true)")
+            return
+        }
         do {
             logger.info("Checking if refresh token is available...")
 
@@ -80,7 +89,7 @@ extension FronteggAuth {
             guard let accessToken = self.accessToken else {
                 logger.debug("No access token found. Attempting to refresh token...")
                 Task {
-                    await self.refreshTokenIfNeeded()
+                    await self.refreshTokenIfNeededInternal(source: .internalAuto)
                 }
                 return
             }
@@ -92,7 +101,7 @@ extension FronteggAuth {
             guard let expirationTime = decode["exp"] as? Int else {
                 logger.warning("JWT missing exp claim in refreshTokenWhenNeeded. Refreshing immediately.")
                 Task {
-                    await self.refreshTokenIfNeeded()
+                    await self.refreshTokenIfNeededInternal(source: .internalAuto)
                 }
                 return
             }
@@ -105,23 +114,33 @@ extension FronteggAuth {
             if offset == 0 {
                 logger.info("Offset is zero. Refreshing token immediately...")
                 Task {
-                    await self.refreshTokenIfNeeded()
+                    await self.refreshTokenIfNeededInternal(source: .internalAuto)
                 }
             } else {
                 logger.info("Scheduling token refresh after \(offset) seconds")
-                self.scheduleTokenRefresh(offset: offset)
+                self.scheduleTokenRefresh(offset: offset, source: .internalAuto)
             }
         } catch {
             logger.error("Failed to decode JWT: \(error.localizedDescription)")
             Task {
-                await self.refreshTokenIfNeeded()
+                await self.refreshTokenIfNeededInternal(source: .internalAuto)
             }
         }
     }
 
 
 
-    func scheduleTokenRefresh(offset: TimeInterval, attempts: Int = 0, skipNetworkCheck: Bool = false) {
+    func scheduleTokenRefresh(
+        offset: TimeInterval,
+        attempts: Int = 0,
+        skipNetworkCheck: Bool = false,
+        source: RefreshInvocationSource = .internalAuto
+    ) {
+        if isAutoRefreshBlocked(source: source) {
+            logger.info("Skipping auto refresh scheduling (disableAutoRefresh=true)")
+            cancelScheduledTokenRefresh()
+            return
+        }
         cancelScheduledTokenRefresh()
         logger.info("Schedule token refresh after, (\(offset) s) (attempt: \(attempts))")
 
@@ -136,11 +155,16 @@ extension FronteggAuth {
                     self.scheduleTokenRefresh(
                         offset: self.scheduledRefreshDeferredRetryDelay,
                         attempts: attempts,
-                        skipNetworkCheck: skipNetworkCheck
+                        skipNetworkCheck: skipNetworkCheck,
+                        source: source
                     )
                     return
                 }
-                await self.refreshTokenIfNeeded(attempts: attempts, skipNetworkCheck: skipNetworkCheck)
+                await self.refreshTokenIfNeededInternal(
+                    source: source,
+                    attempts: attempts,
+                    skipNetworkCheck: skipNetworkCheck
+                )
             }
         }
         refreshTokenDispatch = workItem
@@ -157,6 +181,22 @@ extension FronteggAuth {
     }
 
     public func refreshTokenIfNeeded(attempts: Int = 0, skipNetworkCheck: Bool = false) async -> Bool {
+        await refreshTokenIfNeededInternal(
+            source: .manualUser,
+            attempts: attempts,
+            skipNetworkCheck: skipNetworkCheck
+        )
+    }
+
+    internal func refreshTokenIfNeededInternal(
+        source: RefreshInvocationSource,
+        attempts: Int = 0,
+        skipNetworkCheck: Bool = false
+    ) async -> Bool {
+        if isAutoRefreshBlocked(source: source) {
+            logger.info("Skipping auto refresh (disableAutoRefresh=true)")
+            return false
+        }
         let config = try? PlistHelper.fronteggConfig()
         let enableOfflineMode = config?.enableOfflineMode ?? false
         let enableSessionPerTenant = config?.enableSessionPerTenant ?? false
@@ -249,7 +289,8 @@ extension FronteggAuth {
                 await handleOfflineLikeFailure(
                     error: nil,
                     enableOfflineMode: enableOfflineMode,
-                    attempts: attempts
+                    attempts: attempts,
+                    source: source
                 )
                 return false
             }
@@ -260,7 +301,8 @@ extension FronteggAuth {
                 await handleOfflineLikeFailure(
                     error: nil,
                     enableOfflineMode: enableOfflineMode,
-                    attempts: attempts
+                    attempts: attempts,
+                    source: source
                 )
                 return false
             }
@@ -511,7 +553,8 @@ extension FronteggAuth {
                 error: error,
                 enableOfflineMode: enableOfflineMode,
                 attempts: effectiveAttempts,
-                skipNetworkCheck: skipNetworkCheck
+                skipNetworkCheck: skipNetworkCheck,
+                source: source
             )
             return false
 
@@ -520,7 +563,8 @@ extension FronteggAuth {
                 error: error,
                 enableOfflineMode: enableOfflineMode,
                 attempts: effectiveAttempts,
-                skipNetworkCheck: skipNetworkCheck
+                skipNetworkCheck: skipNetworkCheck,
+                source: source
             )
             return false
         }

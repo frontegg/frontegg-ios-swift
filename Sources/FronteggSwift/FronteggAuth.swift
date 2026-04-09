@@ -16,6 +16,11 @@ import Network
 
 
 public class FronteggAuth: FronteggState {
+
+    enum RefreshInvocationSource {
+        case manualUser
+        case internalAuto
+    }
     
 #if DEBUG
     static var testNetworkPathAvailabilityOverride: Bool? = nil

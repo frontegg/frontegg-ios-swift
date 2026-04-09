@@ -299,6 +299,7 @@ public class FronteggApp {
                 cookieRegex: config.cookieRegex,
                 deleteCookieForHostOnly: config.deleteCookieForHostOnly,
                 enableOfflineMode: enabled,
+                disableAutoRefresh: config.disableAutoRefresh,
                 useLegacySocialLoginFlow: config.useLegacySocialLoginFlow,
                 enableSessionPerTenant: config.enableSessionPerTenant,
                 networkMonitoringInterval: config.networkMonitoringInterval,

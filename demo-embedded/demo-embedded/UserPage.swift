@@ -68,6 +68,8 @@ struct UserPage: View {
                     sensitiveActionButton
                     Spacer().frame(height: 12)
                     getAccessTokenButton
+                    Spacer().frame(height: 12)
+                    getLocalAccessTokenButton
                     Spacer().frame(height: 16)
                     entitlementsSection
                     Spacer().frame(height: 24)
@@ -105,6 +107,20 @@ struct UserPage: View {
         .buttonStyle(PrimaryButtonStyle())
         .padding(.horizontal, 8)
         .accessibilityIdentifier("GetCurrentAccessTokenButton")
+    }
+
+    private var getLocalAccessTokenButton: some View {
+        Button("Get Local Access Token") {
+            if let token = fronteggAuth.accessToken, token.isEmpty == false {
+                UIPasteboard.general.string = token
+                showMessage("Local access token copied to clipboard", isSuccess: true)
+            } else {
+                showMessage("No local access token available", isSuccess: false)
+            }
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .padding(.horizontal, 8)
+        .accessibilityIdentifier("GetLocalAccessTokenButton")
     }
 
     private var entitlementsSection: some View {

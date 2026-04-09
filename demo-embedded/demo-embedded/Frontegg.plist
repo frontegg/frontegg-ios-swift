@@ -10,6 +10,8 @@
 	<true/>
 	<key>enableOfflineMode</key>
 	<true/>
+	<key>disableAutoRefresh</key>
+	<false/>
 	<key>entitlementsEnabled</key>
 	<true/>
 	<key>logLevel</key>

@@ -29,6 +29,7 @@ struct FronteggPlist: Decodable, Equatable {
     var cookieRegex: String? = nil
     let deleteCookieForHostOnly: Bool
     let enableOfflineMode: Bool
+    let disableAutoRefresh: Bool
     let useLegacySocialLoginFlow: Bool
     let enableSessionPerTenant: Bool
     var networkMonitoringInterval: TimeInterval
@@ -54,6 +55,7 @@ struct FronteggPlist: Decodable, Equatable {
         case cookieRegex
         case deleteCookieForHostOnly
         case enableOfflineMode
+        case disableAutoRefresh
         case useLegacySocialLoginFlow
         case enableSessionPerTenant
         case networkMonitoringInterval
@@ -81,6 +83,7 @@ struct FronteggPlist: Decodable, Equatable {
         cookieRegex: String? = nil,
         deleteCookieForHostOnly: Bool = true,
         enableOfflineMode: Bool = false,
+        disableAutoRefresh: Bool = false,
         useLegacySocialLoginFlow: Bool = false,
         enableSessionPerTenant: Bool = false,
         networkMonitoringInterval: TimeInterval = 10,
@@ -106,6 +109,7 @@ struct FronteggPlist: Decodable, Equatable {
         self.cookieRegex = cookieRegex
         self.deleteCookieForHostOnly = deleteCookieForHostOnly
         self.enableOfflineMode = enableOfflineMode
+        self.disableAutoRefresh = disableAutoRefresh
         self.useLegacySocialLoginFlow = useLegacySocialLoginFlow
         self.enableSessionPerTenant = enableSessionPerTenant
         self.networkMonitoringInterval = networkMonitoringInterval
@@ -165,6 +169,9 @@ struct FronteggPlist: Decodable, Equatable {
         
         let enableOfflineMode = try container.decodeIfPresent(Bool.self, forKey: .enableOfflineMode)
         self.enableOfflineMode = enableOfflineMode ?? false
+
+        let disableAutoRefresh = try container.decodeIfPresent(Bool.self, forKey: .disableAutoRefresh)
+        self.disableAutoRefresh = disableAutoRefresh ?? false
         
         let useLegacySocialLoginFlow = try container.decodeIfPresent(Bool.self, forKey: .useLegacySocialLoginFlow)
         self.useLegacySocialLoginFlow = useLegacySocialLoginFlow ?? false
