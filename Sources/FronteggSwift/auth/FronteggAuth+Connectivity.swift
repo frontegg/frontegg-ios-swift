@@ -20,7 +20,6 @@ extension FronteggAuth {
         await self.featureFlags.start()
         SentryHelper.setSentryEnabledFromFeatureFlag(self.featureFlags.isOn(FeatureFlags.mobileEnableLoggingKey))
         await SocialLoginUrlGenerator.shared.reloadConfigs()
-        self.warmingWebViewAsync()
     }
 
     @discardableResult
@@ -98,16 +97,27 @@ extension FronteggAuth {
         self.logger.info("Disconnected from the internet (debounced)")
         // Debounce setting offline to avoid brief flicker on quick reconnects
         cancelPendingOfflineDebounce()
+        let config = try? PlistHelper.fronteggConfig()
+        let debounce = config?.offlineDebounceDelay ?? offlineDebounceDelay
         let generation = expectedGeneration ?? connectivityGenerationLock.withLock { connectivityGeneration }
         let work = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
             guard self.isConnectivityGenerationCurrent(generation) else { return }
+            // Optionally cancel any active ASWebAuthenticationSession so the app's
+            // offline UI is not obscured by a stale Safari auth sheet.
+            // Gated behind plist flag (default OFF) to avoid false positives during
+            // brief connectivity gaps (e.g. WiFi→cellular handoff).
+            if config?.dismissAuthSessionOnOffline == true,
+               let activeSession = WebAuthenticator.shared.session {
+                activeSession.cancel()
+                WebAuthenticator.shared.session = nil
+            }
             // Only set offline if still disconnected (best effort via lastAttemptReason or state)
             // We rely on reconnectedToInternet() to cancel this when path is back.
             self.setIsOfflineMode(true)
         }
         offlineDebounceWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + offlineDebounceDelay, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + debounce, execute: work)
     }
 
     @discardableResult
@@ -502,9 +512,8 @@ extension FronteggAuth {
 
     public func recheckConnection() {
 
-        DispatchQueue.global(qos: .userInitiated).async {
-
-            Task {
+            Task { [weak self] in
+                guard let self = self else { return }
                 if self.isOfflineMode {
                     let networkAvailable = await NetworkStatusMonitor.probeConfiguredReachability(
                         timeout: self.unauthenticatedStartupProbeTimeout
@@ -549,6 +558,5 @@ extension FronteggAuth {
                 self.logger.info("Network is back, refreshing...")
                 _ = await self.refreshTokenIfNeeded()
             }
-        }
     }
 }

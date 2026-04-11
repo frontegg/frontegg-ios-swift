@@ -210,6 +210,12 @@ public class CredentialManager {
         let hasPendingOAuthStates: Bool
     }
 
+    /// Serial lock protecting all read-modify-write operations on the
+    /// `fe_oauthStateVerifiers` UserDefaults dictionary. Without this,
+    /// concurrent `registerPendingOAuth` calls (e.g. from two `makeUIView`
+    /// invocations) can overwrite each other's state entries.
+    private static let oauthStateLock = NSLock()
+
     private static func getPendingOAuthStateVerifiers() -> [String: String] {
         UserDefaults.standard.dictionary(forKey: KeychainKeys.oauthStateVerifiers.rawValue) as? [String: String] ?? [:]
     }
@@ -233,6 +239,8 @@ public class CredentialManager {
     }
 
     static func registerPendingOAuth(state: String, codeVerifier: String) {
+        oauthStateLock.lock()
+        defer { oauthStateLock.unlock() }
         var verifiers = getPendingOAuthStateVerifiers()
         verifiers[state] = codeVerifier
         savePendingOAuthStateVerifiers(verifiers)
@@ -240,10 +248,14 @@ public class CredentialManager {
     }
 
     static func hasPendingOAuthStates() -> Bool {
-        !getPendingOAuthStateVerifiers().isEmpty
+        oauthStateLock.lock()
+        defer { oauthStateLock.unlock() }
+        return !getPendingOAuthStateVerifiers().isEmpty
     }
 
     static func resolveCodeVerifier(for state: String?, allowFallback: Bool = true) -> CodeVerifierResolution {
+        oauthStateLock.lock()
+        defer { oauthStateLock.unlock() }
         let normalizedState = state?.isEmpty == false ? state : nil
         let verifiers = getPendingOAuthStateVerifiers()
 
@@ -279,6 +291,8 @@ public class CredentialManager {
     }
 
     static func consumeCodeVerifier(for state: String?) -> String? {
+        oauthStateLock.lock()
+        defer { oauthStateLock.unlock() }
         guard let state, !state.isEmpty else {
             return getCodeVerifier()
         }
@@ -293,8 +307,10 @@ public class CredentialManager {
     }
 
     static func clearPendingOAuth(state: String?) {
+        oauthStateLock.lock()
+        defer { oauthStateLock.unlock() }
         guard let state, !state.isEmpty else {
-            clearPendingOAuthStates()
+            clearPendingOAuthStatesUnsafe()
             return
         }
 
@@ -304,6 +320,12 @@ public class CredentialManager {
     }
 
     static func clearPendingOAuthStates() {
+        oauthStateLock.lock()
+        defer { oauthStateLock.unlock() }
+        clearPendingOAuthStatesUnsafe()
+    }
+
+    private static func clearPendingOAuthStatesUnsafe() {
         UserDefaults.standard.removeObject(forKey: KeychainKeys.oauthStateVerifiers.rawValue)
     }
 

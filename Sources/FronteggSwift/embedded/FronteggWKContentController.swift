@@ -164,10 +164,10 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
             }
         case "suggestSavePassword":
             guard let data = try? JSONSerialization.jsonObject(with: Data(message.payload.utf8), options: []) as? [String: String],
-                  let email = data["email"],
+                  let email = data["email"] ?? data["username"],
                   let password = data["password"] else {
-                self.logger.error("Invalid payload for loginWithPassword")
-                
+                self.logger.error("Invalid payload for suggestSavePassword: expected JSON with \"email\" (or \"username\") and \"password\" string fields")
+
                 return
             }
             
