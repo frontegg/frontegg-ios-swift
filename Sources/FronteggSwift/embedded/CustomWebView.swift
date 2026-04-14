@@ -44,7 +44,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         return currentFlow == .login ? fallback : currentFlow
     }
 
-    private func reloadFreshLoginPage(after delay: TimeInterval = 0) {
+    func reloadFreshLoginPage(after delay: TimeInterval = 0) {
         cancelSocialSuccessWatchdog()
         let (loginUrl, codeVerifier) = AuthorizeUrlGenerator().generate(remainCodeVerifier: true)
         CredentialManager.saveCodeVerifier(codeVerifier)
