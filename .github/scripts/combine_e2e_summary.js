@@ -13,6 +13,7 @@ const APP_CONFIGS = {
   embedded: { testClass: "DemoEmbeddedE2ETests", catalog: "demo-embedded/demo-embedded-e2e/scenario-catalog.json", label: "Demo Embedded" },
   "multi-region": { testClass: "MultiRegionE2ETests", catalog: "demo-multi-region/demo-multi-region-e2e/scenario-catalog.json", label: "Demo Multi-Region" },
   uikit: { testClass: "UIKitE2ETests", catalog: "demo-uikit/demo-uikit-e2e/scenario-catalog.json", label: "Demo UIKit" },
+  "auto-login": { testClass: "AutoLoginE2ETests", catalog: "demo-auto-login/demo-auto-login-e2e/scenario-catalog.json", label: "Demo Auto-Login" },
 };
 
 const ANSI = /\x1b\[[0-9;]*m/g;
@@ -351,7 +352,7 @@ function renderUnitTestSection(classes) {
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   const artifactsDir = opts["artifacts-dir"];
-  const appsInput = opts["apps"] || "embedded,multi-region,uikit";
+  const appsInput = opts["apps"] || "embedded,multi-region,uikit,auto-login";
   const apps = appsInput.split(",").map(s => s.trim()).filter(s => APP_CONFIGS[s]);
   const includeUnitTests = opts["include-unit-tests"] === "true";
 

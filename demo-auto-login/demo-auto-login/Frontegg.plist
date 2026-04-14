@@ -11,13 +11,13 @@
 	<key>enableOfflineMode</key>
 	<true/>
 	<key>offlineDebounceDelay</key>
-	<real>0.6</real>
+	<real>2.0</real>
 	<key>entitlementsEnabled</key>
 	<true/>
 	<key>logLevel</key>
 	<string>trace</string>
 	<key>shouldSuggestSavePassword</key>
-	<false/>
+	<true/>
 	<key>useAsWebAuthenticationForAppleLogin</key>
 	<true/>
 </dict>

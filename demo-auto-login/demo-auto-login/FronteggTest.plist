@@ -15,7 +15,7 @@
 	<key>handleLoginWithSocialProvider</key>
 	<true/>
 	<key>keychainService</key>
-	<string>frontegg-demo-embedded-e2e</string>
+	<string>frontegg-demo-auto-login-e2e</string>
 	<key>lateInit</key>
 	<true/>
 	<key>loginWithCustomSSO</key>
@@ -28,9 +28,7 @@
 	<string>trace</string>
 	<key>networkMonitoringInterval</key>
 	<real>1</real>
-	<key>offlineDebounceDelay</key>
-	<real>0.6</real>
 	<key>shouldSuggestSavePassword</key>
-	<false/>
+	<true/>
 </dict>
 </plist>

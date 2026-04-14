@@ -224,7 +224,7 @@ public class FronteggApp {
                 self.baseUrl = config.baseUrl
                 self.clientId = config.clientId
                 self.applicationId = config.applicationId
-                self.auth.reinitWithRegion(config: config)
+                self.auth.reinitWithRegion(config: config, entitlementsEnabled: self.entitlementsEnabled)
 
                 SentryHelper.setBaseUrl(self.baseUrl)
                 SentryHelper.setClientId(self.clientId)
@@ -383,7 +383,7 @@ public class FronteggApp {
         self.baseUrl = config.baseUrl
         self.clientId = config.clientId
         self.applicationId = config.applicationId
-        self.auth.reinitWithRegion(config: config)
+        self.auth.reinitWithRegion(config: config, entitlementsEnabled: self.entitlementsEnabled)
 
         SentryHelper.setBaseUrl(self.baseUrl)
         SentryHelper.setClientId(self.clientId)

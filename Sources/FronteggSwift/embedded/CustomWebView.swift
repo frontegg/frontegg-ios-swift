@@ -27,8 +27,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     private var isSocialLoginFlow: Bool = false
     private var socialSuccessWatchdogWorkItem: DispatchWorkItem? = nil
     private let socialSuccessWatchdogDelay: TimeInterval = 5.0
-    private var socialSuccessRetryCount: Int = 0
-    private let socialSuccessMaxRetries: Int = 2
+    internal var socialSuccessRetryCount: Int = 0
+    internal let socialSuccessMaxRetries: Int = 2
+    internal var isWatchdogReload: Bool = false
 
     func setActiveOAuthFlow(_ flow: FronteggOAuthFlow) {
         fronteggAuth.activeEmbeddedOAuthFlow = flow
@@ -77,6 +78,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         socialSuccessWatchdogWorkItem?.cancel()
         socialSuccessWatchdogWorkItem = nil
         socialSuccessRetryCount = 0
+        isWatchdogReload = false
     }
 
     private func scheduleSocialSuccessWatchdog(for webView: WKWebView, url: URL) {
@@ -106,10 +108,11 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     "Social login success page stalled (attempt \(self.socialSuccessRetryCount)/\(self.socialSuccessMaxRetries)), reloading to retry server-side exchange"
                 )
                 DispatchQueue.main.async { [weak self, weak webView] in
-                    guard let webView = webView else { return }
+                    guard let self = self, let webView = webView else { return }
+                    self.isWatchdogReload = true
                     webView.reload()
                     // Re-schedule watchdog for the reload
-                    self?.scheduleSocialSuccessWatchdog(for: webView, url: url)
+                    self.scheduleSocialSuccessWatchdog(for: webView, url: url)
                 }
             } else {
                 self.logger.warning(
@@ -655,7 +658,14 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                         } else {
                             logger.info("🔵 [Social Login Debug] /social/success detected as intermediate page (Google case, previousUrl was HTTPS/nil) - allowing normal navigation")
                             isSocialLoginFlow = true
-                            socialSuccessRetryCount = 0  // Fresh flow — reset before scheduling
+                            if isWatchdogReload {
+                                // Watchdog-triggered reload — preserve the retry counter so
+                                // the watchdog can reach maxRetries and stop.
+                                isWatchdogReload = false
+                            } else {
+                                // Genuinely fresh social login flow — reset counter.
+                                socialSuccessRetryCount = 0
+                            }
                             scheduleSocialSuccessWatchdog(for: webView, url: url)
                             return .allow
                         }
@@ -1474,6 +1484,19 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     let fronteggError = self.oauthCodeVerifierError(
                         oauthState: oauthState,
                         hasPendingOAuthStates: verifierResolution.hasPendingOAuthStates
+                    )
+                    self.logger.warning("⚠️ Hosted callback arrived for unregistered state (state: \(oauthState ?? "nil"), hasPendingStates: \(verifierResolution.hasPendingOAuthStates), source: \(codeVerifierSource))")
+                    SentryHelper.addBreadcrumb(
+                        "Hosted callback code_verifier missing",
+                        category: "oauth_callback",
+                        level: .warning,
+                        data: [
+                            "oauthState": oauthState ?? "nil",
+                            "hasPendingOAuthStates": String(verifierResolution.hasPendingOAuthStates),
+                            "codeVerifierSource": codeVerifierSource,
+                            "isSocialLogin": String(isSocialLogin),
+                            "redirectUri": redirectUri
+                        ]
                     )
                     self.fronteggAuth.reportOAuthFailure(error: fronteggError, flow: oauthFlow)
                     self.resetActiveOAuthFlow()

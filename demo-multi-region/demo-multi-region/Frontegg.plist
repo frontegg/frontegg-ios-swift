@@ -28,6 +28,8 @@
 	<true/>
 	<key>logLevel</key>
 	<string>trace</string>
+	<key>offlineDebounceDelay</key>
+	<real>0.6</real>
 	<key>loginOrganizationAlias</key>
 	<string></string>
 </dict>

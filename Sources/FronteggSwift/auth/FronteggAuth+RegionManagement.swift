@@ -53,14 +53,14 @@ extension FronteggAuth {
         }
     }
 
-    public func reinitWithRegion(config: RegionConfig) {
+    public func reinitWithRegion(config: RegionConfig, entitlementsEnabled: Bool = false) {
         self.baseUrl = config.baseUrl
         self.clientId = config.clientId
         self.applicationId = config.applicationId
         setSelectedRegion(config)
         self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
         self.featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self.api))
-        self.entitlements = Entitlements(.init(api: self.api, enabled: FronteggApp.shared.entitlementsEnabled))
+        self.entitlements = Entitlements(.init(api: self.api, enabled: entitlementsEnabled))
         resetEntitlementsLoadState()
         loadEntitlements(forceRefresh: true)
         self.initializeSubscriptions()

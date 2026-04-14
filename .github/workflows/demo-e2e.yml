@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       apps:
-        description: "Apps to test (comma-separated: embedded,multi-region,uikit)"
-        default: "embedded,multi-region,uikit"
+        description: "Apps to test (comma-separated: embedded,multi-region,uikit,auto-login)"
+        default: "embedded,multi-region,uikit,auto-login"
         type: string
       shard_count:
         description: "Number of shards per app (1 = auto, max 4 tests/shard)"
@@ -65,7 +65,7 @@ jobs:
       - name: Generate matrix
         id: generate
         env:
-          INPUT_APPS: ${{ inputs.apps || 'embedded,multi-region,uikit' }}
+          INPUT_APPS: ${{ inputs.apps || 'embedded,multi-region,uikit,auto-login' }}
           INPUT_SHARD_COUNT: ${{ inputs.shard_count || '1' }}
         run: |
           node .github/scripts/generate_e2e_matrix.js
@@ -144,6 +144,6 @@ jobs:
         run: |
           node .github/scripts/combine_e2e_summary.js \
             --artifacts-dir "$RUNNER_TEMP/artifacts" \
-            --apps "${{ needs.matrix-setup.outputs.apps || 'embedded,multi-region,uikit' }}" \
+            --apps "${{ needs.matrix-setup.outputs.apps || 'embedded,multi-region,uikit,auto-login' }}" \
             --include-unit-tests true \
             --summary "$GITHUB_STEP_SUMMARY"

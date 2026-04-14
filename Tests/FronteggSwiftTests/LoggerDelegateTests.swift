@@ -196,8 +196,11 @@ final class LoggerDelegateTests: XCTestCase {
 
         logger.info("outer info log")
 
+        // Filter by tag to isolate from SDK singleton log noise (e.g. TraceIdLogger
+        // initialization emitting events when first accessed by other test infrastructure)
+        let relevant = delegate.events.filter { $0.tag == "OuterLogger" }
         XCTAssertEqual(
-            delegate.events,
+            relevant,
             [.init(message: "outer info log", level: .info, tag: "OuterLogger")]
         )
     }

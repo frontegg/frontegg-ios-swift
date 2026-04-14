@@ -1,3 +1,38 @@
+## v1.3.0
+
+**Added**
+- Offline mode support with authenticated startup session restore, network path assessment, and offline state handling
+- Step-up authentication methods via refactored OAuth state handling
+- Customizable OAuth error handling and presentation
+- Transactional logout process with timeout for cookie clearing
+- Transactional refresh token handling with enhanced diagnostics
+- API retry logic for `/me` and `/me/tenants` endpoints with error handling
+- Social login watchdog to recover from stalled `/oauth/account/social/success` pages
+- `offlineDebounceDelay` plist option (default `2.0s`) — configurable delay before committing to offline mode, prevents flicker during WiFi-to-cellular handoff
+- `dismissAuthSessionOnOffline` plist option (default `false`) — opt-in cancellation of active Safari auth sheet when device goes offline
+
+**Changed**
+- Refactored connectivity and refresh handling to use async/await for improved responsiveness
+- Made login progress state actor-safe and enhanced token exchange handling
+- Skip PKCE injection for custom providers to align with hosted social flow
+- Generation-based invalidation for connectivity callbacks to prevent stale offline transitions
+- Enhanced API error handling and logging for GET requests
+- Improved redirect URI extraction with base path and root callback alias support
+- Increased offline debounce delay from 0.6s to 2.0s (configurable via plist) to reduce false offline transitions
+- Improved `suggestSavePassword` error message to include expected payload format for custom login script integration
+
+**Fixed**
+- Fix PKCE state registration race condition — serialize `registerPendingOAuth` with NSLock to prevent concurrent calls from overwriting each other's state entries, which caused "Invalid or stale OAuth state" on first login attempt
+- Remove WebView warmup (`warmingWebView`) that generated a competing authorize URL during app startup, causing PKCE state mismatch with the real login WebView
+- Fix social login watchdog infinite retry loop — the retry counter was reset on each reload because `socialSuccessRetryCount` was zeroed when the reloaded `/social/success` page re-triggered navigation detection; now only genuinely fresh flows reset the counter
+- Prevent incorrect setting of `isSocialLoginFlow` in OIDC SSO process, ensuring correct PKCE `code_verifier` usage
+- Prevent unexpected logout by refreshing token on tenant retrieval failure (FR-22001)
+- Fix tenant ID persistence and credential namespace issues
+- Handle stalled social login success page with retry logic and improved error visibility
+- Skip connectivity state handling if generation has changed during token updates
+- Improve async handling in connectivity checks and token change monitoring
+- Add Sentry breadcrumb when hosted login callback arrives with unregistered OAuth state for improved diagnostics
+
 ## v1.2.79
 - Require Swift SDK E2E workflow for release PRs
 **Changed**
