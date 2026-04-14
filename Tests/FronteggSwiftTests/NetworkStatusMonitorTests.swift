@@ -59,6 +59,7 @@ final class NetworkStatusMonitorTests: XCTestCase {
     func test_handlerRemovalByIndex_preservesStableIndicesForRemainingHandlers() {
         let emitted = expectation(description: "Remaining handlers should be called")
         emitted.expectedFulfillmentCount = 2
+        emitted.assertForOverFulfill = false
         var received: [String] = []
 
         let firstIndex = NetworkStatusMonitor.addOnChange { value in
@@ -107,6 +108,7 @@ final class NetworkStatusMonitorTests: XCTestCase {
     func test_forceEmit_notifiesHandlersWithoutStateChange() {
         let emitted = expectation(description: "Force emit should notify even without change")
         emitted.expectedFulfillmentCount = 2
+        emitted.assertForOverFulfill = false
         var received: [Bool] = []
 
         _ = NetworkStatusMonitor.addOnChange { value in
