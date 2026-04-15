@@ -182,6 +182,14 @@ final class LoggerDelegateTests: XCTestCase {
             delegate = nil  // Explicitly release the strong reference
         }
 
+        // On CI, background SDK logging from other tests may briefly retain the
+        // delegate via dispatchToDelegate's local strong reference. Poll briefly
+        // to allow any in-flight log dispatch to complete.
+        let deadline = Date().addingTimeInterval(2.0)
+        while weakDelegate != nil && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+
         XCTAssertNil(weakDelegate)
         XCTAssertNil(FeLogger.delegate)
 
