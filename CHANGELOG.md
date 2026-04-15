@@ -1,5 +1,5 @@
 ## v1.3.2
-Added disableAutoRefresh feature.
+- Added disableAutoRefresh feature
 
 ## v1.3.1
 - `reinitWithRegion()` accessed `FronteggApp.shared.entitlementsEnabled` during `FronteggApp.init()`, before the singleton was assigned — causing `EXC_BREAKPOINT` crash for returning users on multi-region configs with entitlements enabled
