@@ -1,3 +1,7 @@
+## v1.3.1
+- `reinitWithRegion()` accessed `FronteggApp.shared.entitlementsEnabled` during `FronteggApp.init()`, before the singleton was assigned — causing `EXC_BREAKPOINT` crash for returning users on multi-region configs with entitlements enabled
+- Pass `entitlementsEnabled` as a parameter to `reinitWithRegion()` instead of referencing the singleton, consistent with how `manualInit()` and `manualInitRegions()` already work
+
 ## v1.3.0
 
 **Added**
