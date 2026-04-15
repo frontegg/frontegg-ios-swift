@@ -26,6 +26,22 @@ For full documentation, visit the Frontegg Developer Portal:
 
 ## Advanced
 
+### Disable Auto Refresh
+
+You can disable automatic token refresh by adding `disableAutoRefresh` to `Frontegg.plist`:
+
+```xml
+<key>disableAutoRefresh</key>
+<true/>
+```
+
+Behavior:
+
+- Default value is `false` (auto refresh is enabled).
+- When `disableAutoRefresh` is `true`, SDK internal/automatic refresh flows are blocked(including offline mode refreshing, timers and etc.).
+- Manual refresh calls (for example, `getOrRefreshAccessTokenAsync()`) still work.
+- This lets apps fully control when token refresh happens while keeping explicit refresh APIs available.
+
 ### Entitlements
 
 The SDK can load and check user entitlements (features and permissions) from the Frontegg Entitlements API. Enable entitlements in `Frontegg.plist` with `entitlementsEnabled: true`, then:

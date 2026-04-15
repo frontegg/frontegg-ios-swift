@@ -144,7 +144,10 @@ extension FronteggAuth {
             self.setIsLoading(true)
         }
 
-        let refreshed = await self.refreshTokenIfNeeded(skipNetworkCheck: skipNetworkCheck)
+        let refreshed = await self.refreshTokenIfNeededInternal(
+            source: .internalAuto,
+            skipNetworkCheck: skipNetworkCheck
+        )
 
         if !refreshed {
             await MainActor.run {
@@ -367,7 +370,7 @@ extension FronteggAuth {
                     if await NetworkStatusMonitor.isActive {
                         await self.startPostConnectivityServices()
                     }
-                    let refreshed = await self.refreshTokenIfNeeded()
+                    let refreshed = await self.refreshTokenIfNeededInternal(source: .internalAuto)
 
                     // If refresh returned early (e.g., no refresh token), ensure loading/initializing are reset
                     if !refreshed {

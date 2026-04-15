@@ -84,7 +84,7 @@ extension FronteggAuth {
 
         Task {
             // Refresh tokens to get fresh tokens + re-fetch /me user data
-            _ = await self.refreshTokenIfNeeded()
+            _ = await self.refreshTokenIfNeededInternal(source: .internalAuto)
             await self.startPostConnectivityServices()
         }
     }
@@ -409,7 +409,8 @@ extension FronteggAuth {
         error: Error?,
         enableOfflineMode: Bool,
         attempts: Int,
-        skipNetworkCheck: Bool = false
+        skipNetworkCheck: Bool = false,
+        source: RefreshInvocationSource = .internalAuto
     ) async {
         // Classify error type
         let isConn = error.map { isConnectivityError($0) } ?? true // treat nil as connectivity (e.g., no active internet path)
@@ -477,7 +478,12 @@ extension FronteggAuth {
             retryOffset = 1 // non-connectivity errors retry quickly
         }
         self.logger.info("Scheduling retry in \(retryOffset)s (attempt \(attempts + 1), isConn: \(isConn))")
-        scheduleTokenRefresh(offset: retryOffset, attempts: attempts + 1, skipNetworkCheck: skipNetworkCheck)
+        scheduleTokenRefresh(
+            offset: retryOffset,
+            attempts: attempts + 1,
+            skipNetworkCheck: skipNetworkCheck,
+            source: source
+        )
     }
 
     /// Starts network monitoring so that `reconnectedToInternet()` fires on a later connectivity transition.
@@ -556,7 +562,7 @@ extension FronteggAuth {
                 }
 
                 self.logger.info("Network is back, refreshing...")
-                _ = await self.refreshTokenIfNeeded()
+                _ = await self.refreshTokenIfNeededInternal(source: .manualUser)
             }
     }
 }

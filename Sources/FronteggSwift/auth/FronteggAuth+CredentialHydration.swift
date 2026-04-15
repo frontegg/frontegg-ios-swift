@@ -248,7 +248,7 @@ extension FronteggAuth {
                 setIsLoading(false)
 
                 if !shouldEnterOfflineMode, let refreshOffset {
-                    scheduleTokenRefresh(offset: refreshOffset)
+                    scheduleTokenRefresh(offset: refreshOffset, source: .internalAuto)
                 } else {
                     cancelScheduledTokenRefresh()
                 }
@@ -331,7 +331,7 @@ extension FronteggAuth {
                     refreshOffset = 30
                 }
                 await MainActor.run {
-                    scheduleTokenRefresh(offset: refreshOffset)
+                    scheduleTokenRefresh(offset: refreshOffset, source: .internalAuto)
                 }
                 // Start monitoring without an immediate callback so the preserved offline state
                 // remains observable until a later probe or connectivity transition.
