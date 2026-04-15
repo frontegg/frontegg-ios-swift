@@ -1,19 +1,6 @@
 ## v1.3.1
-## Summary
 - `reinitWithRegion()` accessed `FronteggApp.shared.entitlementsEnabled` during `FronteggApp.init()`, before the singleton was assigned — causing `EXC_BREAKPOINT` crash for returning users on multi-region configs with entitlements enabled
 - Pass `entitlementsEnabled` as a parameter to `reinitWithRegion()` instead of referencing the singleton, consistent with how `manualInit()` and `manualInitRegions()` already work
-
-## Reproduction
-1. Open `demo-multi-region` with `entitlementsEnabled = true` in `Frontegg.plist`
-2. Run, select a region, log in
-3. Stop and re-run the app → crash on launch
-
-## Test plan
-- [ ] Verify multi-region app no longer crashes on second launch with entitlements enabled
-- [ ] Verify entitlements still load correctly after region selection
-- [ ] Verify single-region configs are unaffected
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 ## v1.3.0
 
