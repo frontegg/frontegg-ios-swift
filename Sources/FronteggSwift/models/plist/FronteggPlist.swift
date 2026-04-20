@@ -39,6 +39,8 @@ struct FronteggPlist: Decodable, Equatable {
     let entitlementsEnabled: Bool
     let dismissAuthSessionOnOffline: Bool
     let offlineDebounceDelay: TimeInterval
+    /// HTTP timeout (seconds) for the refresh-token request.
+    let refreshTokenTimeout: TimeInterval
 
     enum CodingKeys: CodingKey {
         case keychainService
@@ -67,6 +69,7 @@ struct FronteggPlist: Decodable, Equatable {
         case entitlementsEnabled
         case dismissAuthSessionOnOffline
         case offlineDebounceDelay
+        case refreshTokenTimeout
     }
 
     init(
@@ -96,7 +99,8 @@ struct FronteggPlist: Decodable, Equatable {
         loginOrganizationAlias: String? = nil,
         entitlementsEnabled: Bool = false,
         dismissAuthSessionOnOffline: Bool = false,
-        offlineDebounceDelay: TimeInterval = 2.0
+        offlineDebounceDelay: TimeInterval = 2.0,
+        refreshTokenTimeout: TimeInterval = 20
     ) {
         self.keychainService = keychainService
         self.embeddedMode = embeddedMode
@@ -125,6 +129,7 @@ struct FronteggPlist: Decodable, Equatable {
         self.entitlementsEnabled = entitlementsEnabled
         self.dismissAuthSessionOnOffline = dismissAuthSessionOnOffline
         self.offlineDebounceDelay = offlineDebounceDelay
+        self.refreshTokenTimeout = refreshTokenTimeout
     }
 
     init(from decoder: any Decoder) throws {
@@ -207,6 +212,9 @@ struct FronteggPlist: Decodable, Equatable {
 
         let offlineDebounceDelay = try container.decodeIfPresent(TimeInterval.self, forKey: .offlineDebounceDelay)
         self.offlineDebounceDelay = offlineDebounceDelay ?? 2.0
+
+        let refreshTokenTimeout = try container.decodeIfPresent(TimeInterval.self, forKey: .refreshTokenTimeout)
+        self.refreshTokenTimeout = max(refreshTokenTimeout ?? 20, 10)
 
         do {
             self.payload = try Payload(from: decoder)

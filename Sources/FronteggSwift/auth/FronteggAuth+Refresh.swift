@@ -5,6 +5,48 @@
 
 import Foundation
 import Dispatch
+#if canImport(UIKit) && !os(watchOS)
+import UIKit
+#endif
+
+/// Background-task handle that keeps iOS from suspending the app mid-refresh.
+/// `end()` is idempotent across the expiration handler and the caller's defer.
+#if canImport(UIKit) && !os(watchOS)
+fileprivate final class RefreshBackgroundTaskHandle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var taskId: UIBackgroundTaskIdentifier = .invalid
+
+    @MainActor
+    func begin(name: String) {
+        lock.lock()
+        let current = taskId
+        lock.unlock()
+        guard current == .invalid else { return }
+
+        let newId = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            self?.end()
+        }
+        lock.lock()
+        taskId = newId
+        lock.unlock()
+    }
+
+    func end() {
+        lock.lock()
+        let captured = taskId
+        taskId = .invalid
+        lock.unlock()
+        guard captured != .invalid else { return }
+        if Thread.isMainThread {
+            UIApplication.shared.endBackgroundTask(captured)
+        } else {
+            DispatchQueue.main.async {
+                UIApplication.shared.endBackgroundTask(captured)
+            }
+        }
+    }
+}
+#endif
 
 extension FronteggAuth {
     func isAutoRefreshBlocked(source: RefreshInvocationSource) -> Bool {
@@ -180,6 +222,40 @@ extension FronteggAuth {
         refreshTokenDispatch = nil
     }
 
+    /// Writes rotated tokens to the keychain before post-refresh work runs so a
+    /// mid-flow suspend/kill cannot leave the keychain holding the invalidated
+    /// token. Non-throwing: `setCredentialsInternal` saves again on the happy path.
+    internal func persistRotatedTokensImmediately(
+        accessToken: String,
+        refreshToken: String,
+        tenantId: String?,
+        enableSessionPerTenant: Bool
+    ) {
+        do {
+            if enableSessionPerTenant, let tenantId = tenantId {
+                try self.credentialManager.saveTokenForTenant(refreshToken, tenantId: tenantId, tokenType: .refreshToken)
+                try self.credentialManager.saveTokenForTenant(accessToken, tenantId: tenantId, tokenType: .accessToken)
+                self.logger.info("Persisted rotated tokens to keychain (tenant: \(tenantId)) immediately after refresh")
+            } else {
+                try self.credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: refreshToken)
+                try self.credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: accessToken)
+                self.logger.info("Persisted rotated tokens to keychain (global) immediately after refresh")
+            }
+        } catch {
+            self.logger.error("Failed to persist rotated tokens to keychain immediately after refresh: \(error)")
+            SentryHelper.logError(error, context: [
+                "auth": [
+                    "method": "persistRotatedTokensImmediately",
+                    "enableSessionPerTenant": enableSessionPerTenant,
+                    "hasTenantId": tenantId != nil
+                ],
+                "error": [
+                    "type": "immediate_rotation_persistence_failed"
+                ]
+            ])
+        }
+    }
+
     public func refreshTokenIfNeeded(attempts: Int = 0, skipNetworkCheck: Bool = false) async -> Bool {
         await refreshTokenIfNeededInternal(
             source: .manualUser,
@@ -188,7 +264,48 @@ extension FronteggAuth {
         )
     }
 
+    /// Must be called while holding `refreshSerializationLock`.
+    private func claimOrStartRefreshTaskLocked(
+        source: RefreshInvocationSource,
+        attempts: Int,
+        skipNetworkCheck: Bool
+    ) -> Task<Bool, Never> {
+        if let existing = inflightRefreshTask {
+            return existing
+        }
+        let task = Task<Bool, Never> { [weak self] in
+            guard let self = self else { return false }
+            let result = await self.performRefreshTokenFlow(
+                source: source,
+                attempts: attempts,
+                skipNetworkCheck: skipNetworkCheck
+            )
+            self.refreshSerializationLock.withLock {
+                self.inflightRefreshTask = nil
+            }
+            return result
+        }
+        inflightRefreshTask = task
+        return task
+    }
+
     internal func refreshTokenIfNeededInternal(
+        source: RefreshInvocationSource,
+        attempts: Int = 0,
+        skipNetworkCheck: Bool = false
+    ) async -> Bool {
+        let task: Task<Bool, Never> = refreshSerializationLock.withLock {
+            claimOrStartRefreshTaskLocked(
+                source: source,
+                attempts: attempts,
+                skipNetworkCheck: skipNetworkCheck
+            )
+        }
+        return await task.value
+    }
+
+    /// Body of the serialized refresh; only one instance runs at a time.
+    internal func performRefreshTokenFlow(
         source: RefreshInvocationSource,
         attempts: Int = 0,
         skipNetworkCheck: Bool = false
@@ -356,6 +473,16 @@ extension FronteggAuth {
         setRefreshingToken(true)
         defer { setRefreshingToken(false) }
 
+        // Keep the app awake for the full rotation window so iOS cannot suspend
+        // us between the server rotating the token and the keychain write.
+#if canImport(UIKit) && !os(watchOS)
+        let bgTaskHandle = RefreshBackgroundTaskHandle()
+        await MainActor.run {
+            bgTaskHandle.begin(name: "FronteggRefreshToken")
+        }
+        defer { bgTaskHandle.end() }
+#endif
+
         let preservedTenantId = enableSessionPerTenant ? credentialManager.getLastActiveTenantId() : nil
 
         // Log token refresh attempt details
@@ -460,6 +587,18 @@ extension FronteggAuth {
                 }
             }
 
+            // Persist rotated tokens before setCredentialsInternal so a /me
+            // hang or mid-flow kill cannot strand the new refresh token.
+            let tenantIdForImmediatePersistence: String? = enableSessionPerTenant
+                ? (currentTenantId ?? preservedTenantId ?? credentialManager.getLastActiveTenantId())
+                : nil
+            persistRotatedTokensImmediately(
+                accessToken: data.access_token,
+                refreshToken: data.refresh_token,
+                tenantId: tenantIdForImmediatePersistence,
+                enableSessionPerTenant: enableSessionPerTenant
+            )
+
             await self.setCredentialsInternal(
                 accessToken: data.access_token,
                 refreshToken: data.refresh_token,
@@ -496,6 +635,26 @@ extension FronteggAuth {
 
         } catch let error as FronteggError {
             if case .authError(FronteggError.Authentication.failedToRefreshToken(let message)) = error {
+                // If the in-memory refresh token was rotated by another path
+                // while our request was in flight, the 401 is stale — don't
+                // wipe credentials.
+                let currentInMemoryRefreshToken = await MainActor.run { self.refreshToken }
+                if let current = currentInMemoryRefreshToken, current != refreshToken {
+                    self.logger.warning("Refresh failed but in-memory refresh token has already been rotated; skipping credential wipe")
+                    SentryHelper.addBreadcrumb(
+                        "Refresh token rotation race detected; skipping logout",
+                        category: "auth",
+                        level: .warning,
+                        data: [
+                            "sentRefreshTokenLength": refreshToken.count,
+                            "currentRefreshTokenLength": current.count,
+                            "attempts": attempts,
+                            "enableSessionPerTenant": enableSessionPerTenant
+                        ]
+                    )
+                    return false
+                }
+
                 let tenantIdToPreserve: String? = enableSessionPerTenant
                     ? (preservedTenantId ?? credentialManager.getLastActiveTenantId())
                     : nil

@@ -563,29 +563,35 @@ public class Api {
         return try JSONDecoder().decode(AuthResponse.self, from: data)
     }
     
+    internal func resolveRefreshTokenTimeout() -> Int {
+        let configured = (try? PlistHelper.fronteggConfig())?.refreshTokenTimeout ?? 20
+        return max(Int(configured), 10)
+    }
+
     internal func refreshToken(refreshToken: String, tenantId: String? = nil, accessToken: String? = nil) async throws -> AuthResponse {
+        let refreshHttpTimeout = resolveRefreshTokenTimeout()
         // If tenantId is provided, use the new refresh endpoint that supports per-tenant sessions
         if let unwrappedTenantId = tenantId {
-            self.logger.info("Refreshing token with tenantId: \(unwrappedTenantId) (refresh token length: \(refreshToken.count))")
+            self.logger.info("Refreshing token with tenantId: \(unwrappedTenantId) (refresh token length: \(refreshToken.count), timeout: \(refreshHttpTimeout)s)")
             let refreshTokenCookie = "\(self.cookieName)=\(refreshToken)"
-            
+
             var headers: [String: String] = [
                 "Cookie": refreshTokenCookie,
                 "frontegg-vendor-host": self.baseUrl
             ]
-            
+
             // Include access token in Authorization header if provided
             // This is needed for tenant-specific refresh to work correctly
             if let accessToken = accessToken {
                 headers["Authorization"] = "Bearer \(accessToken)"
                 self.logger.info("Including access token in Authorization header for tenant-specific refresh")
             }
-            
+
             let (data, response) = try await postRequest(
                 path: "identity/resources/auth/v1/user/token/refresh",
                 body: ["tenantId": unwrappedTenantId],
                 additionalHeaders: headers,
-                timeout: 5
+                timeout: refreshHttpTimeout
             )
             
             if let res = response as? HTTPURLResponse {
@@ -672,10 +678,11 @@ public class Api {
                 throw error
             }
         } else {
+            self.logger.info("Refreshing token via oauth/token (timeout: \(refreshHttpTimeout)s)")
             let (data, response) = try await postRequest(path: "oauth/token", body: [
                 "grant_type": "refresh_token",
                 "refresh_token": refreshToken,
-            ], timeout: 5)
+            ], timeout: refreshHttpTimeout)
             
             if let res = response as? HTTPURLResponse {
                 if res.statusCode == 401 {
