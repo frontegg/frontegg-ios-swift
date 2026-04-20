@@ -79,13 +79,14 @@ extension FronteggAuth {
         self.setIsOfflineMode(false)
 
         // If the user is unauthenticated (e.g. logged out while offline),
-        // clear offline state and reload the login page instead of refreshing tokens.
+        // clear offline state so the host app can show its login UI.
+        // Mirrors the unauthenticated path in recheckConnection().
         let hasRuntimeSession = self.isAuthenticated
             || self.accessToken != nil
             || self.refreshToken != nil
 
         if !hasRuntimeSession {
-            self.logger.info("Network reconnected in unauthenticated state — reloading login page")
+            self.logger.info("Network reconnected in unauthenticated state — clearing offline state")
             self.invalidateConnectivityObservers()
             self.stopOfflineMonitoring()
             self.lastAttemptReason = nil
@@ -97,7 +98,6 @@ extension FronteggAuth {
                 self.setShowLoader(false)
                 self.setAppLink(false)
                 self.setExternalLink(false)
-                self.webview?.reloadFreshLoginPage()
             }
             return
         }
