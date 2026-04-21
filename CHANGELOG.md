@@ -1,3 +1,10 @@
+## v1.3.3
+## Summary
+- When a user logs out while offline (or network drops during logout), `reconnectedToInternet()` only ran the authenticated path (`refreshTokenIfNeeded`), which is a no-op without tokens — leaving a blank screen
+- Added unauthenticated handling: detects no-session state and clears offline flags + reloads the login page via `reloadFreshLoginPage()`
+- Mirrors the existing `recheckConnection()` logic for the automatic reconnection callback
+
+
 ## v1.3.2
 - Added disableAutoRefresh feature
 
