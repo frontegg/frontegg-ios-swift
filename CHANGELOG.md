@@ -4,12 +4,6 @@
 - Added unauthenticated handling: detects no-session state and clears offline flags + reloads the login page via `reloadFreshLoginPage()`
 - Mirrors the existing `recheckConnection()` logic for the automatic reconnection callback
 
-Fixes FR-24387
-
-## Test plan
-- [ ] Run existing test suite (629 tests pass, 0 failures)
-- [ ] Manual: log in → log out → turn off network → turn on network → verify login page loads (no blank screen)
-- [ ] Verify authenticated offline → online path still works correctly
 
 ## v1.3.2
 - Added disableAutoRefresh feature
