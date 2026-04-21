@@ -78,6 +78,30 @@ extension FronteggAuth {
         self.logger.info("Connected to the internet")
         self.setIsOfflineMode(false)
 
+        // If the user is unauthenticated (e.g. logged out while offline),
+        // clear offline state so the host app can show its login UI.
+        // Mirrors the unauthenticated path in recheckConnection().
+        let hasRuntimeSession = self.isAuthenticated
+            || self.accessToken != nil
+            || self.refreshToken != nil
+
+        if !hasRuntimeSession {
+            self.logger.info("Network reconnected in unauthenticated state — clearing offline state")
+            self.invalidateConnectivityObservers()
+            self.stopOfflineMonitoring()
+            self.lastAttemptReason = nil
+            DispatchQueue.main.async {
+                self.setUser(nil)
+                self.setIsLoading(false)
+                self.setWebLoading(false)
+                self.setInitializing(false)
+                self.setShowLoader(false)
+                self.setAppLink(false)
+                self.setExternalLink(false)
+            }
+            return
+        }
+
         // Keep monitoring active — don't stop it here.
         // If refreshTokenIfNeeded() succeeds, $accessToken subscription stops monitoring.
         // If it fails, monitoring stays active to detect the next reconnection.
