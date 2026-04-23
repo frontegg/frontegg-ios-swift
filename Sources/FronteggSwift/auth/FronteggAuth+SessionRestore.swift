@@ -250,6 +250,11 @@ extension FronteggAuth {
             accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue)
         }
         
+        // If the previous process died with a refresh in flight, the tombstone
+        // survived. Emit a breadcrumb so residual rotation-orphan rate stays
+        // measurable after the client-side hardening.
+        detectAndReportOrphanedRefreshAtStartup(refreshToken: refreshToken)
+
         // Explicit state categories for startup restore
         let hasAnySessionArtifacts = (refreshToken != nil || accessToken != nil)
         let canRestoreOfflineAuthenticatedState = (accessToken != nil) ||

@@ -275,6 +275,80 @@ final class FronteggAuthRefreshRotationTests: XCTestCase {
         XCTAssertFalse(auth.isAuthenticated)
     }
 
+    // MARK: - Proactive refresh offset
+
+    func test_calculateOffset_usesFiftyPercentOfRemainingTtl_whenAboveMinWindow() {
+        // 600 s remaining → expect ~300 s offset (50%), not the old 480 s (80%).
+        let now = Date().timeIntervalSince1970
+        let offset = auth.calculateOffset(expirationTime: Int(now) + 600)
+        XCTAssertEqual(offset, 300, accuracy: 2.0, "offset must refresh at 50% of remaining TTL")
+    }
+
+    func test_calculateOffset_clampsToMinRefreshWindow_whenNearExpiry() {
+        // 10 s remaining — below 20 s minRefreshWindow — offset clamps to 0.
+        let now = Date().timeIntervalSince1970
+        let offset = auth.calculateOffset(expirationTime: Int(now) + 10)
+        XCTAssertEqual(offset, 0, accuracy: 0.5)
+    }
+
+    // MARK: - Refresh-in-flight tombstone
+
+    func test_refreshTokenIfNeeded_successfulRefresh_clearsRefreshInFlightTombstone() async throws {
+        seedInMemorySessionWithCachedUser(email: "tombstone-success@example.com")
+
+        let rotatedAccess = try makeAccessToken(email: "tombstone-success@example.com", tenantId: "tenant-123")
+        api.refreshResult = .success(try makeAuthResponse(accessToken: rotatedAccess, refreshToken: "RT_NEW"))
+
+        let refreshed = await auth.refreshTokenIfNeeded()
+
+        XCTAssertTrue(refreshed)
+        XCTAssertNil(
+            try credentialManager.get(key: KeychainKeys.refreshInFlight.rawValue),
+            "tombstone must be cleared after a refresh that completed + persisted"
+        )
+    }
+
+    func test_refreshTokenIfNeeded_interruptedRefresh_leavesTombstoneForNextLaunch() async throws {
+        auth.setRefreshToken("RT_OLD")
+        auth.setAccessToken("AT_OLD")
+        auth.setIsAuthenticated(true)
+
+        // Connectivity failure mid-request — we cannot know whether the server
+        // processed the rotation, so the tombstone must survive for the next
+        // launch to observe the orphan.
+        api.refreshResult = .failure(URLError(.timedOut))
+
+        _ = await auth.refreshTokenIfNeeded()
+
+        let tombstone = try credentialManager.get(key: KeychainKeys.refreshInFlight.rawValue)
+        XCTAssertNotNil(tombstone, "tombstone must survive a connectivity failure")
+        XCTAssertEqual(tombstone, auth.refreshTokenFingerprint("RT_OLD"))
+    }
+
+    func test_refreshTokenIfNeeded_failedToRefreshToken_clearsTombstone_onDefinitiveRejection() async throws {
+        auth.setRefreshToken("RT_OLD")
+        auth.setAccessToken("AT_OLD")
+        auth.setIsAuthenticated(true)
+
+        api.refreshResult = .failure(
+            FronteggError.authError(.failedToRefreshToken("Refresh token could not be found"))
+        )
+
+        _ = await auth.refreshTokenIfNeeded()
+
+        XCTAssertNil(
+            try credentialManager.get(key: KeychainKeys.refreshInFlight.rawValue),
+            "tombstone must be cleared after definitive server rejection — there is no unresolved in-flight request anymore"
+        )
+    }
+
+    func test_hasOrphanedRefreshTombstone_matchesByFingerprint() {
+        auth.writeRefreshInFlightTombstone(for: "RT_FROM_PREVIOUS_PROCESS")
+        XCTAssertTrue(auth.hasOrphanedRefreshTombstone(matching: "RT_FROM_PREVIOUS_PROCESS"))
+        XCTAssertFalse(auth.hasOrphanedRefreshTombstone(matching: "DIFFERENT_TOKEN"))
+        XCTAssertFalse(auth.hasOrphanedRefreshTombstone(matching: nil))
+    }
+
     // MARK: - Refresh-token timeout plist
 
     func test_api_resolveRefreshTokenTimeout_returnsPlistValue_whenAboveFloor() {
