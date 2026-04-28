@@ -59,7 +59,7 @@ struct AdminPortalWebView: UIViewRepresentable {
                 if (existing) { existing.parentNode.removeChild(existing); }
                 var meta = document.createElement('meta');
                 meta.setAttribute('name', 'viewport');
-                meta.setAttribute('content', 'width=1280, initial-scale=1, user-scalable=yes');
+                meta.setAttribute('content', 'width=1024, user-scalable=yes');
                 (document.head || document.documentElement).appendChild(meta);
             };
             setViewport();
