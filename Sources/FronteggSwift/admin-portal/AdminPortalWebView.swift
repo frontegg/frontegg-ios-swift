@@ -64,7 +64,11 @@ struct AdminPortalWebView: UIViewRepresentable {
 
     @MainActor
     private func loadPortal(webView: WKWebView) async {
-        guard let portalUrl = URL(string: "\(fronteggAuth.baseUrl)/oauth/portal") else {
+        var components = URLComponents(string: "\(fronteggAuth.baseUrl)/oauth/portal")
+        if let applicationId = fronteggAuth.applicationId, !applicationId.isEmpty {
+            components?.queryItems = [URLQueryItem(name: "appId", value: applicationId)]
+        }
+        guard let portalUrl = components?.url else {
             logger.error("AdminPortal: invalid baseUrl=\(fronteggAuth.baseUrl)")
             return
         }
