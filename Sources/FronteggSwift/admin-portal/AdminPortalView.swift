@@ -4,10 +4,10 @@
 //
 //  POC: SwiftUI entry point for the embedded admin portal.
 //
-//  Renders the WKWebView edge-to-edge — no native chrome. Dismissal is
-//  via the host presentation's swipe-down gesture (use `.sheet` to
-//  present) or via the portal's own X button, which calls window.close()
-//  and is bridged through to SwiftUI's dismiss.
+//  Renders the WKWebView edge-to-edge over a solid background so the
+//  host app's content can't bleed through any seams. Dismissal is via
+//  the sheet's swipe-down gesture or the portal's own X button (bridged
+//  through window.close()).
 //
 
 import SwiftUI
@@ -20,8 +20,12 @@ public struct AdminPortalView: View {
     public init() {}
 
     public var body: some View {
-        AdminPortalWebView(onClose: dismiss)
-            .ignoresSafeArea(edges: .bottom)
+        ZStack {
+            Color(UIColor.systemBackground)
+                .ignoresSafeArea()
+            AdminPortalWebView(onClose: dismiss)
+                .ignoresSafeArea(edges: .bottom)
+        }
     }
 
     private func dismiss() {
