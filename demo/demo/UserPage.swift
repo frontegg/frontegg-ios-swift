@@ -11,7 +11,8 @@ struct UserPage: View {
     @State private var entitlementUnifiedFeature: Entitlement?
     @State private var entitlementUnifiedPermission: Entitlement?
     @State private var entitlementsLoading = false
-    
+    @State private var showAdminPortal = false
+
     struct Message: Identifiable {
         let id = UUID()
         let text: String
@@ -30,6 +31,9 @@ struct UserPage: View {
                 .ignoresSafeArea(edges: .top),alignment: .top)
             .overlay(Footer()
                 .ignoresSafeArea(edges: .bottom),alignment: .bottom)
+            .fullScreenCover(isPresented: $showAdminPortal) {
+                AdminPortalView()
+            }
         }
     }
     
@@ -59,6 +63,7 @@ struct UserPage: View {
                     
                     sensitiveActionButton
                     requestAuthorizeButton
+                    adminPortalButton
                     Spacer().frame(height: 16)
                     entitlementsSection
                     Spacer().frame(height: 24)
@@ -79,6 +84,14 @@ struct UserPage: View {
     private var requestAuthorizeButton: some View {
         Button("Request Authorize") {
             handleRequestAuthorize()
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .padding(.horizontal, 8)
+    }
+
+    private var adminPortalButton: some View {
+        Button("Open Admin Portal") {
+            showAdminPortal = true
         }
         .buttonStyle(PrimaryButtonStyle())
         .padding(.horizontal, 8)
