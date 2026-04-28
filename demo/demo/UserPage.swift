@@ -31,7 +31,7 @@ struct UserPage: View {
                 .ignoresSafeArea(edges: .top),alignment: .top)
             .overlay(Footer()
                 .ignoresSafeArea(edges: .bottom),alignment: .bottom)
-            .fullScreenCover(isPresented: $showAdminPortal) {
+            .sheet(isPresented: $showAdminPortal) {
                 AdminPortalView()
             }
         }

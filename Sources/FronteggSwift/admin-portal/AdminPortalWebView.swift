@@ -26,10 +26,12 @@ struct AdminPortalWebView: UIViewRepresentable {
     typealias UIViewType = WKWebView
 
     private let fronteggAuth: FronteggAuth
+    private let onClose: (() -> Void)?
     private let logger = getLogger("AdminPortalWebView")
 
-    init() {
+    init(onClose: (() -> Void)? = nil) {
         self.fronteggAuth = FronteggAuth.shared
+        self.onClose = onClose
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -42,6 +44,7 @@ struct AdminPortalWebView: UIViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: conf)
         webView.allowsBackForwardNavigationGestures = true
         webView.navigationDelegate = context.coordinator
+        webView.uiDelegate = context.coordinator
 
         #if compiler(>=5.8) && os(iOS) && DEBUG
         if #available(iOS 16.4, *) {
@@ -59,7 +62,7 @@ struct AdminPortalWebView: UIViewRepresentable {
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(onClose: onClose)
     }
 
     @MainActor
@@ -95,8 +98,13 @@ struct AdminPortalWebView: UIViewRepresentable {
 
     // MARK: - Coordinator
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         private let logger = getLogger("AdminPortalWebView")
+        private let onClose: (() -> Void)?
+
+        init(onClose: (() -> Void)?) {
+            self.onClose = onClose
+        }
 
         func webView(_ webView: WKWebView,
                      decidePolicyFor navigationAction: WKNavigationAction,
@@ -122,6 +130,12 @@ struct AdminPortalWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             logger.error("AdminPortal: didFailProvisionalNavigation \(error.localizedDescription)")
+        }
+
+        // The portal's X button calls window.close() — bridge that to SwiftUI dismiss.
+        func webViewDidClose(_ webView: WKWebView) {
+            logger.info("AdminPortal: webViewDidClose — dismissing")
+            onClose?()
         }
     }
 }
