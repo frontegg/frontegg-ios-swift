@@ -42,16 +42,42 @@ struct AdminPortalWebView: UIViewRepresentable {
         conf.websiteDataStore = .default()
 
         // Request the desktop layout so the portal renders the persistent
-        // sidebar + content side-by-side (matches the Android Chrome
-        // experience the PM sees) instead of collapsing into a mobile drawer.
+        // sidebar + content side-by-side (matches what the PM sees in
+        // Chrome) instead of collapsing into a mobile drawer.
         let prefs = WKWebpagePreferences()
         prefs.preferredContentMode = .desktop
         conf.defaultWebpagePreferences = prefs
+
+        // Force the viewport meta to a desktop width before the page's CSS
+        // and JS evaluate. Material-UI's responsive hooks read
+        // window.innerWidth, so this is what actually flips the breakpoint
+        // from mobile to desktop. Runs at documentStart on every frame.
+        let viewportOverride = """
+        (function() {
+            var setViewport = function() {
+                var existing = document.querySelector('meta[name="viewport"]');
+                if (existing) { existing.parentNode.removeChild(existing); }
+                var meta = document.createElement('meta');
+                meta.setAttribute('name', 'viewport');
+                meta.setAttribute('content', 'width=1280, initial-scale=1, user-scalable=yes');
+                (document.head || document.documentElement).appendChild(meta);
+            };
+            setViewport();
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', setViewport);
+            }
+        })();
+        """
+        let viewportScript = WKUserScript(source: viewportOverride, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        conf.userContentController.addUserScript(viewportScript)
 
         let webView = WKWebView(frame: .zero, configuration: conf)
         webView.allowsBackForwardNavigationGestures = true
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
+        // Desktop user-agent — backstop for any UA-sniffing branches in the
+        // portal's responsive logic.
+        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
         // Opaque + solid background so nothing from the host view can bleed
         // through any seam between the webview and the sheet edges.
         webView.isOpaque = true
