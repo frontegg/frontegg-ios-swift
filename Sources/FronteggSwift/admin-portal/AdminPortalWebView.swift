@@ -4,11 +4,21 @@
 //
 //  POC: native admin portal via embedded WKWebView with shared session.
 //
-//  Loads the hosted admin portal at `${baseUrl}/oauth/portal` inside a WKWebView
-//  that shares its cookie store and process pool with the SDK's login webview.
-//  The user's existing refresh-token cookie is also injected defensively before
-//  load, so the portal authenticates without a re-login regardless of whether
-//  the original sign-in happened via embedded mode or `ASWebAuthenticationSession`.
+//  Authenticates the WKWebView before loading `${baseUrl}/oauth/portal` so
+//  the user never sees a re-login prompt. Strategy:
+//
+//    1. Call `silentAuthorize` over URLSession — the response sets the full
+//       `fe_refresh_*` + `fe_device_*` cookie pair on `HTTPCookieStorage.shared`.
+//    2. Mirror every cookie for the base host from `HTTPCookieStorage.shared`
+//       into the WebView's `WKHTTPCookieStore`.
+//    3. As a defensive fallback (e.g. `silentAuthorize` failed offline) also
+//       inject the `fe_refresh_*` cookie directly from the SDK's stored
+//       refresh token.
+//    4. Load the portal URL.
+//
+//  The two-step bridge is required because URLSession and WKWebView do NOT
+//  share a cookie jar — even when the user has a valid SDK session, the
+//  WebView's store is empty until we copy cookies in.
 //
 
 import Foundation
@@ -21,6 +31,7 @@ struct AdminPortalWebView: UIViewRepresentable {
 
     private let fronteggAuth: FronteggAuth
     private let onNavigationFailure: ((URL?) -> Void)?
+    private let logger = getLogger("AdminPortalWebView")
 
     init(onNavigationFailure: ((URL?) -> Void)? = nil) {
         self.fronteggAuth = FronteggAuth.shared
@@ -29,8 +40,8 @@ struct AdminPortalWebView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let conf = WKWebViewConfiguration()
-        // Share the SDK's process pool and persistent data store so that any
-        // session cookies the login webview wrote are visible here.
+        // Share the SDK's process pool and persistent data store so cookies
+        // any login webview wrote are visible here too.
         conf.processPool = WebViewShared.processPool
         conf.websiteDataStore = .default()
 
@@ -44,13 +55,8 @@ struct AdminPortalWebView: UIViewRepresentable {
         }
         #endif
 
-        let portalUrlString = "\(fronteggAuth.baseUrl)/oauth/portal"
-        guard let portalUrl = URL(string: portalUrlString) else {
-            return webView
-        }
-
-        injectRefreshCookieIfAvailable(into: webView) {
-            webView.load(URLRequest(url: portalUrl))
+        Task { @MainActor in
+            await authenticateAndLoad(webView: webView)
         }
 
         return webView
@@ -62,7 +68,67 @@ struct AdminPortalWebView: UIViewRepresentable {
         Coordinator(onNavigationFailure: onNavigationFailure)
     }
 
-    // MARK: - Cookie injection
+    // MARK: - Auth bridging
+
+    @MainActor
+    private func authenticateAndLoad(webView: WKWebView) async {
+        guard let baseUrl = URL(string: fronteggAuth.baseUrl),
+              let portalUrl = URL(string: "\(fronteggAuth.baseUrl)/oauth/portal") else {
+            logger.error("AdminPortal: invalid baseUrl=\(fronteggAuth.baseUrl)")
+            return
+        }
+        let store = webView.configuration.websiteDataStore.httpCookieStore
+
+        // 1. Drive silentAuthorize so the server sets fresh fe_refresh_* + fe_device_*
+        //    cookies on HTTPCookieStorage.shared (URLSession's cookie jar).
+        if let refreshToken = fronteggAuth.refreshToken {
+            do {
+                logger.info("AdminPortal: calling silentAuthorize to obtain session cookies")
+                _ = try await fronteggAuth.api.silentAuthorize(refreshToken: refreshToken)
+                logger.info("AdminPortal: silentAuthorize returned successfully")
+            } catch {
+                logger.warning("AdminPortal: silentAuthorize failed (\(error.localizedDescription)) — falling back to direct injection")
+            }
+        } else {
+            logger.warning("AdminPortal: no refresh token available — portal will likely redirect to login")
+        }
+
+        // 2. Mirror every cookie on the base host from HTTPCookieStorage.shared
+        //    into the WebView's WKHTTPCookieStore.
+        let sessionCookies = HTTPCookieStorage.shared.cookies(for: baseUrl) ?? []
+        logger.info("AdminPortal: mirroring \(sessionCookies.count) cookies into WKHTTPCookieStore")
+        for cookie in sessionCookies {
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                store.setCookie(cookie) { cont.resume() }
+            }
+        }
+
+        // 3. Defensive fallback: if step 1 produced no fe_refresh_* cookie,
+        //    synthesize one from the SDK's stored refresh token.
+        if let refreshToken = fronteggAuth.refreshToken,
+           let host = baseUrl.host,
+           !sessionCookies.contains(where: { $0.name.hasPrefix("fe_refresh_") }) {
+            let name = AdminPortalWebView.cookieName(for: fronteggAuth.clientId)
+            let props: [HTTPCookiePropertyKey: Any] = [
+                .name: name,
+                .value: refreshToken,
+                .domain: host,
+                .path: "/",
+                .secure: true,
+                .expires: Date().addingTimeInterval(60 * 60 * 24 * 30),
+            ]
+            if let cookie = HTTPCookie(properties: props) {
+                logger.info("AdminPortal: synthesizing fallback \(name) cookie")
+                await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                    store.setCookie(cookie) { cont.resume() }
+                }
+            }
+        }
+
+        // 4. Load the portal.
+        logger.info("AdminPortal: loading \(portalUrl.absoluteString)")
+        webView.load(URLRequest(url: portalUrl))
+    }
 
     /// Build the `fe_refresh_*` cookie name the same way `Api.swift` does
     /// (clientId with the first dash removed).
@@ -74,61 +140,45 @@ struct AdminPortalWebView: UIViewRepresentable {
         return "fe_refresh_\(clientIdWithoutFirstDash)"
     }
 
-    private func injectRefreshCookieIfAvailable(into webView: WKWebView,
-                                                completion: @escaping () -> Void) {
-        guard
-            let refreshToken = fronteggAuth.refreshToken,
-            let host = URL(string: fronteggAuth.baseUrl)?.host
-        else {
-            completion()
-            return
-        }
-
-        let cookieName = AdminPortalWebView.cookieName(for: fronteggAuth.clientId)
-        let cookieProperties: [HTTPCookiePropertyKey: Any] = [
-            .name: cookieName,
-            .value: refreshToken,
-            .domain: host,
-            .path: "/",
-            .secure: true,
-            .expires: Date().addingTimeInterval(60 * 60 * 24 * 30),
-        ]
-
-        guard let cookie = HTTPCookie(properties: cookieProperties) else {
-            completion()
-            return
-        }
-
-        let store = webView.configuration.websiteDataStore.httpCookieStore
-        store.setCookie(cookie) {
-            completion()
-        }
-    }
-
     // MARK: - Coordinator
 
     final class Coordinator: NSObject, WKNavigationDelegate {
+        private let logger = getLogger("AdminPortalWebView")
         private let onNavigationFailure: ((URL?) -> Void)?
+        private var didReportFailure = false
 
         init(onNavigationFailure: ((URL?) -> Void)?) {
             self.onNavigationFailure = onNavigationFailure
         }
 
-        /// If the portal redirects the user to a login route, auth bridging failed —
-        /// surface that to the host view so it can show an error or dismiss.
         func webView(_ webView: WKWebView,
                      decidePolicyFor navigationAction: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            if let url = navigationAction.request.url,
-               isLoginRedirect(url: url) {
-                onNavigationFailure?(url)
+            if let url = navigationAction.request.url {
+                logger.trace("AdminPortal: navigation → \(url.absoluteString)")
+                if !didReportFailure, isLoginRedirect(url: url) {
+                    didReportFailure = true
+                    logger.warning("AdminPortal: detected login redirect — auth bridging failed at \(url.absoluteString)")
+                    onNavigationFailure?(url)
+                }
             }
             decisionHandler(.allow)
         }
 
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            logger.error("AdminPortal: didFail \(error.localizedDescription)")
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            logger.error("AdminPortal: didFailProvisionalNavigation \(error.localizedDescription)")
+        }
+
         private func isLoginRedirect(url: URL) -> Bool {
             let path = url.path.lowercased()
-            return path.contains("/oauth/account/login") || path.contains("/oauth/authorize")
+            // The portal itself lives under /oauth/portal — anything else under
+            // /oauth/authorize or /oauth/account/login means we got bounced.
+            if path.hasPrefix("/oauth/portal") { return false }
+            return path.hasPrefix("/oauth/authorize") || path.contains("/oauth/account/login")
         }
     }
 }
