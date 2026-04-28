@@ -41,6 +41,13 @@ struct AdminPortalWebView: UIViewRepresentable {
         conf.processPool = WebViewShared.processPool
         conf.websiteDataStore = .default()
 
+        // Request the desktop layout so the portal renders the persistent
+        // sidebar + content side-by-side (matches the Android Chrome
+        // experience the PM sees) instead of collapsing into a mobile drawer.
+        let prefs = WKWebpagePreferences()
+        prefs.preferredContentMode = .desktop
+        conf.defaultWebpagePreferences = prefs
+
         let webView = WKWebView(frame: .zero, configuration: conf)
         webView.allowsBackForwardNavigationGestures = true
         webView.navigationDelegate = context.coordinator
