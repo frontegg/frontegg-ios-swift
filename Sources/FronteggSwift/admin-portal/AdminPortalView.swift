@@ -4,9 +4,9 @@
 //
 //  POC: SwiftUI entry point for the embedded admin portal.
 //
-//  Presents the hosted admin portal (`${baseUrl}/oauth/portal`) inside an
-//  in-app WKWebView with native iOS chrome (top bar + Done button) so the
-//  end user never leaves the app and never has to re-authenticate.
+//  Native iOS chrome (top bar + Done button) wrapping a WKWebView that loads
+//  `${baseUrl}/oauth/portal`. Reuses any web-side cookies already present
+//  in the shared cookie store; otherwise the portal renders its own login.
 //
 
 import SwiftUI
@@ -15,7 +15,6 @@ import WebKit
 @available(iOS 14.0, *)
 public struct AdminPortalView: View {
     @Environment(\.presentationMode) private var presentationMode
-    @State private var loginRedirectDetected: Bool = false
 
     public init() {}
 
@@ -23,7 +22,7 @@ public struct AdminPortalView: View {
         VStack(spacing: 0) {
             topBar
             Divider()
-            content
+            AdminPortalWebView()
         }
         .background(Color(UIColor.systemBackground).ignoresSafeArea())
     }
@@ -49,37 +48,6 @@ public struct AdminPortalView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(Color(UIColor.systemBackground))
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if loginRedirectDetected {
-            authBridgingFailedState
-        } else {
-            AdminPortalWebView(onNavigationFailure: { _ in
-                DispatchQueue.main.async {
-                    loginRedirectDetected = true
-                }
-            })
-        }
-    }
-
-    private var authBridgingFailedState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 36))
-                .foregroundColor(.orange)
-            Text("Couldn't open the admin portal")
-                .font(.headline)
-            Text("The portal asked us to log in again. The session may have expired.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-            Button("Close", action: dismiss)
-                .padding(.top, 8)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func dismiss() {
