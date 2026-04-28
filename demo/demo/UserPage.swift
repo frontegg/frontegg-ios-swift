@@ -61,9 +61,11 @@ struct UserPage: View {
                     UserInfoView(user: user)
                     Spacer().frame(height: 16)
                     
-                    sensitiveActionButton
-                    requestAuthorizeButton
-                    adminPortalButton
+                    VStack(spacing: 12) {
+                        sensitiveActionButton
+                        requestAuthorizeButton
+                        adminPortalButton
+                    }
                     Spacer().frame(height: 16)
                     entitlementsSection
                     Spacer().frame(height: 24)
