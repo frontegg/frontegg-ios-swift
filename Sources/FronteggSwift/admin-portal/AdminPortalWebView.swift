@@ -57,6 +57,10 @@ struct AdminPortalWebView: UIViewRepresentable {
         webView.isOpaque = true
         webView.backgroundColor = .systemBackground
         webView.scrollView.backgroundColor = .systemBackground
+        // Disable the auto safe-area inset that WKWebView applies, so the
+        // page content extends edge-to-edge (no grey strip above the home
+        // indicator).
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
 
         #if compiler(>=5.8) && os(iOS) && DEBUG
         if #available(iOS 16.4, *) {
