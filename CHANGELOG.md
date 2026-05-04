@@ -1,3 +1,6 @@
+## v1.3.4
+Removed logging of 502/503 errors for Sentry
+
 ## v1.3.3
 ## Summary
 - When a user logs out while offline (or network drops during logout), `reconnectedToInternet()` only ran the authenticated path (`refreshTokenIfNeeded`), which is a no-op without tokens — leaving a blank screen
