@@ -67,4 +67,41 @@ final class SentryLoggingTests: XCTestCase {
         SentryHelper.logMessage("test message", level: .info)
         // When flag is false, isSentryEnabled() is false so capture is skipped; no crash
     }
+
+    func test_shouldDropErrorForTesting_dropsApiError502And503() {
+        XCTAssertTrue(
+            SentryHelper.shouldDropErrorForTesting(ApiError.meEndpointFailed(statusCode: 502, path: "/me"))
+        )
+        XCTAssertTrue(
+            SentryHelper.shouldDropErrorForTesting(ApiError.meEndpointFailed(statusCode: 503, path: "/me"))
+        )
+        XCTAssertTrue(
+            SentryHelper.shouldDropErrorForTesting(ApiError.refreshEndpointTransient(statusCode: 502, message: "temporary"))
+        )
+    }
+
+    func test_shouldDropErrorForTesting_keepsOtherStatusCodes() {
+        XCTAssertFalse(
+            SentryHelper.shouldDropErrorForTesting(ApiError.meEndpointFailed(statusCode: 500, path: "/me"))
+        )
+        XCTAssertFalse(
+            SentryHelper.shouldDropErrorForTesting(ApiError.meEndpointFailed(statusCode: 504, path: "/me"))
+        )
+    }
+
+    func test_shouldDropErrorForTesting_dropsWhenHttpContextHas502Or503() {
+        let generic = NSError(domain: "test", code: -1)
+        XCTAssertTrue(
+            SentryHelper.shouldDropErrorForTesting(
+                generic,
+                context: ["http": ["statusCode": 502]]
+            )
+        )
+        XCTAssertTrue(
+            SentryHelper.shouldDropErrorForTesting(
+                generic,
+                context: ["http": ["statusCode": 503]]
+            )
+        )
+    }
 }

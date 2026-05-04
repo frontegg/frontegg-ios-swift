@@ -16,6 +16,7 @@ public class SentryHelper {
     // Thread-safe initialization queue (serial to ensure atomic initialization)
     private static let initQueue = DispatchQueue(label: "com.frontegg.sentry.init")
     private static var sentryEnabledByFeatureFlag: Bool? = nil
+    private static let ignoredHTTPStatusCodes: Set<Int> = [502, 503]
 
     public static func setSentryEnabledFromFeatureFlag(_ enabled: Bool) {
         initQueue.sync {
@@ -29,12 +30,34 @@ public class SentryHelper {
         }
     }
 
+    internal static func shouldDropErrorForTesting(_ error: Error, context: [String: [String: Any]] = [:]) -> Bool {
+        shouldDropError(error, context: context)
+    }
+
     private static func isSentryEnabled() -> Bool {
         return initQueue.sync {
             guard isInitialized else { return false }
             guard sentryEnabledByFeatureFlag == true else { return false }
             return true
         }
+    }
+
+    private static func shouldDropError(_ error: Error, context: [String: [String: Any]]) -> Bool {
+        if let apiError = error as? ApiError {
+            switch apiError {
+            case .meEndpointFailed(let statusCode, _),
+                 .refreshEndpointTransient(let statusCode, _):
+                return ignoredHTTPStatusCodes.contains(statusCode)
+            default:
+                break
+            }
+        }
+
+        if let statusCode = context["http"]?["statusCode"] as? Int {
+            return ignoredHTTPStatusCodes.contains(statusCode)
+        }
+
+        return false
     }
 
     private static func parseAssociatedDomains(_ values: [String]) -> [[String: Any]] {
@@ -234,6 +257,10 @@ public class SentryHelper {
     /// The maxQueueSize limit (30) prevents memory abuse during extended offline periods.
     public static func logError(_ error: Error, context: [String: [String: Any]] = [:]) {
         guard isSentryEnabled() else { return }
+        if shouldDropError(error, context: context) {
+            logger.debug("Dropping Sentry error event for ignored HTTP status (502/503): \(String(reflecting: error))")
+            return
+        }
         SentrySDK.capture(error: error) { scope in
             for (key, value) in context {
                 scope.setContext(value: value, key: key)
