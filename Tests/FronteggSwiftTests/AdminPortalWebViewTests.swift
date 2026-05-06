@@ -99,17 +99,22 @@ final class AdminPortalWebViewTests: XCTestCase {
     // MARK: - Coordinator navigation policy
 
     @MainActor
-    func test_coordinator_allowsAllNavigation_byDefault() {
+    func test_coordinator_allowsAllNavigation_andRequestsDesktopContentMode() {
         let coordinator = AdminPortalWebView.Coordinator(onClose: nil)
         let request = URLRequest(url: URL(string: "https://app.frontegg.com/oauth/portal")!)
         let action = StubNavigationAction(request: request)
+        let preferences = WKWebpagePreferences()
 
         var receivedPolicy: WKNavigationActionPolicy?
-        coordinator.webView(WKWebView(), decidePolicyFor: action) { policy in
+        var receivedPreferences: WKWebpagePreferences?
+        coordinator.webView(WKWebView(), decidePolicyFor: action, preferences: preferences) { policy, prefs in
             receivedPolicy = policy
+            receivedPreferences = prefs
         }
 
         XCTAssertEqual(receivedPolicy, .allow)
+        XCTAssertEqual(receivedPreferences?.preferredContentMode, .desktop,
+                       "Per-navigation preferences must request desktop content mode so the portal layout doesn't flip to mobile after in-page navigations.")
     }
 
 }

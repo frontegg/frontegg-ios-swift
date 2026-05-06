@@ -51,7 +51,14 @@ struct AdminPortalWebView: UIViewRepresentable {
         // Force the viewport meta to a desktop width before the page's CSS
         // and JS evaluate. Material-UI's responsive hooks read
         // window.innerWidth, so this is what actually flips the breakpoint
-        // from mobile to desktop. Runs at documentStart on every frame.
+        // from mobile to desktop. Runs at documentStart on the main frame
+        // only — overriding inside iframes (e.g. embedded social-login
+        // widgets) was causing mid-page re-layouts that disrupted the
+        // zoom-and-pan state.
+        //
+        // initial-scale lets WebKit auto-fit on first paint; minimum/maximum
+        // clamp pinch zoom to a sane range so panning a zoomed page stays
+        // smooth instead of going extreme.
         let viewportOverride = """
         (function() {
             var setViewport = function() {
@@ -59,7 +66,7 @@ struct AdminPortalWebView: UIViewRepresentable {
                 if (existing) { existing.parentNode.removeChild(existing); }
                 var meta = document.createElement('meta');
                 meta.setAttribute('name', 'viewport');
-                meta.setAttribute('content', 'width=1024, user-scalable=yes');
+                meta.setAttribute('content', 'width=1024, user-scalable=yes, minimum-scale=0.3, maximum-scale=3');
                 (document.head || document.documentElement).appendChild(meta);
             };
             setViewport();
@@ -68,7 +75,7 @@ struct AdminPortalWebView: UIViewRepresentable {
             }
         })();
         """
-        let viewportScript = WKUserScript(source: viewportOverride, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        let viewportScript = WKUserScript(source: viewportOverride, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         conf.userContentController.addUserScript(viewportScript)
 
         let webView = WKWebView(frame: .zero, configuration: conf)
@@ -87,6 +94,13 @@ struct AdminPortalWebView: UIViewRepresentable {
         // page content extends edge-to-edge (no grey strip above the home
         // indicator).
         webView.scrollView.contentInsetAdjustmentBehavior = .never
+        // Explicit defaults for pinch-zoom-and-pan — when the viewport is
+        // wider than the screen and the user zooms in, the scroll view
+        // needs both bouncing and bouncesZoom for the rubber-band gesture
+        // to surface (some iOS versions disable bounces on certain
+        // contentInsetAdjustmentBehavior combos).
+        webView.scrollView.bounces = true
+        webView.scrollView.bouncesZoom = true
 
         #if compiler(>=5.8) && os(iOS) && DEBUG
         if #available(iOS 16.4, *) {
@@ -159,13 +173,44 @@ struct AdminPortalWebView: UIViewRepresentable {
             self.onClose = onClose
         }
 
+        /// iOS 13+ per-navigation preferences callback. Setting
+        /// `preferredContentMode = .desktop` here (in addition to the
+        /// `defaultWebpagePreferences` we set on the configuration) is what
+        /// makes desktop layout stick across in-page back/forward and
+        /// BFCache restorations — without this, a few in-page navigations
+        /// can flip the layout back to mobile.
+        ///
+        /// When this method is implemented, the simpler 3-arg variant is
+        /// not called, so navigation-trace logging happens here too.
         func webView(_ webView: WKWebView,
                      decidePolicyFor navigationAction: WKNavigationAction,
-                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+                     preferences: WKWebpagePreferences,
+                     decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
             if let url = navigationAction.request.url {
                 logger.trace("AdminPortal: navigation → \(url.absoluteString)")
             }
-            decisionHandler(.allow)
+            preferences.preferredContentMode = .desktop
+            decisionHandler(.allow, preferences)
+        }
+
+        /// Re-apply the desktop viewport on every finished navigation as a
+        /// safety net — BFCache or fast same-document navigations can skip
+        /// the documentStart user script, leaving the page on whatever
+        /// viewport the document originally declared.
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            let reapply = """
+            (function() {
+                var existing = document.querySelector('meta[name="viewport"]');
+                var desired = 'width=1024, user-scalable=yes, minimum-scale=0.3, maximum-scale=3';
+                if (existing && existing.getAttribute('content') === desired) { return; }
+                if (existing) { existing.parentNode.removeChild(existing); }
+                var meta = document.createElement('meta');
+                meta.setAttribute('name', 'viewport');
+                meta.setAttribute('content', desired);
+                (document.head || document.documentElement).appendChild(meta);
+            })();
+            """
+            webView.evaluateJavaScript(reapply, completionHandler: nil)
         }
 
         func webView(_ webView: WKWebView,
