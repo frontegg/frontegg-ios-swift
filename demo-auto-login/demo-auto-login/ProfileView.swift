@@ -8,6 +8,7 @@ import FronteggSwift
 
 struct ProfileView: View {
     @EnvironmentObject var fronteggAuth: FronteggAuth
+    @State private var showAdminPortal = false
 
     var body: some View {
         NavigationView {
@@ -66,6 +67,19 @@ struct ProfileView: View {
                     }
                 }
 
+                // Admin Portal
+                Section {
+                    Button {
+                        showAdminPortal = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "gearshape")
+                            Text("Open Admin Portal")
+                        }
+                    }
+                    .accessibilityIdentifier("OpenAdminPortalButton")
+                }
+
                 // Logout
                 Section {
                     Button(role: .destructive) {
@@ -86,6 +100,9 @@ struct ProfileView: View {
                     tokenDiagnostics
                     offlineDiagnostics
                 }
+            }
+            .sheet(isPresented: $showAdminPortal) {
+                AdminPortalView()
             }
         }
     }
