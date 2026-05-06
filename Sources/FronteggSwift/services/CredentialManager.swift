@@ -14,6 +14,10 @@ public enum KeychainKeys: String {
     case region = "fe_region"
     case userInfo = "user_me"
     case lastActiveTenantId = "fe_lastActiveTenantId"
+    /// Tombstone marking a refresh request that was dispatched to the server
+    /// but whose response we may not have received. A stale value surviving a
+    /// process kill indicates the rotation-orphan state.
+    case refreshInFlight = "fe_refresh_in_flight"
 }
 
 

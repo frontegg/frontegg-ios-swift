@@ -5,6 +5,49 @@
 
 import Foundation
 import Dispatch
+import CryptoKit
+#if canImport(UIKit) && !os(watchOS)
+import UIKit
+#endif
+
+/// Background-task handle that keeps iOS from suspending the app mid-refresh.
+/// `end()` is idempotent across the expiration handler and the caller's defer.
+#if canImport(UIKit) && !os(watchOS)
+fileprivate final class RefreshBackgroundTaskHandle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var taskId: UIBackgroundTaskIdentifier = .invalid
+
+    @MainActor
+    func begin(name: String) {
+        lock.lock()
+        let current = taskId
+        lock.unlock()
+        guard current == .invalid else { return }
+
+        let newId = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            self?.end()
+        }
+        lock.lock()
+        taskId = newId
+        lock.unlock()
+    }
+
+    func end() {
+        lock.lock()
+        let captured = taskId
+        taskId = .invalid
+        lock.unlock()
+        guard captured != .invalid else { return }
+        if Thread.isMainThread {
+            UIApplication.shared.endBackgroundTask(captured)
+        } else {
+            DispatchQueue.main.async {
+                UIApplication.shared.endBackgroundTask(captured)
+            }
+        }
+    }
+}
+#endif
 
 extension FronteggAuth {
     func isAutoRefreshBlocked(source: RefreshInvocationSource) -> Bool {
@@ -18,7 +61,9 @@ extension FronteggAuth {
         let remainingTime = (Double(expirationTime) * 1000) - now
 
         let minRefreshWindow: Double = 20000 // Minimum 20 seconds before expiration, in milliseconds
-        let adaptiveRefreshTime = remainingTime * 0.8 // 80% of remaining time
+        // Refresh at 50% of remaining TTL so each rotation lands with comfortable
+        // network/retry headroom instead of near expiry.
+        let adaptiveRefreshTime = remainingTime * 0.5
 
         return remainingTime > minRefreshWindow ? adaptiveRefreshTime / 1000 : max((remainingTime - minRefreshWindow) / 1000, 0)
     }
@@ -180,6 +225,92 @@ extension FronteggAuth {
         refreshTokenDispatch = nil
     }
 
+    /// Truncated hex of SHA-256 of the refresh token — used as a keychain
+    /// tombstone value. Short enough to stay out of logs, long enough to
+    /// uniquely identify a given token across process restarts.
+    internal func refreshTokenFingerprint(_ token: String) -> String {
+        let digest = SHA256.hash(data: Data(token.utf8))
+        return digest.prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Marks a refresh as in-flight so a force-kill or crash before the response
+    /// leaves a detectable breadcrumb for the next launch.
+    internal func writeRefreshInFlightTombstone(for refreshToken: String) {
+        let fingerprint = refreshTokenFingerprint(refreshToken)
+        do {
+            try credentialManager.save(key: KeychainKeys.refreshInFlight.rawValue, value: fingerprint)
+        } catch {
+            self.logger.warning("Failed to write refresh-in-flight tombstone: \(error)")
+        }
+    }
+
+    internal func clearRefreshInFlightTombstone() {
+        credentialManager.delete(key: KeychainKeys.refreshInFlight.rawValue)
+    }
+
+    /// True iff a tombstone exists and matches the given refresh token —
+    /// i.e. the previous process died with a refresh request on the wire for
+    /// this exact token.
+    internal func hasOrphanedRefreshTombstone(matching refreshToken: String?) -> Bool {
+        guard
+            let refreshToken,
+            let stored = try? credentialManager.get(key: KeychainKeys.refreshInFlight.rawValue)
+        else {
+            return false
+        }
+        return stored == refreshTokenFingerprint(refreshToken)
+    }
+
+    /// Called once per app start. Emits a Sentry breadcrumb when the previous
+    /// session died mid-refresh so residual rotation-orphan rate is observable
+    /// even after this PR's client-side hardening.
+    internal func detectAndReportOrphanedRefreshAtStartup(refreshToken: String?) {
+        guard hasOrphanedRefreshTombstone(matching: refreshToken) else { return }
+        self.logger.warning("Startup: detected orphaned refresh tombstone — previous session died mid-refresh")
+        SentryHelper.addBreadcrumb(
+            "Startup detected orphaned refresh (previous process interrupted mid-rotation)",
+            category: "auth",
+            level: .warning,
+            data: [
+                "hasRefreshToken": refreshToken != nil
+            ]
+        )
+    }
+
+    /// Writes rotated tokens to the keychain before post-refresh work runs so a
+    /// mid-flow suspend/kill cannot leave the keychain holding the invalidated
+    /// token. Non-throwing: `setCredentialsInternal` saves again on the happy path.
+    internal func persistRotatedTokensImmediately(
+        accessToken: String,
+        refreshToken: String,
+        tenantId: String?,
+        enableSessionPerTenant: Bool
+    ) {
+        do {
+            if enableSessionPerTenant, let tenantId = tenantId {
+                try self.credentialManager.saveTokenForTenant(refreshToken, tenantId: tenantId, tokenType: .refreshToken)
+                try self.credentialManager.saveTokenForTenant(accessToken, tenantId: tenantId, tokenType: .accessToken)
+                self.logger.info("Persisted rotated tokens to keychain (tenant: \(tenantId)) immediately after refresh")
+            } else {
+                try self.credentialManager.save(key: KeychainKeys.refreshToken.rawValue, value: refreshToken)
+                try self.credentialManager.save(key: KeychainKeys.accessToken.rawValue, value: accessToken)
+                self.logger.info("Persisted rotated tokens to keychain (global) immediately after refresh")
+            }
+        } catch {
+            self.logger.error("Failed to persist rotated tokens to keychain immediately after refresh: \(error)")
+            SentryHelper.logError(error, context: [
+                "auth": [
+                    "method": "persistRotatedTokensImmediately",
+                    "enableSessionPerTenant": enableSessionPerTenant,
+                    "hasTenantId": tenantId != nil
+                ],
+                "error": [
+                    "type": "immediate_rotation_persistence_failed"
+                ]
+            ])
+        }
+    }
+
     public func refreshTokenIfNeeded(attempts: Int = 0, skipNetworkCheck: Bool = false) async -> Bool {
         await refreshTokenIfNeededInternal(
             source: .manualUser,
@@ -188,7 +319,48 @@ extension FronteggAuth {
         )
     }
 
+    /// Must be called while holding `refreshSerializationLock`.
+    private func claimOrStartRefreshTaskLocked(
+        source: RefreshInvocationSource,
+        attempts: Int,
+        skipNetworkCheck: Bool
+    ) -> Task<Bool, Never> {
+        if let existing = inflightRefreshTask {
+            return existing
+        }
+        let task = Task<Bool, Never> { [weak self] in
+            guard let self = self else { return false }
+            let result = await self.performRefreshTokenFlow(
+                source: source,
+                attempts: attempts,
+                skipNetworkCheck: skipNetworkCheck
+            )
+            self.refreshSerializationLock.withLock {
+                self.inflightRefreshTask = nil
+            }
+            return result
+        }
+        inflightRefreshTask = task
+        return task
+    }
+
     internal func refreshTokenIfNeededInternal(
+        source: RefreshInvocationSource,
+        attempts: Int = 0,
+        skipNetworkCheck: Bool = false
+    ) async -> Bool {
+        let task: Task<Bool, Never> = refreshSerializationLock.withLock {
+            claimOrStartRefreshTaskLocked(
+                source: source,
+                attempts: attempts,
+                skipNetworkCheck: skipNetworkCheck
+            )
+        }
+        return await task.value
+    }
+
+    /// Body of the serialized refresh; only one instance runs at a time.
+    internal func performRefreshTokenFlow(
         source: RefreshInvocationSource,
         attempts: Int = 0,
         skipNetworkCheck: Bool = false
@@ -356,7 +528,23 @@ extension FronteggAuth {
         setRefreshingToken(true)
         defer { setRefreshingToken(false) }
 
+        // Keep the app awake for the full rotation window so iOS cannot suspend
+        // us between the server rotating the token and the keychain write.
+#if canImport(UIKit) && !os(watchOS)
+        let bgTaskHandle = RefreshBackgroundTaskHandle()
+        await MainActor.run {
+            bgTaskHandle.begin(name: "FronteggRefreshToken")
+        }
+        defer { bgTaskHandle.end() }
+#endif
+
         let preservedTenantId = enableSessionPerTenant ? credentialManager.getLastActiveTenantId() : nil
+        let hadOrphanedTombstoneOnEntry = hasOrphanedRefreshTombstone(matching: refreshToken)
+
+        // Record that a refresh is on the wire. If the process is killed before
+        // the response lands, this tombstone survives and the next launch can
+        // attribute the resulting 401 to an interrupted rotation.
+        writeRefreshInFlightTombstone(for: refreshToken)
 
         // Log token refresh attempt details
         SentryHelper.addBreadcrumb(
@@ -369,7 +557,8 @@ extension FronteggAuth {
                 "preservedTenantId": preservedTenantId ?? "nil",
                 "hasRefreshToken": true,
                 "refreshTokenLength": refreshToken.count,
-                "hasAccessToken": accessToken != nil
+                "hasAccessToken": accessToken != nil,
+                "followsInterruptedRefresh": hadOrphanedTombstoneOnEntry
             ]
         )
 
@@ -460,6 +649,21 @@ extension FronteggAuth {
                 }
             }
 
+            // Persist rotated tokens before setCredentialsInternal so a /me
+            // hang or mid-flow kill cannot strand the new refresh token.
+            let tenantIdForImmediatePersistence: String? = enableSessionPerTenant
+                ? (currentTenantId ?? preservedTenantId ?? credentialManager.getLastActiveTenantId())
+                : nil
+            persistRotatedTokensImmediately(
+                accessToken: data.access_token,
+                refreshToken: data.refresh_token,
+                tenantId: tenantIdForImmediatePersistence,
+                enableSessionPerTenant: enableSessionPerTenant
+            )
+            // Rotation completed and the new token is durable; tombstone no
+            // longer indicates an unresolved in-flight request.
+            clearRefreshInFlightTombstone()
+
             await self.setCredentialsInternal(
                 accessToken: data.access_token,
                 refreshToken: data.refresh_token,
@@ -496,6 +700,29 @@ extension FronteggAuth {
 
         } catch let error as FronteggError {
             if case .authError(FronteggError.Authentication.failedToRefreshToken(let message)) = error {
+                // If the in-memory refresh token was rotated by another path
+                // while our request was in flight, the 401 is stale — don't
+                // wipe credentials.
+                let currentInMemoryRefreshToken = await MainActor.run { self.refreshToken }
+                if let current = currentInMemoryRefreshToken, current != refreshToken {
+                    self.logger.warning("Refresh failed but in-memory refresh token has already been rotated; skipping credential wipe")
+                    SentryHelper.addBreadcrumb(
+                        "Refresh token rotation race detected; skipping logout",
+                        category: "auth",
+                        level: .warning,
+                        data: [
+                            "sentRefreshTokenLength": refreshToken.count,
+                            "currentRefreshTokenLength": current.count,
+                            "attempts": attempts,
+                            "enableSessionPerTenant": enableSessionPerTenant
+                        ]
+                    )
+                    // The other path completed rotation; our tombstone no
+                    // longer points at a live in-flight request.
+                    clearRefreshInFlightTombstone()
+                    return false
+                }
+
                 let tenantIdToPreserve: String? = enableSessionPerTenant
                     ? (preservedTenantId ?? credentialManager.getLastActiveTenantId())
                     : nil
@@ -509,7 +736,11 @@ extension FronteggAuth {
                         "method": "refreshTokenIfNeeded",
                         "attempts": attempts,
                         "enableSessionPerTenant": enableSessionPerTenant,
-                        "hasPreservedTenantId": enableSessionPerTenant && preservedTenantId != nil
+                        "hasPreservedTenantId": enableSessionPerTenant && preservedTenantId != nil,
+                        // Surfaces the residual rotation-orphan rate: true means
+                        // this 401 followed a refresh that was interrupted
+                        // before the previous process could persist RT_NEW.
+                        "followsInterruptedRefresh": hadOrphanedTombstoneOnEntry
                     ],
                     "error": [
                         "type": "failed_to_refresh_token",
@@ -530,6 +761,7 @@ extension FronteggAuth {
                     context: context
                 )
 
+                clearRefreshInFlightTombstone()
                 if enableSessionPerTenant {
                     self.credentialManager.clear(excludingKeys: [KeychainKeys.lastActiveTenantId.rawValue])
                 } else {

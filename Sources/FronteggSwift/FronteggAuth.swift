@@ -61,6 +61,10 @@ public class FronteggAuth: FronteggState {
     var offlineDebounceWork: DispatchWorkItem?
     let connectivityGenerationLock = NSLock()
     var connectivityGeneration: UInt64 = 0
+    /// Serializes concurrent refresh callers so only one rotation hits the
+    /// server at a time; subsequent callers await the same Task.
+    let refreshSerializationLock = NSLock()
+    var inflightRefreshTask: Task<Bool, Never>?
     let logoutTransitionLock = NSLock()
     var logoutInProgress = false
     // internal for extension access (FronteggAuth+Connectivity.swift)
