@@ -7,6 +7,7 @@
 
 import Foundation
 import UIKit
+import SwiftUI
 import Combine
 import FronteggSwift
 
@@ -60,8 +61,32 @@ class StreamViewController: BaseViewController, UITextFieldDelegate {
         testLabel.accessibilityIdentifier = "AccessTokenLabel"
 
         self.setupAppFlow()
+        self.installAdminPortalButton()
 
         self.addObservers()
+    }
+
+    /// Adds a small "Admin Portal" button anchored to the top-trailing safe
+    /// area of the view. Placed programmatically so we don't have to edit
+    /// the storyboard XML for a POC affordance.
+    private func installAdminPortalButton() {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.setTitle("Admin Portal", for: .normal)
+        button.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+        button.accessibilityIdentifier = "OpenAdminPortalButton"
+        button.addTarget(self, action: #selector(didTapAdminPortal), for: .touchUpInside)
+        view.addSubview(button)
+        NSLayoutConstraint.activate([
+            button.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            button.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
+        ])
+    }
+
+    @objc private func didTapAdminPortal() {
+        let host = UIHostingController(rootView: AdminPortalView())
+        host.modalPresentationStyle = .pageSheet
+        present(host, animated: true)
     }
     
     /// Sets up the UI for the stream view.
