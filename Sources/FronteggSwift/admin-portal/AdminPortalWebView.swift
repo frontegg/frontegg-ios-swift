@@ -107,13 +107,24 @@ struct AdminPortalWebView: UIViewRepresentable {
         Coordinator(onClose: onClose)
     }
 
-    @MainActor
-    private func loadPortal(webView: WKWebView) async {
-        var components = URLComponents(string: "\(fronteggAuth.baseUrl)/oauth/portal")
-        if let applicationId = fronteggAuth.applicationId, !applicationId.isEmpty {
+    /// Builds the admin portal URL. Pinning the application context via
+    /// `?appId=<applicationId>` is required for multi-app workspaces — without
+    /// it the portal renders "Application not found". Single-app workspaces
+    /// pass `nil`/empty and get the bare URL.
+    internal static func portalURL(baseUrl: String, applicationId: String?) -> URL? {
+        var components = URLComponents(string: "\(baseUrl)/oauth/portal")
+        if let applicationId = applicationId, !applicationId.isEmpty {
             components?.queryItems = [URLQueryItem(name: "appId", value: applicationId)]
         }
-        guard let portalUrl = components?.url else {
+        return components?.url
+    }
+
+    @MainActor
+    private func loadPortal(webView: WKWebView) async {
+        guard let portalUrl = AdminPortalWebView.portalURL(
+            baseUrl: fronteggAuth.baseUrl,
+            applicationId: fronteggAuth.applicationId
+        ) else {
             logger.error("AdminPortal: invalid baseUrl=\(fronteggAuth.baseUrl)")
             return
         }
