@@ -1,3 +1,19 @@
+## v1.3.5
+The release workflows wrote the PR body to CHANGELOG.md by inlining the GitHub Actions expression `${{ steps.get_description.outputs.DESCRIPTION }}` inside a single-quoted bash string:
+
+    echo -e '${{ steps.get_description.outputs.DESCRIPTION }}' > $CHANGELOG
+
+Whenever the PR body contained an apostrophe ("host's", "page's", "portal's", any English contraction), the single quote inside the expanded string closed the literal early, then bash mis-parsed the remainder as commands — exit 2, "syntax error near unexpected token `('".
+
+This bit the merge of #253 and would bite every future PR with contraction-style English in the description (i.e. nearly all of them). Failed run:
+https://github.com/frontegg/frontegg-ios-swift/actions/runs/25501763514
+
+Fix in both onPullRequestMerged.yaml and onReleasePullRequestUpdated.yaml:
+
+- Pass DESCRIPTION via `env:` so bash dereferences it as $DESCRIPTION with no escaping required.
+- Reference all paths via env vars ($CHANGELOG_FILE, $CHANGELOG_OLD_FILE) instead of ${{ env.X }} so the bash invocation is fully shell-quoted.
+- Replace `echo -e '...' > FILE` with `printf '%s\n' "$VAR" > "$FILE"` — printf is portable and won't choke on backslashes inside the body.
+
 ## v1.3.4
 Removed logging of 502/503 errors for Sentry
 
