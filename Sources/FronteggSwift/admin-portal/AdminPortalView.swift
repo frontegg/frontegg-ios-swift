@@ -21,7 +21,10 @@ public struct AdminPortalView: View {
 
     public var body: some View {
         ZStack {
-            Color(UIColor.systemBackground)
+            // Match the WKWebView's scrollView background (and the portal
+            // body's grey chrome) so over-scroll bouncing and any seam
+            // around the safe area look continuous with the rendered page.
+            Color(UIColor.secondarySystemBackground)
                 .ignoresSafeArea()
             AdminPortalWebView(onClose: dismiss)
                 .ignoresSafeArea(edges: .bottom)

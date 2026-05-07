@@ -86,10 +86,14 @@ struct AdminPortalWebView: UIViewRepresentable {
         // portal's responsive logic.
         webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
         // Opaque + solid background so nothing from the host view can bleed
-        // through any seam between the webview and the sheet edges.
+        // through any seam between the webview and the sheet edges. Use the
+        // *secondary* system background (light grey in light mode, near-black
+        // in dark mode) because that's what Frontegg's admin-portal body
+        // chrome uses — without the match, horizontal over-scroll bouncing
+        // flashes a colour that doesn't belong to the page.
         webView.isOpaque = true
-        webView.backgroundColor = .systemBackground
-        webView.scrollView.backgroundColor = .systemBackground
+        webView.backgroundColor = .secondarySystemBackground
+        webView.scrollView.backgroundColor = .secondarySystemBackground
         // Disable the auto safe-area inset that WKWebView applies, so the
         // page content extends edge-to-edge (no grey strip above the home
         // indicator).
