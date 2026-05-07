@@ -11,7 +11,8 @@ struct UserPage: View {
     @State private var entitlementUnifiedFeature: Entitlement?
     @State private var entitlementUnifiedPermission: Entitlement?
     @State private var entitlementsLoading = false
-    
+    @State private var showAdminPortal = false
+
     struct Message: Identifiable {
         let id = UUID()
         let text: String
@@ -30,6 +31,9 @@ struct UserPage: View {
                 .ignoresSafeArea(edges: .top),alignment: .top)
             .overlay(Footer()
                 .ignoresSafeArea(edges: .bottom),alignment: .bottom)
+            .sheet(isPresented: $showAdminPortal) {
+                AdminPortalView()
+            }
         }
     }
     
@@ -57,7 +61,10 @@ struct UserPage: View {
                     UserInfoView(user: user)
                     Spacer().frame(height: 16)
                     
-                    sensitiveActionButton
+                    VStack(spacing: 12) {
+                        sensitiveActionButton
+                        adminPortalButton
+                    }
                     Spacer().frame(height: 16)
                     entitlementsSection
                     Spacer().frame(height: 24)
@@ -160,6 +167,14 @@ struct UserPage: View {
     private var sensitiveActionButton: some View {
         Button("Sensitive action") {
             handleSensitiveAction()
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .padding(.horizontal, 8)
+    }
+
+    private var adminPortalButton: some View {
+        Button("Open Admin Portal") {
+            showAdminPortal = true
         }
         .buttonStyle(PrimaryButtonStyle())
         .padding(.horizontal, 8)
