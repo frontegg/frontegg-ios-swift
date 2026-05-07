@@ -95,22 +95,31 @@ jobs:
       - name: Update CHANGELOG file
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pass DESCRIPTION through the environment so bash sees it as a
+          # plain variable. Inlining ${{ ... }} into a shell-quoted string
+          # breaks when the PR body contains apostrophes (e.g. "host's",
+          # "portal's") — the single-quoted heredoc closes early and bash
+          # then mis-parses the rest as commands. See the failure on
+          # https://github.com/frontegg/frontegg-ios-swift/actions/runs/25501763514
+          DESCRIPTION: ${{ steps.get_description.outputs.DESCRIPTION }}
         shell: bash
         run: |
-          if [[ -f "${{ env.CHANGELOG_FILE }}" ]]; then
-            cp "${{ env.CHANGELOG_FILE }}" "${{ env.CHANGELOG_OLD_FILE }}"
+          if [[ -f "$CHANGELOG_FILE" ]]; then
+            cp "$CHANGELOG_FILE" "$CHANGELOG_OLD_FILE"
           else
             echo "WARNING: CHANGELOG_FILE does not exist!"
           fi
-          
-          
-          # Append PR description to CHANGELOG_FILE safely
-          if [[ -f "${{ env.CHANGELOG_FILE }}" ]]; then
-            CHANGELOG_FILE_CONTENT="$(cat ${{ env.CHANGELOG_FILE }})"
-            echo -e '${{ steps.get_description.outputs.DESCRIPTION }}' > ${{ env.CHANGELOG_FILE }}
-            echo -e "\n$CHANGELOG_FILE_CONTENT" >> ${{ env.CHANGELOG_FILE }}
+
+
+          # Append PR description to CHANGELOG_FILE safely. printf is more
+          # portable than `echo -e` and won't choke on backslashes inside
+          # the PR body.
+          if [[ -f "$CHANGELOG_FILE" ]]; then
+            CHANGELOG_FILE_CONTENT="$(cat "$CHANGELOG_FILE")"
+            printf '%s\n' "$DESCRIPTION" > "$CHANGELOG_FILE"
+            printf '\n%s\n' "$CHANGELOG_FILE_CONTENT" >> "$CHANGELOG_FILE"
           else
-            echo -e '${{ steps.get_description.outputs.DESCRIPTION }}' > ${{ env.CHANGELOG_FILE }}
+            printf '%s\n' "$DESCRIPTION" > "$CHANGELOG_FILE"
           fi
 
       - name: Commit changes
