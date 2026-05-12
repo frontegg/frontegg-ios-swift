@@ -549,14 +549,56 @@ public enum NetworkStatusMonitor {
         }
     }
 
-    private static func routeIsAvailableOnce() async -> Bool {
-        await withCheckedContinuation { cont in
+    /// Bridges a callback-based API that may invoke `resume` more than once into a single
+    /// async result. The first call to `resume` wins; later calls are silently dropped.
+    ///
+    /// This exists because `NWPathMonitor.pathUpdateHandler` is invoked once at start *and* on
+    /// every subsequent path change (Wi-Fi ↔ cellular handoff, VPN reconnect, captive-portal
+    /// auth, sleep/wake). Resuming a `CheckedContinuation` more than once trips
+    /// `_checkedContinuationViolated` and crashes the process with `EXC_BREAKPOINT`. Even
+    /// cancelling the monitor before resuming is not enough: callbacks already enqueued on
+    /// the serial path queue still run after `cancel()`. The lock-guarded boolean here is the
+    /// authoritative gate.
+    private static func awaitFirstBoolResult(
+        body: (@escaping (Bool) -> Void) -> Void
+    ) async -> Bool {
+        await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            let lock = NSLock()
+            var didResume = false
+            body { value in
+                let shouldResume: Bool = lock.withLock {
+                    guard !didResume else { return false }
+                    didResume = true
+                    return true
+                }
+                guard shouldResume else { return }
+                cont.resume(returning: value)
+            }
+        }
+    }
+
+    /// One-shot route availability check. Returns `false` if the monitor does not
+    /// deliver a path update within `timeout`. Mirrors `FronteggAuth.checkNetworkPath`'s
+    /// defensive bound — without it, a stalled `NWPathMonitor` (VPN reconnect, MDM
+    /// captive portal) could hang the startup connectivity race indefinitely.
+    private static func routeIsAvailableOnce(timeout: TimeInterval = 1.0) async -> Bool {
+        await awaitFirstBoolResult { resume in
             let m = NWPathMonitor()
             m.pathUpdateHandler = { path in
-                cont.resume(returning: path.status == .satisfied)
+                let satisfied = path.status == .satisfied
+                m.pathUpdateHandler = nil
                 m.cancel()
+                resume(satisfied)
             }
             m.start(queue: pathQueue)
+
+            // Race the monitor against a deadline on the same serial queue so the
+            // cancel + resume are serialized w.r.t. any in-flight path update.
+            pathQueue.asyncAfter(deadline: .now() + timeout) {
+                m.pathUpdateHandler = nil
+                m.cancel()
+                resume(false)
+            }
         }
     }
 }
@@ -630,6 +672,19 @@ extension NetworkStatusMonitor {
 
     static func _testEmitCached(_ value: Bool, forceEmit: Bool = false) {
         updateCached(value, forceEmit: forceEmit)
+    }
+
+    /// Test seam that exposes the one-shot resume primitive used by `routeIsAvailableOnce`.
+    /// Used to verify the `EXC_BREAKPOINT` regression from issue #256 cannot return.
+    static func _testAwaitFirstBoolResult(
+        body: (@escaping (Bool) -> Void) -> Void
+    ) async -> Bool {
+        await awaitFirstBoolResult(body: body)
+    }
+
+    /// Test seam exposing the real `routeIsAvailableOnce` so we can smoke-test the wiring.
+    static func _testRouteIsAvailableOnce() async -> Bool {
+        await routeIsAvailableOnce()
     }
 
     static func _testSnapshot() -> (
