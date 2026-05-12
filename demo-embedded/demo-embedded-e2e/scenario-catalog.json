@@ -156,6 +156,11 @@
       "description": "Logs in with a short access token TTL and verifies the SDK's scheduled refresh fires automatically, incrementing the token version while the app stays in the foreground."
     },
     {
+      "method": "testMisroutedOpenURLRecoversIntoAuthenticatedState",
+      "title": "Mis-routed OAuth callback recovers into authenticated state",
+      "description": "Simulates a multi-app AASA scenario where an OAuth callback is delivered to the wrong app via openURL, and verifies the SDK exchanges the seeded code and lands the user on the authenticated screen instead of getting stuck on login."
+    },
+    {
       "method": "testAuthenticatedRelaunchWithExpiredAccessTokenAndFreshRefreshToken",
       "title": "Relaunch with expired access token refreshes via valid refresh token",
       "description": "Logs in with a very short access TTL, terminates after access expires but before refresh expires, relaunches, and verifies the token is refreshed."
