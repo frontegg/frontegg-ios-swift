@@ -23,19 +23,33 @@ class WebAuthenticator: NSObject, ObservableObject, ASWebAuthenticationPresentat
 
     weak var window: UIWindow? = nil
     var session: ASWebAuthenticationSession? = nil
-    /// Set transiently by `FronteggAuth.handleOpenUrl` before cancelling an
-    /// in-flight `ASWebAuthenticationSession` whose callback was mis-routed
-    /// back to the app as a deep-link. Causes the synthetic `canceledLogin`
-    /// completion to be swallowed instead of bubbling up as a spurious
-    /// `.failure` while the WebView path completes the login. The completion
-    /// handler reads-and-clears this flag.
+    /// `ObjectIdentifier` of the specific `ASWebAuthenticationSession` whose
+    /// synthetic `canceledLogin` completion should be swallowed. Set by
+    /// `cancelSuppressingCanceledLogin(_:)` so that *only* the matching
+    /// session's cancel is suppressed — a newer session that starts before
+    /// the canceled one's completion fires will not have its genuine
+    /// cancel/error masked. The completion handler reads-and-clears it.
     ///
     /// Lives on `WebAuthenticator.shared` (not `FronteggAuth`) because:
     /// (a) it's about *this* singleton's session lifecycle, and
     /// (b) it avoids a singleton-roundabout in tests where `FronteggAuth`
     ///     instances are constructed locally and `FronteggAuth.shared`
     ///     points at a different one.
-    var suppressNextWebAuthSessionCancel: Bool = false
+    internal var suppressedCancelSessionId: ObjectIdentifier?
+
+    /// Cancel `session` and mark *only that session's* `canceledLogin`
+    /// completion to be swallowed. Use this when the SDK is taking over a
+    /// flow that the ASWebAuthSession was driving (e.g. a mis-routed deep
+    /// link is being recovered via the hosted-login callback path) and the
+    /// synthetic cancel would otherwise race a successful exchange and
+    /// report a spurious `.failure`.
+    func cancelSuppressingCanceledLogin(_ sessionToCancel: ASWebAuthenticationSession) {
+        suppressedCancelSessionId = ObjectIdentifier(sessionToCancel)
+        sessionToCancel.cancel()
+        if self.session === sessionToCancel {
+            self.session = nil
+        }
+    }
 #if DEBUG
     private var testingSession: TestingWebAuthenticationSession?
 #endif
@@ -116,14 +130,16 @@ class WebAuthenticator: NSObject, ObservableObject, ASWebAuthenticationPresentat
                 // callback was mis-routed back to us as a deep-link, the
                 // synthetic `canceledLogin` here would race the WebView
                 // path and report a spurious `.failure` while the user is
-                // about to be authenticated. Swallow it.
+                // about to be authenticated. Swallow it — but only for the
+                // exact session that was marked, so a newer session's
+                // genuine cancel/error isn't masked.
                 if let error = error as NSError?,
                    error.domain == ASWebAuthenticationSessionError.errorDomain,
                    error.code == ASWebAuthenticationSessionError.canceledLogin.rawValue,
-                   WebAuthenticator.shared.suppressNextWebAuthSessionCancel {
-                    WebAuthenticator.shared.suppressNextWebAuthSessionCancel = false
-                    if let mySession = sessionRef.ref,
-                       WebAuthenticator.shared.session === mySession {
+                   let mySession = sessionRef.ref,
+                   WebAuthenticator.shared.suppressedCancelSessionId == ObjectIdentifier(mySession) {
+                    WebAuthenticator.shared.suppressedCancelSessionId = nil
+                    if WebAuthenticator.shared.session === mySession {
                         WebAuthenticator.shared.session = nil
                     }
                     let logger = getLogger("WebAuthenticator")

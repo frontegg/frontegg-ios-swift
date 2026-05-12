@@ -359,9 +359,7 @@ extension FronteggAuth {
         // which would break the session context. Suppress the synthetic
         // canceledLogin so the WebView-side completion isn't masked.
         if let activeSession = WebAuthenticator.shared.session {
-            WebAuthenticator.shared.suppressNextWebAuthSessionCancel = true
-            activeSession.cancel()
-            WebAuthenticator.shared.session = nil
+            WebAuthenticator.shared.cancelSuppressingCanceledLogin(activeSession)
         }
 
         let loginModal = EmbeddedLoginModal(parentVC: rootVC)
@@ -570,9 +568,7 @@ extension FronteggAuth {
         // suppress the synthetic canceledLogin so it doesn't race a successful
         // token exchange below.
         if let activeSession = WebAuthenticator.shared.session {
-            WebAuthenticator.shared.suppressNextWebAuthSessionCancel = true
-            activeSession.cancel()
-            WebAuthenticator.shared.session = nil
+            WebAuthenticator.shared.cancelSuppressingCanceledLogin(activeSession)
         }
 
         let oauthState = queryItems["state"]
@@ -613,6 +609,30 @@ extension FronteggAuth {
             for: oauthState,
             allowFallback: true
         )
+
+        // Mirror the precedence in `createOauthCallbackHandler`: a missing
+        // verifier means the token exchange would deterministically fail
+        // with an opaque server error. Surface the consistent SDK error
+        // (`codeVerifierNotFound` / `invalidOAuthState`) up front instead.
+        guard resolvedVerifier.verifier != nil else {
+            let authError = self.oauthCodeVerifierError(
+                for: oauthState,
+                resolution: resolvedVerifier
+            )
+            logger.error(
+                "❌ [handleOpenUrl recovery] Missing code verifier for mis-routed callback " +
+                "(state=\(oauthState ?? "nil"), hasPending=\(resolvedVerifier.hasPendingOAuthStates))"
+            )
+            self.reportOAuthFailure(
+                error: FronteggError.authError(authError),
+                flow: self.activeEmbeddedOAuthFlow
+            )
+            self.setWebLoading(false)
+            self.setIsLoading(false)
+            self.activeEmbeddedOAuthFlow = .login
+            setAppLink(false)
+            return true
+        }
 
         logger.info(
             "🟢 [handleOpenUrl recovery] Exchanging mis-routed OAuth code via hosted login callback " +

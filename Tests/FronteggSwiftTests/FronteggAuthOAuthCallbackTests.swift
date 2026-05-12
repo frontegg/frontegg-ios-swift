@@ -159,7 +159,7 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         super.setUp()
         NetworkStatusMonitor._testReset()
         clearOAuthState()
-        WebAuthenticator.shared.suppressNextWebAuthSessionCancel = false
+        WebAuthenticator.shared.suppressedCancelSessionId = nil
         WebAuthenticator.shared.session = nil
 
         serviceKey = "frontegg-oauth-tests-\(UUID().uuidString)"
@@ -204,7 +204,7 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         PlistHelper.testConfigOverride = nil
         FronteggOAuthErrorRuntimeSettings.presentation = .toast
         FronteggOAuthErrorRuntimeSettings.delegateBox.value = nil
-        WebAuthenticator.shared.suppressNextWebAuthSessionCancel = false
+        WebAuthenticator.shared.suppressedCancelSessionId = nil
         WebAuthenticator.shared.session = nil
         api = nil
         auth = nil
@@ -768,12 +768,12 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         )
     }
 
-    func test_handleOpenUrl_misroutedCallback_setsSuppressNextWebAuthSessionCancel() async throws {
+    func test_handleOpenUrl_misroutedCallback_armsSuppressionForActiveSession() async throws {
         // If an ASWebAuthSession is in-flight when the mis-routed callback
-        // arrives, the recovery path must arm
-        // `suppressNextWebAuthSessionCancel` so the synthetic
-        // canceledLogin doesn't propagate as a spurious `.failure` while
-        // the hosted login callback completes the login.
+        // arrives, the recovery path must mark *that specific session* for
+        // canceledLogin suppression so the synthetic cancel doesn't
+        // propagate as a spurious `.failure` while the hosted login
+        // callback completes the login.
         let accessToken = try makeAccessToken()
         api.exchangeTokenResponse = try makeAuthResponse(
             accessToken: accessToken,
@@ -797,14 +797,14 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
             app.bundleIdentifier = previousBundleIdentifier
         }
 
-        // Reset the singleton flag in case prior tests left it armed.
-        WebAuthenticator.shared.suppressNextWebAuthSessionCancel = false
-        XCTAssertFalse(WebAuthenticator.shared.suppressNextWebAuthSessionCancel)
+        // Reset suppression in case prior tests left a stale id.
+        WebAuthenticator.shared.suppressedCancelSessionId = nil
+        XCTAssertNil(WebAuthenticator.shared.suppressedCancelSessionId)
 
         api.setExchangeTokenBlocked(true)
         defer {
             api.resumeExchangeToken()
-            WebAuthenticator.shared.suppressNextWebAuthSessionCancel = false
+            WebAuthenticator.shared.suppressedCancelSessionId = nil
         }
 
         var components = URLComponents()
@@ -828,8 +828,11 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         defer { WebAuthenticator.shared.session = nil }
 
         XCTAssertTrue(auth.handleOpenUrl(misroutedUrl))
-        XCTAssertTrue(WebAuthenticator.shared.suppressNextWebAuthSessionCancel,
-                      "Recovery must arm the WebAuthenticator suppression flag before cancelling the active session")
+        XCTAssertEqual(
+            WebAuthenticator.shared.suppressedCancelSessionId,
+            ObjectIdentifier(dummySession),
+            "Recovery must arm suppression for the exact session it cancels"
+        )
     }
 
     func test_createOauthCallbackHandler_generatedRedirectAliasWithBasePath_usesActualCallbackAliasForExchange() async throws {

@@ -93,9 +93,21 @@ internal var _testAppURLSchemesOverride: [String]?
 /// declared custom schemes — including the case where iOS mis-routes a
 /// Universal-Link callback to a sibling app (multi-app AASA wrong-app routing).
 func appURLSchemes() -> [String] {
+    func normalize(_ rawSchemes: [String?]) -> [String] {
+        var schemes: [String] = []
+        var seen = Set<String>()
+        for raw in rawSchemes {
+            guard let normalized = raw?.lowercased(), !normalized.isEmpty else { continue }
+            if seen.insert(normalized).inserted {
+                schemes.append(normalized)
+            }
+        }
+        return schemes
+    }
+
 #if DEBUG
     if let override = _testAppURLSchemesOverride {
-        return override
+        return normalize(override)
     }
 #endif
 
@@ -106,27 +118,16 @@ func appURLSchemes() -> [String] {
         return cached
     }
 
-    var schemes: [String] = []
-    var seen = Set<String>()
-
-    func add(_ scheme: String?) {
-        guard let scheme = scheme?.lowercased(), !scheme.isEmpty else { return }
-        if seen.insert(scheme).inserted {
-            schemes.append(scheme)
-        }
-    }
-
+    var rawSchemes: [String?] = []
     if let urlTypes = Bundle.main.infoDictionary?["CFBundleURLTypes"] as? [[String: Any]] {
         for entry in urlTypes {
             guard let entrySchemes = entry["CFBundleURLSchemes"] as? [String] else { continue }
-            for scheme in entrySchemes {
-                add(scheme)
-            }
+            rawSchemes.append(contentsOf: entrySchemes.map { Optional($0) })
         }
     }
+    rawSchemes.append(currentAppBundleIdentifier())
 
-    add(currentAppBundleIdentifier())
-
+    let schemes = normalize(rawSchemes)
     cachedAppURLSchemes = schemes
     return schemes
 }
