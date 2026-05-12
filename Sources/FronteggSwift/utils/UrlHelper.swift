@@ -81,6 +81,64 @@ func currentAppBundleIdentifier() -> String {
     return Bundle.main.bundleIdentifier?.lowercased() ?? ""
 }
 
+private var cachedAppURLSchemesLock = NSLock()
+private var cachedAppURLSchemes: [String]?
+
+#if DEBUG
+internal var _testAppURLSchemesOverride: [String]?
+#endif
+
+/// Reads `CFBundleURLSchemes` from Info.plist and adds the running bundle identifier.
+/// Used to recognise OAuth-shaped URLs whose scheme matches any of the app's
+/// declared custom schemes — including the case where iOS mis-routes a
+/// Universal-Link callback to a sibling app (multi-app AASA wrong-app routing).
+func appURLSchemes() -> [String] {
+#if DEBUG
+    if let override = _testAppURLSchemesOverride {
+        return override
+    }
+#endif
+
+    cachedAppURLSchemesLock.lock()
+    defer { cachedAppURLSchemesLock.unlock() }
+
+    if let cached = cachedAppURLSchemes {
+        return cached
+    }
+
+    var schemes: [String] = []
+    var seen = Set<String>()
+
+    func add(_ scheme: String?) {
+        guard let scheme = scheme?.lowercased(), !scheme.isEmpty else { return }
+        if seen.insert(scheme).inserted {
+            schemes.append(scheme)
+        }
+    }
+
+    if let urlTypes = Bundle.main.infoDictionary?["CFBundleURLTypes"] as? [[String: Any]] {
+        for entry in urlTypes {
+            guard let entrySchemes = entry["CFBundleURLSchemes"] as? [String] else { continue }
+            for scheme in entrySchemes {
+                add(scheme)
+            }
+        }
+    }
+
+    add(currentAppBundleIdentifier())
+
+    cachedAppURLSchemes = schemes
+    return schemes
+}
+
+#if DEBUG
+internal func _resetAppURLSchemesCacheForTesting() {
+    cachedAppURLSchemesLock.lock()
+    defer { cachedAppURLSchemesLock.unlock() }
+    cachedAppURLSchemes = nil
+}
+#endif
+
 func routedAppPath(
     _ url: URL,
     baseUrl: String = FronteggApp.shared.baseUrl

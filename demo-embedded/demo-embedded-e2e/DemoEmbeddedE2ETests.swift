@@ -723,6 +723,59 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         XCTAssertTrue(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
     }
 
+    // MARK: - Deep-link recovery regression (multi-app AASA wrong-app routing)
+
+    /// Regression for the SkyPath "stuck on loading after login" incident
+    /// (see plan.md in mobile-logs investigation). When a device has more
+    /// than one app from the same TeamID claiming the same Universal Link
+    /// associated domain, iOS may dispatch an ASWebAuthSession OAuth
+    /// callback to the *wrong* app. The receiving app sees a URL whose
+    /// scheme/host/path don't match the strict generated redirect URI but
+    /// it still carries a usable `code` + `state`.
+    ///
+    /// Before the fix in `FronteggAuth+EmbeddedAndDeepLink.swift`, the SDK
+    /// would early-return false on this URL (`handleOpenUrl` warning
+    /// "URL doesn't match baseUrl"), the OAuth code would be silently
+    /// dropped, and affected users were stuck on the loader.
+    ///
+    /// After the fix, the SDK recognises the URL as OAuth-shaped (its
+    /// scheme matches one of the app's declared `CFBundleURLSchemes` and
+    /// it carries `code`/`error`) and runs the hosted-login token
+    /// exchange, recovering the login instead of dropping the code.
+    func testMisroutedOpenURLRecoversIntoAuthenticatedState() throws {
+        let misroutedCode = "code-e2e-misrouted-\(UUID().uuidString.lowercased())"
+        let misroutedState = "state-e2e-misrouted-\(UUID().uuidString.lowercased())"
+        let misroutedVerifier = "verifier-e2e-misrouted-\(UUID().uuidString.lowercased())"
+
+        Self.server.seedAuthCode(
+            code: misroutedCode,
+            email: "test@frontegg.com",
+            redirectURI: "",
+            state: misroutedState
+        )
+
+        launchApp(
+            resetState: true,
+            misroutedCallbackCode: misroutedCode,
+            misroutedCallbackState: misroutedState,
+            misroutedCallbackVerifier: misroutedVerifier
+        )
+        waitForScreen("LoginPageRoot")
+        XCTAssertFalse(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
+
+        tapButton("E2ESimulateMisroutedDeepLinkButton")
+
+        // Recovery path must exchange the seeded code with the mock /oauth/token
+        // and land the user on UserPageRoot — *not* leave them stuck on
+        // LoginPageRoot / DefaultLoader (the symptom in SP-7114 / SP-6985).
+        XCTAssertTrue(
+            Self.server.waitForRequest(method: "POST", path: "/oauth/token", timeout: 15),
+            "Recovery should drive a token exchange. \(screenDebugSummary())"
+        )
+        waitForUserEmail("test@frontegg.com", timeout: 20)
+        XCTAssertFalse(noConnectionScreen().exists, screenDebugSummary())
+    }
+
     /// Verifies that relaunching with an expired access token but a valid refresh token
     /// restores the session via token refresh (not via cached access token validation).
     func testAuthenticatedRelaunchWithExpiredAccessTokenAndFreshRefreshToken() throws {

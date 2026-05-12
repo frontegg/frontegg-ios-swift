@@ -78,6 +78,14 @@ extension FronteggAuth {
         Self.testNetworkPathAvailabilityOverride = available
     }
 
+    /// Test-only: pre-register a `state→codeVerifier` pair so a synthetic
+    /// `handleOpenUrl` callback can complete a token exchange without going
+    /// through the full authorize flow. Used by the e2e regression test
+    /// for system-mis-routed deep links (multi-app AASA wrong-app routing).
+    public func registerPendingOAuthForTesting(state: String, codeVerifier: String) {
+        CredentialManager.registerPendingOAuth(state: state, codeVerifier: codeVerifier)
+    }
+
     func hasScheduledTokenRefreshForTesting() -> Bool {
         refreshTokenDispatch != nil
     }

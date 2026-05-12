@@ -112,6 +112,20 @@ private final class SpyOAuthErrorDelegate: FronteggOAuthErrorDelegate {
     }
 }
 
+private final class SpyLoggerDelegate: FronteggLoggerDelegate {
+    struct Event: Equatable {
+        let message: String
+        let level: FeLogger.Level
+        let tag: String
+    }
+
+    private(set) var events: [Event] = []
+
+    func fronteggSDK(didLog message: String, level: FeLogger.Level, tag: String) {
+        events.append(.init(message: message, level: level, tag: tag))
+    }
+}
+
 private final class StartupProbeSequence {
     private var results: [Bool]
     private(set) var callCount = 0
@@ -145,6 +159,8 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         super.setUp()
         NetworkStatusMonitor._testReset()
         clearOAuthState()
+        WebAuthenticator.shared.suppressNextWebAuthSessionCancel = false
+        WebAuthenticator.shared.session = nil
 
         serviceKey = "frontegg-oauth-tests-\(UUID().uuidString)"
         credentialManager = CredentialManager(serviceKey: serviceKey)
@@ -188,6 +204,8 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         PlistHelper.testConfigOverride = nil
         FronteggOAuthErrorRuntimeSettings.presentation = .toast
         FronteggOAuthErrorRuntimeSettings.delegateBox.value = nil
+        WebAuthenticator.shared.suppressNextWebAuthSessionCancel = false
+        WebAuthenticator.shared.session = nil
         api = nil
         auth = nil
         credentialManager = nil
@@ -558,6 +576,260 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         XCTAssertEqual(delegate.contexts.first?.errorDescription, "JWT token size exceeded")
         XCTAssertEqual(delegate.contexts.first?.flow, .socialLogin)
         XCTAssertEqual(delegate.contexts.first?.embeddedMode, false)
+    }
+
+    func test_handleOpenUrl_misroutedCustomSchemeCallbackWithCode_recoversViaTokenExchange() async throws {
+        // Simulates the SkyPath multi-app AASA wrong-app routing case: a
+        // custom-scheme URL arrives via onOpenURL whose host/path don't match
+        // the canonical generated redirect URI (`<bundle>://<authHost>/ios/oauth/callback`),
+        // but it carries `code` + `state`. The SDK must recover by exchanging
+        // the code instead of silently dropping it (which is what caused
+        // affected users to be stuck on the loader forever).
+        let accessToken = try makeAccessToken()
+        api.exchangeTokenResponse = try makeAuthResponse(
+            accessToken: accessToken,
+            refreshToken: "refresh-token-misrouted"
+        )
+        api.meResult = .success(try makeUser())
+
+#if DEBUG
+        PlistHelper.testConfigOverride = makeSharedAppConfig()
+        _testAppURLSchemesOverride = ["com.frontegg.tests", "fronteggsocial"]
+        _resetAppURLSchemesCacheForTesting()
+        defer {
+            _testAppURLSchemesOverride = nil
+            _resetAppURLSchemesCacheForTesting()
+        }
+#endif
+        let app = FronteggApp.shared
+        let previousBundleIdentifier = app.bundleIdentifier
+        app.bundleIdentifier = "com.frontegg.tests"
+        defer {
+            app.bundleIdentifier = previousBundleIdentifier
+        }
+
+        CredentialManager.registerPendingOAuth(state: "misrouted-state", codeVerifier: "misrouted-verifier")
+
+        let exchangeDone = expectation(description: "exchangeToken called")
+        api.onExchangeTokenStarted = { exchangeDone.fulfill() }
+
+        // Scheme matches an app URL scheme, host/path do NOT match the canonical redirect URI.
+        var components = URLComponents()
+        components.scheme = "com.frontegg.tests"
+        components.host = "api.other-tenant.io"
+        components.path = "/foreign-app/oauth/account/redirect/iOS/com.frontegg.tests"
+        components.queryItems = [
+            URLQueryItem(name: "code", value: "misrouted-code"),
+            URLQueryItem(name: "state", value: "misrouted-state"),
+        ]
+        let misroutedUrl = components.url!
+
+        XCTAssertTrue(auth.handleOpenUrl(misroutedUrl))
+
+        await fulfillment(of: [exchangeDone], timeout: 5.0)
+
+        // Wait briefly for the async hostedLoginCallback completion to land.
+        for _ in 0..<20 {
+            if auth.isAuthenticated { break }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        XCTAssertEqual(api.lastExchangeInput?.code, "misrouted-code")
+        XCTAssertEqual(api.lastExchangeInput?.codeVerifier, "misrouted-verifier")
+        XCTAssertTrue(auth.isAuthenticated, "Recovery path must complete the login")
+    }
+
+    func test_handleOpenUrl_misroutedCustomSchemeCallbackWithError_reportsFailureToDelegate() async throws {
+        let delegate = SpyOAuthErrorDelegate()
+        FronteggOAuthErrorRuntimeSettings.presentation = .delegate
+        FronteggOAuthErrorRuntimeSettings.delegateBox.value = delegate
+
+#if DEBUG
+        PlistHelper.testConfigOverride = makeSharedAppConfig()
+        _testAppURLSchemesOverride = ["com.frontegg.tests"]
+        _resetAppURLSchemesCacheForTesting()
+        defer {
+            _testAppURLSchemesOverride = nil
+            _resetAppURLSchemesCacheForTesting()
+        }
+#endif
+        let app = FronteggApp.shared
+        let previousBundleIdentifier = app.bundleIdentifier
+        app.bundleIdentifier = "com.frontegg.tests"
+        defer {
+            app.bundleIdentifier = previousBundleIdentifier
+        }
+
+        var components = URLComponents()
+        components.scheme = "com.frontegg.tests"
+        components.host = "api.other-tenant.io"
+        components.path = "/foreign-app/callback"
+        components.queryItems = [
+            URLQueryItem(name: "error", value: "ER-05001"),
+            URLQueryItem(name: "error_description", value: "JWT+token+size+exceeded"),
+            URLQueryItem(name: "state", value: "misrouted-state"),
+        ]
+        let misroutedUrl = components.url!
+
+        XCTAssertTrue(auth.handleOpenUrl(misroutedUrl))
+        await waitForOAuthErrorDispatch()
+
+        XCTAssertEqual(delegate.contexts.count, 1)
+        XCTAssertEqual(delegate.contexts.first?.errorCode, "ER-05001")
+        XCTAssertNil(api.lastExchangeInput, "No token exchange should occur for error callbacks")
+    }
+
+    func test_handleOpenUrl_misroutedCallbackWithBothErrorAndCode_reportsErrorAndSkipsExchange() async throws {
+        // Per OAuth2 spec an error response should not also include a code,
+        // but defensively match the precedence used by the rest of the SDK
+        // (error wins) so a stray `code` next to an `error` doesn't get
+        // silently exchanged.
+        let delegate = SpyOAuthErrorDelegate()
+        FronteggOAuthErrorRuntimeSettings.presentation = .delegate
+        FronteggOAuthErrorRuntimeSettings.delegateBox.value = delegate
+
+#if DEBUG
+        PlistHelper.testConfigOverride = makeSharedAppConfig()
+        _testAppURLSchemesOverride = ["com.frontegg.tests"]
+        _resetAppURLSchemesCacheForTesting()
+        defer {
+            _testAppURLSchemesOverride = nil
+            _resetAppURLSchemesCacheForTesting()
+        }
+#endif
+        let app = FronteggApp.shared
+        let previousBundleIdentifier = app.bundleIdentifier
+        app.bundleIdentifier = "com.frontegg.tests"
+        defer {
+            app.bundleIdentifier = previousBundleIdentifier
+        }
+
+        var components = URLComponents()
+        components.scheme = "com.frontegg.tests"
+        components.host = "api.other-tenant.io"
+        components.path = "/foreign-app/callback"
+        components.queryItems = [
+            URLQueryItem(name: "code", value: "stray-code"),
+            URLQueryItem(name: "error", value: "access_denied"),
+            URLQueryItem(name: "state", value: "misrouted-state"),
+        ]
+        let misroutedUrl = components.url!
+
+        XCTAssertTrue(auth.handleOpenUrl(misroutedUrl))
+        await waitForOAuthErrorDispatch()
+
+        XCTAssertEqual(delegate.contexts.count, 1)
+        XCTAssertEqual(delegate.contexts.first?.errorCode, "access_denied")
+        XCTAssertNil(api.lastExchangeInput,
+                     "Error precedence: no token exchange should be attempted when an `error` param is present")
+    }
+
+    func test_handleOpenUrl_unrelatedDeepLink_isRejectedAndDoesNotTouchApi() async throws {
+        // S3 from plan.md: SkyPath's non-auth deep links (share-links, push
+        // opens) flow into handleOpenUrl. Those must not be recognised as
+        // OAuth-shaped — `code`/`error` is absent — so the SDK keeps
+        // returning false and the host app's onOpenURL takes over.
+        // The log MUST be at debug level (not warning) so it doesn't
+        // pollute Datadog/Sentry alerting with benign noise.
+#if DEBUG
+        PlistHelper.testConfigOverride = makeSharedAppConfig()
+        _testAppURLSchemesOverride = ["com.frontegg.tests"]
+        _resetAppURLSchemesCacheForTesting()
+        defer {
+            _testAppURLSchemesOverride = nil
+            _resetAppURLSchemesCacheForTesting()
+        }
+#endif
+        let app = FronteggApp.shared
+        let previousBundleIdentifier = app.bundleIdentifier
+        app.bundleIdentifier = "com.frontegg.tests"
+        defer {
+            app.bundleIdentifier = previousBundleIdentifier
+        }
+
+        let spy = SpyLoggerDelegate()
+        FeLogger.delegate = spy
+        defer { FeLogger.delegate = nil }
+
+        let shareLink = URL(string: "com.frontegg.tests://flights/XX123?source=push")!
+
+        XCTAssertFalse(auth.handleOpenUrl(shareLink))
+        XCTAssertNil(api.lastExchangeInput)
+
+        // S3 noise reduction: must NOT emit a warning-level log for an
+        // unrelated deep link.
+        let fronteggAuthWarnings = spy.events.filter {
+            $0.tag == "FronteggAuth" && $0.level == .warning
+        }
+        XCTAssertTrue(
+            fronteggAuthWarnings.allSatisfy { !$0.message.contains("doesn't match baseUrl") &&
+                                              !$0.message.contains("not OAuth-shaped") },
+            "Non-OAuth-shaped URL rejection must not log at warning level. Got: \(fronteggAuthWarnings.map(\.message))"
+        )
+    }
+
+    func test_handleOpenUrl_misroutedCallback_setsSuppressNextWebAuthSessionCancel() async throws {
+        // If an ASWebAuthSession is in-flight when the mis-routed callback
+        // arrives, the recovery path must arm
+        // `suppressNextWebAuthSessionCancel` so the synthetic
+        // canceledLogin doesn't propagate as a spurious `.failure` while
+        // the hosted login callback completes the login.
+        let accessToken = try makeAccessToken()
+        api.exchangeTokenResponse = try makeAuthResponse(
+            accessToken: accessToken,
+            refreshToken: "refresh-token-suppress"
+        )
+        api.meResult = .success(try makeUser())
+
+#if DEBUG
+        PlistHelper.testConfigOverride = makeSharedAppConfig()
+        _testAppURLSchemesOverride = ["com.frontegg.tests"]
+        _resetAppURLSchemesCacheForTesting()
+        defer {
+            _testAppURLSchemesOverride = nil
+            _resetAppURLSchemesCacheForTesting()
+        }
+#endif
+        let app = FronteggApp.shared
+        let previousBundleIdentifier = app.bundleIdentifier
+        app.bundleIdentifier = "com.frontegg.tests"
+        defer {
+            app.bundleIdentifier = previousBundleIdentifier
+        }
+
+        // Reset the singleton flag in case prior tests left it armed.
+        WebAuthenticator.shared.suppressNextWebAuthSessionCancel = false
+        XCTAssertFalse(WebAuthenticator.shared.suppressNextWebAuthSessionCancel)
+
+        api.setExchangeTokenBlocked(true)
+        defer {
+            api.resumeExchangeToken()
+            WebAuthenticator.shared.suppressNextWebAuthSessionCancel = false
+        }
+
+        var components = URLComponents()
+        components.scheme = "com.frontegg.tests"
+        components.host = "api.other-tenant.io"
+        components.path = "/foreign-app/callback"
+        components.queryItems = [
+            URLQueryItem(name: "code", value: "suppress-code"),
+            URLQueryItem(name: "state", value: "suppress-state"),
+        ]
+        let misroutedUrl = components.url!
+
+        // Plant an in-flight session in WebAuthenticator.shared so the
+        // recovery path goes through the cancel branch.
+        let dummyUrl = URL(string: "https://test.example.com/oauth/authorize")!
+        let dummySession = ASWebAuthenticationSession(
+            url: dummyUrl,
+            callbackURLScheme: "com.frontegg.tests"
+        ) { _, _ in }
+        WebAuthenticator.shared.session = dummySession
+        defer { WebAuthenticator.shared.session = nil }
+
+        XCTAssertTrue(auth.handleOpenUrl(misroutedUrl))
+        XCTAssertTrue(WebAuthenticator.shared.suppressNextWebAuthSessionCancel,
+                      "Recovery must arm the WebAuthenticator suppression flag before cancelling the active session")
     }
 
     func test_createOauthCallbackHandler_generatedRedirectAliasWithBasePath_usesActualCallbackAliasForExchange() async throws {

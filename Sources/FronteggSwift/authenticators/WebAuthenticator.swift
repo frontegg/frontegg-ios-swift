@@ -9,12 +9,33 @@ import UIKit
 import WebKit
 
 
+/// Lightweight class used to give an ASWebAuthSession completion closure a
+/// reference to the session it belongs to, so the closure can identity-check
+/// the singleton's `session` slot before clearing it.
+private final class WebAuthSessionRef {
+    weak var ref: ASWebAuthenticationSession?
+}
+
+
 class WebAuthenticator: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
-    
+
     static let shared = WebAuthenticator()
-    
+
     weak var window: UIWindow? = nil
     var session: ASWebAuthenticationSession? = nil
+    /// Set transiently by `FronteggAuth.handleOpenUrl` before cancelling an
+    /// in-flight `ASWebAuthenticationSession` whose callback was mis-routed
+    /// back to the app as a deep-link. Causes the synthetic `canceledLogin`
+    /// completion to be swallowed instead of bubbling up as a spurious
+    /// `.failure` while the WebView path completes the login. The completion
+    /// handler reads-and-clears this flag.
+    ///
+    /// Lives on `WebAuthenticator.shared` (not `FronteggAuth`) because:
+    /// (a) it's about *this* singleton's session lifecycle, and
+    /// (b) it avoids a singleton-roundabout in tests where `FronteggAuth`
+    ///     instances are constructed locally and `FronteggAuth.shared`
+    ///     points at a different one.
+    var suppressNextWebAuthSessionCancel: Bool = false
 #if DEBUG
     private var testingSession: TestingWebAuthenticationSession?
 #endif
@@ -81,10 +102,35 @@ class WebAuthenticator: NSObject, ObservableObject, ASWebAuthenticationPresentat
             ]
         )
         
+        // Box used to give the completion closure a stable reference back to
+        // the session it belongs to, so that completion can clear
+        // `WebAuthenticator.shared.session` only if no newer session has
+        // since taken its place (e.g. handleOpenUrl-triggered cancel races
+        // a fresh `start()`).
+        let sessionRef = WebAuthSessionRef()
         let webAuthSession = ASWebAuthenticationSession.init(
             url: websiteURL,
             callbackURLScheme: bundleIdentifier,
             completionHandler: { callbackUrl, error in
+                // If `handleOpenUrl` cancelled this session because the
+                // callback was mis-routed back to us as a deep-link, the
+                // synthetic `canceledLogin` here would race the WebView
+                // path and report a spurious `.failure` while the user is
+                // about to be authenticated. Swallow it.
+                if let error = error as NSError?,
+                   error.domain == ASWebAuthenticationSessionError.errorDomain,
+                   error.code == ASWebAuthenticationSessionError.canceledLogin.rawValue,
+                   WebAuthenticator.shared.suppressNextWebAuthSessionCancel {
+                    WebAuthenticator.shared.suppressNextWebAuthSessionCancel = false
+                    if let mySession = sessionRef.ref,
+                       WebAuthenticator.shared.session === mySession {
+                        WebAuthenticator.shared.session = nil
+                    }
+                    let logger = getLogger("WebAuthenticator")
+                    logger.info("Swallowing ASWebAuthSession canceledLogin during handleOpenUrl handover")
+                    return
+                }
+
                 // Log completion result
                 if let error = error {
                     let nsError = error as NSError
@@ -189,14 +235,24 @@ class WebAuthenticator: NSObject, ObservableObject, ASWebAuthenticationPresentat
                     }
                 }
                 
+                // Clear our session pointer if it still points at us. Done
+                // before calling upstream so anything the upstream does that
+                // checks `WebAuthenticator.shared.session` sees the
+                // post-completion state.
+                if let mySession = sessionRef.ref,
+                   WebAuthenticator.shared.session === mySession {
+                    WebAuthenticator.shared.session = nil
+                }
+
                 // Call original completion handler
                 completionHandler(callbackUrl, error)
             })
+        sessionRef.ref = webAuthSession
         // Run the session
         webAuthSession.presentationContextProvider = self
         webAuthSession.prefersEphemeralWebBrowserSession = ephemeralSession
-        
-        
+
+
         self.window = window
         self.session = webAuthSession
         let didStart = webAuthSession.start()
