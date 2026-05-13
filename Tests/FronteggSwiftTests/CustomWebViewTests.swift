@@ -352,87 +352,72 @@ final class CustomWebViewTests: XCTestCase {
         XCTAssertNotNil(resolution.providerError)
     }
 
-    // MARK: - Watchdog Retry Counter Logic Tests
+    // MARK: - Social-success watchdog no longer reloads
     //
-    // These tests verify the retry counter logic that was fixed in the
-    // social-success watchdog. The decidePolicyFor handler uses isWatchdogReload
-    // to decide whether to reset socialSuccessRetryCount.
+    // Reloading /oauth/account/social/success while the server is mid-flight
+    // re-submits the already-consumed authorization code. The second
+    // post-login attempt then fails and the server replaces a useful,
+    // specific error (e.g. the HTML below from data-test-id="social-login-
+    // failure-title": "Couldn't sign you in / Cannot resolve user profile,
+    // please check the identity provider configuration") with a generic
+    // message. Post-login can also legitimately exceed the watchdog delay
+    // on a slow tenant. So the watchdog must NEVER reload — it only hides
+    // the SDK loader so whatever the server eventually renders is visible.
+    //
+    // SocialSuccessWatchdogAction is the pure decision returned when the
+    // watchdog fires. It deliberately has no `.reload` case — these tests
+    // pin that contract.
 
-    func test_socialSuccessRetryCount_notResetOnWatchdogReload() {
-        // Simulate the state after first watchdog fires and triggers a reload.
-        var retryCount = 1
-        var isWatchdogReload = true
-
-        // The decidePolicyFor branch for /social/success:
-        // if isWatchdogReload → preserve counter; else → reset to 0
-        if isWatchdogReload {
-            isWatchdogReload = false
-        } else {
-            retryCount = 0
-        }
-
-        XCTAssertEqual(retryCount, 1,
-                       "Retry counter must persist across watchdog-triggered reloads")
-        XCTAssertFalse(isWatchdogReload,
-                       "Flag should be cleared after the reload is processed")
+    func test_socialSuccessWatchdog_hidesLoaderWhenStillOnSocialSuccess() {
+        let action = CustomWebView.socialSuccessWatchdogAction(
+            currentPath: "/fe-auth/oauth/account/social/success"
+        )
+        XCTAssertEqual(action, .hideLoader,
+                       "Still on /social/success after timeout → reveal server-rendered content (loader or error)")
     }
 
-    func test_socialSuccessRetryCount_resetsOnFreshFlow() {
-        // Previous watchdog cycle exhausted, but now a genuinely fresh flow starts.
-        var retryCount = 2
-        var isWatchdogReload = false
-
-        if isWatchdogReload {
-            isWatchdogReload = false
-        } else {
-            retryCount = 0
-        }
-
-        XCTAssertEqual(retryCount, 0,
-                       "Counter must reset on genuinely fresh social login flow")
+    func test_socialSuccessWatchdog_hidesLoaderWhenServerRenderedSocialLoginFailure() {
+        // Even when the page is the actual Frontegg "Couldn't sign you in"
+        // error (data-test-id=social-login-failure-title), the path stays
+        // on /social/success — the action is still hideLoader, NEVER reload.
+        let action = CustomWebView.socialSuccessWatchdogAction(
+            currentPath: "/identity/resources/auth/v2/user/oauth/account/social/success"
+        )
+        XCTAssertEqual(action, .hideLoader,
+                       "Server-rendered social-login-failure page must not trigger a reload — that would re-consume the code")
     }
 
-    func test_socialSuccessRetryCount_exhaustsAfterMaxRetries() {
-        let maxRetries = 2
-        var retryCount = 0
+    func test_socialSuccessWatchdog_skipsAfterNavigationAwayFromSocialSuccess() {
+        XCTAssertEqual(
+            CustomWebView.socialSuccessWatchdogAction(currentPath: "/dashboard"),
+            .skip,
+            "Page navigated to dashboard → watchdog must not interfere"
+        )
+        XCTAssertEqual(
+            CustomWebView.socialSuccessWatchdogAction(currentPath: "/oauth/account/login"),
+            .skip,
+            "Navigated to login page → no watchdog action"
+        )
+        XCTAssertEqual(
+            CustomWebView.socialSuccessWatchdogAction(currentPath: "/postlogin/verify"),
+            .skip,
+            "Navigated to postlogin verify page → no watchdog action"
+        )
+    }
 
-        // Simulate the full watchdog cycle: each retry increments.
-        // On each reload, isWatchdogReload=true prevents reset.
-        for attempt in 1...maxRetries {
-            // Watchdog fires → increment
-            retryCount += 1
-            XCTAssertEqual(retryCount, attempt)
-
-            // Reload triggers /social/success re-navigation with isWatchdogReload=true
-            let isWatchdogReload = true
-            if isWatchdogReload {
-                // Counter preserved — no reset
-            } else {
-                retryCount = 0
+    func test_socialSuccessWatchdog_actionEnumHasNoReloadCase() {
+        // Compile-time guarantee: the enum cases are skip and hideLoader only.
+        // If anyone ever adds .reload, this switch becomes non-exhaustive at
+        // compile time and forces them to update the test (and reconsider why
+        // — see the comment at the top of this section).
+        let cases: [CustomWebView.SocialSuccessWatchdogAction] = [.skip, .hideLoader]
+        for action in cases {
+            switch action {
+            case .skip, .hideLoader:
+                break
             }
         }
-
-        // After max retries, the condition should stop further reloads
-        XCTAssertFalse(retryCount < maxRetries,
-                       "After max retries, watchdog must stop reloading")
-    }
-
-    func test_socialSuccessRetryCount_infiniteLoopWithoutFix() {
-        // Documents the bug: without the isWatchdogReload check,
-        // the counter would reset on every reload, creating an infinite loop.
-        let maxRetries = 2
-        var retryCount = 0
-
-        // Simulate 5 watchdog cycles WITH the old buggy behavior (always reset)
-        for _ in 1...5 {
-            retryCount += 1 // watchdog increments
-            // OLD behavior: always reset on /social/success re-navigation
-            retryCount = 0
-        }
-
-        // Counter never reaches maxRetries — infinite loop
-        XCTAssertTrue(retryCount < maxRetries,
-                      "Without the fix, counter resets every cycle and never exhausts")
+        XCTAssertEqual(cases.count, 2)
     }
 
     // MARK: - Unregistered State Error Type Tests

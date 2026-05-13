@@ -27,9 +27,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     private var isSocialLoginFlow: Bool = false
     private var socialSuccessWatchdogWorkItem: DispatchWorkItem? = nil
     private let socialSuccessWatchdogDelay: TimeInterval = 5.0
-    internal var socialSuccessRetryCount: Int = 0
-    internal let socialSuccessMaxRetries: Int = 2
-    internal var isWatchdogReload: Bool = false
 
     func setActiveOAuthFlow(_ flow: FronteggOAuthFlow) {
         fronteggAuth.activeEmbeddedOAuthFlow = flow
@@ -77,13 +74,34 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     private func cancelSocialSuccessWatchdog() {
         socialSuccessWatchdogWorkItem?.cancel()
         socialSuccessWatchdogWorkItem = nil
-        socialSuccessRetryCount = 0
-        isWatchdogReload = false
     }
 
+    /// Outcome the social-success watchdog can take when it fires. Pure value
+    /// so the decision logic can be unit-tested without WKWebView/FronteggAuth.
+    ///
+    /// Crucially there is no `.reload` case: reloading
+    /// `/oauth/account/social/success` would re-submit the authorization
+    /// code, which fails the second post-login attempt and replaces a useful
+    /// server-rendered error (e.g. "Couldn't sign you in / Cannot resolve
+    /// user profile") with a generic one. Post-login can legitimately take
+    /// longer than the watchdog delay on a slow tenant, so we never reload.
+    internal enum SocialSuccessWatchdogAction: Equatable {
+        /// The page already navigated away from `/social/success` — no action.
+        case skip
+        /// Still on `/social/success` after the timeout — hide the SDK loader
+        /// so whatever the server rendered (its own loader, success page, or
+        /// error) becomes visible.
+        case hideLoader
+    }
+
+    internal static func socialSuccessWatchdogAction(currentPath: String) -> SocialSuccessWatchdogAction {
+        currentPath.contains("/oauth/account/social/success") ? .hideLoader : .skip
+    }
+
+    /// Schedule a single timeout that hides the SDK loader if the social
+    /// success page is still on-screen after `socialSuccessWatchdogDelay`.
+    /// See `SocialSuccessWatchdogAction` for the no-reload rationale.
     private func scheduleSocialSuccessWatchdog(for webView: WKWebView, url: URL) {
-        // Cancel the pending work item without resetting retryCount
-        // so that retry calls can track cumulative attempts.
         socialSuccessWatchdogWorkItem?.cancel()
         socialSuccessWatchdogWorkItem = nil
 
@@ -91,37 +109,15 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             guard let self = self, let webView = webView else { return }
             let currentUrl = webView.url ?? url
 
-            guard currentUrl.path.contains("/oauth/account/social/success") else {
+            switch Self.socialSuccessWatchdogAction(currentPath: currentUrl.path) {
+            case .skip:
                 return
-            }
-
-            // The social success page is still showing after the timeout. The
-            // server-side provider code exchange (e.g. Google → Frontegg) either
-            // failed or stalled. Do NOT extract the provider code and send it to
-            // /oauth/token — that endpoint expects a Frontegg authorization code.
-            // Instead, retry by reloading the page so the server can re-attempt
-            // the exchange. After max retries, hide the loader to reveal any
-            // server-rendered error message.
-            if self.socialSuccessRetryCount < self.socialSuccessMaxRetries {
-                self.socialSuccessRetryCount += 1
-                self.logger.warning(
-                    "Social login success page stalled (attempt \(self.socialSuccessRetryCount)/\(self.socialSuccessMaxRetries)), reloading to retry server-side exchange"
+            case .hideLoader:
+                self.logger.info(
+                    "Social login success page still on-screen after \(self.socialSuccessWatchdogDelay)s; hiding SDK loader so any server-rendered content is visible (no reload — would break in-flight post-login)"
                 )
-                DispatchQueue.main.async { [weak self, weak webView] in
-                    guard let self = self, let webView = webView else { return }
-                    self.isWatchdogReload = true
-                    webView.reload()
-                    // Re-schedule watchdog for the reload
-                    self.scheduleSocialSuccessWatchdog(for: webView, url: url)
-                }
-            } else {
-                self.logger.warning(
-                    "Social login success page stalled after \(self.socialSuccessMaxRetries) retries, hiding loader to reveal server response"
-                )
-                DispatchQueue.main.async { [weak self] in
-                    self?.fronteggAuth.setWebLoading(false)
-                    self?.fronteggAuth.setLoginBoxLoading(false)
-                }
+                self.fronteggAuth.setWebLoading(false)
+                self.fronteggAuth.setLoginBoxLoading(false)
             }
         }
 
@@ -658,14 +654,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                         } else {
                             logger.info("🔵 [Social Login Debug] /social/success detected as intermediate page (Google case, previousUrl was HTTPS/nil) - allowing normal navigation")
                             isSocialLoginFlow = true
-                            if isWatchdogReload {
-                                // Watchdog-triggered reload — preserve the retry counter so
-                                // the watchdog can reach maxRetries and stop.
-                                isWatchdogReload = false
-                            } else {
-                                // Genuinely fresh social login flow — reset counter.
-                                socialSuccessRetryCount = 0
-                            }
                             scheduleSocialSuccessWatchdog(for: webView, url: url)
                             return .allow
                         }
