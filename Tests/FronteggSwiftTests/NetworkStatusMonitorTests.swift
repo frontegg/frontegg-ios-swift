@@ -276,6 +276,36 @@ final class NetworkStatusMonitorTests: XCTestCase {
         XCTAssertTrue(result, "first resume(true) must win; late resume(false) must be dropped")
     }
 
+    func test_awaitFirstBoolResult_cancellableTimeoutPattern_neverFiresWhenCancelled() async {
+        // Mirrors the production pattern in `routeIsAvailableOnce`: the body schedules a
+        // deadline `DispatchWorkItem` and the "winner" cancels it before its deadline.
+        // The gate alone (covered by the prior test) would still prevent a double-resume
+        // even if the work item ran — this test pins the *cancellation* behavior the
+        // implementation relies on for resource hygiene, so a future edit that removes
+        // `timeoutItem.cancel()` in `routeIsAvailableOnce` regresses a guarded invariant
+        // instead of silently reverting the optimization.
+        let queue = DispatchQueue(label: "test.cancellableTimeoutPattern")
+        let timeoutFired = expectation(description: "deadline work item must not run after cancel")
+        timeoutFired.isInverted = true
+        let result = await NetworkStatusMonitor._testAwaitFirstBoolResult { resume in
+            let timeoutItem = DispatchWorkItem {
+                timeoutFired.fulfill()
+                resume(false)
+            }
+            queue.async {
+                // Simulate the path-update handler winning the race: cancel the deadline
+                // before resuming so the deadline closure never runs.
+                timeoutItem.cancel()
+                resume(true)
+            }
+            queue.asyncAfter(deadline: .now() + 0.05, execute: timeoutItem)
+        }
+        // Wait past the scheduled deadline; the inverted expectation fails if the
+        // cancelled work item ever executes.
+        await fulfillment(of: [timeoutFired], timeout: 0.3)
+        XCTAssertTrue(result, "cancelled deadline must not poison the resumed value")
+    }
+
     func test_routeIsAvailableOnce_repeatedRapidCalls_doNotCrash() async {
         // Issues many overlapping invocations to maximise the chance of catching a
         // double-resume regression. Each call instantiates its own NWPathMonitor and
