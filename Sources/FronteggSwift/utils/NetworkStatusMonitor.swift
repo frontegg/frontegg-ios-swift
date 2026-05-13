@@ -584,21 +584,26 @@ public enum NetworkStatusMonitor {
     private static func routeIsAvailableOnce(timeout: TimeInterval = 1.0) async -> Bool {
         await awaitFirstBoolResult { resume in
             let m = NWPathMonitor()
-            m.pathUpdateHandler = { path in
-                let satisfied = path.status == .satisfied
-                m.pathUpdateHandler = nil
-                m.cancel()
-                resume(satisfied)
-            }
-            m.start(queue: pathQueue)
-
-            // Race the monitor against a deadline on the same serial queue so the
-            // cancel + resume are serialized w.r.t. any in-flight path update.
-            pathQueue.asyncAfter(deadline: .now() + timeout) {
+            // Build the deadline work item first so the path handler can cancel it
+            // when an update wins the race — without this, the deadline closure stays
+            // queued, keeps `m` alive until `timeout`, and fires a dropped
+            // cancel + resume(false) after the await has already resumed.
+            let timeoutItem = DispatchWorkItem {
                 m.pathUpdateHandler = nil
                 m.cancel()
                 resume(false)
             }
+            m.pathUpdateHandler = { path in
+                let satisfied = path.status == .satisfied
+                m.pathUpdateHandler = nil
+                m.cancel()
+                timeoutItem.cancel()
+                resume(satisfied)
+            }
+            m.start(queue: pathQueue)
+            // Race the monitor against a deadline on the same serial queue so the
+            // cancel + resume are serialized w.r.t. any in-flight path update.
+            pathQueue.asyncAfter(deadline: .now() + timeout, execute: timeoutItem)
         }
     }
 }

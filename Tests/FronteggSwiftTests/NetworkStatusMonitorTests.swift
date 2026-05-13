@@ -258,19 +258,22 @@ final class NetworkStatusMonitorTests: XCTestCase {
         // (which also calls `resume(false)` after `timeout` seconds) can never re-enter
         // a continuation that the path update already resumed.
         let queue = DispatchQueue(label: "test.lateSecondFire")
-        let firstFired = expectation(description: "first resume fired")
+        let lateFired = expectation(description: "late resume fired without crashing")
         let result = await NetworkStatusMonitor._testAwaitFirstBoolResult { resume in
+            // First fire immediately on the serial queue — this wins the gate.
             queue.async {
                 resume(true)
-                firstFired.fulfill()
+            }
+            // Second fire arrives later on the same queue, after the await has
+            // already resumed. If the gate ever lets it through, the runtime
+            // will SIGTRAP on the double-resume of the continuation.
+            queue.asyncAfter(deadline: .now() + 0.05) {
+                resume(false)
+                lateFired.fulfill()
             }
         }
-        await fulfillment(of: [firstFired], timeout: 1.0)
-        // Now simulate the timeout closure arriving long after the first resume.
-        // We can't reach the same `resume` sink (it's local to the previous call),
-        // but we exercise the same invariant with a fresh helper invocation that
-        // gets called both immediately and "late" via the queue.
-        XCTAssertTrue(result)
+        await fulfillment(of: [lateFired], timeout: 1.0)
+        XCTAssertTrue(result, "first resume(true) must win; late resume(false) must be dropped")
     }
 
     func test_routeIsAvailableOnce_repeatedRapidCalls_doNotCrash() async {
