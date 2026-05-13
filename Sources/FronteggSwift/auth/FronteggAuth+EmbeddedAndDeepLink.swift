@@ -76,21 +76,7 @@ extension FronteggAuth {
 
         let redirectCallbackFailureDetails: OAuthFailureDetails? = {
             guard let parsedQueryItems else { return nil }
-            if let failureDetails = self.oauthFailureDetails(from: parsedQueryItems) {
-                return failureDetails
-            }
-
-            let rawError = parsedQueryItems["error"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let rawDescription = parsedQueryItems["error_description"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !(rawError?.isEmpty ?? true) || !(rawDescription?.isEmpty ?? true) else {
-                return nil
-            }
-
-            return self.oauthFailureDetails(
-                errorCode: parsedQueryItems["error"],
-                errorDescription: parsedQueryItems["error_description"],
-                fallbackError: FronteggError.authError(.failedToExtractCode)
-            )
+            return oauthFailureDetailsWithRawFallback(from: parsedQueryItems)
         }()
 
         if matchesGeneratedRedirectCallback,
@@ -359,9 +345,7 @@ extension FronteggAuth {
         // which would break the session context. Suppress the synthetic
         // canceledLogin so the WebView-side completion isn't masked.
         if let activeSession = WebAuthenticator.shared.session {
-            WebAuthenticator.shared.suppressNextWebAuthSessionCancel = true
-            activeSession.cancel()
-            WebAuthenticator.shared.session = nil
+            WebAuthenticator.shared.cancelSuppressingCanceledLogin(activeSession)
         }
 
         let loginModal = EmbeddedLoginModal(parentVC: rootVC)
@@ -570,9 +554,7 @@ extension FronteggAuth {
         // suppress the synthetic canceledLogin so it doesn't race a successful
         // token exchange below.
         if let activeSession = WebAuthenticator.shared.session {
-            WebAuthenticator.shared.suppressNextWebAuthSessionCancel = true
-            activeSession.cancel()
-            WebAuthenticator.shared.session = nil
+            WebAuthenticator.shared.cancelSuppressingCanceledLogin(activeSession)
         }
 
         let oauthState = queryItems["state"]
@@ -580,8 +562,10 @@ extension FronteggAuth {
         // Match the precedence used by createOauthCallbackHandler and the
         // strict-redirect branch above: if the callback carries an `error`,
         // report it and stop — even if a stray `code` is also present (a
-        // non-spec response we shouldn't try to silently exchange).
-        if let failureDetails = self.oauthFailureDetails(from: queryItems) {
+        // non-spec response we shouldn't try to silently exchange). Use the
+        // same raw-error fallback as the strict-redirect branch so an
+        // unrecognised error format still wins over the code.
+        if let failureDetails = oauthFailureDetailsWithRawFallback(from: queryItems) {
             logger.error("❌ [handleOpenUrl recovery] OAuth error in mis-routed callback: \(failureDetails.error.localizedDescription)")
             self.reportOAuthFailure(details: failureDetails, flow: self.activeEmbeddedOAuthFlow)
             self.setWebLoading(false)
@@ -613,6 +597,30 @@ extension FronteggAuth {
             for: oauthState,
             allowFallback: true
         )
+
+        // Mirror the precedence in `createOauthCallbackHandler`: a missing
+        // verifier means the token exchange would deterministically fail
+        // with an opaque server error. Surface the consistent SDK error
+        // (`codeVerifierNotFound` / `invalidOAuthState`) up front instead.
+        guard resolvedVerifier.verifier != nil else {
+            let authError = self.oauthCodeVerifierError(
+                for: oauthState,
+                resolution: resolvedVerifier
+            )
+            logger.error(
+                "❌ [handleOpenUrl recovery] Missing code verifier for mis-routed callback " +
+                "(state=\(oauthState ?? "nil"), hasPending=\(resolvedVerifier.hasPendingOAuthStates))"
+            )
+            self.reportOAuthFailure(
+                error: FronteggError.authError(authError),
+                flow: self.activeEmbeddedOAuthFlow
+            )
+            self.setWebLoading(false)
+            self.setIsLoading(false)
+            self.activeEmbeddedOAuthFlow = .login
+            setAppLink(false)
+            return true
+        }
 
         logger.info(
             "🟢 [handleOpenUrl recovery] Exchanging mis-routed OAuth code via hosted login callback " +
@@ -647,5 +655,30 @@ extension FronteggAuth {
         )
 
         return true
+    }
+
+    /// Resolve OAuth failure details from a query dictionary, falling back to
+    /// raw `error` / `error_description` params when `oauthFailureDetails(from:)`
+    /// doesn't recognise the error format. Both the strict-redirect branch in
+    /// `handleOpenUrl` and `recoverFromMisroutedOAuthCallback` use this so an
+    /// unrecognised-but-present error always wins over a stray `code`.
+    private func oauthFailureDetailsWithRawFallback(
+        from queryItems: [String: String]
+    ) -> OAuthFailureDetails? {
+        if let details = self.oauthFailureDetails(from: queryItems) {
+            return details
+        }
+
+        let rawError = queryItems["error"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawDescription = queryItems["error_description"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !(rawError?.isEmpty ?? true) || !(rawDescription?.isEmpty ?? true) else {
+            return nil
+        }
+
+        return self.oauthFailureDetails(
+            errorCode: queryItems["error"],
+            errorDescription: queryItems["error_description"],
+            fallbackError: FronteggError.authError(.failedToExtractCode)
+        )
     }
 }

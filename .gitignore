@@ -16,3 +16,4 @@ TestResults
 demo-embedded/build
 .claude/settings.local.json
 .claude/planning
+.claude/*.lock
