@@ -98,28 +98,57 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         currentPath.contains("/oauth/account/social/success") ? .hideLoader : .skip
     }
 
-    /// Schedule a single timeout that hides the SDK loader if the social
-    /// success page is still on-screen after `socialSuccessWatchdogDelay`.
-    /// See `SocialSuccessWatchdogAction` for the no-reload rationale.
+    /// Builds the work item that the social-success watchdog dispatches. Pulled
+    /// out as `internal static` so tests can construct the same item with
+    /// stub callbacks and assert its side effects without standing up a real
+    /// WKWebView or the FronteggAuth singleton.
+    ///
+    /// `pathProvider` is invoked when the item fires (so the test can simulate
+    /// the user navigating away mid-timeout). `onHideLoader` receives the
+    /// only intentional side effect — there is no `onReload` callback because
+    /// reload is never an option (see `SocialSuccessWatchdogAction`).
+    internal static func makeSocialSuccessWatchdogWorkItem(
+        pathProvider: @escaping () -> String?,
+        onHideLoader: @escaping () -> Void,
+        onFire: @escaping () -> Void = {}
+    ) -> DispatchWorkItem {
+        DispatchWorkItem {
+            let currentPath = pathProvider() ?? ""
+            switch socialSuccessWatchdogAction(currentPath: currentPath) {
+            case .skip:
+                return
+            case .hideLoader:
+                onFire()
+                onHideLoader()
+            }
+        }
+    }
+
+    /// Schedule a single timeout. If the user is still on `/social/success`
+    /// when it fires, hide the SDK loader so server-rendered content (the
+    /// server's own loader, the success page, or the social-login-failure
+    /// page) becomes visible. We never reload — that would re-submit the
+    /// already-consumed authorization code and fail an in-flight post-login.
     private func scheduleSocialSuccessWatchdog(for webView: WKWebView, url: URL) {
         socialSuccessWatchdogWorkItem?.cancel()
         socialSuccessWatchdogWorkItem = nil
 
-        let workItem = DispatchWorkItem { [weak self, weak webView] in
-            guard let self = self, let webView = webView else { return }
-            let currentUrl = webView.url ?? url
-
-            switch Self.socialSuccessWatchdogAction(currentPath: currentUrl.path) {
-            case .skip:
-                return
-            case .hideLoader:
-                self.logger.info(
-                    "Social login success page still on-screen after \(self.socialSuccessWatchdogDelay)s; hiding SDK loader so any server-rendered content is visible (no reload — would break in-flight post-login)"
-                )
+        let delay = socialSuccessWatchdogDelay
+        let workItem = Self.makeSocialSuccessWatchdogWorkItem(
+            pathProvider: { [weak webView] in
+                (webView?.url ?? url).path
+            },
+            onHideLoader: { [weak self] in
+                guard let self = self else { return }
                 self.fronteggAuth.setWebLoading(false)
                 self.fronteggAuth.setLoginBoxLoading(false)
+            },
+            onFire: { [weak self] in
+                self?.logger.warning(
+                    "Social login success page still on-screen after \(delay)s; hiding SDK loader so any server-rendered content is visible (no reload — would break in-flight post-login)"
+                )
             }
-        }
+        )
 
         socialSuccessWatchdogWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + socialSuccessWatchdogDelay, execute: workItem)

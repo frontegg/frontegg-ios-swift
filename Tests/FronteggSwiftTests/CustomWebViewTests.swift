@@ -406,18 +406,65 @@ final class CustomWebViewTests: XCTestCase {
     }
 
     func test_socialSuccessWatchdog_actionEnumHasNoReloadCase() {
-        // Compile-time guarantee: the enum cases are skip and hideLoader only.
-        // If anyone ever adds .reload, this switch becomes non-exhaustive at
-        // compile time and forces them to update the test (and reconsider why
-        // — see the comment at the top of this section).
-        let cases: [CustomWebView.SocialSuccessWatchdogAction] = [.skip, .hideLoader]
-        for action in cases {
+        // Compile-time guarantee: this exhaustive switch (no `default`) stops
+        // building if anyone adds a new case — e.g. `.reload` — forcing them
+        // to update the test and reconsider the no-reload rationale described
+        // at the top of this section.
+        func label(for action: CustomWebView.SocialSuccessWatchdogAction) -> String {
             switch action {
-            case .skip, .hideLoader:
-                break
+            case .skip: return "skip"
+            case .hideLoader: return "hideLoader"
             }
         }
-        XCTAssertEqual(cases.count, 2)
+        XCTAssertEqual(label(for: .skip), "skip")
+        XCTAssertEqual(label(for: .hideLoader), "hideLoader")
+    }
+
+    // MARK: - Watchdog work item — behavioral tests
+    //
+    // These exercise the actual DispatchWorkItem the watchdog dispatches,
+    // built via `makeSocialSuccessWatchdogWorkItem`. They pin two
+    // customer-facing contracts:
+    //   1. On `/social/success`, the timer fires → the loader is hidden.
+    //   2. If the page already navigated away, the timer fires → nothing.
+    // There is no `onReload` callback in the factory — the absence of that
+    // wiring is the no-reload guarantee at the call site (paired with the
+    // enum exhaustiveness test above).
+
+    func test_socialSuccessWatchdogWorkItem_hidesLoaderWhenStillOnSocialSuccess() {
+        var hideCalls = 0
+        var fireCalls = 0
+        let item = CustomWebView.makeSocialSuccessWatchdogWorkItem(
+            pathProvider: { "/fe-auth/oauth/account/social/success" },
+            onHideLoader: { hideCalls += 1 },
+            onFire: { fireCalls += 1 }
+        )
+        item.perform()
+        XCTAssertEqual(hideCalls, 1, "Loader must be hidden when the page is still on /social/success")
+        XCTAssertEqual(fireCalls, 1, "Fire-side-effect (logging) must be called exactly once")
+    }
+
+    func test_socialSuccessWatchdogWorkItem_doesNothingWhenNavigatedAway() {
+        var hideCalls = 0
+        var fireCalls = 0
+        let item = CustomWebView.makeSocialSuccessWatchdogWorkItem(
+            pathProvider: { "/dashboard" },
+            onHideLoader: { hideCalls += 1 },
+            onFire: { fireCalls += 1 }
+        )
+        item.perform()
+        XCTAssertEqual(hideCalls, 0, "Loader must not be touched once the page has left /social/success")
+        XCTAssertEqual(fireCalls, 0, "Fire side effect must not run on the skip path")
+    }
+
+    func test_socialSuccessWatchdogWorkItem_handlesNilPathAsSkip() {
+        var hideCalls = 0
+        let item = CustomWebView.makeSocialSuccessWatchdogWorkItem(
+            pathProvider: { nil },
+            onHideLoader: { hideCalls += 1 }
+        )
+        item.perform()
+        XCTAssertEqual(hideCalls, 0, "A nil current path (deallocated webview) must not trigger the loader-hide")
     }
 
     // MARK: - Unregistered State Error Type Tests
