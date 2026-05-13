@@ -209,6 +209,44 @@ struct LoginBody: View {
         }
         .buttonStyle(PrimaryButtonStyle())
         .accessibilityIdentifier("E2EDirectSocialLoginButton")
+        Button("E2E Simulate Mis-routed Deep Link") {
+            simulateMisroutedDeepLink()
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .accessibilityIdentifier("E2ESimulateMisroutedDeepLinkButton")
+    }
+
+    /// Regression for the SkyPath multi-app AASA wrong-app routing case:
+    /// the SDK previously dropped any URL whose scheme/host/path didn't
+    /// match the strict generated redirect URI even when it carried a
+    /// usable `code`. Tapping this button delivers exactly that shape of
+    /// URL to `handleOpenUrl` and the SDK should still complete the login
+    /// instead of leaving the user stuck on the loader.
+    private func simulateMisroutedDeepLink() {
+        guard let code = DemoEmbeddedTestMode.misroutedCallbackCode,
+              let state = DemoEmbeddedTestMode.misroutedCallbackState,
+              let verifier = DemoEmbeddedTestMode.misroutedCallbackVerifier else {
+            print("E2E mis-routed deep link: missing env vars")
+            return
+        }
+
+        fronteggAuth.registerPendingOAuthForTesting(state: state, codeVerifier: verifier)
+
+        let bundleId = Bundle.main.bundleIdentifier?.lowercased() ?? "com.frontegg.demo"
+        var components = URLComponents()
+        components.scheme = bundleId
+        components.host = "api.foreign-tenant.example"
+        components.path = "/foreign-app/oauth/account/redirect/iOS/\(bundleId)"
+        components.queryItems = [
+            URLQueryItem(name: "code", value: code),
+            URLQueryItem(name: "state", value: state),
+        ]
+        guard let url = components.url else {
+            print("E2E mis-routed deep link: failed to build URL")
+            return
+        }
+
+        _ = fronteggAuth.handleOpenUrl(url)
     }
 
     private func startEmbeddedGoogleSocialLogin() {

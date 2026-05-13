@@ -81,6 +81,65 @@ func currentAppBundleIdentifier() -> String {
     return Bundle.main.bundleIdentifier?.lowercased() ?? ""
 }
 
+private var cachedAppURLSchemesLock = NSLock()
+private var cachedAppURLSchemes: [String]?
+
+#if DEBUG
+internal var _testAppURLSchemesOverride: [String]?
+#endif
+
+/// Reads `CFBundleURLSchemes` from Info.plist and adds the running bundle identifier.
+/// Used to recognise OAuth-shaped URLs whose scheme matches any of the app's
+/// declared custom schemes — including the case where iOS mis-routes a
+/// Universal-Link callback to a sibling app (multi-app AASA wrong-app routing).
+func appURLSchemes() -> [String] {
+    func normalize(_ rawSchemes: [String?]) -> [String] {
+        var schemes: [String] = []
+        var seen = Set<String>()
+        for raw in rawSchemes {
+            guard let normalized = raw?.lowercased(), !normalized.isEmpty else { continue }
+            if seen.insert(normalized).inserted {
+                schemes.append(normalized)
+            }
+        }
+        return schemes
+    }
+
+#if DEBUG
+    if let override = _testAppURLSchemesOverride {
+        return normalize(override)
+    }
+#endif
+
+    cachedAppURLSchemesLock.lock()
+    defer { cachedAppURLSchemesLock.unlock() }
+
+    if let cached = cachedAppURLSchemes {
+        return cached
+    }
+
+    var rawSchemes: [String?] = []
+    if let urlTypes = Bundle.main.infoDictionary?["CFBundleURLTypes"] as? [[String: Any]] {
+        for entry in urlTypes {
+            guard let entrySchemes = entry["CFBundleURLSchemes"] as? [String] else { continue }
+            rawSchemes.append(contentsOf: entrySchemes.map { Optional($0) })
+        }
+    }
+    rawSchemes.append(currentAppBundleIdentifier())
+
+    let schemes = normalize(rawSchemes)
+    cachedAppURLSchemes = schemes
+    return schemes
+}
+
+#if DEBUG
+internal func _resetAppURLSchemesCacheForTesting() {
+    cachedAppURLSchemesLock.lock()
+    defer { cachedAppURLSchemesLock.unlock() }
+    cachedAppURLSchemes = nil
+}
+#endif
+
 func routedAppPath(
     _ url: URL,
     baseUrl: String = FronteggApp.shared.baseUrl

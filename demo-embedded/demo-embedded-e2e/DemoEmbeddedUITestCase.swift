@@ -46,7 +46,10 @@ class DemoEmbeddedUITestCase: XCTestCase {
         forceNetworkPathOffline: Bool = false,
         enableOfflineMode: Bool? = nil,
         basePathPrefix: String = "",
-        useRootGeneratedCallbackAlias: Bool = false
+        useRootGeneratedCallbackAlias: Bool = false,
+        misroutedCallbackCode: String? = nil,
+        misroutedCallbackState: String? = nil,
+        misroutedCallbackVerifier: String? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment = Self.server.launchEnvironment(
@@ -55,7 +58,10 @@ class DemoEmbeddedUITestCase: XCTestCase {
             forceNetworkPathOffline: forceNetworkPathOffline,
             enableOfflineMode: enableOfflineMode,
             basePathPrefix: basePathPrefix,
-            useRootGeneratedCallbackAlias: useRootGeneratedCallbackAlias
+            useRootGeneratedCallbackAlias: useRootGeneratedCallbackAlias,
+            misroutedCallbackCode: misroutedCallbackCode,
+            misroutedCallbackState: misroutedCallbackState,
+            misroutedCallbackVerifier: misroutedCallbackVerifier
         )
         app.launch()
         self.app = app

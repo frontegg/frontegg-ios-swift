@@ -9,6 +9,13 @@ enum DemoEmbeddedTestMode {
     static let resetStateEnv = "FRONTEGG_E2E_RESET_STATE"
     static let forceNetworkPathOfflineEnv = "FRONTEGG_E2E_FORCE_NETWORK_PATH_OFFLINE"
     static let enableOfflineModeEnv = "FRONTEGG_E2E_ENABLE_OFFLINE_MODE"
+    /// Mis-routed deep-link regression test. Provided values populate a
+    /// synthetic `<bundle>://...?code=&state=` URL that's piped through
+    /// `FronteggAuth.handleOpenUrl` to simulate the multi-app AASA
+    /// wrong-app routing seen in the SkyPath incident.
+    static let misroutedCallbackCodeEnv = "FRONTEGG_E2E_MISROUTED_CALLBACK_CODE"
+    static let misroutedCallbackStateEnv = "FRONTEGG_E2E_MISROUTED_CALLBACK_STATE"
+    static let misroutedCallbackVerifierEnv = "FRONTEGG_E2E_MISROUTED_CALLBACK_VERIFIER"
     static let requestAuthorizeRefreshToken = "signup-refresh-token"
     static let embeddedPasswordEmail = "test@frontegg.com"
     static let embeddedSAMLEmail = "test@saml-domain.com"
@@ -46,6 +53,18 @@ enum DemoEmbeddedTestMode {
     static var customSSOUrl: String? {
         guard let baseUrl else { return nil }
         return "\(baseUrl)/idp/custom-sso"
+    }
+
+    static var misroutedCallbackCode: String? {
+        ProcessInfo.processInfo.environment[misroutedCallbackCodeEnv]
+    }
+
+    static var misroutedCallbackState: String? {
+        ProcessInfo.processInfo.environment[misroutedCallbackStateEnv]
+    }
+
+    static var misroutedCallbackVerifier: String? {
+        ProcessInfo.processInfo.environment[misroutedCallbackVerifierEnv]
     }
 
     static var directSocialLoginUrl: String? {

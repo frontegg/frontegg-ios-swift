@@ -76,21 +76,7 @@ extension FronteggAuth {
 
         let redirectCallbackFailureDetails: OAuthFailureDetails? = {
             guard let parsedQueryItems else { return nil }
-            if let failureDetails = self.oauthFailureDetails(from: parsedQueryItems) {
-                return failureDetails
-            }
-
-            let rawError = parsedQueryItems["error"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let rawDescription = parsedQueryItems["error_description"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !(rawError?.isEmpty ?? true) || !(rawDescription?.isEmpty ?? true) else {
-                return nil
-            }
-
-            return self.oauthFailureDetails(
-                errorCode: parsedQueryItems["error"],
-                errorDescription: parsedQueryItems["error_description"],
-                fallbackError: FronteggError.authError(.failedToExtractCode)
-            )
+            return oauthFailureDetailsWithRawFallback(from: parsedQueryItems)
         }()
 
         if matchesGeneratedRedirectCallback,
@@ -115,22 +101,71 @@ extension FronteggAuth {
         }
 
         if(!url.absoluteString.hasPrefix(self.baseUrl) && !internalHandleUrl && !matchesGeneratedRedirectCallback){
-            logger.warning("⚠️ [handleOpenUrl] URL doesn't match baseUrl and internalHandleUrl is false, returning false")
-            SentryHelper.logMessage(
-                "App redirect URL rejected - doesn't match baseUrl",
-                level: .warning,
-                context: [
-                    "app_redirect": [
-                        "url": url.absoluteString,
-                        "baseUrl": self.baseUrl,
-                        "internalHandleUrl": internalHandleUrl,
-                        "matchesGeneratedRedirectUri": matchesGeneratedRedirectCallback,
-                        "scheme": url.scheme ?? "nil",
-                        "host": url.host ?? "nil"
-                    ],
-                    "error": [
-                        "type": "redirect_url_mismatch"
+            // Recovery for system mis-routed OAuth callbacks.
+            //
+            // Background: when multiple iOS apps from the same TeamID share the
+            // same Universal Link associated domain (the multi-app AASA case)
+            // iOS may dispatch an ASWebAuthSession callback to the *wrong*
+            // app. The receiving app sees a URL whose scheme/host/path don't
+            // match the strict redirect URI it generated, so the strict check
+            // above misses. If the URL is recognisably OAuth-shaped (custom
+            // scheme matches one of our declared `CFBundleURLSchemes` AND
+            // carries `code` or `error`), recover instead of silently
+            // dropping the OAuth code. Same recognition rule the embedded
+            // `CustomWebView` already applies internally.
+            if let scheme = url.scheme?.lowercased(),
+               appURLSchemes().contains(scheme),
+               let queryItems = parsedQueryItems,
+               (queryItems["code"] != nil || queryItems["error"] != nil) {
+                logger.warning(
+                    "⚠️ [handleOpenUrl] OAuth-shaped URL didn't match strict redirect URI but has a recognised scheme — attempting recovery. " +
+                    "url=\(url.absoluteString) scheme=\(scheme) host=\(url.host ?? "nil") path=\(url.path)"
+                )
+                SentryHelper.logMessage(
+                    "App redirect URL recovered via custom-scheme parity",
+                    level: .warning,
+                    context: [
+                        "app_redirect": [
+                            "url": url.absoluteString,
+                            "baseUrl": self.baseUrl,
+                            "scheme": scheme,
+                            "host": url.host ?? "nil",
+                            "path": url.path,
+                            "internalHandleUrl": internalHandleUrl,
+                            "hasCode": queryItems["code"] != nil,
+                            "hasError": queryItems["error"] != nil
+                        ],
+                        "error": [
+                            "type": "redirect_url_recovered_via_scheme"
+                        ]
                     ]
+                )
+
+                return recoverFromMisroutedOAuthCallback(url: url, queryItems: queryItems)
+            }
+
+            // S3 from plan.md: URLs that aren't OAuth-shaped (no `code`/
+            // `error`, or scheme not in `appURLSchemes()`) are almost
+            // always host-app deep links the SDK shouldn't claim
+            // (share-links, push opens). Log at debug level + a Sentry
+            // breadcrumb instead of warning-level so they don't pollute
+            // Datadog/Sentry alerting with benign noise.
+            logger.debug(
+                "[handleOpenUrl] URL not handled by SDK (not OAuth-shaped). " +
+                "url=\(url.absoluteString) scheme=\(url.scheme ?? "nil") host=\(url.host ?? "nil") path=\(url.path)"
+            )
+            SentryHelper.addBreadcrumb(
+                "App redirect URL declined - not OAuth-shaped",
+                category: "app_redirect",
+                level: .debug,
+                data: [
+                    "url": url.absoluteString,
+                    "baseUrl": self.baseUrl,
+                    "internalHandleUrl": internalHandleUrl,
+                    "matchesGeneratedRedirectUri": matchesGeneratedRedirectCallback,
+                    "scheme": url.scheme ?? "nil",
+                    "host": url.host ?? "nil",
+                    "path": url.path
                 ]
             )
             setAppLink(false)
@@ -307,10 +342,10 @@ extension FronteggAuth {
 
         // Cancel any active ASWebAuthenticationSession before presenting EmbeddedLoginModal
         // This prevents the magic link deep link from opening Internal WebView on top of Custom Tab
-        // which would break the session context
+        // which would break the session context. Suppress the synthetic
+        // canceledLogin so the WebView-side completion isn't masked.
         if let activeSession = WebAuthenticator.shared.session {
-            activeSession.cancel()
-            WebAuthenticator.shared.session = nil
+            WebAuthenticator.shared.cancelSuppressingCanceledLogin(activeSession)
         }
 
         let loginModal = EmbeddedLoginModal(parentVC: rootVC)
@@ -505,5 +540,145 @@ extension FronteggAuth {
 
             }
         }
+    }
+
+    /// Recover an OAuth callback whose scheme matches one of our declared
+    /// `CFBundleURLSchemes` but whose host/path don't match the generated
+    /// redirect URI (e.g. iOS dispatched a sibling app's Universal Link
+    /// callback to us, or the hosted page issued a custom-scheme redirect
+    /// using a non-canonical path). Returns `true` to signal the URL was
+    /// consumed.
+    @discardableResult
+    func recoverFromMisroutedOAuthCallback(url: URL, queryItems: [String: String]) -> Bool {
+        // Cancel any in-flight ASWebAuthSession so the system Safari dismisses;
+        // suppress the synthetic canceledLogin so it doesn't race a successful
+        // token exchange below.
+        if let activeSession = WebAuthenticator.shared.session {
+            WebAuthenticator.shared.cancelSuppressingCanceledLogin(activeSession)
+        }
+
+        let oauthState = queryItems["state"]
+
+        // Match the precedence used by createOauthCallbackHandler and the
+        // strict-redirect branch above: if the callback carries an `error`,
+        // report it and stop — even if a stray `code` is also present (a
+        // non-spec response we shouldn't try to silently exchange). Use the
+        // same raw-error fallback as the strict-redirect branch so an
+        // unrecognised error format still wins over the code.
+        if let failureDetails = oauthFailureDetailsWithRawFallback(from: queryItems) {
+            logger.error("❌ [handleOpenUrl recovery] OAuth error in mis-routed callback: \(failureDetails.error.localizedDescription)")
+            self.reportOAuthFailure(details: failureDetails, flow: self.activeEmbeddedOAuthFlow)
+            self.setWebLoading(false)
+            self.setIsLoading(false)
+            self.activeEmbeddedOAuthFlow = .login
+            setAppLink(false)
+            return true
+        }
+
+        guard let code = queryItems["code"], !code.isEmpty else {
+            logger.error("❌ [handleOpenUrl recovery] No code in mis-routed callback URL")
+            self.reportOAuthFailure(
+                error: FronteggError.authError(.failedToExtractCode),
+                flow: self.activeEmbeddedOAuthFlow
+            )
+            self.setWebLoading(false)
+            self.setIsLoading(false)
+            self.activeEmbeddedOAuthFlow = .login
+            setAppLink(false)
+            return true
+        }
+
+        let redirectUri = generateRedirectUri(
+            baseUrl: self.baseUrl,
+            bundleIdentifier: currentAppBundleIdentifier()
+        )
+
+        let resolvedVerifier = CredentialManager.resolveCodeVerifier(
+            for: oauthState,
+            allowFallback: true
+        )
+
+        // Mirror the precedence in `createOauthCallbackHandler`: a missing
+        // verifier means the token exchange would deterministically fail
+        // with an opaque server error. Surface the consistent SDK error
+        // (`codeVerifierNotFound` / `invalidOAuthState`) up front instead.
+        guard resolvedVerifier.verifier != nil else {
+            let authError = self.oauthCodeVerifierError(
+                for: oauthState,
+                resolution: resolvedVerifier
+            )
+            logger.error(
+                "❌ [handleOpenUrl recovery] Missing code verifier for mis-routed callback " +
+                "(state=\(oauthState ?? "nil"), hasPending=\(resolvedVerifier.hasPendingOAuthStates))"
+            )
+            self.reportOAuthFailure(
+                error: FronteggError.authError(authError),
+                flow: self.activeEmbeddedOAuthFlow
+            )
+            self.setWebLoading(false)
+            self.setIsLoading(false)
+            self.activeEmbeddedOAuthFlow = .login
+            setAppLink(false)
+            return true
+        }
+
+        logger.info(
+            "🟢 [handleOpenUrl recovery] Exchanging mis-routed OAuth code via hosted login callback " +
+            "(state=\(oauthState ?? "nil"), source=\(resolvedVerifier.source.rawValue), " +
+            "hasVerifier=\(resolvedVerifier.verifier != nil))"
+        )
+
+        let completion: FronteggAuth.CompletionHandler = { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .success(let user):
+                self.logger.info("✅ [handleOpenUrl recovery] Mis-routed OAuth callback exchanged successfully for user \(user.email)")
+            case .failure(let error):
+                self.logger.error("❌ [handleOpenUrl recovery] Mis-routed OAuth callback exchange failed: \(error.localizedDescription)")
+            }
+            if let existing = self.loginCompletion {
+                self.loginCompletion = nil
+                existing(result)
+            }
+            self.setAppLink(false)
+        }
+
+        self.handleHostedLoginCallback(
+            code,
+            resolvedVerifier.verifier,
+            oauthState: oauthState,
+            redirectUri: redirectUri,
+            flow: self.activeEmbeddedOAuthFlow,
+            completePendingFlowOnSuccess: true,
+            matchedPendingOAuthState: resolvedVerifier.source == .stateMatch,
+            completion: completion
+        )
+
+        return true
+    }
+
+    /// Resolve OAuth failure details from a query dictionary, falling back to
+    /// raw `error` / `error_description` params when `oauthFailureDetails(from:)`
+    /// doesn't recognise the error format. Both the strict-redirect branch in
+    /// `handleOpenUrl` and `recoverFromMisroutedOAuthCallback` use this so an
+    /// unrecognised-but-present error always wins over a stray `code`.
+    private func oauthFailureDetailsWithRawFallback(
+        from queryItems: [String: String]
+    ) -> OAuthFailureDetails? {
+        if let details = self.oauthFailureDetails(from: queryItems) {
+            return details
+        }
+
+        let rawError = queryItems["error"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawDescription = queryItems["error_description"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !(rawError?.isEmpty ?? true) || !(rawDescription?.isEmpty ?? true) else {
+            return nil
+        }
+
+        return self.oauthFailureDetails(
+            errorCode: queryItems["error"],
+            errorDescription: queryItems["error_description"],
+            fallbackError: FronteggError.authError(.failedToExtractCode)
+        )
     }
 }
