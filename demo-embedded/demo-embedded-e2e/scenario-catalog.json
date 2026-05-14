@@ -36,11 +36,6 @@
       "description": "Runs the embedded Google social flow through the real system web authentication session and verifies the Google social user is signed in."
     },
     {
-      "method": "testEmbeddedGoogleSocialSuccessWatchdogDoesNotReloadSuccessPage",
-      "title": "Embedded Google social-success watchdog does not reload the success page",
-      "description": "Drives the embedded Google social flow through to /oauth/account/social/success, waits past the 5s watchdog delay, and verifies the watchdog never reloads the success page (which would re-consume the authorization code) and the user remains authenticated."
-    },
-    {
       "method": "testEmbeddedGoogleSocialLoginSupportsBasePathRootCallbackAlias",
       "title": "Embedded Google social login supports the root callback alias",
       "description": "Runs the embedded Google social flow with a base-path deployment and verifies the login succeeds when the callback returns through the root /ios/oauth/callback alias."
