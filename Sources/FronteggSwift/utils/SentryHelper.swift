@@ -18,6 +18,96 @@ public class SentryHelper {
     private static var sentryEnabledByFeatureFlag: Bool? = nil
     private static let ignoredHTTPStatusCodes: Set<Int> = [502, 503]
 
+    /// Keys whose values must never leave the device in Sentry payloads (headers, tokens, signing material).
+    /// Substrings are matched against lowercased keys (covers camelCase JSON and arbitrary `additionalHeaders` keys).
+    /// Aligned with `FeLogger` redaction patterns and with HTTP/auth fields used in `Api`, OAuth, and WebAuthn flows.
+    private static func breadcrumbKeyIsSensitive(_ key: String) -> Bool {
+        let k = key.lowercased()
+        if k == "code" || k == "state" { return true }
+        if k.hasPrefix("x-amz-") { return true }
+        let needles = [
+            // Generic / headers (`Api` Authorization, Cookie; passkeys `authorization`)
+            "password", "passwd", "secret", "token", "authorization",
+            "credential", "signature", "cookie", "set-cookie", "apikey", "api_key",
+            "access_key", "bearer",
+            // OAuth & refresh bodies (`Api` grant_type flows, token exchange) + FeLogger token keys
+            "refresh_token", "id_token", "client_secret", "access_token", "device_token",
+            "code_verifier", "verifier",
+            // WebAuthn (`Passkeys.swift` challenge; `WebauthnAssertion` clientDataJSON / authenticatorData / signature)
+            "challenge", "authenticator", "clientdata", "userhandle",
+            // Other secrets sometimes present in auth JSON or callbacks
+            "nonce", "jwt", "mfa_token",
+        ]
+        return needles.contains { k.contains($0) }
+    }
+
+    /// Breadcrumb `data` keys whose string values are treated as URLs: query and fragment are stripped.
+    private static func breadcrumbKeyHoldsURL(_ key: String) -> Bool {
+        let k = key.lowercased()
+        if k == "url" || k == "href" || k == "location" { return true }
+        return k.hasSuffix("url") || k.hasSuffix("_uri") || k.hasSuffix("uri")
+    }
+
+    private static func redactURLQueryAndFragment(_ raw: String) -> String {
+        guard let url = URL(string: raw), let host = url.host else {
+            return raw.contains("://") && (raw.contains("?") || raw.contains("#")) ? "[redacted_url]" : raw
+        }
+        let path = url.path.isEmpty ? "/" : url.path
+        let scheme = url.scheme ?? "https"
+        if let port = url.port {
+            return "\(scheme)://\(host):\(port)\(path)"
+        }
+        return "\(scheme)://\(host)\(path)"
+    }
+
+    /// Recursively redacts sensitive keys and URL queries from breadcrumb `data` (SDK + app).
+    private static func sanitizeBreadcrumbData(_ data: [String: Any]) -> [String: Any] {
+        var out: [String: Any] = [:]
+        out.reserveCapacity(data.count)
+        for (key, value) in data {
+            if breadcrumbKeyIsSensitive(key) {
+                out[key] = "[redacted]"
+                continue
+            }
+            if breadcrumbKeyHoldsURL(key), let s = value as? String {
+                out[key] = redactURLQueryAndFragment(s)
+                continue
+            }
+            if key.lowercased() == "http.query" || key.lowercased() == "http.fragment" {
+                out[key] = "[redacted]"
+                continue
+            }
+            switch value {
+            case let nested as [String: Any]:
+                out[key] = sanitizeBreadcrumbData(nested)
+            case let arr as [Any]:
+                out[key] = arr.map { element -> Any in
+                    if let d = element as? [String: Any] {
+                        return sanitizeBreadcrumbData(d)
+                    }
+                    return element
+                }
+            default:
+                out[key] = value
+            }
+        }
+        return out
+    }
+
+    private static func applyBreadcrumbSanitization(_ crumb: Breadcrumb) -> Breadcrumb {
+        if let raw = crumb.data {
+            var dict: [String: Any] = [:]
+            for (k, v) in raw {
+                dict[k] = v
+            }
+            crumb.data = sanitizeBreadcrumbData(dict)
+        }
+        if let msg = crumb.message, msg.contains("://"), (msg.contains("?") || msg.contains("#")) {
+            crumb.message = redactURLQueryAndFragment(msg)
+        }
+        return crumb
+    }
+
     public static func setSentryEnabledFromFeatureFlag(_ enabled: Bool) {
         initQueue.sync {
             sentryEnabledByFeatureFlag = enabled
@@ -222,6 +312,10 @@ public class SentryHelper {
                 let maxCacheItems = UInt(config?.sentryMaxQueueSize ?? 30)
                 options.maxCacheItems = maxCacheItems // Configurable cache limit to prevent memory abuse during extended offline periods
                 options.enableAutoBreadcrumbTracking = true
+
+                // Automatic URLSession breadcrumbs include http.query / fragments and can mirror
+                // request metadata; we already emit minimal HTTP breadcrumbs from `Api`.
+                options.enableNetworkBreadcrumbs = false
                 
                 // Disable Sentry's automatic network request tracking to avoid:
                 // 1. Interfering with our NetworkStatusMonitor offline detection
@@ -229,6 +323,10 @@ public class SentryHelper {
                 // 3. Consuming bandwidth when our offline mode is active
                 // Note: Sentry still handles offline queuing automatically - we're just preventing it from making its own network calls
                 options.enableNetworkTracking = false
+
+                options.beforeBreadcrumb = { crumb in
+                    Self.applyBreadcrumbSanitization(crumb)
+                }
                 
                 if let bundleId = Bundle.main.bundleIdentifier {
                     options.environment = bundleId
@@ -289,6 +387,7 @@ public class SentryHelper {
         let breadcrumb = Breadcrumb(level: level, category: category)
         breadcrumb.message = message
         breadcrumb.data = data
+        _ = applyBreadcrumbSanitization(breadcrumb)
         SentrySDK.addBreadcrumb(breadcrumb)
     }
     
@@ -318,5 +417,10 @@ public class SentryHelper {
         SentrySDK.configureScope { scope in
             scope.setContext(value: value, key: key)
         }
+    }
+
+    /// Exposed for unit tests (`@testable import`).
+    internal static func sanitizeBreadcrumbPayloadForTesting(_ data: [String: Any]) -> [String: Any] {
+        sanitizeBreadcrumbData(data)
     }
 }
