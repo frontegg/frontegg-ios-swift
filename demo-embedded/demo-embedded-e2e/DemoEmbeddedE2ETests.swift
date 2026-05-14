@@ -130,6 +130,43 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         waitForUserEmail("google-social@frontegg.com", timeout: 30)
     }
 
+    // Regression: FR-24598 — the social-success watchdog must never reload
+    // /oauth/account/social/success, because reloading re-consumes the
+    // authorization code and surfaces a generic OAuth error. The watchdog
+    // only hides the SDK loader. CustomWebViewTests.swift pins the pure
+    // SocialSuccessWatchdogAction logic; this test pins the integration.
+    func testEmbeddedGoogleSocialSuccessWatchdogDoesNotReloadSuccessPage() throws {
+        launchApp(resetState: true, useTestingWebAuthenticationTransport: false)
+        waitForScreen("LoginPageRoot")
+        tapButton("E2EEmbeddedGoogleSocialButton")
+
+        acceptSystemDialogIfNeeded(timeout: 10)
+        XCTAssertTrue(Self.server.waitForRequest(path: "/idp/google/authorize", timeout: 10))
+
+        app.getWebLabel("Mock Google Login").waitUntilExists(timeout: 20)
+        app.getWebButton("Continue with Mock Google").safeTap()
+        acceptSystemDialogIfNeeded(timeout: 10)
+        waitForUserEmail("google-social@frontegg.com", timeout: 30)
+
+        // The success page was hit once during the real login flow.
+        XCTAssertTrue(
+            Self.server.waitForRequestCount(path: "/oauth/account/social/success", count: 1, timeout: 20),
+            "Expected the embedded webview to hit /oauth/account/social/success exactly once during login."
+        )
+
+        // Wait past the 5s socialSuccessWatchdogDelay defined in
+        // Sources/FronteggSwift/embedded/CustomWebView.swift. If the watchdog
+        // reloads the success page (the FR-24598 bug), requestCount would
+        // increment to 2.
+        Thread.sleep(forTimeInterval: 6)
+
+        XCTAssertEqual(
+            Self.server.requestCount(path: "/oauth/account/social/success"),
+            1,
+            "Watchdog must not reload /oauth/account/social/success — reloading re-consumes the authorization code (FR-24598)."
+        )
+    }
+
     func testEmbeddedGoogleSocialLoginSupportsBasePathRootCallbackAlias() throws {
         launchApp(
             resetState: true,
@@ -723,7 +760,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         XCTAssertTrue(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
     }
 
-    // MARK: - Deep-link recovery regression (multi-app AASA wrong-app routing)
+    // MARK: - FR-24808 Deep-link recovery regression (multi-app AASA wrong-app routing)
 
     /// Regression for the SkyPath "stuck on loading after login" incident
     /// (see plan.md in mobile-logs investigation). When a device has more
