@@ -207,3 +207,90 @@ jobs:
               echo ":warning: No TSan log found."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build per-file coverage summary
+        id: coverage_summary
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+
+          XCRESULT="${{ runner.temp }}/artifacts/unit-tests-results/unit-tests.xcresult"
+          if [ ! -d "$XCRESULT" ]; then
+            echo "No xcresult bundle at $XCRESULT — skipping coverage summary."
+            exit 0
+          fi
+
+          COVERAGE_JSON="${{ runner.temp }}/coverage.json"
+          xcrun xccov view --report --files-for-target FronteggSwift --json "$XCRESULT" > "$COVERAGE_JSON" 2>/dev/null
+          if [ ! -s "$COVERAGE_JSON" ]; then
+            echo "xccov produced empty output — skipping coverage summary."
+            exit 0
+          fi
+
+          git fetch --depth=1 origin master 2>/dev/null || true
+          CHANGED="${{ runner.temp }}/changed-files.txt"
+          git diff --name-only origin/master...HEAD | grep '^Sources/FronteggSwift/.*\.swift$' > "$CHANGED" || true
+
+          if [ ! -s "$CHANGED" ]; then
+            echo "No FronteggSwift source files changed — skipping coverage summary."
+            exit 0
+          fi
+
+          BODY="${{ runner.temp }}/coverage-comment.md"
+          {
+            echo "<!-- coverage-summary -->"
+            echo "## Coverage for changed FronteggSwift files"
+            echo ""
+            echo "| File | Line coverage | Covered / Total |"
+            echo "|------|---------------|-----------------|"
+            while IFS= read -r file; do
+              base=$(basename "$file")
+              row=$(node -e "
+                const fs = require('fs');
+                const data = JSON.parse(fs.readFileSync('$COVERAGE_JSON', 'utf8'));
+                const files = Array.isArray(data) ? data : (data.files || []);
+                const match = files.find(f => (f.path || f.name || '').endsWith('/$base') || (f.path || f.name || '') === '$base');
+                if (!match) { process.stdout.write('| $file | n/a | n/a |'); return; }
+                const pct = (match.lineCoverage * 100).toFixed(1);
+                const covered = match.coveredLines ?? 'n/a';
+                const total = match.executableLines ?? 'n/a';
+                process.stdout.write(\`| $file | \${pct}% | \${covered} / \${total} |\`);
+              " 2>/dev/null)
+              if [ -z "$row" ]; then
+                echo "| $file | n/a | n/a |"
+              else
+                echo "$row"
+              fi
+            done < "$CHANGED"
+            echo ""
+            echo "_Informational — no threshold is enforced. Coverage is for the \`FronteggSwift\` target unit-test run._"
+          } > "$BODY"
+
+          cat "$BODY" >> "$GITHUB_STEP_SUMMARY"
+          echo "body_path=$BODY" >> "$GITHUB_OUTPUT"
+
+      - name: Post or update coverage PR comment
+        if: github.event_name == 'pull_request' && steps.coverage_summary.outputs.body_path != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BODY_PATH: ${{ steps.coverage_summary.outputs.body_path }}
+        run: |
+          set -e
+
+          EXISTING_ID=$(gh api \
+            "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            --paginate \
+            --jq '.[] | select(.body | contains("<!-- coverage-summary -->")) | .id' \
+            | head -n 1)
+
+          if [ -n "$EXISTING_ID" ]; then
+            gh api \
+              --method PATCH \
+              "repos/${{ github.repository }}/issues/comments/${EXISTING_ID}" \
+              --field body="@${BODY_PATH}"
+          else
+            gh pr comment "${PR_NUMBER}" --body-file "${BODY_PATH}"
+          fi
