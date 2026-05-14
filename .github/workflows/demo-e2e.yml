@@ -135,6 +135,14 @@ jobs:
             -test-iterations 3
           )
 
+          # CI-environment flakes — these tests pass locally but fail on
+          # macos-15-xlarge runners (slow ASWebAuthenticationSession startup
+          # poisons subsequent retry iterations). Tracked for proper fix.
+          # See CONTRIBUTING.md → "Known CI-flaky tests".
+          XCODEBUILD_ARGS+=(
+            -skip-testing:demo-embedded-e2e/DemoEmbeddedE2ETests/testEmbeddedGoogleSocialLoginRecoversFromStalledSocialSuccessPage
+          )
+
           if [ -n "$ONLY_TESTING" ]; then
             for flag in $ONLY_TESTING; do
               XCODEBUILD_ARGS+=("$flag")
