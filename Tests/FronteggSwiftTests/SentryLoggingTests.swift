@@ -104,4 +104,58 @@ final class SentryLoggingTests: XCTestCase {
             )
         )
     }
+
+    // MARK: - Breadcrumb payload sanitization
+
+    func test_sanitizeBreadcrumbPayload_stripsQueryFromUrls() {
+        let raw = [
+            "url": "https://example.com/oauth/callback?code=secret123&state=abc"
+        ]
+        let out = SentryHelper.sanitizeBreadcrumbPayloadForTesting(raw)
+        XCTAssertEqual(out["url"] as? String, "https://example.com/oauth/callback")
+    }
+
+    func test_sanitizeBreadcrumbPayload_redactsSensitiveKeys() {
+        let raw: [String: Any] = [
+            "Authorization": "Bearer x",
+            "x-amz-security-token": "tok",
+            "safe": "ok"
+        ]
+        let out = SentryHelper.sanitizeBreadcrumbPayloadForTesting(raw)
+        XCTAssertEqual(out["Authorization"] as? String, "[redacted]")
+        XCTAssertEqual(out["x-amz-security-token"] as? String, "[redacted]")
+        XCTAssertEqual(out["safe"] as? String, "ok")
+    }
+
+    func test_sanitizeBreadcrumbPayload_redactsHttpQueryFragmentKeys() {
+        let raw: [String: Any] = [
+            "http.query": "token=1",
+            "http.fragment": "frag"
+        ]
+        let out = SentryHelper.sanitizeBreadcrumbPayloadForTesting(raw)
+        XCTAssertEqual(out["http.query"] as? String, "[redacted]")
+        XCTAssertEqual(out["http.fragment"] as? String, "[redacted]")
+    }
+
+    func test_sanitizeBreadcrumbPayload_redactsPkceAndWebAuthnStyleKeys() {
+        let raw: [String: Any] = [
+            "code_verifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+            "clientDataJSON": "{\"type\":\"webauthn.get\"}",
+            "challenge": "binary-challenge-material",
+            "userHandle": "dXNlcg"
+        ]
+        let out = SentryHelper.sanitizeBreadcrumbPayloadForTesting(raw)
+        XCTAssertEqual(out["code_verifier"] as? String, "[redacted]")
+        XCTAssertEqual(out["clientDataJSON"] as? String, "[redacted]")
+        XCTAssertEqual(out["challenge"] as? String, "[redacted]")
+        XCTAssertEqual(out["userHandle"] as? String, "[redacted]")
+    }
+
+    func test_sanitizeBreadcrumbPayload_stripsQueryFromLocationHeaderValue() {
+        let raw = [
+            "location": "https://idp.example.com/callback?code=abc&session_state=xyz"
+        ]
+        let out = SentryHelper.sanitizeBreadcrumbPayloadForTesting(raw)
+        XCTAssertEqual(out["location"] as? String, "https://idp.example.com/callback")
+    }
 }
