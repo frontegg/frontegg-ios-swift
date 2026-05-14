@@ -153,7 +153,10 @@ final class NetworkStatusMonitorTests: XCTestCase {
         XCTAssertFalse(snapshot.hasInitialCheckFired)
     }
 
-    // MARK: - One-shot CheckedContinuation safety (issue #256)
+    // MARK: - FR-24822 One-shot CheckedContinuation safety (issue #256)
+    // Regression: FR-24822 — NWPathMonitor.pathUpdateHandler can re-enter and
+    // resume a CheckedContinuation twice, crashing with EXC_BREAKPOINT. The
+    // tests below pin the lock-guarded "first resume wins" bridge.
     //
     // `NWPathMonitor.pathUpdateHandler` is invoked once at start and again on every
     // subsequent path change (Wi-Fi ↔ cellular handoff, VPN reconnect, sleep/wake).

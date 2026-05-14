@@ -352,7 +352,10 @@ final class CustomWebViewTests: XCTestCase {
         XCTAssertNotNil(resolution.providerError)
     }
 
-    // MARK: - Social-success watchdog no longer reloads
+    // MARK: - FR-24598 Social-success watchdog no longer reloads
+    // Regression: FR-24598 — reloading /oauth/account/social/success caused
+    // the authorization code to be re-consumed. The watchdog must never reload;
+    // it only hides the SDK loader. These tests pin the pure decision logic.
     //
     // Reloading /oauth/account/social/success while the server is mid-flight
     // re-submits the already-consumed authorization code. The second
