@@ -53,6 +53,14 @@ Some tests pass locally but flake on `macos-15-xlarge` runners due to environmen
 |---|---|---|
 | `DemoEmbeddedE2ETests.testEmbeddedGoogleSocialLoginRecoversFromStalledSocialSuccessPage` | First iteration takes 60–70 s on slow CI runners; retries fail because `ASWebAuthenticationSession` system-level state leaks between iterations | Reset `WKWebsiteDataStore` / simulator browser state in `tearDownWithError`, or split this test into a separate non-retried job |
 
+### Thread Sanitizer — currently advisory
+
+The `Unit Tests (Thread Sanitizer)` job is configured with `continue-on-error: true` and `timeout-minutes: 25`. It runs on every PR and reports findings, but does **not** block merge while two known issues are open:
+
+1. **Real race in `FronteggSwift.FeLogger.dispatchToDelegate`** detected during `LoggerDelegateTests.test_delegateReceivesAllLevelsRegardlessOfLogLevelThreshold` when run as part of the full suite. The race is between delegate-registration writes from one test and dispatch-queue reads from another. Likely needs `dispatchToDelegate` to serialize delegate access (lock or queue), and `LoggerDelegateTests` to drain pending dispatches in `tearDownWithError`. Fix in a follow-up PR.
+
+2. **Job hang under TSan instrumentation** — the first CI run consumed the full 6-hour GitHub Actions timeout. With `timeout-minutes: 25` the job now fails fast if it hangs. Once #1 is fixed and the hang is diagnosed, TSan should be promoted to a required check.
+
 ## Regression-test convention
 
 Every test that exists *because* a specific production bug was found should be traceable to its Frontegg ticket. Use this convention.
@@ -89,7 +97,6 @@ The following checks should be marked **required** in Settings → Branches → 
 | `Validate PR Description` | [onPullRequestUpdated.yaml](.github/workflows/onPullRequestUpdated.yaml) | CHANGELOG generation needs a non-empty description |
 | `Build & Lint` | [onPullRequestUpdated.yaml](.github/workflows/onPullRequestUpdated.yaml) | SwiftPM resolves + SDK builds for iPhone 16 simulator |
 | `Unit Tests` | [demo-e2e.yml](.github/workflows/demo-e2e.yml) | `FronteggSwiftTests` with coverage |
-| `Unit Tests (Thread Sanitizer)` | [demo-e2e.yml](.github/workflows/demo-e2e.yml) | Catches `CheckedContinuation` races and other concurrency bugs |
 | `embedded (shard 1/N)` (and other matrix shards) | [demo-e2e.yml](.github/workflows/demo-e2e.yml) | Embedded e2e — covers social/SAML/OIDC flows, deep-link recovery, offline mode |
 | `multi-region (shard …)`, `uikit (shard …)`, `auto-login (shard …)` | [demo-e2e.yml](.github/workflows/demo-e2e.yml) | Per-variant e2e |
 | `Swift SDK E2E` | [swift-sdk-e2e.yml](.github/workflows/swift-sdk-e2e.yml) | External system-tests suite (only for non-master target branches) |

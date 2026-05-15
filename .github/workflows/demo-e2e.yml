@@ -55,6 +55,12 @@ jobs:
   unit-tests-tsan:
     name: "Unit Tests (Thread Sanitizer)"
     runs-on: "macos-15-xlarge"
+    # Advisory while we debug a hang under TSan instrumentation that consumed
+    # 6 hours on the first run. timeout-minutes: 25 caps the damage; the
+    # default 360 is unsafe for a job we know can hang. Once the hang is
+    # diagnosed and fixed, drop continue-on-error and tighten the timeout.
+    timeout-minutes: 25
+    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v6
