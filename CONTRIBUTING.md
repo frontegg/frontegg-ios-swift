@@ -55,27 +55,35 @@ Some tests pass locally but flake on `macos-15-xlarge` runners due to environmen
 
 ### Thread Sanitizer — currently advisory
 
-The `Unit Tests (Thread Sanitizer)` job is configured with `continue-on-error: true`, `timeout-minutes: 15`, and `TSAN_OPTIONS=halt_on_error=1:abort_on_error=1`. It runs on every PR and reports findings; the test process aborts cleanly on the first race so the job completes in ~5 minutes regardless of whether races are found.
+The `Unit Tests (Thread Sanitizer)` job is configured with `continue-on-error: true` and `timeout-minutes: 15`. It runs on every PR, reports findings, and completes in ~7 minutes. Findings do **not** block merge while the two open races below are tracked for follow-up.
 
-Findings do **not** block merge while the known race below is open:
+Drop `continue-on-error: true` and promote TSan to a required check once both open races are closed.
 
-**Race: `FronteggSwift.FronteggAuth.featureFlags` getter/setter contention across test setUps.**
+#### Past findings (resolved)
 
-```
-Write of size 8 by main thread:
-  FronteggAuth.featureFlags.setter ← FronteggAuth.manualInit ← FronteggApp.manualInit
-  ← <NewTest>.setUp()
+- **`FronteggAuth.featureFlags` data race** — concurrent main-thread reassignment (from `manualInit` and region-switch entry points in `FronteggAuth+RegionManagement.swift`) racing with background-thread reads in `startPostConnectivityServices()` and `SocialLoginUrlGenerator`. The race wedged xcodebuild for 25+ minutes on every PR, blocking the Combine Results & Summary step on unrelated PRs. Fixed by serializing access through an `NSLock`-backed computed property. Regression test: [`Tests/FronteggSwiftTests/FronteggAuthFeatureFlagsRaceTests.swift`](Tests/FronteggSwiftTests/FronteggAuthFeatureFlagsRaceTests.swift).
 
-Previous read of size 8 by thread T19 (GCD worker):
-  FronteggAuth.featureFlags.getter ← FronteggAuth.startPostConnectivityServices() async
-  ← scheduled by <PriorTest>.setUp() via FronteggApp.shared.init()
-```
+#### Open findings (follow-up PRs)
 
-A previous test's `FronteggApp.shared` init kicks off `startPostConnectivityServices()` on a GCD worker. That async task reads `FronteggAuth.featureFlags` while the next test's `setUp()` triggers `manualInit`, which writes `featureFlags`. The race window is real in production too — region switches in [FronteggAuth+RegionManagement.swift](Sources/FronteggSwift/auth/FronteggAuth+RegionManagement.swift) reassign `featureFlags` while async consumers may be reading it.
+These surfaced once the `featureFlags` crash no longer aborted the suite first.
 
-**Fix in a follow-up PR:** Either serialize `featureFlags` access through a serial queue / lock, or cancel in-flight `startPostConnectivityServices` tasks when `featureFlags` is reassigned (and on `FronteggAuth.resetForTesting`). The unit tests should also cancel/await any in-flight startup tasks in `tearDownWithError` so test isolation matches the production lifetime.
+1. **`FronteggAuth.refreshTokenDispatch` getter/setter race** *(production code)*
 
-Once that race is closed, drop `continue-on-error: true` and promote TSan to a required check.
+   ```
+   Write: FronteggAuth.cancelScheduledTokenRefresh ← FronteggAuth.scheduleTokenRefresh
+        (async closure on GCD worker T1)
+   Read:  FronteggAuth.hasScheduledTokenRefreshForTesting (from a test's async closure on T3)
+   ```
+
+   `refreshTokenDispatch: DispatchWorkItem?` is read/written across `scheduleTokenRefresh`, `cancelScheduledTokenRefresh`, and `hasScheduledTokenRefreshForTesting` without synchronization. Apply the same lock-backed computed-property pattern as `featureFlags`.
+
+2. **`MockRefreshRecoveryApi.refreshToken` Swift access race** *(test-side)*
+
+   The mock in `FronteggAuthRefreshRecoveryTests` mutates internal state (call counts, response queues) from concurrent async contexts without synchronization. Add an internal lock or convert the mock to an actor.
+
+#### Known follow-up — same pattern, no TSan finding yet
+
+`FronteggAuth.api` and `FronteggAuth.entitlements` share the exact reassignment pattern that `featureFlags` had — reassigned in the same four sites in [`FronteggAuth+RegionManagement.swift`](Sources/FronteggSwift/auth/FronteggAuth+RegionManagement.swift) and read across multiple threads. TSan did not surface those races on the test ordering we ran, but the same fix pattern should be applied to both before they bite in production region-switch flows.
 
 ## Regression-test convention
 
