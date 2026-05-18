@@ -723,7 +723,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         XCTAssertTrue(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
     }
 
-    // MARK: - Deep-link recovery regression (multi-app AASA wrong-app routing)
+    // MARK: - FR-24808 Deep-link recovery regression (multi-app AASA wrong-app routing)
 
     /// Regression for the SkyPath "stuck on loading after login" incident
     /// (see plan.md in mobile-logs investigation). When a device has more

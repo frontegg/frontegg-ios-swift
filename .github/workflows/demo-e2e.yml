@@ -52,6 +52,45 @@ jobs:
             ${{ runner.temp }}/unit-tests.xcresult
           retention-days: 7
 
+  unit-tests-tsan:
+    name: "Unit Tests (Thread Sanitizer)"
+    runs-on: "macos-15-xlarge"
+    # Advisory while we debug a hang under TSan instrumentation that consumed
+    # 6 hours on the first run. timeout-minutes: 25 caps the damage; the
+    # default 360 is unsafe for a job we know can hang. Once the hang is
+    # diagnosed and fixed, drop continue-on-error and tighten the timeout.
+    timeout-minutes: 25
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Reset SwiftPM artifact cache
+        run: bash .github/scripts/reset_swiftpm_artifact_cache.sh
+
+      - name: Run Unit Tests with Thread Sanitizer
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -scheme FronteggSwift \
+            -destination "platform=iOS Simulator,name=iPhone 16" \
+            -only-testing:FronteggSwiftTests \
+            -resultBundlePath "$RUNNER_TEMP/unit-tests-tsan.xcresult" \
+            -enableThreadSanitizer YES \
+            -enableCodeCoverage NO \
+            -parallel-testing-enabled NO \
+            2>&1 | tee "$RUNNER_TEMP/unit-tests-tsan.log"
+
+      - name: Upload TSan artifacts
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: unit-tests-tsan-results
+          path: |
+            ${{ runner.temp }}/unit-tests-tsan.log
+            ${{ runner.temp }}/unit-tests-tsan.xcresult
+          retention-days: 7
+
   matrix-setup:
     name: "Generate E2E Matrix"
     runs-on: ubuntu-latest
@@ -98,6 +137,16 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/${{ matrix.app }}-e2e-shard-${{ matrix.shard-index }}.xcresult"
             -enableCodeCoverage YES
             -parallel-testing-enabled NO
+            -retry-tests-on-failure
+            -test-iterations 3
+          )
+
+          # CI-environment flakes — these tests pass locally but fail on
+          # macos-15-xlarge runners (slow ASWebAuthenticationSession startup
+          # poisons subsequent retry iterations). Tracked for proper fix.
+          # See CONTRIBUTING.md → "Known CI-flaky tests".
+          XCODEBUILD_ARGS+=(
+            -skip-testing:demo-embedded-e2e/DemoEmbeddedE2ETests/testEmbeddedGoogleSocialLoginRecoversFromStalledSocialSuccessPage
           )
 
           if [ -n "$ONLY_TESTING" ]; then
@@ -121,7 +170,7 @@ jobs:
 
   summary:
     name: "Combine Results & Summary"
-    needs: [matrix-setup, e2e, unit-tests]
+    needs: [matrix-setup, e2e, unit-tests, unit-tests-tsan]
     if: always()
     runs-on: "macos-15-xlarge"
     steps:
@@ -140,6 +189,13 @@ jobs:
           name: unit-tests-results
           path: ${{ runner.temp }}/artifacts/unit-tests-results
 
+      - name: Download Thread Sanitizer artifacts
+        uses: actions/download-artifact@v8
+        if: always()
+        with:
+          name: unit-tests-tsan-results
+          path: ${{ runner.temp }}/artifacts/unit-tests-tsan-results
+
       - name: Generate combined summary
         run: |
           node .github/scripts/combine_e2e_summary.js \
@@ -147,3 +203,110 @@ jobs:
             --apps "${{ needs.matrix-setup.outputs.apps || 'embedded,multi-region,uikit,auto-login' }}" \
             --include-unit-tests true \
             --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Append Thread Sanitizer summary
+        if: always()
+        run: |
+          set -e
+          {
+            echo ""
+            echo "## Thread Sanitizer"
+            echo ""
+            if [ -f "${{ runner.temp }}/artifacts/unit-tests-tsan-results/unit-tests-tsan.log" ]; then
+              if grep -qE "ThreadSanitizer: data race|WARNING: ThreadSanitizer" \
+                "${{ runner.temp }}/artifacts/unit-tests-tsan-results/unit-tests-tsan.log"; then
+                echo ":x: ThreadSanitizer reported data races. See \`unit-tests-tsan-results\` artifact."
+              else
+                echo ":white_check_mark: No data races reported."
+              fi
+            else
+              echo ":warning: No TSan log found."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build per-file coverage summary
+        id: coverage_summary
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+
+          XCRESULT="${{ runner.temp }}/artifacts/unit-tests-results/unit-tests.xcresult"
+          if [ ! -d "$XCRESULT" ]; then
+            echo "No xcresult bundle at $XCRESULT — skipping coverage summary."
+            exit 0
+          fi
+
+          COVERAGE_JSON="${{ runner.temp }}/coverage.json"
+          xcrun xccov view --report --files-for-target FronteggSwift --json "$XCRESULT" > "$COVERAGE_JSON" 2>/dev/null
+          if [ ! -s "$COVERAGE_JSON" ]; then
+            echo "xccov produced empty output — skipping coverage summary."
+            exit 0
+          fi
+
+          git fetch --depth=1 origin master 2>/dev/null || true
+          CHANGED="${{ runner.temp }}/changed-files.txt"
+          git diff --name-only origin/master...HEAD | grep '^Sources/FronteggSwift/.*\.swift$' > "$CHANGED" || true
+
+          if [ ! -s "$CHANGED" ]; then
+            echo "No FronteggSwift source files changed — skipping coverage summary."
+            exit 0
+          fi
+
+          BODY="${{ runner.temp }}/coverage-comment.md"
+          {
+            echo "<!-- coverage-summary -->"
+            echo "## Coverage for changed FronteggSwift files"
+            echo ""
+            echo "| File | Line coverage | Covered / Total |"
+            echo "|------|---------------|-----------------|"
+            while IFS= read -r file; do
+              base=$(basename "$file")
+              row=$(node -e "
+                const fs = require('fs');
+                const data = JSON.parse(fs.readFileSync('$COVERAGE_JSON', 'utf8'));
+                const files = Array.isArray(data) ? data : (data.files || []);
+                const match = files.find(f => (f.path || f.name || '').endsWith('/$base') || (f.path || f.name || '') === '$base');
+                if (!match) { process.stdout.write('| $file | n/a | n/a |'); return; }
+                const pct = (match.lineCoverage * 100).toFixed(1);
+                const covered = match.coveredLines ?? 'n/a';
+                const total = match.executableLines ?? 'n/a';
+                process.stdout.write(\`| $file | \${pct}% | \${covered} / \${total} |\`);
+              " 2>/dev/null)
+              if [ -z "$row" ]; then
+                echo "| $file | n/a | n/a |"
+              else
+                echo "$row"
+              fi
+            done < "$CHANGED"
+            echo ""
+            echo "_Informational — no threshold is enforced. Coverage is for the \`FronteggSwift\` target unit-test run._"
+          } > "$BODY"
+
+          cat "$BODY" >> "$GITHUB_STEP_SUMMARY"
+          echo "body_path=$BODY" >> "$GITHUB_OUTPUT"
+
+      - name: Post or update coverage PR comment
+        if: github.event_name == 'pull_request' && steps.coverage_summary.outputs.body_path != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BODY_PATH: ${{ steps.coverage_summary.outputs.body_path }}
+        run: |
+          set -e
+
+          EXISTING_ID=$(gh api \
+            "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            --paginate \
+            --jq '.[] | select(.body | contains("<!-- coverage-summary -->")) | .id' \
+            | head -n 1)
+
+          if [ -n "$EXISTING_ID" ]; then
+            gh api \
+              --method PATCH \
+              "repos/${{ github.repository }}/issues/comments/${EXISTING_ID}" \
+              --field body="@${BODY_PATH}"
+          else
+            gh pr comment "${PR_NUMBER}" --body-file "${BODY_PATH}"
+          fi

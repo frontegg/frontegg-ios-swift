@@ -578,6 +578,11 @@ final class FronteggAuthOAuthCallbackTests: XCTestCase {
         XCTAssertEqual(delegate.contexts.first?.embeddedMode, false)
     }
 
+    // MARK: - FR-24808 Mis-routed OAuth Callback Recovery Regression Tests
+    // Regression: FR-24808 — multi-app AASA scenarios deliver OAuth callbacks
+    // to the wrong app via openURL. The SDK must recognize the OAuth-shaped
+    // custom-scheme URL and exchange the code instead of rejecting the URL.
+
     func test_handleOpenUrl_misroutedCustomSchemeCallbackWithCode_recoversViaTokenExchange() async throws {
         // Simulates the SkyPath multi-app AASA wrong-app routing case: a
         // custom-scheme URL arrives via onOpenURL whose host/path don't match
