@@ -15,9 +15,9 @@ xcodebuild test \
   -only-testing:FronteggSwiftTests
 ```
 
-### Unit tests with Thread Sanitizer
+### Unit tests with Thread Sanitizer (local only)
 
-This is the same configuration as CI's `Unit Tests (Thread Sanitizer)` job. TSan and code coverage are mutually exclusive in xcodebuild, so coverage is disabled here:
+Run the suite under Thread Sanitizer to catch concurrency races. TSan and code coverage are mutually exclusive in xcodebuild, so coverage is disabled here:
 
 ```bash
 xcodebuild test \
@@ -29,7 +29,7 @@ xcodebuild test \
   -parallel-testing-enabled NO
 ```
 
-Any output containing `ThreadSanitizer: data race` is a failure.
+Any output containing `ThreadSanitizer: data race` is a finding. **There is currently no CI job for this** — a real race in `FronteggSwift.FeLogger.dispatchToDelegate` was identified locally during the work that added this guide. Wiring TSan into CI is blocked on a fix to that race; see the "Known TSan findings" section below.
 
 ### Embedded demo end-to-end tests
 
@@ -53,13 +53,15 @@ Some tests pass locally but flake on `macos-15-xlarge` runners due to environmen
 |---|---|---|
 | `DemoEmbeddedE2ETests.testEmbeddedGoogleSocialLoginRecoversFromStalledSocialSuccessPage` | First iteration takes 60–70 s on slow CI runners; retries fail because `ASWebAuthenticationSession` system-level state leaks between iterations | Reset `WKWebsiteDataStore` / simulator browser state in `tearDownWithError`, or split this test into a separate non-retried job |
 
-### Thread Sanitizer — currently advisory
+### Known TSan findings (CI integration deferred)
 
-The `Unit Tests (Thread Sanitizer)` job is configured with `continue-on-error: true` and `timeout-minutes: 25`. It runs on every PR and reports findings, but does **not** block merge while two known issues are open:
+The earlier iteration of this PR added a `Unit Tests (Thread Sanitizer)` job to CI. It surfaced a real race and a separate runtime hang, so the job was pulled and the work is captured here for a follow-up PR.
 
-1. **Real race in `FronteggSwift.FeLogger.dispatchToDelegate`** detected during `LoggerDelegateTests.test_delegateReceivesAllLevelsRegardlessOfLogLevelThreshold` when run as part of the full suite. The race is between delegate-registration writes from one test and dispatch-queue reads from another. Likely needs `dispatchToDelegate` to serialize delegate access (lock or queue), and `LoggerDelegateTests` to drain pending dispatches in `tearDownWithError`. Fix in a follow-up PR.
+1. **Real race in `FronteggSwift.FeLogger.dispatchToDelegate`** — reproduces locally during `LoggerDelegateTests.test_delegateReceivesAllLevelsRegardlessOfLogLevelThreshold` when run as part of the full suite (not in isolation). The race is between delegate-registration writes from one test and dispatch-queue reads from another. Likely needs `dispatchToDelegate` to serialize delegate access (lock or queue), and `LoggerDelegateTests` to drain pending dispatches in `tearDownWithError`.
 
-2. **Job hang under TSan instrumentation** — the first CI run consumed the full 6-hour GitHub Actions timeout. With `timeout-minutes: 25` the job now fails fast if it hangs. Once #1 is fixed and the hang is diagnosed, TSan should be promoted to a required check.
+2. **Test-runner hang under TSan instrumentation** — running the full `FronteggSwiftTests` suite with `-enableThreadSanitizer YES` on `macos-15-xlarge` consumed the full 6-hour GitHub Actions timeout on the first CI run. Root cause TBD — possibly related to (1), possibly independent.
+
+Fix (1), diagnose (2), and re-add the TSan job to [.github/workflows/demo-e2e.yml](.github/workflows/demo-e2e.yml) in a focused follow-up.
 
 ## Regression-test convention
 
