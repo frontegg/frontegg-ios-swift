@@ -52,6 +52,45 @@ jobs:
             ${{ runner.temp }}/unit-tests.xcresult
           retention-days: 7
 
+  unit-tests-tsan:
+    name: "Unit Tests (Thread Sanitizer)"
+    runs-on: "macos-15-xlarge"
+    # Advisory while we debug a hang under TSan instrumentation that consumed
+    # 6 hours on the first run. timeout-minutes: 25 caps the damage; the
+    # default 360 is unsafe for a job we know can hang. Once the hang is
+    # diagnosed and fixed, drop continue-on-error and tighten the timeout.
+    timeout-minutes: 25
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Reset SwiftPM artifact cache
+        run: bash .github/scripts/reset_swiftpm_artifact_cache.sh
+
+      - name: Run Unit Tests with Thread Sanitizer
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -scheme FronteggSwift \
+            -destination "platform=iOS Simulator,name=iPhone 16" \
+            -only-testing:FronteggSwiftTests \
+            -resultBundlePath "$RUNNER_TEMP/unit-tests-tsan.xcresult" \
+            -enableThreadSanitizer YES \
+            -enableCodeCoverage NO \
+            -parallel-testing-enabled NO \
+            2>&1 | tee "$RUNNER_TEMP/unit-tests-tsan.log"
+
+      - name: Upload TSan artifacts
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: unit-tests-tsan-results
+          path: |
+            ${{ runner.temp }}/unit-tests-tsan.log
+            ${{ runner.temp }}/unit-tests-tsan.xcresult
+          retention-days: 7
+
   matrix-setup:
     name: "Generate E2E Matrix"
     runs-on: ubuntu-latest
@@ -131,7 +170,7 @@ jobs:
 
   summary:
     name: "Combine Results & Summary"
-    needs: [matrix-setup, e2e, unit-tests]
+    needs: [matrix-setup, e2e, unit-tests, unit-tests-tsan]
     if: always()
     runs-on: "macos-15-xlarge"
     steps:
@@ -150,6 +189,13 @@ jobs:
           name: unit-tests-results
           path: ${{ runner.temp }}/artifacts/unit-tests-results
 
+      - name: Download Thread Sanitizer artifacts
+        uses: actions/download-artifact@v8
+        if: always()
+        with:
+          name: unit-tests-tsan-results
+          path: ${{ runner.temp }}/artifacts/unit-tests-tsan-results
+
       - name: Generate combined summary
         run: |
           node .github/scripts/combine_e2e_summary.js \
@@ -157,6 +203,26 @@ jobs:
             --apps "${{ needs.matrix-setup.outputs.apps || 'embedded,multi-region,uikit,auto-login' }}" \
             --include-unit-tests true \
             --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Append Thread Sanitizer summary
+        if: always()
+        run: |
+          set -e
+          {
+            echo ""
+            echo "## Thread Sanitizer"
+            echo ""
+            if [ -f "${{ runner.temp }}/artifacts/unit-tests-tsan-results/unit-tests-tsan.log" ]; then
+              if grep -qE "ThreadSanitizer: data race|WARNING: ThreadSanitizer" \
+                "${{ runner.temp }}/artifacts/unit-tests-tsan-results/unit-tests-tsan.log"; then
+                echo ":x: ThreadSanitizer reported data races. See \`unit-tests-tsan-results\` artifact."
+              else
+                echo ":white_check_mark: No data races reported."
+              fi
+            else
+              echo ":warning: No TSan log found."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build per-file coverage summary
         id: coverage_summary
