@@ -53,7 +53,17 @@ public class FronteggAuth: FronteggState {
     // internal for extension access (FronteggAuth+StepUp.swift)
     var stepUpAuthenticator: StepUpAuthenticator
     public var api: Api
-    public var featureFlags: FeatureFlags
+    // Lock-protected storage for the public `featureFlags` accessor below.
+    // FronteggAuth.featureFlags is reassigned during region switches and on
+    // every test's setUp via manualInit, while async work from a prior
+    // setUp's startPostConnectivityServices() may still be reading it on a
+    // GCD worker. Serialize all access to avoid the data race.
+    private let featureFlagsLock = NSLock()
+    private var _featureFlags: FeatureFlags
+    public var featureFlags: FeatureFlags {
+        get { featureFlagsLock.withLock { _featureFlags } }
+        set { featureFlagsLock.withLock { _featureFlags = newValue } }
+    }
     public var entitlements: Entitlements
     var subscribers = Set<AnyCancellable>()
     // internal for extension access (Refresh, Testing, Connectivity)
@@ -124,7 +134,7 @@ public class FronteggAuth: FronteggState {
         self.clientId = clientId
         self.applicationId = applicationId
         self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
-        self.featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self.api))
+        self._featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self.api))
         self.entitlements = Entitlements(.init(api: self.api, enabled: entitlementsEnabled))
         self.multiFactorAuthenticator = MultiFactorAuthenticator(api: api, baseUrl: baseUrl)
         self.stepUpAuthenticator = StepUpAuthenticator(credentialManager: credentialManager)
