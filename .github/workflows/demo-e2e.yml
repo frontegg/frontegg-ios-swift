@@ -77,7 +77,12 @@ jobs:
 
       - name: Run Unit Tests with Thread Sanitizer
         env:
-          TSAN_OPTIONS: "halt_on_error=1:abort_on_error=1:second_deadlock_stack=1:print_suppressions=0"
+          # SIMCTL_CHILD_* env vars are propagated by simctl into the iOS
+          # Simulator child process where the test binary actually runs.
+          # A plain TSAN_OPTIONS env var on the xcodebuild parent process
+          # is NOT inherited by the simulator child, so halt_on_error was
+          # previously a no-op and xcodebuild hung after every race report.
+          SIMCTL_CHILD_TSAN_OPTIONS: "halt_on_error=1:abort_on_error=1:second_deadlock_stack=1:print_suppressions=0"
         run: |
           set -o pipefail
           xcodebuild test \
