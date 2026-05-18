@@ -55,11 +55,27 @@ Some tests pass locally but flake on `macos-15-xlarge` runners due to environmen
 
 ### Thread Sanitizer — currently advisory
 
-The `Unit Tests (Thread Sanitizer)` job is configured with `continue-on-error: true` and `timeout-minutes: 25`. It runs on every PR and reports findings, but does **not** block merge while two known issues are open:
+The `Unit Tests (Thread Sanitizer)` job is configured with `continue-on-error: true`, `timeout-minutes: 15`, and `TSAN_OPTIONS=halt_on_error=1:abort_on_error=1`. It runs on every PR and reports findings; the test process aborts cleanly on the first race so the job completes in ~5 minutes regardless of whether races are found.
 
-1. **Real race in `FronteggSwift.FeLogger.dispatchToDelegate`** detected during `LoggerDelegateTests.test_delegateReceivesAllLevelsRegardlessOfLogLevelThreshold` when run as part of the full suite. The race is between delegate-registration writes from one test and dispatch-queue reads from another. Likely needs `dispatchToDelegate` to serialize delegate access (lock or queue), and `LoggerDelegateTests` to drain pending dispatches in `tearDownWithError`. Fix in a follow-up PR.
+Findings do **not** block merge while the known race below is open:
 
-2. **Job hang under TSan instrumentation** — the first CI run consumed the full 6-hour GitHub Actions timeout. With `timeout-minutes: 25` the job now fails fast if it hangs. Once #1 is fixed and the hang is diagnosed, TSan should be promoted to a required check.
+**Race: `FronteggSwift.FronteggAuth.featureFlags` getter/setter contention across test setUps.**
+
+```
+Write of size 8 by main thread:
+  FronteggAuth.featureFlags.setter ← FronteggAuth.manualInit ← FronteggApp.manualInit
+  ← <NewTest>.setUp()
+
+Previous read of size 8 by thread T19 (GCD worker):
+  FronteggAuth.featureFlags.getter ← FronteggAuth.startPostConnectivityServices() async
+  ← scheduled by <PriorTest>.setUp() via FronteggApp.shared.init()
+```
+
+A previous test's `FronteggApp.shared` init kicks off `startPostConnectivityServices()` on a GCD worker. That async task reads `FronteggAuth.featureFlags` while the next test's `setUp()` triggers `manualInit`, which writes `featureFlags`. The race window is real in production too — region switches in [FronteggAuth+RegionManagement.swift](Sources/FronteggSwift/auth/FronteggAuth+RegionManagement.swift) reassign `featureFlags` while async consumers may be reading it.
+
+**Fix in a follow-up PR:** Either serialize `featureFlags` access through a serial queue / lock, or cancel in-flight `startPostConnectivityServices` tasks when `featureFlags` is reassigned (and on `FronteggAuth.resetForTesting`). The unit tests should also cancel/await any in-flight startup tasks in `tearDownWithError` so test isolation matches the production lifetime.
+
+Once that race is closed, drop `continue-on-error: true` and promote TSan to a required check.
 
 ## Regression-test convention
 
