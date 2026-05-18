@@ -1,3 +1,6 @@
+# Triggers fresh workflow resolution on PR #263 (CI previously used a stale
+# workflow definition with a now-removed TSan job that no longer produces its
+# expected artifact, causing the Combine Results & Summary job to fail).
 name: "(▶) Demo E2E Tests"
 
 on:
