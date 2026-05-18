@@ -81,6 +81,10 @@ These surfaced once the `featureFlags` crash no longer aborted the suite first.
 
    The mock in `FronteggAuthRefreshRecoveryTests` mutates internal state (call counts, response queues) from concurrent async contexts without synchronization. Add an internal lock or convert the mock to an actor.
 
+3. **`LoggerDelegateTests.setUp()` data race** *(test-side)*
+
+   Concurrent access to delegate-registration state across `LoggerDelegateTests` instances. Same fix shape as #2 — serialize the relevant state in the test or its harness.
+
 #### Known follow-up — same pattern, no TSan finding yet
 
 `FronteggAuth.api` and `FronteggAuth.entitlements` share the exact reassignment pattern that `featureFlags` had — reassigned in the same four sites in [`FronteggAuth+RegionManagement.swift`](Sources/FronteggSwift/auth/FronteggAuth+RegionManagement.swift) and read across multiple threads. TSan did not surface those races on the test ordering we ran, but the same fix pattern should be applied to both before they bite in production region-switch flows.

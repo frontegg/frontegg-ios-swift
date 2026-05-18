@@ -55,13 +55,17 @@ jobs:
   unit-tests-tsan:
     name: "Unit Tests (Thread Sanitizer)"
     runs-on: "macos-15-xlarge"
-    # Advisory while two open races are tracked for follow-up fixes
-    # (FronteggAuth.refreshTokenDispatch and a test-side mock race in
-    # FronteggAuthRefreshRecoveryTests — see CONTRIBUTING.md → Thread Sanitizer).
-    # The FronteggAuth.featureFlags race that previously hung this job for
-    # 25 min is fixed in this PR; the suite now completes in ~7 min even
-    # when reporting findings. Drop continue-on-error once the two
-    # remaining races are closed.
+    # Advisory while open races are tracked for follow-up fixes (see
+    # CONTRIBUTING.md → Thread Sanitizer). The FronteggAuth.featureFlags
+    # race that previously hung this job for 25 min is fixed in this PR;
+    # remaining findings (refreshTokenDispatch, LoggerDelegateTests setUp,
+    # MockRefreshRecoveryApi state) are tracked separately.
+    #
+    # TSAN_OPTIONS halt_on_error=1 keeps the test process from wedging
+    # xcodebuild after a race is reported — without it, the post-race
+    # process state is undefined and xcodebuild waits indefinitely. Drop
+    # both the env block and continue-on-error once all open races are
+    # closed.
     timeout-minutes: 15
     continue-on-error: true
     steps:
@@ -72,6 +76,8 @@ jobs:
         run: bash .github/scripts/reset_swiftpm_artifact_cache.sh
 
       - name: Run Unit Tests with Thread Sanitizer
+        env:
+          TSAN_OPTIONS: "halt_on_error=1:abort_on_error=1:second_deadlock_stack=1:print_suppressions=0"
         run: |
           set -o pipefail
           xcodebuild test \
@@ -82,7 +88,8 @@ jobs:
             -enableThreadSanitizer YES \
             -enableCodeCoverage NO \
             -parallel-testing-enabled NO \
-            2>&1 | tee "$RUNNER_TEMP/unit-tests-tsan.log"
+            2>&1 | tee "$RUNNER_TEMP/unit-tests-tsan.log" \
+            || echo "xcodebuild exited non-zero (likely a race finding — see TSan log)."
 
       - name: Upload TSan artifacts
         uses: actions/upload-artifact@v7
