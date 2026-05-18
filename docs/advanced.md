@@ -738,3 +738,64 @@ func performSensitiveAction() {
     print("Secure action performed.")
 }
 ```
+
+## Admin portal (BETA)
+
+The Admin Portal is a hosted page that lets end users manage their account, profile, sessions, and tenant settings. The SDK ships an `AdminPortalView` SwiftUI view (iOS 14+) that loads the portal at `${baseUrl}/oauth/portal` in an embedded `WKWebView`.
+
+The web view shares the SDK's persistent cookie store, so users who are already authenticated through the SDK's login flow are not asked to sign in again. If the cookies are missing or stale, the portal renders its own login form — after a one-time sign-in the cookies persist for next time.
+
+> The Admin Portal entry point is in **BETA** as of SDK version `1.3.5`. The public API may still change.
+
+### Multi-app prerequisite
+
+For multi-app workspaces, set `applicationId` in your `Frontegg.plist` (see [Multi-app support](#multi-app-support)). The SDK appends `?appId=<applicationId>` to the portal URL. Without it, the portal renders **"Application not found"** after sign-in. Single-app workspaces don't need this.
+
+### Present from SwiftUI
+
+Present the view as a sheet (or any other modal style) from anywhere in your app:
+
+```swift
+import SwiftUI
+import FronteggSwift
+
+struct ProfileView: View {
+    @State private var showAdminPortal = false
+
+    var body: some View {
+        Button("Open Admin Portal") {
+            showAdminPortal = true
+        }
+        .sheet(isPresented: $showAdminPortal) {
+            AdminPortalView()
+        }
+    }
+}
+```
+
+### Present from UIKit
+
+Wrap `AdminPortalView` in a `UIHostingController` and present it:
+
+```swift
+import UIKit
+import SwiftUI
+import FronteggSwift
+
+final class ProfileViewController: UIViewController {
+    @objc func openAdminPortal() {
+        let host = UIHostingController(rootView: AdminPortalView())
+        host.modalPresentationStyle = .pageSheet
+        present(host, animated: true)
+    }
+}
+```
+
+### Dismissal
+
+The portal is dismissed in one of two ways:
+
+- The user swipes down on the sheet (standard iOS sheet behaviour).
+- The user taps the portal's **X** button — the page calls `window.close()`, which the SDK bridges to the SwiftUI `presentationMode` dismiss.
+
+No additional code is required to wire this up.
