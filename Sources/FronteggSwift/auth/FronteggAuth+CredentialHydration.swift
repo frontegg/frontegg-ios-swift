@@ -252,6 +252,19 @@ extension FronteggAuth {
                 } else {
                     cancelScheduledTokenRefresh()
                 }
+                // Drop any cached entitlements before kicking off the new load. Without
+                // this:
+                //   * during the in-flight reload, getFeatureEntitlements() keeps
+                //     returning the PREVIOUS tenant's verdict (state and hasLoaded are
+                //     unchanged until performEntitlementsLoad's Task finishes);
+                //   * if the reload fails (Entitlements.load returns false on HTTP
+                //     error or decode failure without touching _state), the cache stays
+                //     pinned to the previous tenant forever.
+                // For login/init paths the cache is already empty (in-memory, no
+                // persistence), so clear() is a no-op. The behavior change is scoped to
+                // tenant switching, where setCredentialsInternal runs with a populated
+                // cache from the prior tenant.
+                entitlements.clear()
                 loadEntitlements(forceRefresh: true)
             }
 
