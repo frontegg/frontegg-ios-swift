@@ -67,7 +67,17 @@ public class FronteggAuth: FronteggState {
     public var entitlements: Entitlements
     var subscribers = Set<AnyCancellable>()
     // internal for extension access (Refresh, Testing, Connectivity)
-    var refreshTokenDispatch: DispatchWorkItem?
+    // Lock-protected storage for the public `refreshTokenDispatch` accessor.
+    // The scheduling code in FronteggAuth+Refresh and the test-only
+    // `hasScheduledTokenRefreshForTesting` in FronteggAuth+Testing access
+    // this property from different async contexts; serialize to avoid a
+    // data race.
+    let refreshTokenDispatchLock = NSLock()
+    var _refreshTokenDispatch: DispatchWorkItem?
+    var refreshTokenDispatch: DispatchWorkItem? {
+        get { refreshTokenDispatchLock.withLock { _refreshTokenDispatch } }
+        set { refreshTokenDispatchLock.withLock { _refreshTokenDispatch = newValue } }
+    }
     var offlineDebounceWork: DispatchWorkItem?
     let connectivityGenerationLock = NSLock()
     var connectivityGeneration: UInt64 = 0

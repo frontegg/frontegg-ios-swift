@@ -2,13 +2,36 @@ import XCTest
 @testable import FronteggSwift
 
 private final class MockRefreshRecoveryApi: Api {
-    private(set) var refreshCallCount = 0
-    private(set) var meWithRefreshCallCount = 0
-    private(set) var callCounts: [String: Int] = [:]
+    // All mutable state is guarded by `stateLock`. The mock is exercised
+    // concurrently — `refreshToken`/`me`/`getRequest` overrides are called
+    // from async contexts on different threads, and tests read the counters
+    // from the main thread. Without the lock, TSan reports a Swift access
+    // race. Each method holds the lock only across state access and releases
+    // it before any `await`.
+    private let stateLock = NSLock()
+    private var _refreshCallCount = 0
+    private var _meWithRefreshCallCount = 0
+    private var _callCounts: [String: Int] = [:]
+    private var _refreshResult: Result<AuthResponse, Error>?
+    private var _meWithRefreshResult: Result<MeResult, Error>?
+    private var _responseQueues: [String: [(statusCode: Int, data: Data, error: Error?)]] = [:]
 
-    var refreshResult: Result<AuthResponse, Error>?
-    var meWithRefreshResult: Result<MeResult, Error>?
-    var responseQueues: [String: [(statusCode: Int, data: Data, error: Error?)]] = [:]
+    var refreshCallCount: Int { stateLock.withLock { _refreshCallCount } }
+    var meWithRefreshCallCount: Int { stateLock.withLock { _meWithRefreshCallCount } }
+    var callCounts: [String: Int] { stateLock.withLock { _callCounts } }
+
+    var refreshResult: Result<AuthResponse, Error>? {
+        get { stateLock.withLock { _refreshResult } }
+        set { stateLock.withLock { _refreshResult = newValue } }
+    }
+    var meWithRefreshResult: Result<MeResult, Error>? {
+        get { stateLock.withLock { _meWithRefreshResult } }
+        set { stateLock.withLock { _meWithRefreshResult = newValue } }
+    }
+    var responseQueues: [String: [(statusCode: Int, data: Data, error: Error?)]] {
+        get { stateLock.withLock { _responseQueues } }
+        set { stateLock.withLock { _responseQueues = newValue } }
+    }
 
     init() {
         super.init(baseUrl: "https://test.example.com", clientId: "test-client-id", applicationId: nil)
@@ -19,12 +42,14 @@ private final class MockRefreshRecoveryApi: Api {
         tenantId: String? = nil,
         accessToken: String? = nil
     ) async throws -> AuthResponse {
-        refreshCallCount += 1
-        guard let refreshResult else {
+        let result: Result<AuthResponse, Error>? = stateLock.withLock {
+            _refreshCallCount += 1
+            return _refreshResult
+        }
+        guard let result else {
             throw ApiError.invalidUrl("Missing refresh result")
         }
-
-        switch refreshResult {
+        switch result {
         case .success(let response):
             return response
         case .failure(let error):
@@ -33,9 +58,14 @@ private final class MockRefreshRecoveryApi: Api {
     }
 
     override func me(accessToken: String, refreshToken: String) async throws -> MeResult {
-        if let meWithRefreshResult {
-            meWithRefreshCallCount += 1
-            switch meWithRefreshResult {
+        let captured: Result<MeResult, Error>? = stateLock.withLock {
+            if _meWithRefreshResult != nil {
+                _meWithRefreshCallCount += 1
+            }
+            return _meWithRefreshResult
+        }
+        if let captured {
+            switch captured {
             case .success(let result):
                 return result
             case .failure(let error):
@@ -59,17 +89,27 @@ private final class MockRefreshRecoveryApi: Api {
         retries: Int = 0
     ) async throws -> (Data, URLResponse) {
         let normalizedPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        callCounts[normalizedPath, default: 0] += 1
 
-        guard var queue = responseQueues[normalizedPath], !queue.isEmpty else {
+        // Pop the next mock response under the lock; release before any await.
+        let popped: (statusCode: Int, data: Data, error: Error?)?
+        let hasMoreForRetry: Bool
+        (popped, hasMoreForRetry) = stateLock.withLock {
+            _callCounts[normalizedPath, default: 0] += 1
+            guard var queue = _responseQueues[normalizedPath], !queue.isEmpty else {
+                return (nil, false)
+            }
+            let entry = queue.removeFirst()
+            _responseQueues[normalizedPath] = queue
+            let more = (_responseQueues[normalizedPath]?.isEmpty == false)
+            return (entry, more)
+        }
+
+        guard let entry = popped else {
             throw ApiError.invalidUrl("No mock response for path: \(normalizedPath)")
         }
 
-        let entry = queue.removeFirst()
-        responseQueues[normalizedPath] = queue
-
         if let error = entry.error {
-            if retries > 0, let nextQueue = responseQueues[normalizedPath], !nextQueue.isEmpty {
+            if retries > 0, hasMoreForRetry {
                 return try await getRequest(
                     path: path,
                     accessToken: accessToken,
@@ -91,7 +131,7 @@ private final class MockRefreshRecoveryApi: Api {
         }
 
         if Api.isTransientRefreshHTTPStatus(entry.statusCode) {
-            if retries > 0, let nextQueue = responseQueues[normalizedPath], !nextQueue.isEmpty {
+            if retries > 0, hasMoreForRetry {
                 return try await getRequest(
                     path: path,
                     accessToken: accessToken,
@@ -110,15 +150,21 @@ private final class MockRefreshRecoveryApi: Api {
 
     func enqueueJSON(path: String, statusCode: Int, json: [String: Any]) {
         let data = (try? JSONSerialization.data(withJSONObject: json)) ?? Data()
-        responseQueues[path, default: []].append((statusCode: statusCode, data: data, error: nil))
+        stateLock.withLock {
+            _responseQueues[path, default: []].append((statusCode: statusCode, data: data, error: nil))
+        }
     }
 
     func enqueueBody(path: String, statusCode: Int, body: String) {
-        responseQueues[path, default: []].append((statusCode: statusCode, data: Data(body.utf8), error: nil))
+        stateLock.withLock {
+            _responseQueues[path, default: []].append((statusCode: statusCode, data: Data(body.utf8), error: nil))
+        }
     }
 
     func enqueueError(path: String, error: Error) {
-        responseQueues[path, default: []].append((statusCode: 0, data: Data(), error: error))
+        stateLock.withLock {
+            _responseQueues[path, default: []].append((statusCode: 0, data: Data(), error: error))
+        }
     }
 }
 

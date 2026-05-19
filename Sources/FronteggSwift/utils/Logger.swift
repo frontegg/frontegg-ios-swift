@@ -91,7 +91,20 @@ public class FeLogger {
     ///
     /// `trace` and `debug` events are forwarded as-is. `info`, `warning`,
     /// `error`, and `critical` events are sanitized before delivery.
-    public static weak var delegate: FronteggLoggerDelegate?
+    ///
+    /// Reads and writes of this property are serialized through `delegateLock`.
+    /// Without serialization, a test that reassigns `FeLogger.delegate` in
+    /// `setUp()` races with concurrent log emissions from background work
+    /// that is still in flight from a previous test (or, in production, any
+    /// concurrent code path calling the logger while a host app reassigns
+    /// the delegate). The underlying storage `_delegate` remains `weak`, so
+    /// the deallocation-clears-to-nil semantics are preserved.
+    private static let delegateLock = NSLock()
+    private static weak var _delegate: FronteggLoggerDelegate?
+    public static var delegate: FronteggLoggerDelegate? {
+        get { delegateLock.withLock { _delegate } }
+        set { delegateLock.withLock { _delegate = newValue } }
+    }
     
     public var logLevel: FeLogger.Level  = Level.error
     public var label: String
