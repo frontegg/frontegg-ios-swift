@@ -53,13 +53,25 @@ Some tests pass locally but flake on `macos-15-xlarge` runners due to environmen
 |---|---|---|
 | `DemoEmbeddedE2ETests.testEmbeddedGoogleSocialLoginRecoversFromStalledSocialSuccessPage` | First iteration takes 60–70 s on slow CI runners; retries fail because `ASWebAuthenticationSession` system-level state leaks between iterations | Reset `WKWebsiteDataStore` / simulator browser state in `tearDownWithError`, or split this test into a separate non-retried job |
 
-### Thread Sanitizer — currently advisory
+### Thread Sanitizer
 
-The `Unit Tests (Thread Sanitizer)` job is configured with `continue-on-error: true` and `timeout-minutes: 25`. It runs on every PR and reports findings, but does **not** block merge while two known issues are open:
+The `Unit Tests (Thread Sanitizer)` job is a **required check** on every PR. It runs `FronteggSwiftTests` with `-enableThreadSanitizer YES`; any TSan finding fails the PR.
 
-1. **Real race in `FronteggSwift.FeLogger.dispatchToDelegate`** detected during `LoggerDelegateTests.test_delegateReceivesAllLevelsRegardlessOfLogLevelThreshold` when run as part of the full suite. The race is between delegate-registration writes from one test and dispatch-queue reads from another. Likely needs `dispatchToDelegate` to serialize delegate access (lock or queue), and `LoggerDelegateTests` to drain pending dispatches in `tearDownWithError`. Fix in a follow-up PR.
+Job timeout: 15 minutes (typical run completes in well under 10).
 
-2. **Job hang under TSan instrumentation** — the first CI run consumed the full 6-hour GitHub Actions timeout. With `timeout-minutes: 25` the job now fails fast if it hangs. Once #1 is fixed and the hang is diagnosed, TSan should be promoted to a required check.
+`SIMCTL_CHILD_TSAN_OPTIONS=halt_on_error=1` is set as belt-and-suspenders — if a future undetected race surfaces, the test process aborts cleanly instead of hanging xcodebuild for the full job timeout.
+
+#### Past findings (all resolved)
+
+- **`FronteggAuth.featureFlags` data race** — concurrent main-thread reassignment (from `manualInit` and region-switch entry points in `FronteggAuth+RegionManagement.swift`) racing with background-thread reads in `startPostConnectivityServices()` and `SocialLoginUrlGenerator`. Wedged xcodebuild for 25+ minutes on every PR. Fixed by serializing access through an `NSLock`-backed computed property. Regression test: [`Tests/FronteggSwiftTests/FronteggAuthFeatureFlagsRaceTests.swift`](Tests/FronteggSwiftTests/FronteggAuthFeatureFlagsRaceTests.swift).
+- **`FronteggAuth.refreshTokenDispatch` getter/setter race** — `refreshTokenDispatch: DispatchWorkItem?` was read/written across `scheduleTokenRefresh`, `cancelScheduledTokenRefresh`, and `hasScheduledTokenRefreshForTesting` without synchronization. Fixed with the same lock-backed computed-property pattern.
+- **`FeLogger.delegate` data race** — `public static weak var delegate` was assigned from test setUps while concurrent SDK code paths read it for emission. Surfaced as `LoggerDelegateTests.setUp()` race under TSan. Fixed by routing the public accessor through `NSLock` while preserving `weak` storage semantics via a private `_delegate` slot.
+- **`MockRefreshRecoveryApi` Swift access race** *(test-side)* — call counters and response queues were mutated from concurrent async contexts in `refreshToken` / `me` / `getRequest` overrides. Fixed by adding an internal `stateLock` and holding it only across state access, never across `await`.
+- **`SocialLoginUrlGenerator.socialLoginConfig` / `customSocialLoginConfigs` data race** — `reloadConfigs()` writes both fields from a `TaskGroup` fired by `startPostConnectivityServices`, while `authorizeURL(forCustomProvider:)` and `configuration(for:)` read them from concurrent test / production paths. Fixed with the same lock-backed computed-property pattern.
+
+#### Known follow-up — same pattern, no TSan finding yet
+
+`FronteggAuth.api` and `FronteggAuth.entitlements` share the exact reassignment pattern that `featureFlags` had — reassigned in the same four sites in [`FronteggAuth+RegionManagement.swift`](Sources/FronteggSwift/auth/FronteggAuth+RegionManagement.swift) and read across multiple threads. TSan did not surface those races on the test ordering we ran, but the same fix pattern should be applied to both before they bite in production region-switch flows.
 
 ## Regression-test convention
 

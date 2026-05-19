@@ -58,12 +58,7 @@ jobs:
   unit-tests-tsan:
     name: "Unit Tests (Thread Sanitizer)"
     runs-on: "macos-15-xlarge"
-    # Advisory while we debug a hang under TSan instrumentation that consumed
-    # 6 hours on the first run. timeout-minutes: 25 caps the damage; the
-    # default 360 is unsafe for a job we know can hang. Once the hang is
-    # diagnosed and fixed, drop continue-on-error and tighten the timeout.
-    timeout-minutes: 25
-    continue-on-error: true
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -72,6 +67,13 @@ jobs:
         run: bash .github/scripts/reset_swiftpm_artifact_cache.sh
 
       - name: Run Unit Tests with Thread Sanitizer
+        env:
+          # SIMCTL_CHILD_* env vars are propagated by simctl into the iOS
+          # Simulator child process where the test binary runs. A plain
+          # TSAN_OPTIONS on the xcodebuild parent process is NOT inherited.
+          # We still set halt_on_error=1 as belt-and-suspenders so any
+          # future, undetected race aborts cleanly instead of hanging.
+          SIMCTL_CHILD_TSAN_OPTIONS: "halt_on_error=1:abort_on_error=1:second_deadlock_stack=1:print_suppressions=0"
         run: |
           set -o pipefail
           xcodebuild test \

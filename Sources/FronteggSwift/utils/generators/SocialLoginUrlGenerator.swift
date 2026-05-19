@@ -120,9 +120,23 @@ private final class PendingSocialProviderCodeVerifierStore {
 
 public final class SocialLoginUrlGenerator {
     public static let shared = SocialLoginUrlGenerator()
-    
-    private var socialLoginConfig: SocialLoginConfig?
-    private var customSocialLoginConfigs: [CustomSocialLoginProviderConfig]?
+
+    // Lock-protected storage for `socialLoginConfig` and `customSocialLoginConfigs`.
+    // These are written by `reloadConfigs()` (fired off-main from
+    // `startPostConnectivityServices`) and read by `authorizeURL(...)` and
+    // `configuration(for:)` from concurrent test / production paths. TSan
+    // catches the race; serialize through `configLock` to fix it.
+    private let configLock = NSLock()
+    private var _socialLoginConfig: SocialLoginConfig?
+    private var _customSocialLoginConfigs: [CustomSocialLoginProviderConfig]?
+    private var socialLoginConfig: SocialLoginConfig? {
+        get { configLock.withLock { _socialLoginConfig } }
+        set { configLock.withLock { _socialLoginConfig = newValue } }
+    }
+    private var customSocialLoginConfigs: [CustomSocialLoginProviderConfig]? {
+        get { configLock.withLock { _customSocialLoginConfigs } }
+        set { configLock.withLock { _customSocialLoginConfigs = newValue } }
+    }
     private let logger = getLogger("SocialLoginUrlGenerator")
     private let pendingSocialProviderCodeVerifiers = PendingSocialProviderCodeVerifierStore()
     
