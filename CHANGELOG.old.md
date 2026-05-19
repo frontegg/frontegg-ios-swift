@@ -1,3 +1,13 @@
+## v1.3.5
+## Summary
+Adds Admin Portal BETA version to the SDK. Opens `${baseUrl}/oauth/portal?appId=<applicationId>` in a WebView that shares the process-wide CookieManager with the SDK's login WebView so authenticated users don't see a second login.
+
+- New public surface: `AdminPortalView` from anywhere in the host app
+- Demo app: "Open Admin Portal" button on the home screen
+
+## Implementation details
+`applicationId` is required. Without it, the portal renders "Application not found" after login when the SDK was configured with an application context.
+
 ## v1.3.4
 Removed logging of 502/503 errors for Sentry
 
