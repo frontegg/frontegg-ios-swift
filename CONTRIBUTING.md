@@ -53,37 +53,21 @@ Some tests pass locally but flake on `macos-15-xlarge` runners due to environmen
 |---|---|---|
 | `DemoEmbeddedE2ETests.testEmbeddedGoogleSocialLoginRecoversFromStalledSocialSuccessPage` | First iteration takes 60–70 s on slow CI runners; retries fail because `ASWebAuthenticationSession` system-level state leaks between iterations | Reset `WKWebsiteDataStore` / simulator browser state in `tearDownWithError`, or split this test into a separate non-retried job |
 
-### Thread Sanitizer — currently advisory
+### Thread Sanitizer
 
-The `Unit Tests (Thread Sanitizer)` job is configured with `continue-on-error: true` and `timeout-minutes: 15`. It runs on every PR, reports findings, and completes in ~7 minutes. Findings do **not** block merge while the two open races below are tracked for follow-up.
+The `Unit Tests (Thread Sanitizer)` job is a **required check** on every PR. It runs `FronteggSwiftTests` with `-enableThreadSanitizer YES`; any TSan finding fails the PR.
 
-Drop `continue-on-error: true` and promote TSan to a required check once both open races are closed.
+Job timeout: 15 minutes (typical run completes in well under 10).
 
-#### Past findings (resolved)
+`SIMCTL_CHILD_TSAN_OPTIONS=halt_on_error=1` is set as belt-and-suspenders — if a future undetected race surfaces, the test process aborts cleanly instead of hanging xcodebuild for the full job timeout.
 
-- **`FronteggAuth.featureFlags` data race** — concurrent main-thread reassignment (from `manualInit` and region-switch entry points in `FronteggAuth+RegionManagement.swift`) racing with background-thread reads in `startPostConnectivityServices()` and `SocialLoginUrlGenerator`. The race wedged xcodebuild for 25+ minutes on every PR, blocking the Combine Results & Summary step on unrelated PRs. Fixed by serializing access through an `NSLock`-backed computed property. Regression test: [`Tests/FronteggSwiftTests/FronteggAuthFeatureFlagsRaceTests.swift`](Tests/FronteggSwiftTests/FronteggAuthFeatureFlagsRaceTests.swift).
+#### Past findings (all resolved)
 
-#### Open findings (follow-up PRs)
-
-These surfaced once the `featureFlags` crash no longer aborted the suite first.
-
-1. **`FronteggAuth.refreshTokenDispatch` getter/setter race** *(production code)*
-
-   ```
-   Write: FronteggAuth.cancelScheduledTokenRefresh ← FronteggAuth.scheduleTokenRefresh
-        (async closure on GCD worker T1)
-   Read:  FronteggAuth.hasScheduledTokenRefreshForTesting (from a test's async closure on T3)
-   ```
-
-   `refreshTokenDispatch: DispatchWorkItem?` is read/written across `scheduleTokenRefresh`, `cancelScheduledTokenRefresh`, and `hasScheduledTokenRefreshForTesting` without synchronization. Apply the same lock-backed computed-property pattern as `featureFlags`.
-
-2. **`MockRefreshRecoveryApi.refreshToken` Swift access race** *(test-side)*
-
-   The mock in `FronteggAuthRefreshRecoveryTests` mutates internal state (call counts, response queues) from concurrent async contexts without synchronization. Add an internal lock or convert the mock to an actor.
-
-3. **`LoggerDelegateTests.setUp()` data race** *(test-side)*
-
-   Concurrent access to delegate-registration state across `LoggerDelegateTests` instances. Same fix shape as #2 — serialize the relevant state in the test or its harness.
+- **`FronteggAuth.featureFlags` data race** — concurrent main-thread reassignment (from `manualInit` and region-switch entry points in `FronteggAuth+RegionManagement.swift`) racing with background-thread reads in `startPostConnectivityServices()` and `SocialLoginUrlGenerator`. Wedged xcodebuild for 25+ minutes on every PR. Fixed by serializing access through an `NSLock`-backed computed property. Regression test: [`Tests/FronteggSwiftTests/FronteggAuthFeatureFlagsRaceTests.swift`](Tests/FronteggSwiftTests/FronteggAuthFeatureFlagsRaceTests.swift).
+- **`FronteggAuth.refreshTokenDispatch` getter/setter race** — `refreshTokenDispatch: DispatchWorkItem?` was read/written across `scheduleTokenRefresh`, `cancelScheduledTokenRefresh`, and `hasScheduledTokenRefreshForTesting` without synchronization. Fixed with the same lock-backed computed-property pattern.
+- **`FeLogger.delegate` data race** — `public static weak var delegate` was assigned from test setUps while concurrent SDK code paths read it for emission. Surfaced as `LoggerDelegateTests.setUp()` race under TSan. Fixed by routing the public accessor through `NSLock` while preserving `weak` storage semantics via a private `_delegate` slot.
+- **`MockRefreshRecoveryApi` Swift access race** *(test-side)* — call counters and response queues were mutated from concurrent async contexts in `refreshToken` / `me` / `getRequest` overrides. Fixed by adding an internal `stateLock` and holding it only across state access, never across `await`.
+- **`SocialLoginUrlGenerator.socialLoginConfig` / `customSocialLoginConfigs` data race** — `reloadConfigs()` writes both fields from a `TaskGroup` fired by `startPostConnectivityServices`, while `authorizeURL(forCustomProvider:)` and `configuration(for:)` read them from concurrent test / production paths. Fixed with the same lock-backed computed-property pattern.
 
 #### Known follow-up — same pattern, no TSan finding yet
 
