@@ -1,3 +1,32 @@
+## v1.3.6
+
+- Sentry's automatic network breadcrumbs have been disabled
+## Summary
+
+Follow-up to [#261](https://github.com/frontegg/frontegg-ios-swift/pull/261). Removes the `Unit Tests (Thread Sanitizer)` job from [.github/workflows/demo-e2e.yml](.github/workflows/demo-e2e.yml).
+
+## Why
+
+The TSan job that landed in #261 has two known issues:
+
+1. **Real race in `FronteggSwift.FeLogger.dispatchToDelegate`** — reproduces locally during `LoggerDelegateTests` when run as part of the full suite. Delegate-registration writes from one test race dispatch-queue reads from another.
+2. **Test-runner hang under TSan instrumentation** — even with `timeout-minutes: 25`, the job sits at ~25m26s before timing out on every PR.
+
+Pulling the job is cleaner than leaving it as a 25-min advisory failure on every PR. Both findings are captured in `CONTRIBUTING.md` → "Known TSan findings (CI integration deferred)" for the follow-up that fixes the race and re-adds the job.
+
+## Changes
+
+- `.github/workflows/demo-e2e.yml` — remove the `unit-tests-tsan` job, its entry from the `summary` job's `needs:`, the artifact-download step, and the `Append Thread Sanitizer summary` step.
+- `CONTRIBUTING.md` — update the "Unit tests with Thread Sanitizer" section to say it's local-only; replace the old "Thread Sanitizer — currently advisory" subsection with "Known TSan findings (CI integration deferred)" that documents both blockers for the re-add.
+
+## Test plan
+
+- [ ] CI: all checks pass without TSan job
+- [ ] No red \`Unit Tests (Thread Sanitizer)\` mark on this PR
+- [ ] After merge, future PRs no longer run TSan
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
 ## v1.3.5
 ## Summary
 Adds Admin Portal BETA version to the SDK. Opens `${baseUrl}/oauth/portal?appId=<applicationId>` in a WebView that shares the process-wide CookieManager with the SDK's login WebView so authenticated users don't see a second login.
