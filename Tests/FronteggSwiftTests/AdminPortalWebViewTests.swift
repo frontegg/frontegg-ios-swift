@@ -176,6 +176,36 @@ final class AdminPortalWebViewTests: XCTestCase {
         XCTAssertEqual(cookie?.name, "fe_refresh_appidabc123")
     }
 
+    // MARK: - Logout cleanup invariant
+
+    func test_refreshCookieName_matchesDefaultLogoutCleanupRegex() {
+        // FronteggAuth+Logout.swift / makeCookieNameMatcher() uses the regex
+        // `^fe_refresh` (when the consumer hasn't overridden cookieRegex) to
+        // pick which cookies to delete on logout. The bridged cookie this
+        // class writes MUST match that regex so a logged-out session can't be
+        // resurrected in the portal via a stale cookie.
+        //
+        // If the cookie-name format here ever diverges from what
+        // clearCookie() in the logout flow looks for, this test fails and
+        // the engineer changing one side must update the other.
+        let names = [
+            AdminPortalWebView.refreshCookieName(clientId: "c-1", applicationId: nil),
+            AdminPortalWebView.refreshCookieName(clientId: "c-1", applicationId: "a-1"),
+            AdminPortalWebView.refreshCookieName(
+                clientId: "b1c2d3e4-1234-5678-9abc-deadbeef0000",
+                applicationId: nil
+            ),
+        ]
+        let logoutMatcher = try! NSRegularExpression(pattern: "^fe_refresh")
+        for name in names {
+            let range = NSRange(name.startIndex..<name.endIndex, in: name)
+            XCTAssertNotNil(
+                logoutMatcher.firstMatch(in: name, range: range),
+                "Bridged refresh-cookie name '\(name)' must match the default logout-cleanup regex '^fe_refresh' so it's purged on logout. If the cookie name format changed, update FronteggAuth+Logout.swift makeCookieNameMatcher() (or vice versa)."
+            )
+        }
+    }
+
     // MARK: - Coordinator.webViewDidClose
 
     @MainActor
