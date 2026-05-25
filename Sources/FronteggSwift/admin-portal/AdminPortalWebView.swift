@@ -137,6 +137,49 @@ struct AdminPortalWebView: UIViewRepresentable {
         return components?.url
     }
 
+    /// Builds the Frontegg backend refresh-token cookie name. Mirrors the
+    /// Next.js SDK rule (frontegg-nextjs/packages/nextjs/src/utils/cookies/index.ts):
+    /// prefer `appId` when present (multi-app workspaces), fall back to
+    /// `clientId`. Dashes are stripped to match the auth-server's expected
+    /// cookie name format.
+    internal static func refreshCookieName(clientId: String, applicationId: String?) -> String {
+        if let applicationId = applicationId, !applicationId.isEmpty {
+            return "fe_refresh_\(applicationId.replacingOccurrences(of: "-", with: ""))"
+        }
+        return "fe_refresh_\(clientId.replacingOccurrences(of: "-", with: ""))"
+    }
+
+    /// Constructs the `HTTPCookie` that lets the embedded portal recognize
+    /// the SDK's existing authenticated session.
+    ///
+    /// Returns nil when there is no refresh token to bridge (user is not
+    /// logged in) or when the base URL is malformed. In both cases the
+    /// portal falls back to its own login form — same as before this bridge.
+    internal static func makeRefreshCookie(
+        refreshToken: String?,
+        baseUrl: String,
+        clientId: String,
+        applicationId: String?
+    ) -> HTTPCookie? {
+        guard let refreshToken = refreshToken, !refreshToken.isEmpty else { return nil }
+        guard let url = URL(string: baseUrl), let host = url.host else { return nil }
+        let isSecure = url.scheme?.lowercased() == "https"
+        var properties: [HTTPCookiePropertyKey: Any] = [
+            .name: refreshCookieName(clientId: clientId, applicationId: applicationId),
+            .value: refreshToken,
+            .domain: host,
+            .path: "/",
+        ]
+        if isSecure {
+            properties[.secure] = "TRUE"
+        }
+        // Deliberately not setting `.sameSitePolicy`: the portal request is
+        // same-origin to this cookie's host (we set `.domain = host`), so
+        // SameSite policy is irrelevant here. iOS 13+ also lacks a public
+        // `HTTPCookieStringPolicy.sameSiteNone` constant.
+        return HTTPCookie(properties: properties)
+    }
+
     @MainActor
     private func loadPortal(webView: WKWebView) async {
         guard let portalUrl = AdminPortalWebView.portalURL(
@@ -147,8 +190,30 @@ struct AdminPortalWebView: UIViewRepresentable {
             return
         }
 
-        // Snapshot existing cookies for visibility only — we do not modify them.
         let store = webView.configuration.websiteDataStore.httpCookieStore
+
+        // Bridge: if the SDK is authenticated, inject the refresh-token
+        // cookie the Frontegg backend reads at /oauth/portal before loading
+        // the page. Without this, a user who logged in via ASWebAuthenticationSession
+        // (whose cookies live in Safari's isolated jar — never visible to
+        // WKWebView) is forced to log in a second time to access the portal.
+        // Users who logged in via the SDK's embedded WKWebView already have
+        // these cookies because the SDK shares WKWebsiteDataStore.default().
+        if let bridgeCookie = AdminPortalWebView.makeRefreshCookie(
+            refreshToken: fronteggAuth.refreshToken,
+            baseUrl: fronteggAuth.baseUrl,
+            clientId: fronteggAuth.clientId,
+            applicationId: fronteggAuth.applicationId
+        ) {
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                store.setCookie(bridgeCookie) { cont.resume() }
+            }
+            logger.info("AdminPortal: bridged refresh cookie \(bridgeCookie.name) domain=\(bridgeCookie.domain)")
+        } else {
+            logger.info("AdminPortal: no refresh token to bridge — portal will use its own login if no existing web cookies are present")
+        }
+
+        // Snapshot existing cookies for visibility only — we do not modify them.
         let existing = await withCheckedContinuation { (cont: CheckedContinuation<[HTTPCookie], Never>) in
             store.getAllCookies { cont.resume(returning: $0) }
         }

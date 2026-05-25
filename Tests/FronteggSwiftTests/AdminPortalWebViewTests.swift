@@ -74,6 +74,108 @@ final class AdminPortalWebViewTests: XCTestCase {
         )
     }
 
+    // MARK: - refreshCookieName(clientId:applicationId:)
+
+    func test_refreshCookieName_usesClientId_whenApplicationIdNil() {
+        let name = AdminPortalWebView.refreshCookieName(
+            clientId: "b1c2d3e4-1234-5678-9abc-deadbeef0000",
+            applicationId: nil
+        )
+        XCTAssertEqual(name, "fe_refresh_b1c2d3e4123456789abcdeadbeef0000")
+        XCTAssertFalse(name.contains("-"))
+        XCTAssertTrue(name.hasPrefix("fe_refresh_"))
+    }
+
+    func test_refreshCookieName_usesClientId_whenApplicationIdEmpty() {
+        let name = AdminPortalWebView.refreshCookieName(
+            clientId: "client-123-abc",
+            applicationId: ""
+        )
+        XCTAssertEqual(name, "fe_refresh_client123abc")
+    }
+
+    func test_refreshCookieName_usesApplicationId_whenPresent() {
+        // Mirrors frontegg-nextjs CookieManager.refreshTokenKey: when appId
+        // is set (multi-app workspace), the cookie is scoped to the appId
+        // instead of the clientId so the portal recognizes the per-app session.
+        let name = AdminPortalWebView.refreshCookieName(
+            clientId: "client-id-here",
+            applicationId: "app-id-multi-tenant"
+        )
+        XCTAssertEqual(name, "fe_refresh_appidmultitenant")
+    }
+
+    // MARK: - makeRefreshCookie(refreshToken:baseUrl:clientId:applicationId:)
+
+    func test_makeRefreshCookie_returnsNil_whenRefreshTokenIsNil() {
+        let cookie = AdminPortalWebView.makeRefreshCookie(
+            refreshToken: nil,
+            baseUrl: "https://app.frontegg.com",
+            clientId: "client",
+            applicationId: nil
+        )
+        XCTAssertNil(cookie, "User not logged in → no cookie to bridge; portal falls back to its own login.")
+    }
+
+    func test_makeRefreshCookie_returnsNil_whenRefreshTokenIsEmpty() {
+        let cookie = AdminPortalWebView.makeRefreshCookie(
+            refreshToken: "",
+            baseUrl: "https://app.frontegg.com",
+            clientId: "client",
+            applicationId: nil
+        )
+        XCTAssertNil(cookie)
+    }
+
+    func test_makeRefreshCookie_returnsNil_whenBaseUrlIsMalformed() {
+        let cookie = AdminPortalWebView.makeRefreshCookie(
+            refreshToken: "rt-jwt-value",
+            baseUrl: "not a url",
+            clientId: "client",
+            applicationId: nil
+        )
+        XCTAssertNil(cookie)
+    }
+
+    func test_makeRefreshCookie_buildsHttpsCookie_withSecureFlag() {
+        let cookie = AdminPortalWebView.makeRefreshCookie(
+            refreshToken: "rt-jwt-value-abc",
+            baseUrl: "https://app.frontegg.com",
+            clientId: "b1c2d3e4-1234",
+            applicationId: nil
+        )
+        XCTAssertNotNil(cookie)
+        XCTAssertEqual(cookie?.name, "fe_refresh_b1c2d3e41234")
+        XCTAssertEqual(cookie?.value, "rt-jwt-value-abc")
+        XCTAssertEqual(cookie?.domain, "app.frontegg.com")
+        XCTAssertEqual(cookie?.path, "/")
+        XCTAssertTrue(cookie?.isSecure ?? false, "HTTPS baseUrl must produce a Secure cookie.")
+    }
+
+    func test_makeRefreshCookie_buildsHttpCookie_withoutSecureFlag() {
+        // Useful for local-dev tenants on http://localhost. The cookie still
+        // needs to be set so the portal recognizes the session in dev.
+        let cookie = AdminPortalWebView.makeRefreshCookie(
+            refreshToken: "rt-jwt",
+            baseUrl: "http://localhost:3000",
+            clientId: "client-1",
+            applicationId: nil
+        )
+        XCTAssertNotNil(cookie)
+        XCTAssertEqual(cookie?.domain, "localhost")
+        XCTAssertFalse(cookie?.isSecure ?? true)
+    }
+
+    func test_makeRefreshCookie_scopesToApplicationId_whenPresent() {
+        let cookie = AdminPortalWebView.makeRefreshCookie(
+            refreshToken: "rt-jwt",
+            baseUrl: "https://app.frontegg.com",
+            clientId: "client-id",
+            applicationId: "app-id-abc-123"
+        )
+        XCTAssertEqual(cookie?.name, "fe_refresh_appidabc123")
+    }
+
     // MARK: - Coordinator.webViewDidClose
 
     @MainActor
