@@ -60,10 +60,19 @@ class StepUpAuthenticator {
             stepUp: true,
             maxAge: maxAge
         )
-        
+
         DispatchQueue.main.async {
             FronteggAuth.shared.setIsStepUpAuthorization(true)
             FronteggAuth.shared.setIsLoading(false)
+
+            if FronteggAuth.shared.embeddedMode {
+                FronteggAuth.shared.activeEmbeddedOAuthFlow = .stepUp
+                FronteggAuth.shared.pendingAppLink = authorizeUrl
+                FronteggAuth.shared.setWebLoading(true)
+                FronteggAuth.shared.embeddedLogin(updatedCompletion, loginHint: nil)
+                return
+            }
+
             let oauthCallback = FronteggAuth.shared.createOauthCallbackHandler(
                 updatedCompletion,
                 pendingOAuthState: Self.pendingOAuthState(from: authorizeUrl),
