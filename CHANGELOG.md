@@ -1,3 +1,6 @@
+## v1.3.8
+Fix for step Up feature with MFA.
+
 ## v1.3.7
 ## Summary
 
