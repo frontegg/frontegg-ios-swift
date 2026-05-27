@@ -5,6 +5,7 @@
 //
 
 import Foundation
+import WebKit
 import Sentry
 
 
@@ -648,7 +649,11 @@ public class Api {
                     self.logger.info("Refresh with tenantId response: status=\(res.statusCode)")
                 }
             }
-            
+
+            // Mirror any session cookies the server emitted into the WebView
+            // store so AdminPortalWebView recognizes this session.
+            await mirrorFronteggCookiesToWebViewStore(from: response)
+
             do {
                 let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
                 self.logger.info("Successfully decoded AuthResponse from refresh with tenantId")
@@ -734,7 +739,12 @@ public class Api {
                     self.logger.info("OAuth refresh response: status=\(res.statusCode)")
                 }
             }
-            
+
+            // Mirror any session cookies the server emitted into the WebView
+            // store so AdminPortalWebView recognizes this session and doesn't
+            // force a second login.
+            await mirrorFronteggCookiesToWebViewStore(from: response)
+
             do {
                 let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
                 self.logger.info("Successfully decoded AuthResponse from OAuth refresh")
@@ -793,13 +803,18 @@ public class Api {
                 body["code_verifier"] = codeVerifier
             }
                         
-            let (data, _) = try await postRequest(path: "oauth/token", body: body)
-            
+            let (data, response) = try await postRequest(path: "oauth/token", body: body)
+
             if let responseString = String(data: data, encoding: .utf8),
                responseString.contains("\"errors\"") || responseString.contains("\"error\"") {
                 return (nil, FronteggError.authError(.other(NSError(domain: "FronteggAuth", code: 400, userInfo: [NSLocalizedDescriptionKey: responseString]))))
             }
-            
+
+            // Mirror any session cookies the server emitted into the WebView
+            // store so AdminPortalWebView (which uses the same data store)
+            // recognizes this session and doesn't force a second login.
+            await mirrorFronteggCookiesToWebViewStore(from: response)
+
             return (try JSONDecoder().decode(AuthResponse.self, from: data), nil)
         } catch {
             return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
@@ -1152,8 +1167,57 @@ public class Api {
     
     internal func getFeatureFlags() async throws -> String {
         let (stringData, _) = try await self.getRequest(path: "/flags", accessToken: nil)
-        
+
         return String(data: stringData, encoding: .utf8) ?? ""
+    }
+
+    /// Mirror any `fe_*` cookies the Frontegg auth backend set on this response
+    /// into the WebKit shared cookie store (`WKWebsiteDataStore.default()`).
+    ///
+    /// The embedded `AdminPortalWebView` opens `${baseUrl}/oauth/portal` in a
+    /// WKWebView that uses `WKWebsiteDataStore.default()`. URLSession (used by
+    /// this `Api` class) and `WKWebsiteDataStore` are separate cookie stores
+    /// by Apple's design — without this bridge, a session established by the
+    /// SDK over URLSession (e.g. social/SAML/OIDC via `ASWebAuthenticationSession`,
+    /// or any programmatic `/oauth/token` refresh) is invisible to the portal.
+    /// The portal then renders its own login form and the user logs in twice.
+    ///
+    /// The raw refresh-token JWT is **not** a valid `fe_refresh_*` cookie value
+    /// — the auth backend signs/wraps the value before placing it in
+    /// `Set-Cookie`. So instead of synthesizing a cookie locally, we capture
+    /// whatever cookies the server actually emitted and pass them through verbatim.
+    ///
+    /// Restricted to `fe_*`-prefixed cookies so unrelated server cookies
+    /// (e.g. tracking) don't leak into the WebView store, and so the
+    /// `^fe_refresh` regex in `FronteggAuth+Logout.swift / clearCookie()`
+    /// still owns the cleanup invariant on logout.
+    internal func mirrorFronteggCookiesToWebViewStore(from response: URLResponse) async {
+        guard let httpResponse = response as? HTTPURLResponse,
+              let url = httpResponse.url else {
+            return
+        }
+
+        // HTTPURLResponse.allHeaderFields is `[AnyHashable: Any]`. The Set-Cookie
+        // entry may be a single comma-joined string (Apple combines duplicates)
+        // — HTTPCookie.cookies(withResponseHeaderFields:for:) knows how to
+        // parse that.
+        var stringHeaders: [String: String] = [:]
+        for (k, v) in httpResponse.allHeaderFields {
+            if let key = k as? String, let value = v as? String {
+                stringHeaders[key] = value
+            }
+        }
+        let cookies = HTTPCookie.cookies(withResponseHeaderFields: stringHeaders, for: url)
+        let fronteggCookies = cookies.filter { $0.name.hasPrefix("fe_") }
+        guard !fronteggCookies.isEmpty else { return }
+
+        let store = await WKWebsiteDataStore.default().httpCookieStore
+        for cookie in fronteggCookies {
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                store.setCookie(cookie) { cont.resume() }
+            }
+            self.logger.info("Mirrored Frontegg cookie \(cookie.name) for \(cookie.domain) into WebView store")
+        }
     }
 }
 
