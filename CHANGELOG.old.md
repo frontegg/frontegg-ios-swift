@@ -1,3 +1,67 @@
+## v1.3.7
+## Summary
+
+Port of [frontegg/frontegg-android-kotlin#254](https://github.com/frontegg/frontegg-android-kotlin/pull/254) to the Swift SDK. Adds the missing cache invalidation step in `setCredentialsInternal` so `getFeatureEntitlements` cannot leak the previous tenant's verdict during the in-flight reload window or after a failed reload.
+
+## Why
+
+`setCredentialsInternal` — the workhorse that `switchTenant` routes through after re-minting tokens — fires `loadEntitlements(forceRefresh: true)` on the new tenant's access token but never invalidates the cache first. Two windows still leak the previous tenant's view:
+
+1. **In-flight reload** — between `loadEntitlements` being called and `performEntitlementsLoad`'s `Task` writing the new state, `getFeatureEntitlements()` keeps returning the PREVIOUS tenant's verdict. State and `hasLoaded` are unchanged until the load completes.
+
+2. **Failed reload** — `Entitlements.load` returns `false` on HTTP error or decode failure WITHOUT touching `_state` ([Entitlements.swift:74-78](Sources/FronteggSwift/services/Entitlements.swift#L74-L78), [:94-97](Sources/FronteggSwift/services/Entitlements.swift#L94-L97)). The cache is pinned to the previous tenant forever — until another `getUserEntitlements` call eventually succeeds, or until the SDK process restarts.
+
+**Customer-visible symptom (FR-24821):** after switching to a tenant without the `sso` feature, `fronteggAuth.getFeatureEntitlements(featureKey: "sso")` still reports `isEntitled = true`. With this change, the verdict is one of:
+
+- the new tenant's verdict (reload succeeded — normal case), or
+- `Entitlement(isEntitled: false, justification: "MISSING_FEATURE")` on the empty cache during the in-flight window or after a failed reload.
+
+Never the previous tenant's verdict.
+
+> NB: Swift's `Entitlements.checkFeature` reports `MISSING_FEATURE` on an empty state, whereas the Android counterpart returns `ENTITLEMENTS_NOT_LOADED` when `hasLoaded == false`. Same defensive boolean (`isEntitled == false`), different justification string. Documented in the failed-reload test. This PR doesn't change the justification surface — that's a separate platform-parity item if we ever want to align.
+
+## The fix
+
+One line in `setCredentialsInternal`, immediately before `loadEntitlements(forceRefresh: true)`:
+
+```swift
+entitlements.clear()
+loadEntitlements(forceRefresh: true)
+```
+
+For login / restore-from-storage paths the cache is already empty (in-memory only, no persistence), so the clear is a no-op. The behavior change is scoped to tenant switching, where `setCredentialsInternal` runs with a populated cache from the prior tenant.
+
+## Tests
+
+Three regression tests in [`FronteggAuthEntitlementsTests`](Tests/FronteggSwiftTests/FronteggAuthEntitlementsTests.swift), sharing a `seedTenantAEntitlementsCacheWithSSO()` helper plus tenant-B JWT / User builders plus a `BlockingAuthEntitlementsApi`-driven poll helper:
+
+| # | Test | What it covers | FAILS without fix? |
+|---|---|---|---|
+| 1 | `…(FR-24821 happy path)` | Successful reload returning empty entitlements for tenant B. Asserts `hasLoaded` true, `state.featureKeys` empty, `getFeatureEntitlements("sso") → MISSING_FEATURE`. | No — `loadEntitlements` is already fired. Kept as top-level guard for the customer-reported symptom. |
+| 2 | `…in-flight window` | Blocks the reload's HTTP response so the load Task stays suspended in `api.getRequest`. Asserts cache is already empty + `hasLoaded` is already false BEFORE load completes. | **Yes** — without fix, `hasLoaded` stays true (tenant A's `{sso}`) until load completes. |
+| 3 | `…failed reload` | Reload responds 500. `Entitlements.load` returns false on HTTP error without touching `_state`. With fix: cache empty, `getFeatureEntitlements("sso").isEntitled == false`. | **Yes** — without fix, cache stays pinned to tenant A's `{sso}` forever. |
+
+Differential verified by temporarily removing `entitlements.clear()` from `setCredentialsInternal` and re-running: tests 2 and 3 fail, test 1 passes.
+
+## Test plan
+
+- [x] All 3 new tests pass with fix
+- [x] Tests 2 and 3 fail without fix (differential — temporarily reverted the production change and re-ran)
+- [x] Test 1 passes on bare master (top-level FR-24821 regression guard)
+- [x] `xcodebuild -scheme FronteggSwift -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.6' test` — full suite **683 tests / 0 failures / 18 skipped**
+- [ ] Manual: in a demo app, force a tenant-B reload failure (e.g., kill network mid-switch) and confirm `getFeatureEntitlements("sso")` no longer reports the previous tenant's verdict
+
+## Diff
+
+- `+13 lines` in [FronteggAuth+CredentialHydration.swift](Sources/FronteggSwift/auth/FronteggAuth+CredentialHydration.swift) (1 line of code + 12-line explanatory comment).
+- `+227 lines` in [FronteggAuthEntitlementsTests.swift](Tests/FronteggSwiftTests/FronteggAuthEntitlementsTests.swift) (helpers + 3 tests).
+
+## Related
+
+- [frontegg-android-kotlin#254](https://github.com/frontegg/frontegg-android-kotlin/pull/254) — the equivalent Android fix this is ported from.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
 ## v1.3.6
 
 - Sentry's automatic network breadcrumbs have been disabled
