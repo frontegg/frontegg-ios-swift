@@ -42,7 +42,13 @@ extension FronteggAuth {
             FronteggRuntime.testingLog("E2E embeddedLogin present called")
 
         } else {
-            logger.critical(FronteggError.authError(.couldNotFindRootViewController).localizedDescription)
+            let message = FronteggError.authError(.couldNotFindRootViewController).localizedDescription
+
+            if FronteggRuntime.isRunningUnderXCTest {
+                logger.warning("\(message) — skipping modal presentation while running under XCTest")
+                return
+            }
+            logger.critical(message)
             exit(500)
         }
     }
