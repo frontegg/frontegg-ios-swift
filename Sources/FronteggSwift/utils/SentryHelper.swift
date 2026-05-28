@@ -132,6 +132,31 @@ public class SentryHelper {
         }
     }
 
+    /// Maps Sentry's severity to the SDK's `FeLogger.Level` so breadcrumbs can be
+    /// gated against the configured `logLevel` (plist key `logLevel`). Without this
+    /// gate, breadcrumbs ship to Sentry on every `info`/`debug` call even when the
+    /// host app set `logLevel: warn` to silence verbose logs — which is the actual
+    /// driver of our Sentry volume problem.
+    private static func mapSentryLevel(_ level: SentryLevel) -> FeLogger.Level? {
+        switch level {
+        case .debug:   return .debug
+        case .info:    return .info
+        case .warning: return .warning
+        case .error:   return .error
+        case .fatal:   return .critical
+        case .none:    return nil
+        @unknown default: return .info
+        }
+    }
+
+    /// Returns `true` if a breadcrumb at `level` should be emitted given the
+    /// configured `logLevel`. `nil` mapped level → always drop (Sentry `.none`).
+    private static func breadcrumbMeetsLogLevelThreshold(_ level: SentryLevel) -> Bool {
+        guard let mapped = mapSentryLevel(level) else { return false }
+        // FeLogger gate: emit when configured threshold <= message level.
+        return PlistHelper.getLogLevel().rawValue <= mapped.rawValue
+    }
+
     private static func shouldDropError(_ error: Error, context: [String: [String: Any]]) -> Bool {
         if let apiError = error as? ApiError {
             switch apiError {
@@ -379,16 +404,29 @@ public class SentryHelper {
         }
     }
     
-    /// Adds a breadcrumb to Sentry
+    /// Adds a breadcrumb to Sentry.
+    ///
+    /// Breadcrumbs at a `level` below the configured `logLevel` (plist key
+    /// `logLevel`, default `.warning`) are dropped. This keeps the breadcrumb
+    /// surface consistent with `os_log` output and prevents the SDK from
+    /// shipping verbose `info`/`debug` context to Sentry when the host app has
+    /// asked for a quieter SDK.
+    ///
     /// Note: Sentry SDK automatically queues breadcrumbs when offline and sends them when back online.
     /// The maxQueueSize limit (30) prevents memory abuse during extended offline periods.
     public static func addBreadcrumb(_ message: String, category: String = "default", level: SentryLevel = .info, data: [String: Any] = [:]) {
         guard isSentryEnabled() else { return }
+        guard breadcrumbMeetsLogLevelThreshold(level) else { return }
         let breadcrumb = Breadcrumb(level: level, category: category)
         breadcrumb.message = message
         breadcrumb.data = data
         _ = applyBreadcrumbSanitization(breadcrumb)
         SentrySDK.addBreadcrumb(breadcrumb)
+    }
+
+    /// Exposed for unit tests (`@testable import`).
+    internal static func breadcrumbMeetsLogLevelThresholdForTesting(_ level: SentryLevel) -> Bool {
+        breadcrumbMeetsLogLevelThreshold(level)
     }
     
     public static func setUser(_ userId: String?, email: String? = nil, username: String? = nil) {

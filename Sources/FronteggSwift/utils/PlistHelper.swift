@@ -14,6 +14,12 @@ struct PlistHelper {
     private static let decoder = PropertyListDecoder()
 #if DEBUG
     static var testConfigOverride: FronteggPlist? = nil
+
+    /// Test hook: drops the cached log level so a subsequent `getLogLevel()` call
+    /// re-reads (and `testConfigOverride` can take effect for the next read).
+    static func resetLogLevelCacheForTesting() {
+        logLevelCache = nil
+    }
 #endif
 
     /// Decodes the Frontegg configuration plist and logs any error that occurs

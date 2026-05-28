@@ -158,4 +158,52 @@ final class SentryLoggingTests: XCTestCase {
         let out = SentryHelper.sanitizeBreadcrumbPayloadForTesting(raw)
         XCTAssertEqual(out["location"] as? String, "https://idp.example.com/callback")
     }
+
+    // MARK: - Breadcrumb gating by logLevel
+    //
+    // Regression coverage for "Sentry quota exhausted" — pre-fix, `addBreadcrumb`
+    // ignored the configured `logLevel` and shipped every `info`/`debug` breadcrumb,
+    // so a host app that set `logLevel: warn` to silence the SDK still saw the SDK
+    // flood Sentry. The gate now mirrors `FeLogger.emit`: emit when the configured
+    // threshold <= the breadcrumb's level.
+
+    func test_breadcrumbGating_atDefaultWarningLevel_dropsInfoAndDebug() {
+        // Default configured logLevel is `.warning` (rawValue 3).
+        PlistHelper.resetLogLevelCacheForTesting()
+
+        XCTAssertFalse(
+            SentryHelper.breadcrumbMeetsLogLevelThresholdForTesting(.debug),
+            ".debug breadcrumb must be dropped when logLevel is .warning"
+        )
+        XCTAssertFalse(
+            SentryHelper.breadcrumbMeetsLogLevelThresholdForTesting(.info),
+            ".info breadcrumb must be dropped when logLevel is .warning — this is the actual bug fix"
+        )
+    }
+
+    func test_breadcrumbGating_atDefaultWarningLevel_emitsWarningAndAbove() {
+        PlistHelper.resetLogLevelCacheForTesting()
+
+        XCTAssertTrue(
+            SentryHelper.breadcrumbMeetsLogLevelThresholdForTesting(.warning),
+            ".warning breadcrumb must still ship at the default .warning logLevel"
+        )
+        XCTAssertTrue(
+            SentryHelper.breadcrumbMeetsLogLevelThresholdForTesting(.error),
+            ".error breadcrumb must still ship at the default .warning logLevel"
+        )
+        XCTAssertTrue(
+            SentryHelper.breadcrumbMeetsLogLevelThresholdForTesting(.fatal),
+            ".fatal breadcrumb must still ship at the default .warning logLevel"
+        )
+    }
+
+    func test_breadcrumbGating_alwaysDropsSentryLevelNone() {
+        PlistHelper.resetLogLevelCacheForTesting()
+
+        XCTAssertFalse(
+            SentryHelper.breadcrumbMeetsLogLevelThresholdForTesting(.none),
+            "SentryLevel.none must never emit a breadcrumb"
+        )
+    }
 }
