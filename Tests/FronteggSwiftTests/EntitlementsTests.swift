@@ -107,8 +107,19 @@ final class EntitlementsTests: XCTestCase {
     }
 
     func test_load_withValidJson_updatesStateAndReturnsTrue() async {
+        // FR-24821: the verdict is driven by the full UserEntitlementsContext now
+        // (features w/ planIds/expireTime/featureFlag + plans + permissions), NOT
+        // by the legacy featureKeys set. To assert "sso" is entitled, the response
+        // must mark it as directly assigned — `expireTime: -1` (NO_EXPIRATION_TIME)
+        // is the canonical "directly assigned, never expires" sentinel mirrored
+        // from web.
+        //
+        // `test-feature` deliberately has no expireTime/planIds/featureFlag — the
+        // catalog populates featureKeys for backwards compat with host apps that
+        // render counts, but checkFeature("test-feature") correctly reports
+        // MISSING_FEATURE because there's no entitlement path.
         let json = """
-        {"features":{"test-feature":{},"sso":{}},"permissions":{"fe.secure.*":true,"fe.connectivity.*":false}}
+        {"features":{"test-feature":{},"sso":{"expireTime":-1}},"permissions":{"fe.secure.*":true,"fe.connectivity.*":false}}
         """
         let data = json.data(using: .utf8)!
         let response = HTTPURLResponse(url: URL(string: "https://test.example.com/e")!, statusCode: 200, httpVersion: nil, headerFields: nil)!

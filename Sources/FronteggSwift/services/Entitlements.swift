@@ -5,18 +5,30 @@
 
 import Foundation
 
-private struct UserEntitlementsResponse: Decodable {
-    let features: [String: FeatureDetail]?
-    let permissions: [String: Bool]?
-
-    struct FeatureDetail: Decodable {}
-}
-
-public struct EntitlementState {
+public struct EntitlementState: Equatable {
+    /// Catalog of feature keys in the most recent `/user-entitlements` response.
+    /// Kept for backwards compatibility with host apps that render counts/debug
+    /// surfaces. **NOT** the verdict — the verdict goes through `checkFeature` /
+    /// `checkPermission`, driven off `context`.
     public let featureKeys: Set<String>
+    /// Permission keys with `value = true` in the response. Backwards-compat only;
+    /// see `featureKeys` note above.
     public let permissionKeys: Set<String>
+    /// Structured form used by the evaluators. `nil` when entitlements haven't
+    /// been loaded yet or the load failed.
+    public let context: UserEntitlementsContext?
 
-    public static let empty = EntitlementState(featureKeys: [], permissionKeys: [])
+    public init(
+        featureKeys: Set<String>,
+        permissionKeys: Set<String>,
+        context: UserEntitlementsContext? = nil
+    ) {
+        self.featureKeys = featureKeys
+        self.permissionKeys = permissionKeys
+        self.context = context
+    }
+
+    public static let empty = EntitlementState(featureKeys: [], permissionKeys: [], context: nil)
 }
 
 public final class Entitlements {
@@ -76,19 +88,32 @@ public final class Entitlements {
                 logger.warning("Failed to load user entitlements: HTTP \(code)")
                 return false
             }
-            let parsed = try JSONDecoder().decode(UserEntitlementsResponse.self, from: data)
-
-            var featureKeys = Set<String>()
-            var permissionKeys = Set<String>()
-
-            if let features = parsed.features {
-                featureKeys.formUnion(features.keys)
+            // Parse the full UserEntitlementsContext (features w/ planIds /
+            // expireTime / linkedPermissions / featureFlag, plans, permissions).
+            // Pre-fix the SDK only kept the feature keys + truthy permissions and
+            // threw away everything needed to make an actual entitlement decision
+            // (FR-24821).
+            guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                logger.warning("Failed to parse user-entitlements response as JSON object")
+                return false
             }
-            if let permissions = parsed.permissions {
-                permissionKeys.formUnion(permissions.filter { $0.value }.map(\.key))
-            }
+            let context = UserEntitlementsParser.parse(json)
 
-            setState(EntitlementState(featureKeys: featureKeys, permissionKeys: permissionKeys))
+            // Keep populating featureKeys/permissionKeys for backwards compat with
+            // host apps that read them off `auth.entitlements.state` (e.g. the
+            // demo's "Cached: N feature(s), M permission(s)" summary).
+            // featureKeys is the catalog of feature keys seen in the response.
+            // permissionKeys is the set of keys with value=true.
+            let featureKeys = Set(context.features.keys)
+            let permissionKeys = Set(context.permissions.filter { $0.value }.map { $0.key })
+
+            setState(
+                EntitlementState(
+                    featureKeys: featureKeys,
+                    permissionKeys: permissionKeys,
+                    context: context
+                )
+            )
             logger.info("Loaded entitlements: \(featureKeys.count) feature(s), \(permissionKeys.count) permission(s)")
             return true
         } catch {
@@ -101,19 +126,23 @@ public final class Entitlements {
         setState(.empty, hasLoaded: false)
     }
 
-    public func checkFeature(featureKey: String) -> Entitlement {
+    /// Evaluates `featureKey` against the cached `UserEntitlementsContext` using
+    /// the full decision chain (direct entitlement + feature flag + plan targeting
+    /// rules). `attributes` carries JWT claims and any host-app custom attributes
+    /// used by rule conditions — see `AttributesPreparer`.
+    public func checkFeature(featureKey: String, attributes: Attributes = Attributes()) -> Entitlement {
         guard enabled else {
-            return Entitlement(isEntitled: false, justification: "ENTITLEMENTS_DISABLED")
+            return Entitlement(isEntitled: false, justification: NotEntitledJustification.ENTITLEMENTS_DISABLED)
         }
-        let entitled = state.featureKeys.contains(featureKey)
-        return Entitlement(isEntitled: entitled, justification: entitled ? nil : "MISSING_FEATURE")
+        let result = IsEntitledToFeature.evaluate(featureKey, context: state.context, attributes: attributes)
+        return Entitlement(isEntitled: result.isEntitled, justification: result.justification)
     }
 
-    public func checkPermission(permissionKey: String) -> Entitlement {
+    public func checkPermission(permissionKey: String, attributes: Attributes = Attributes()) -> Entitlement {
         guard enabled else {
-            return Entitlement(isEntitled: false, justification: "ENTITLEMENTS_DISABLED")
+            return Entitlement(isEntitled: false, justification: NotEntitledJustification.ENTITLEMENTS_DISABLED)
         }
-        let entitled = state.permissionKeys.contains(permissionKey)
-        return Entitlement(isEntitled: entitled, justification: entitled ? nil : "MISSING_PERMISSION")
+        let result = IsEntitledToPermission.evaluate(permissionKey, context: state.context, attributes: attributes)
+        return Entitlement(isEntitled: result.isEntitled, justification: result.justification)
     }
 }
