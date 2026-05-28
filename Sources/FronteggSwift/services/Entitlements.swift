@@ -97,6 +97,18 @@ public final class Entitlements {
                 logger.warning("Failed to parse user-entitlements response as JSON object")
                 return false
             }
+
+            // Diagnostic logging — full RAW response body. Tagged `[ENT-DEBUG]` so
+            // it's easy to filter the Xcode console for entitlement diagnostics
+            // while triaging FR-24821-style "verdict doesn't match web" reports.
+            // The host app's logger is the same instance used for everything else
+            // in the SDK; if the host app sets log level below `.info` (or the
+            // FronteggApp `logLevel` config is `.debug` / `.info`) this surfaces
+            // automatically.
+            if let rawString = String(data: data, encoding: .utf8) {
+                logger.info("[ENT-DEBUG] RAW /user-entitlements response: \(rawString)")
+            }
+
             let context = UserEntitlementsParser.parse(json)
 
             // Keep populating featureKeys/permissionKeys for backwards compat with
@@ -115,6 +127,17 @@ public final class Entitlements {
                 )
             )
             logger.info("Loaded entitlements: \(featureKeys.count) feature(s), \(permissionKeys.count) permission(s)")
+            logger.info("[ENT-DEBUG] Parsed context — features: \(context.features.count), plans: \(context.plans.count), permissions: \(context.permissions.count)")
+            for (key, detail) in context.features {
+                let planIdsStr = detail.planIds.isEmpty ? "[]" : "[\(detail.planIds.joined(separator: ","))]"
+                let expireStr = detail.expireTime.map { "\($0)" } ?? "nil"
+                let flagStr = detail.featureFlag.map { "on=\($0.on) off=\($0.offTreatment.rawValue) default=\($0.defaultTreatment.rawValue) rules=\($0.rules?.count ?? 0)" } ?? "nil"
+                logger.info("[ENT-DEBUG]   feature[\(key)]: planIds=\(planIdsStr) expireTime=\(expireStr) featureFlag=\(flagStr) linkedPermissions=\(detail.linkedPermissions)")
+            }
+            for (key, plan) in context.plans {
+                let rulesStr = plan.rules?.count ?? 0
+                logger.info("[ENT-DEBUG]   plan[\(key)]: defaultTreatment=\(plan.defaultTreatment.rawValue) rules=\(rulesStr)")
+            }
             return true
         } catch {
             logger.warning("Failed to load user entitlements: \(error)")
@@ -135,6 +158,7 @@ public final class Entitlements {
             return Entitlement(isEntitled: false, justification: NotEntitledJustification.ENTITLEMENTS_DISABLED)
         }
         let result = IsEntitledToFeature.evaluate(featureKey, context: state.context, attributes: attributes)
+        logCheckTrace(kind: "feature", key: featureKey, attributes: attributes, result: result)
         return Entitlement(isEntitled: result.isEntitled, justification: result.justification)
     }
 
@@ -143,6 +167,45 @@ public final class Entitlements {
             return Entitlement(isEntitled: false, justification: NotEntitledJustification.ENTITLEMENTS_DISABLED)
         }
         let result = IsEntitledToPermission.evaluate(permissionKey, context: state.context, attributes: attributes)
+        logCheckTrace(kind: "permission", key: permissionKey, attributes: attributes, result: result)
         return Entitlement(isEntitled: result.isEntitled, justification: result.justification)
+    }
+
+    /// Diagnostic trace for `getFeatureEntitlements` / `getPermissionEntitlements`.
+    /// Shows the prepared attribute bag (so the caller can confirm
+    /// `frontegg.tenantId` / `frontegg.email` / etc. actually came through from the
+    /// JWT) and the verdict. Tagged `[ENT-DEBUG]` for easy Xcode-console filtering.
+    /// Sensitive claims (email, tenantId) only appear in your own test app's
+    /// debug log, never leaving the device unless you copy them.
+    private func logCheckTrace(kind: String, key: String, attributes: Attributes, result: EntitlementResult) {
+        let prepared = AttributesPreparer.prepare(attributes)
+        let attributeSummary = prepared
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value ?? "nil")" }
+            .joined(separator: ", ")
+        let contextStatus: String
+        if let ctx = state.context {
+            contextStatus = "features=\(ctx.features.count) plans=\(ctx.plans.count) permissions=\(ctx.permissions.count)"
+        } else {
+            contextStatus = "context=nil"
+        }
+        logger.info("[ENT-DEBUG] check\(kind)(\"\(key)\") → isEntitled=\(result.isEntitled) justification=\(result.justification ?? "nil")")
+        logger.info("[ENT-DEBUG]   context: \(contextStatus)")
+        logger.info("[ENT-DEBUG]   attributes: {\(attributeSummary)}")
+        // Print the relevant slice of the context for THIS feature/permission so
+        // the trace is self-contained — no need to cross-reference the load log.
+        if kind == "feature", let ctx = state.context, let feature = ctx.features[key] {
+            let planIdsStr = feature.planIds.isEmpty ? "[]" : "[\(feature.planIds.joined(separator: ","))]"
+            let expireStr = feature.expireTime.map { "\($0)" } ?? "nil"
+            let flagStr = feature.featureFlag.map { "on=\($0.on) off=\($0.offTreatment.rawValue) default=\($0.defaultTreatment.rawValue) rules=\($0.rules?.count ?? 0)" } ?? "nil"
+            logger.info("[ENT-DEBUG]   feature slice: planIds=\(planIdsStr) expireTime=\(expireStr) featureFlag=\(flagStr) linkedPermissions=\(feature.linkedPermissions)")
+            for planId in feature.planIds {
+                if let plan = ctx.plans[planId] {
+                    logger.info("[ENT-DEBUG]     linked plan[\(planId)]: defaultTreatment=\(plan.defaultTreatment.rawValue) rules=\(plan.rules?.count ?? 0)")
+                } else {
+                    logger.info("[ENT-DEBUG]     linked plan[\(planId)]: MISSING from plans map")
+                }
+            }
+        }
     }
 }
