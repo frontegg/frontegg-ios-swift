@@ -137,6 +137,57 @@ struct AdminPortalWebView: UIViewRepresentable {
         return components?.url
     }
 
+    /// Builds the cookie name the Frontegg auth backend reads at `/oauth/portal`.
+    ///
+    /// Critical: this MUST match the format the SDK's HTTP client uses for the
+    /// same cookie elsewhere — see `Api.swift` (`self.cookieName`), which sends
+    /// `Cookie: fe_refresh_<id>=<refreshToken>` to the auth server in
+    /// `refreshToken`, `logout`, and `silentAuthorize`. The server accepts that
+    /// exact format with the raw JWT as the value, so writing the same name +
+    /// value into WKHTTPCookieStore lets the portal recognize the session
+    /// without any backend changes.
+    ///
+    /// Format: `fe_refresh_<clientId-with-FIRST-dash-removed>`. Note: only the
+    /// first dash is removed, not all of them. The Frontegg Next.js SDK uses
+    /// the same convention in `modifySetCookie` (which forwards real server-set
+    /// cookies). Using `applicationId` here is wrong — the SDK's HTTP client
+    /// always keys this cookie by `clientId`, including in multi-app workspaces.
+    internal static func refreshCookieName(clientId: String) -> String {
+        var stripped = clientId
+        if let firstDash = stripped.firstIndex(of: "-") {
+            stripped.remove(at: firstDash)
+        }
+        return "fe_refresh_\(stripped)"
+    }
+
+    /// Constructs the `HTTPCookie` that lets the embedded portal recognize the
+    /// SDK's existing authenticated session.
+    ///
+    /// Returns nil when there is no refresh token to bridge (user not logged in)
+    /// or when the base URL is malformed. In both cases the portal falls back
+    /// to its own login form — the existing behavior before this bridge.
+    internal static func makeRefreshCookie(
+        refreshToken: String?,
+        baseUrl: String,
+        clientId: String
+    ) -> HTTPCookie? {
+        guard let refreshToken = refreshToken, !refreshToken.isEmpty else { return nil }
+        guard let url = URL(string: baseUrl), let host = url.host else { return nil }
+        let isSecure = url.scheme?.lowercased() == "https"
+        var properties: [HTTPCookiePropertyKey: Any] = [
+            .name: refreshCookieName(clientId: clientId),
+            .value: refreshToken,
+            .domain: host,
+            .path: "/",
+        ]
+        if isSecure {
+            properties[.secure] = "TRUE"
+        }
+        // Deliberately not setting `.sameSitePolicy`: the portal request is
+        // same-origin to this cookie's host, so SameSite policy is irrelevant.
+        return HTTPCookie(properties: properties)
+    }
+
     @MainActor
     private func loadPortal(webView: WKWebView) async {
         guard let portalUrl = AdminPortalWebView.portalURL(
@@ -147,38 +198,32 @@ struct AdminPortalWebView: UIViewRepresentable {
             return
         }
 
-        // Force a token refresh BEFORE loading the portal. This is the
-        // mechanism that gets a valid session cookie into WKHTTPCookieStore:
+        let store = webView.configuration.websiteDataStore.httpCookieStore
+
+        // Bridge: write the SDK's refresh token into WKHTTPCookieStore as
+        // `fe_refresh_<clientId>=<rawJWT>` BEFORE the WebView fetches
+        // /oauth/portal. The Frontegg auth backend already accepts this exact
+        // cookie format with the raw JWT value — see `Api.swift` cookieName
+        // and the Cookie header it sends on every refresh / logout call. So
+        // this is a pure client-side fix; no backend changes needed.
         //
-        //   1. refreshTokenIfNeeded() → Api.refreshToken() → POST /oauth/token
-        //   2. The Frontegg auth backend's response includes
-        //      `Set-Cookie: fe_refresh_<id>=<server-signed-value>` …
-        //   3. Api.mirrorFronteggCookiesToWebViewStore() captures every
-        //      `fe_*` cookie from that response and writes it into
-        //      WKWebsiteDataStore.default().httpCookieStore — the same store
-        //      this WKWebView uses.
-        //   4. webView.load(...) then carries the cookie on its request,
-        //      the portal recognizes the session, no second login.
-        //
-        // Why force a refresh here instead of relying on the SDK's natural
-        // refresh: on cold start with a non-expired access token, the SDK
-        // may not call /oauth/token at all before the user opens the portal.
-        // Without a refresh, WKHTTPCookieStore has no cookies for browser-login
-        // sessions (ASWebAuthenticationSession's cookies live in Safari's
-        // isolated jar) and the portal bounces to login.
-        //
-        // Failure modes: if the refresh fails (offline, server error), we
-        // still load the portal — it renders its own login form, which is the
-        // existing behavior before any of this.
-        if fronteggAuth.refreshToken != nil {
-            logger.info("AdminPortal: forcing refresh before load to populate session cookies")
-            _ = await fronteggAuth.refreshTokenIfNeeded()
+        // Without this bridge, users who logged in via ASWebAuthenticationSession
+        // (whose cookies live in Safari's isolated jar — never visible to
+        // WKWebView) are forced to log in a second time to access the portal.
+        if let bridgeCookie = AdminPortalWebView.makeRefreshCookie(
+            refreshToken: fronteggAuth.refreshToken,
+            baseUrl: fronteggAuth.baseUrl,
+            clientId: fronteggAuth.clientId
+        ) {
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                store.setCookie(bridgeCookie) { cont.resume() }
+            }
+            logger.info("AdminPortal: bridged refresh cookie \(bridgeCookie.name) domain=\(bridgeCookie.domain)")
         } else {
-            logger.info("AdminPortal: no refresh token; loading portal directly (its own login will render)")
+            logger.info("AdminPortal: no refresh token to bridge — portal will use its own login if no existing web cookies are present")
         }
 
         // Snapshot existing cookies for visibility only — we do not modify them.
-        let store = webView.configuration.websiteDataStore.httpCookieStore
         let existing = await withCheckedContinuation { (cont: CheckedContinuation<[HTTPCookie], Never>) in
             store.getAllCookies { cont.resume(returning: $0) }
         }

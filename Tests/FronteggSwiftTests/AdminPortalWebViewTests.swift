@@ -74,6 +74,108 @@ final class AdminPortalWebViewTests: XCTestCase {
         )
     }
 
+    // MARK: - refreshCookieName(clientId:)
+
+    func test_refreshCookieName_stripsOnlyFirstDash_notAllDashes() {
+        // CRITICAL: this format must match Api.swift's `self.cookieName`
+        // (line 62-66 of Api.swift). The SDK's HTTP client sends
+        // `Cookie: fe_refresh_<that-id>=<refreshToken>` to the auth server
+        // on every refresh / logout call and the server accepts it. So
+        // writing the same name + value into WKHTTPCookieStore is what
+        // makes the portal recognize the session without backend changes.
+        //
+        // Earlier versions of this code removed ALL dashes — that produced
+        // a cookie name the server didn't recognize, and the portal
+        // bounced to login. This test pins the right behavior.
+        let name = AdminPortalWebView.refreshCookieName(
+            clientId: "b1c2d3e4-1234-5678-9abc-deadbeef0000"
+        )
+        XCTAssertEqual(name, "fe_refresh_b1c2d3e41234-5678-9abc-deadbeef0000",
+                       "Must strip ONLY the first dash to match Api.swift cookieName format.")
+        XCTAssertTrue(name.hasPrefix("fe_refresh_"))
+        XCTAssertTrue(name.contains("-"), "Subsequent dashes must remain in the cookie name.")
+    }
+
+    func test_refreshCookieName_handlesClientIdWithNoDashes() {
+        let name = AdminPortalWebView.refreshCookieName(clientId: "nodashesclient")
+        XCTAssertEqual(name, "fe_refresh_nodashesclient")
+    }
+
+    // MARK: - makeRefreshCookie(refreshToken:baseUrl:clientId:)
+
+    func test_makeRefreshCookie_returnsNil_whenRefreshTokenIsNil() {
+        XCTAssertNil(AdminPortalWebView.makeRefreshCookie(
+            refreshToken: nil,
+            baseUrl: "https://app.frontegg.com",
+            clientId: "abc-def"
+        ))
+    }
+
+    func test_makeRefreshCookie_returnsNil_whenRefreshTokenIsEmpty() {
+        XCTAssertNil(AdminPortalWebView.makeRefreshCookie(
+            refreshToken: "",
+            baseUrl: "https://app.frontegg.com",
+            clientId: "abc-def"
+        ))
+    }
+
+    func test_makeRefreshCookie_returnsNil_whenBaseUrlIsMalformed() {
+        XCTAssertNil(AdminPortalWebView.makeRefreshCookie(
+            refreshToken: "rt-jwt",
+            baseUrl: "not a url",
+            clientId: "abc-def"
+        ))
+    }
+
+    func test_makeRefreshCookie_buildsHttpsCookie_withSecureFlag() {
+        let cookie = AdminPortalWebView.makeRefreshCookie(
+            refreshToken: "rt-jwt-value-abc",
+            baseUrl: "https://app.frontegg.com",
+            clientId: "b1c2d3e4-1234"
+        )
+        XCTAssertNotNil(cookie)
+        XCTAssertEqual(cookie?.name, "fe_refresh_b1c2d3e41234",
+                       "First dash stripped — matches Api.swift cookieName format.")
+        XCTAssertEqual(cookie?.value, "rt-jwt-value-abc",
+                       "Cookie value is the raw refresh token JWT, same as Api.swift sends.")
+        XCTAssertEqual(cookie?.domain, "app.frontegg.com")
+        XCTAssertEqual(cookie?.path, "/")
+        XCTAssertTrue(cookie?.isSecure ?? false)
+    }
+
+    func test_makeRefreshCookie_buildsHttpCookie_withoutSecureFlag() {
+        let cookie = AdminPortalWebView.makeRefreshCookie(
+            refreshToken: "rt-jwt",
+            baseUrl: "http://localhost:3000",
+            clientId: "client-1"
+        )
+        XCTAssertNotNil(cookie)
+        XCTAssertEqual(cookie?.domain, "localhost")
+        XCTAssertFalse(cookie?.isSecure ?? true)
+    }
+
+    // MARK: - Logout cleanup invariant
+
+    func test_refreshCookieName_matchesDefaultLogoutCleanupRegex() {
+        // FronteggAuth+Logout.swift uses `^fe_refresh` regex by default to
+        // clean up cookies on logout. The bridged cookie this class writes
+        // must match that regex so a logged-out session can't be resurrected
+        // in the portal via a stale cookie.
+        let names = [
+            AdminPortalWebView.refreshCookieName(clientId: "c-1"),
+            AdminPortalWebView.refreshCookieName(clientId: "b1c2d3e4-1234-5678-9abc-deadbeef0000"),
+            AdminPortalWebView.refreshCookieName(clientId: "nodashes"),
+        ]
+        let logoutMatcher = try! NSRegularExpression(pattern: "^fe_refresh")
+        for name in names {
+            let range = NSRange(name.startIndex..<name.endIndex, in: name)
+            XCTAssertNotNil(
+                logoutMatcher.firstMatch(in: name, range: range),
+                "Bridged cookie name '\(name)' must match the default logout-cleanup regex '^fe_refresh'."
+            )
+        }
+    }
+
     // MARK: - Coordinator.webViewDidClose
 
     @MainActor
