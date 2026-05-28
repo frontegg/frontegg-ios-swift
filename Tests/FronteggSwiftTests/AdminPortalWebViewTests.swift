@@ -78,15 +78,15 @@ final class AdminPortalWebViewTests: XCTestCase {
 
     func test_refreshCookieName_stripsOnlyFirstDash_notAllDashes() {
         // CRITICAL: this format must match Api.swift's `self.cookieName`
-        // (line 62-66 of Api.swift). The SDK's HTTP client sends
-        // `Cookie: fe_refresh_<that-id>=<refreshToken>` to the auth server
-        // on every refresh / logout call and the server accepts it. So
-        // writing the same name + value into WKHTTPCookieStore is what
-        // makes the portal recognize the session without backend changes.
+        // (line 62-66 of Api.swift). The cleanup pass in loadPortal uses
+        // this prefix to delete stale fe_refresh_* / fe_device_* cookies
+        // from the WebView store before mirroring fresh ones — if the
+        // format here drifts, the cleanup will miss the stale cookie that
+        // got the customer into "second-login" hell in the first place.
         //
-        // Earlier versions of this code removed ALL dashes — that produced
-        // a cookie name the server didn't recognize, and the portal
-        // bounced to login. This test pins the right behavior.
+        // Earlier versions of this code stripped ALL dashes — that produced
+        // a cookie name the server didn't recognize. This test pins the
+        // correct behavior.
         let name = AdminPortalWebView.refreshCookieName(
             clientId: "b1c2d3e4-1234-5678-9abc-deadbeef0000"
         )
@@ -101,66 +101,13 @@ final class AdminPortalWebViewTests: XCTestCase {
         XCTAssertEqual(name, "fe_refresh_nodashesclient")
     }
 
-    // MARK: - makeRefreshCookie(refreshToken:baseUrl:clientId:)
-
-    func test_makeRefreshCookie_returnsNil_whenRefreshTokenIsNil() {
-        XCTAssertNil(AdminPortalWebView.makeRefreshCookie(
-            refreshToken: nil,
-            baseUrl: "https://app.frontegg.com",
-            clientId: "abc-def"
-        ))
-    }
-
-    func test_makeRefreshCookie_returnsNil_whenRefreshTokenIsEmpty() {
-        XCTAssertNil(AdminPortalWebView.makeRefreshCookie(
-            refreshToken: "",
-            baseUrl: "https://app.frontegg.com",
-            clientId: "abc-def"
-        ))
-    }
-
-    func test_makeRefreshCookie_returnsNil_whenBaseUrlIsMalformed() {
-        XCTAssertNil(AdminPortalWebView.makeRefreshCookie(
-            refreshToken: "rt-jwt",
-            baseUrl: "not a url",
-            clientId: "abc-def"
-        ))
-    }
-
-    func test_makeRefreshCookie_buildsHttpsCookie_withSecureFlag() {
-        let cookie = AdminPortalWebView.makeRefreshCookie(
-            refreshToken: "rt-jwt-value-abc",
-            baseUrl: "https://app.frontegg.com",
-            clientId: "b1c2d3e4-1234"
-        )
-        XCTAssertNotNil(cookie)
-        XCTAssertEqual(cookie?.name, "fe_refresh_b1c2d3e41234",
-                       "First dash stripped — matches Api.swift cookieName format.")
-        XCTAssertEqual(cookie?.value, "rt-jwt-value-abc",
-                       "Cookie value is the raw refresh token JWT, same as Api.swift sends.")
-        XCTAssertEqual(cookie?.domain, "app.frontegg.com")
-        XCTAssertEqual(cookie?.path, "/")
-        XCTAssertTrue(cookie?.isSecure ?? false)
-    }
-
-    func test_makeRefreshCookie_buildsHttpCookie_withoutSecureFlag() {
-        let cookie = AdminPortalWebView.makeRefreshCookie(
-            refreshToken: "rt-jwt",
-            baseUrl: "http://localhost:3000",
-            clientId: "client-1"
-        )
-        XCTAssertNotNil(cookie)
-        XCTAssertEqual(cookie?.domain, "localhost")
-        XCTAssertFalse(cookie?.isSecure ?? true)
-    }
-
     // MARK: - Logout cleanup invariant
 
     func test_refreshCookieName_matchesDefaultLogoutCleanupRegex() {
         // FronteggAuth+Logout.swift uses `^fe_refresh` regex by default to
-        // clean up cookies on logout. The bridged cookie this class writes
-        // must match that regex so a logged-out session can't be resurrected
-        // in the portal via a stale cookie.
+        // clean up cookies on logout. The cookies this class mirrors from
+        // silent-authorize responses must match that regex so a logged-out
+        // session can't be resurrected in the portal via a stale cookie.
         let names = [
             AdminPortalWebView.refreshCookieName(clientId: "c-1"),
             AdminPortalWebView.refreshCookieName(clientId: "b1c2d3e4-1234-5678-9abc-deadbeef0000"),
@@ -174,6 +121,122 @@ final class AdminPortalWebViewTests: XCTestCase {
                 "Bridged cookie name '\(name)' must match the default logout-cleanup regex '^fe_refresh'."
             )
         }
+    }
+
+    // MARK: - extractFronteggSessionCookies(from:requestURL:)
+
+    private func makeResponse(
+        url: URL,
+        setCookieHeaders: [String]
+    ) -> HTTPURLResponse {
+        // HTTPURLResponse only accepts a flat header dict. Multiple Set-Cookie
+        // headers are joined by `, ` per RFC 7230, which is exactly how iOS's
+        // own URLSession exposes them — so concatenate to simulate the real
+        // shape `HTTPCookie.cookies(withResponseHeaderFields:for:)` will see.
+        let joined = setCookieHeaders.joined(separator: ", ")
+        return HTTPURLResponse(
+            url: url,
+            statusCode: 201,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Set-Cookie": joined]
+        )!
+    }
+
+    func test_extractFronteggSessionCookies_capturesRefreshAndDeviceCookies() {
+        // The two cookies the auth backend emits on a successful
+        // POST /frontegg/oauth/authorize/silent — observed via real curl
+        // against autheu.davidantoon.me. The portal's React app expects
+        // both in the WebView's cookie jar to bootstrap the session.
+        let requestURL = URL(string: "https://app.frontegg.com/frontegg/oauth/authorize/silent")!
+        let response = makeResponse(url: requestURL, setCookieHeaders: [
+            "fe_refresh_b6adfe4cd695-4c04-b95f-3ec9fd0c6cca=rt-uuid; Domain=app.frontegg.com; Path=/; HttpOnly; Secure; SameSite=None",
+            "fe_device_e322534e48004374af986674ab86c55c=dev-uuid; Domain=app.frontegg.com; Path=/; HttpOnly; Secure; SameSite=None",
+        ])
+
+        let cookies = AdminPortalWebView.extractFronteggSessionCookies(
+            from: response,
+            requestURL: requestURL
+        )
+
+        XCTAssertEqual(cookies.count, 2)
+        let names = Set(cookies.map { $0.name })
+        XCTAssertTrue(names.contains("fe_refresh_b6adfe4cd695-4c04-b95f-3ec9fd0c6cca"))
+        XCTAssertTrue(names.contains("fe_device_e322534e48004374af986674ab86c55c"))
+    }
+
+    func test_extractFronteggSessionCookies_filtersOutNonFronteggCookies() {
+        // Defensive: if the server response also carries unrelated cookies
+        // (analytics, tracking, anything), we must NOT pollute the WebView
+        // cookie jar with them.
+        let requestURL = URL(string: "https://app.frontegg.com/frontegg/oauth/authorize/silent")!
+        let response = makeResponse(url: requestURL, setCookieHeaders: [
+            "fe_refresh_abc=rt-value; Domain=app.frontegg.com; Path=/",
+            "_ga=GA1.1.xxx; Domain=.frontegg.com; Path=/",
+            "tracking_id=tk-value; Path=/",
+        ])
+
+        let cookies = AdminPortalWebView.extractFronteggSessionCookies(
+            from: response,
+            requestURL: requestURL
+        )
+
+        XCTAssertEqual(cookies.count, 1)
+        XCTAssertEqual(cookies.first?.name, "fe_refresh_abc")
+    }
+
+    func test_extractFronteggSessionCookies_returnsEmpty_whenNoMatchingHeaders() {
+        let requestURL = URL(string: "https://app.frontegg.com/frontegg/oauth/authorize/silent")!
+        let response = makeResponse(url: requestURL, setCookieHeaders: [
+            "_ga=GA1.1.xxx; Domain=.frontegg.com; Path=/",
+        ])
+
+        let cookies = AdminPortalWebView.extractFronteggSessionCookies(
+            from: response,
+            requestURL: requestURL
+        )
+
+        XCTAssertTrue(cookies.isEmpty)
+    }
+
+    func test_extractFronteggSessionCookies_returnsEmpty_whenResponseIsNotHTTPURLResponse() {
+        // URLResponse (not HTTPURLResponse) has no headers; helper must
+        // handle this gracefully.
+        let requestURL = URL(string: "https://app.frontegg.com")!
+        let response = URLResponse(
+            url: requestURL,
+            mimeType: nil,
+            expectedContentLength: 0,
+            textEncodingName: nil
+        )
+
+        let cookies = AdminPortalWebView.extractFronteggSessionCookies(
+            from: response,
+            requestURL: requestURL
+        )
+
+        XCTAssertTrue(cookies.isEmpty)
+    }
+
+    func test_extractFronteggSessionCookies_carriesSecureAndDomainAttributes() {
+        // The mirrored cookies must keep their HttpOnly/Secure/SameSite/Domain
+        // attributes so they behave the same way in the WebView as they would
+        // if the server had set them directly via a navigation response.
+        let requestURL = URL(string: "https://app.frontegg.com/frontegg/oauth/authorize/silent")!
+        let response = makeResponse(url: requestURL, setCookieHeaders: [
+            "fe_refresh_abc=rt-value; Domain=app.frontegg.com; Path=/; HttpOnly; Secure; SameSite=None",
+        ])
+
+        let cookies = AdminPortalWebView.extractFronteggSessionCookies(
+            from: response,
+            requestURL: requestURL
+        )
+
+        XCTAssertEqual(cookies.count, 1)
+        let c = cookies.first!
+        XCTAssertEqual(c.value, "rt-value")
+        XCTAssertEqual(c.path, "/")
+        XCTAssertTrue(c.isSecure)
+        XCTAssertTrue(c.isHTTPOnly)
     }
 
     // MARK: - Coordinator.webViewDidClose
