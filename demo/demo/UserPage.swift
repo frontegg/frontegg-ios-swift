@@ -12,6 +12,13 @@ struct UserPage: View {
     @State private var entitlementUnifiedPermission: Entitlement?
     @State private var entitlementsLoading = false
     @State private var showAdminPortal = false
+    // Active tenant on the most recent entitlements render. Used by the
+    // `onChange(of: fronteggAuth.user?.activeTenant.id)` watcher to detect
+    // tenant switches and trigger an automatic re-render — without this, the
+    // user has to manually tap "Load entitlements" again after `switchTenant`
+    // to see the new tenant's verdicts (the SDK cache is correct, but the UI
+    // is stale until someone re-calls getFeatureEntitlements). See FR-24821.
+    @State private var lastRenderedTenantId: String?
 
     struct Message: Identifiable {
         let id = UUID()
@@ -33,6 +40,22 @@ struct UserPage: View {
                 .ignoresSafeArea(edges: .bottom),alignment: .bottom)
             .sheet(isPresented: $showAdminPortal) {
                 AdminPortalView()
+            }
+            // Auto-refresh entitlements display on tenant switch. switchTenant
+            // (via setCredentialsInternal → updateStateWithCredentials) already
+            // clears the SDK cache and re-fires loadEntitlements; we just need
+            // to re-call getFeatureEntitlements/getPermissionEntitlements to
+            // refresh the verdict rows. Without this, "Load entitlements" has
+            // to be tapped manually after each switch (FR-24821 QA finding).
+            .onChange(of: fronteggAuth.user?.activeTenant.id) { newTenantId in
+                guard let newTenantId = newTenantId else {
+                    lastRenderedTenantId = nil
+                    return
+                }
+                if lastRenderedTenantId != nil && lastRenderedTenantId != newTenantId {
+                    loadEntitlements()
+                }
+                lastRenderedTenantId = newTenantId
             }
         }
     }

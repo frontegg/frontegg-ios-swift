@@ -13,6 +13,10 @@ struct UserPage: View {
     @State private var entitlementUnifiedPermission: Entitlement?
     @State private var entitlementsLoading = false
     @State private var showAdminPortal = false
+    // Active tenant on the most recent entitlements render. See FR-24821 —
+    // without this, the UI shows stale verdicts after switchTenant until the
+    // user manually re-taps "Load entitlements".
+    @State private var lastRenderedTenantId: String?
 
     struct Message: Identifiable {
         let id = UUID()
@@ -34,6 +38,17 @@ struct UserPage: View {
                 .ignoresSafeArea(edges: .bottom),alignment: .bottom)
             .sheet(isPresented: $showAdminPortal) {
                 AdminPortalView()
+            }
+            // Auto-refresh entitlements after switchTenant — see FR-24821.
+            .onChange(of: fronteggAuth.user?.activeTenant.id) { newTenantId in
+                guard let newTenantId = newTenantId else {
+                    lastRenderedTenantId = nil
+                    return
+                }
+                if lastRenderedTenantId != nil && lastRenderedTenantId != newTenantId {
+                    loadEntitlements()
+                }
+                lastRenderedTenantId = newTenantId
             }
         }
     }
