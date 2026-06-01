@@ -103,15 +103,6 @@ public class FronteggAuth: FronteggState {
     // internal for extension access (SessionRestore, Testing, Refresh, HostedFlows)
     var isInitializingWithTokens: Bool = false
     @MainActor var isLoginInProgress: Bool = false
-    /// True while the embedded admin portal owns the refresh-token rotation
-    /// chain (see FronteggAuth+AdminPortalSession). The Frontegg refresh token
-    /// is single-use and rotates on every read with no grace window, so the
-    /// SDK's background refresh loop and the portal WebView cannot both consume
-    /// it concurrently — one would invalidate the other. While this is true,
-    /// internal/auto refreshes are suppressed (see isAutoRefreshBlocked) so the
-    /// portal is the sole consumer; the SDK reclaims the rotated token when the
-    /// portal closes.
-    var adminPortalSessionActive: Bool = false
     // internal for extension access (FronteggAuth+Entitlements.swift)
     let entitlementsLoadLock = NSLock()
     var entitlementsLoadInProgress: Bool = false

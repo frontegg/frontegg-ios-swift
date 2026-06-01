@@ -8,16 +8,6 @@ import Dispatch
 
 extension FronteggAuth {
     func isAutoRefreshBlocked(source: RefreshInvocationSource) -> Bool {
-        // While the embedded admin portal owns the token-rotation chain, the
-        // SDK must not auto-refresh: the refresh token is single-use and the
-        // portal is the sole consumer until it closes. A background refresh
-        // here would rotate the token out from under the portal's cookie
-        // (breaking the portal) or be rotated out by the portal (breaking the
-        // SDK's next refresh → logout). Manual/user-initiated refreshes are
-        // still allowed.
-        if adminPortalSessionActive && source == .internalAuto {
-            return true
-        }
         let disableAutoRefresh = (try? PlistHelper.fronteggConfig())?.disableAutoRefresh ?? false
         return disableAutoRefresh && source == .internalAuto
     }

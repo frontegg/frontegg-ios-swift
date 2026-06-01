@@ -100,14 +100,6 @@ struct AdminPortalWebView: UIViewRepresentable {
         }
         #endif
 
-        // The coordinator owns the session lifecycle: it needs the cookie store
-        // + host to reclaim the rotated token when the portal closes.
-        context.coordinator.configureSession(
-            fronteggAuth: fronteggAuth,
-            cookieStore: webView.configuration.websiteDataStore.httpCookieStore,
-            host: URL(string: fronteggAuth.baseUrl)?.host
-        )
-
         Task { @MainActor in
             await loadPortal(webView: webView)
         }
@@ -126,7 +118,7 @@ struct AdminPortalWebView: UIViewRepresentable {
     /// This is the reliable place to reclaim the token, since the portal's
     /// `window.close()` (→ webViewDidClose) only covers the in-page X button.
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
-        coordinator.reclaimAndEndSession()
+        // DIAGNOSTIC: no reclaim — pure no-op build.
     }
 
     /// Builds the admin portal URL. Pinning the application context via
@@ -189,41 +181,32 @@ struct AdminPortalWebView: UIViewRepresentable {
 
         let store = webView.configuration.websiteDataStore.httpCookieStore
 
-        // Baton handoff — pause the SDK's auto-refresh loop and take ownership
-        // of the current refresh token for the portal's lifetime.
-        let token = fronteggAuth.beginAdminPortalSession()
+        // DIAGNOSTIC PASS (no-op): do NOT clear/seed/refresh. Just log what's in
+        // WKHTTPCookieStore at portal-open and what the SDK has stored, so we can
+        // see — on a real device — whether the login's cookie-family fe_refresh
+        // is present + fresh, or stale (rotated away by the SDK's URLSession-based
+        // refresh, which can't write WKHTTPCookieStore). Then load the portal
+        // exactly as the original pass-through did.
+        let expectedName = AdminPortalWebView.refreshCookieName(clientId: fronteggAuth.clientId)
+        let sdkTok = fronteggAuth.refreshToken ?? ""
+        let sdkPrefix = sdkTok.isEmpty ? "<none>" : (sdkTok.count > 8 ? "\(sdkTok.prefix(8))... len=\(sdkTok.count)" : "<short>")
+        logger.info("AdminPortal[DIAG]: expectedCookieName=\(expectedName) SDK.refreshToken=\(sdkPrefix)")
 
-        if let token = token,
-           let host = URL(string: fronteggAuth.baseUrl)?.host {
-            // Clear any stale fe_refresh_* cookie for this host first. The
-            // persistent store may hold a previous session's rotated-away
-            // value; if it lingered alongside ours in a different scope, RFC
-            // 6265 §5.4 could sort the stale one first in the Cookie header
-            // and the portal's silent-authorize would 401.
-            let existing = await withCheckedContinuation { (cont: CheckedContinuation<[HTTPCookie], Never>) in
-                store.getAllCookies { cont.resume(returning: $0) }
-            }
-            for c in existing where c.name.hasPrefix("fe_refresh_") {
-                let domain = c.domain.hasPrefix(".") ? String(c.domain.dropFirst()) : c.domain
-                if host == domain || host.hasSuffix("." + domain) {
-                    await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-                        store.delete(c) { cont.resume() }
-                    }
+        let existing = await withCheckedContinuation { (cont: CheckedContinuation<[HTTPCookie], Never>) in
+            store.getAllCookies { cont.resume(returning: $0) }
+        }
+        if let host = URL(string: fronteggAuth.baseUrl)?.host {
+            let fe = existing.filter { ($0.name.hasPrefix("fe_refresh_") || $0.name.hasPrefix("fe_device_")) }
+                .filter { c in
+                    let d = c.domain.hasPrefix(".") ? String(c.domain.dropFirst()) : c.domain
+                    return host == d || host.hasSuffix("." + d)
                 }
+            logger.info("AdminPortal[DIAG]: WKHTTPCookieStore fe_* scoped to \(host): \(fe.count)")
+            for c in fe {
+                let vp = c.value.count > 8 ? "\(c.value.prefix(8))... len=\(c.value.count)" : "<short>"
+                let matchesSDK = (c.name == expectedName && c.value == sdkTok) ? " MATCHES-SDK" : ""
+                logger.info("AdminPortal[DIAG]:   \(c.name) value=\(vp) domain=\(c.domain) secure=\(c.isSecure)\(matchesSDK)")
             }
-
-            if let cookie = AdminPortalWebView.makeRefreshCookie(
-                refreshToken: token,
-                baseUrl: fronteggAuth.baseUrl,
-                clientId: fronteggAuth.clientId
-            ) {
-                await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-                    store.setCookie(cookie) { cont.resume() }
-                }
-                logger.info("AdminPortal: seeded current refresh cookie \(cookie.name) for portal session")
-            }
-        } else {
-            logger.info("AdminPortal: no refresh token — portal will render its own login")
         }
 
         logger.info("AdminPortal: loading \(portalUrl.absoluteString)")
@@ -236,52 +219,8 @@ struct AdminPortalWebView: UIViewRepresentable {
         private let logger = getLogger("AdminPortalWebView")
         private let onClose: (() -> Void)?
 
-        // Session state for the baton handoff. Set in configureSession.
-        private weak var fronteggAuth: FronteggAuth?
-        private var cookieStore: WKHTTPCookieStore?
-        private var host: String?
-        private var didEndSession = false
-
         init(onClose: (() -> Void)?) {
             self.onClose = onClose
-        }
-
-        func configureSession(fronteggAuth: FronteggAuth, cookieStore: WKHTTPCookieStore, host: String?) {
-            self.fronteggAuth = fronteggAuth
-            self.cookieStore = cookieStore
-            self.host = host
-        }
-
-        /// Read the portal's latest fe_refresh_* cookie value back from the
-        /// store and hand it to the SDK to reclaim, then resume the SDK's
-        /// refresh loop. Idempotent — safe to call from both webViewDidClose
-        /// and dismantleUIView; only the first call does work.
-        func reclaimAndEndSession() {
-            guard !didEndSession else { return }
-            didEndSession = true
-
-            guard let fronteggAuth = fronteggAuth else { return }
-            let store = cookieStore
-            let host = self.host
-
-            Task {
-                var reclaimed: String? = nil
-                if let store = store {
-                    let cookies = await withCheckedContinuation { (cont: CheckedContinuation<[HTTPCookie], Never>) in
-                        store.getAllCookies { cont.resume(returning: $0) }
-                    }
-                    // Prefer a host-scoped fe_refresh_* cookie; fall back to any.
-                    let refreshCookies = cookies.filter { $0.name.hasPrefix("fe_refresh_") }
-                    if let host = host {
-                        reclaimed = refreshCookies.first(where: { c in
-                            let domain = c.domain.hasPrefix(".") ? String(c.domain.dropFirst()) : c.domain
-                            return host == domain || host.hasSuffix("." + domain)
-                        })?.value
-                    }
-                    if reclaimed == nil { reclaimed = refreshCookies.first?.value }
-                }
-                await fronteggAuth.endAdminPortalSession(reclaimedRefreshToken: reclaimed)
-            }
         }
 
         func webView(_ webView: WKWebView,
@@ -331,8 +270,7 @@ struct AdminPortalWebView: UIViewRepresentable {
         // The portal's X button calls window.close() — reclaim the token, then
         // dismiss.
         func webViewDidClose(_ webView: WKWebView) {
-            logger.info("AdminPortal: webViewDidClose — reclaiming token + dismissing")
-            reclaimAndEndSession()
+            logger.info("AdminPortal: webViewDidClose — dismissing")
             onClose?()
         }
     }
