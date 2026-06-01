@@ -46,7 +46,10 @@ struct UserPage: View {
                     return
                 }
                 if lastRenderedTenantId != nil && lastRenderedTenantId != newTenantId {
-                    loadEntitlements()
+                    // forceRefresh: true is REQUIRED — a plain cache read races the
+                    // SDK's clear()+reload during the switch and renders the new
+                    // tenant as not-entitled (FR-24821).
+                    loadEntitlements(forceRefresh: true)
                 }
                 lastRenderedTenantId = newTenantId
             }
@@ -157,14 +160,18 @@ struct UserPage: View {
         .cornerRadius(8)
     }
 
-    private func loadEntitlements() {
+    // forceRefresh MUST be true when called from the tenant-switch `.onChange`
+    // handler (FR-24821): a forceRefresh=false call short-circuits and reads the
+    // verdict during the SDK's cleared-but-not-yet-reloaded window. The button
+    // keeps forceRefresh=false.
+    private func loadEntitlements(forceRefresh: Bool = false) {
         entitlementsLoading = true
         loadSuccess = nil
         entitlementFeature = nil
         entitlementPermission = nil
         entitlementUnifiedFeature = nil
         entitlementUnifiedPermission = nil
-        fronteggAuth.loadEntitlements { success in
+        fronteggAuth.loadEntitlements(forceRefresh: forceRefresh) { success in
             let feature = fronteggAuth.getFeatureEntitlements(featureKey: "sso")
             let unifiedFeature = fronteggAuth.getEntitlements(options: .featureKey("proteins.*"))
             let permission = fronteggAuth.getPermissionEntitlements(permissionKey: "dora.protein.*")
