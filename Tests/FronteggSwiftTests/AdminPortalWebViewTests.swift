@@ -117,6 +117,50 @@ final class AdminPortalWebViewTests: XCTestCase {
         }
     }
 
+    // MARK: - makeRefreshCookie(refreshToken:baseUrl:clientId:)
+    //
+    // This cookie seeds the portal WebView with the SDK's CURRENT refresh token
+    // at portal-open (the baton handoff). Its value is whatever token the SDK
+    // hands over; the portal then rotates it and we reclaim on close.
+
+    func test_makeRefreshCookie_returnsNil_whenRefreshTokenIsNil() {
+        XCTAssertNil(AdminPortalWebView.makeRefreshCookie(
+            refreshToken: nil, baseUrl: "https://app.frontegg.com", clientId: "abc-def"))
+    }
+
+    func test_makeRefreshCookie_returnsNil_whenRefreshTokenIsEmpty() {
+        XCTAssertNil(AdminPortalWebView.makeRefreshCookie(
+            refreshToken: "", baseUrl: "https://app.frontegg.com", clientId: "abc-def"))
+    }
+
+    func test_makeRefreshCookie_returnsNil_whenBaseUrlMalformed() {
+        XCTAssertNil(AdminPortalWebView.makeRefreshCookie(
+            refreshToken: "rt", baseUrl: "not a url", clientId: "abc-def"))
+    }
+
+    func test_makeRefreshCookie_buildsHttpsCookie_withCorrectNameValueAndSecure() {
+        let cookie = AdminPortalWebView.makeRefreshCookie(
+            refreshToken: "rt-uuid-value",
+            baseUrl: "https://app.frontegg.com",
+            clientId: "b1c2d3e4-1234"
+        )
+        XCTAssertNotNil(cookie)
+        XCTAssertEqual(cookie?.name, "fe_refresh_b1c2d3e41234",
+                       "First dash stripped — matches Api.swift cookieName.")
+        XCTAssertEqual(cookie?.value, "rt-uuid-value")
+        XCTAssertEqual(cookie?.domain, "app.frontegg.com")
+        XCTAssertEqual(cookie?.path, "/")
+        XCTAssertTrue(cookie?.isSecure ?? false)
+    }
+
+    func test_makeRefreshCookie_buildsHttpCookie_withoutSecure() {
+        let cookie = AdminPortalWebView.makeRefreshCookie(
+            refreshToken: "rt", baseUrl: "http://localhost:3000", clientId: "client-1")
+        XCTAssertNotNil(cookie)
+        XCTAssertEqual(cookie?.domain, "localhost")
+        XCTAssertFalse(cookie?.isSecure ?? true)
+    }
+
     // MARK: - Coordinator.webViewDidClose
 
     @MainActor
