@@ -110,26 +110,51 @@ extension FronteggAuth {
         }
     }
 
-    public func getFeatureEntitlements(featureKey: String) -> Entitlement {
+    public func getFeatureEntitlements(featureKey: String, customAttributes: [String: Any?]? = nil) -> Entitlement {
         guard self.user != nil else {
-            return Entitlement(isEntitled: false, justification: "NOT_AUTHENTICATED")
+            return Entitlement(isEntitled: false, justification: NotEntitledJustification.NOT_AUTHENTICATED)
         }
-        return entitlements.checkFeature(featureKey: featureKey)
+        return entitlements.checkFeature(
+            featureKey: featureKey,
+            attributes: attributesForEvaluation(customAttributes: customAttributes)
+        )
     }
 
-    public func getPermissionEntitlements(permissionKey: String) -> Entitlement {
+    public func getPermissionEntitlements(permissionKey: String, customAttributes: [String: Any?]? = nil) -> Entitlement {
         guard self.user != nil else {
-            return Entitlement(isEntitled: false, justification: "NOT_AUTHENTICATED")
+            return Entitlement(isEntitled: false, justification: NotEntitledJustification.NOT_AUTHENTICATED)
         }
-        return entitlements.checkPermission(permissionKey: permissionKey)
+        return entitlements.checkPermission(
+            permissionKey: permissionKey,
+            attributes: attributesForEvaluation(customAttributes: customAttributes)
+        )
     }
 
-    public func getEntitlements(options: EntitledToOptions) -> Entitlement {
+    public func getEntitlements(options: EntitledToOptions, customAttributes: [String: Any?]? = nil) -> Entitlement {
         switch options {
         case .featureKey(let key):
-            return getFeatureEntitlements(featureKey: key)
+            return getFeatureEntitlements(featureKey: key, customAttributes: customAttributes)
         case .permissionKey(let key):
-            return getPermissionEntitlements(permissionKey: key)
+            return getPermissionEntitlements(permissionKey: key, customAttributes: customAttributes)
         }
+    }
+
+    /// Builds the attribute bag rule conditions are evaluated against — JWT claims
+    /// from the current access token plus any host-app `customAttributes`. The
+    /// downstream `AttributesPreparer` adds the `frontegg.` and `jwt.` prefixes
+    /// (e.g. `frontegg.tenantId`, `jwt.email`) so a server-emitted rule like
+    /// `attribute = "frontegg.tenantId"` can look the value up directly.
+    ///
+    /// Decoding the JWT inline keeps each entitlement check honest against the
+    /// current token — if the SDK just switched tenants and the JWT now carries
+    /// `tenantId = "B"`, the check sees `B` immediately, without waiting for the
+    /// entitlements reload to settle.
+    private func attributesForEvaluation(customAttributes: [String: Any?]?) -> Attributes {
+        var jwtClaims: [String: Any?] = [:]
+        if let token = self.accessToken, !token.isEmpty,
+           let decoded = try? JWTHelper.decode(jwtToken: token) {
+            jwtClaims = decoded.mapValues { $0 as Any? }
+        }
+        return Attributes(custom: customAttributes, jwt: jwtClaims)
     }
 }

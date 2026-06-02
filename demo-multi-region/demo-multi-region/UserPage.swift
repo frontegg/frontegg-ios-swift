@@ -12,6 +12,10 @@ struct UserPage: View {
     @State private var entitlementUnifiedPermission: Entitlement?
     @State private var entitlementsLoading = false
     @State private var showAdminPortal = false
+    // Active tenant on the most recent entitlements render. See FR-24821 —
+    // without this, the UI shows stale verdicts after switchTenant until the
+    // user manually re-taps "Load entitlements".
+    @State private var lastRenderedTenantId: String?
 
     struct Message: Identifiable {
         let id = UUID()
@@ -34,6 +38,20 @@ struct UserPage: View {
             .accessibilityIdentifier("UserPageRoot")
             .sheet(isPresented: $showAdminPortal) {
                 AdminPortalView()
+            }
+            // Auto-refresh entitlements after switchTenant — see FR-24821.
+            .onChange(of: fronteggAuth.user?.activeTenant.id) { newTenantId in
+                guard let newTenantId = newTenantId else {
+                    lastRenderedTenantId = nil
+                    return
+                }
+                if lastRenderedTenantId != nil && lastRenderedTenantId != newTenantId {
+                    // forceRefresh: true is REQUIRED — a plain cache read races the
+                    // SDK's clear()+reload during the switch and renders the new
+                    // tenant as not-entitled (FR-24821).
+                    loadEntitlements(forceRefresh: true)
+                }
+                lastRenderedTenantId = newTenantId
             }
         }
     }
@@ -142,14 +160,18 @@ struct UserPage: View {
         .cornerRadius(8)
     }
 
-    private func loadEntitlements() {
+    // forceRefresh MUST be true when called from the tenant-switch `.onChange`
+    // handler (FR-24821): a forceRefresh=false call short-circuits and reads the
+    // verdict during the SDK's cleared-but-not-yet-reloaded window. The button
+    // keeps forceRefresh=false.
+    private func loadEntitlements(forceRefresh: Bool = false) {
         entitlementsLoading = true
         loadSuccess = nil
         entitlementFeature = nil
         entitlementPermission = nil
         entitlementUnifiedFeature = nil
         entitlementUnifiedPermission = nil
-        fronteggAuth.loadEntitlements { success in
+        fronteggAuth.loadEntitlements(forceRefresh: forceRefresh) { success in
             let feature = fronteggAuth.getFeatureEntitlements(featureKey: "sso")
             let unifiedFeature = fronteggAuth.getEntitlements(options: .featureKey("proteins.*"))
             let permission = fronteggAuth.getPermissionEntitlements(permissionKey: "dora.protein.*")
