@@ -439,17 +439,20 @@ extension FronteggAuth {
         // Classify error type
         let isConn = error.map { isConnectivityError($0) } ?? true // treat nil as connectivity (e.g., no active internet path)
 
+        // Per-retry chatter — demoted from .info to .debug so an offline user
+        // doesn't fill the log with one line per retry tick. The state-transition
+        // logs (offline-mode entered, network back) stay at .info below.
         if isConn {
-            self.logger.info("Refresh rescheduled due to network error \(error?.localizedDescription ?? "(no error)")")
+            self.logger.debug("Refresh rescheduled due to network error \(error?.localizedDescription ?? "(no error)")")
         } else {
-            self.logger.info("Refresh rescheduled due to unknown error \(error?.localizedDescription ?? "(no error)")")
+            self.logger.debug("Refresh rescheduled due to unknown error \(error?.localizedDescription ?? "(no error)")")
         }
 
         // Classify lastAttemptReason based on actual error type
         self.lastAttemptReason = isConn ? .noNetwork : .unknown
 
         let hasTokens = (self.refreshToken != nil || self.accessToken != nil)
-        self.logger.info("handleOfflineLikeFailure: isConn=\(isConn), enableOfflineMode=\(enableOfflineMode), hasTokens=\(hasTokens), attempts=\(attempts), lastAttemptReason=\(isConn ? ".noNetwork" : ".unknown")")
+        self.logger.debug("handleOfflineLikeFailure: isConn=\(isConn), enableOfflineMode=\(enableOfflineMode), hasTokens=\(hasTokens), attempts=\(attempts), lastAttemptReason=\(isConn ? ".noNetwork" : ".unknown")")
 
         if enableOfflineMode {
             let resolvedUser = self.accessToken.flatMap { self.resolveBestEffortUser(accessToken: $0) }
@@ -501,7 +504,8 @@ extension FronteggAuth {
         } else {
             retryOffset = 1 // non-connectivity errors retry quickly
         }
-        self.logger.info("Scheduling retry in \(retryOffset)s (attempt \(attempts + 1), isConn: \(isConn))")
+        // Per-retry tick — demoted to .debug; one line per failed attempt is too noisy.
+        self.logger.debug("Scheduling retry in \(retryOffset)s (attempt \(attempts + 1), isConn: \(isConn))")
         scheduleTokenRefresh(
             offset: retryOffset,
             attempts: attempts + 1,

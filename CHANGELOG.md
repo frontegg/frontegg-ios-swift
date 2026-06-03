@@ -1,3 +1,29 @@
+## v
+## Summary
+
+Reduce Sentry / `os_log` volume by gating breadcrumbs on the configured `logLevel` and trimming verbose info-level call sites left over from earlier debug sessions. Customer-driven: at default `logLevel: warn`, the SDK was still flooding Sentry with `info`-level breadcrumbs because `SentryHelper.addBreadcrumb` ignored `logLevel`.
+
+## What changed
+
+- **`SentryHelper.addBreadcrumb` now respects `logLevel`.** A breadcrumb whose mapped `FeLogger.Level` is below the configured threshold is dropped before it reaches the Sentry buffer. Mapping mirrors `FeLogger.emit`: `.debug → .debug`, `.info → .info`, `.warning → .warning`, `.error → .error`, `.fatal → .critical`, `.none → drop`. This is the root cause of the volume spike — at default `.warning`, every `info` breadcrumb is now suppressed.
+- **`CustomWebView` per-navigation block collapsed.** The 5 `logger.info` lines per WKWebView navigation become one `info` summary (`host`, `path`, `previousUrl`, `hasCode`, `hasError`); full URL + scheme + query keys move to `.debug`. The Sentry breadcrumb itself is unchanged — it still carries the full structured payload (and gets dropped by the new gate at `.warning`).
+- **`🔵 [Social Login Debug]` block demoted from `.info` to `.debug`** (20 call sites across `CustomWebView`). Left over from a one-time social-login investigation, never gated off. Still emitted when an integrator sets `logLevel: debug`.
+- **Connectivity-retry chatter demoted from `.info` to `.debug`** in `FronteggAuth+Connectivity.swift` (`Refresh rescheduled…`, `handleOfflineLikeFailure: …`, `Scheduling retry in …`). One log per retry tick × however long the user is offline = the worst per-session offender. State-transition logs (offline-mode entered, network back, first failure) stay at `.info`.
+
+## Tests
+
+- New `SentryLoggingTests`:
+  - `test_breadcrumbGating_atDefaultWarningLevel_dropsInfoAndDebug` — regression for the actual bug
+  - `test_breadcrumbGating_atDefaultWarningLevel_emitsWarningAndAbove` — errors still ship
+  - `test_breadcrumbGating_alwaysDropsSentryLevelNone`
+- New `PlistHelper.resetLogLevelCacheForTesting()` (DEBUG-only) so tests can re-read `logLevel` after toggling `testConfigOverride`.
+
+## Knobs (already existed, just documenting)
+
+- `Frontegg.plist` → `logLevel` (default `warn`) now also gates Sentry breadcrumbs, not just `os_log`.
+- `Frontegg.plist` → `enableSentryLogging` (default `true`) — hard kill switch for Sentry init.
+- Backend feature flag `mobile-enable-logging` still works as the runtime kill switch via `SentryHelper.setSentryEnabledFromFeatureFlag(_:)`.
+
 ## v1.3.8
 Fix for step Up feature with MFA.
 

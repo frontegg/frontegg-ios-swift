@@ -367,11 +367,12 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             let hasCode = queryItems?["code"] != nil
             let hasError = queryItems?["error"] != nil
             
-            logger.info("🔍 [Navigation] URL: \(url.absoluteString)")
-            logger.info("🔍 [Navigation] Scheme: \(url.scheme ?? "nil"), Host: \(url.host ?? "nil"), Path: \(url.path)")
-            logger.info("🔍 [Navigation] Query params: \(queryKeys.isEmpty ? "none" : queryKeys.joined(separator: ", "))")
-            logger.info("🔍 [Navigation] Has code: \(hasCode), Has error: \(hasError)")
-            logger.info("🔍 [Navigation] Previous URL: \(previousUrl?.absoluteString ?? "nil")")
+            // One info line per navigation — this caught a real navigation bug in the past,
+            // so we keep host + path + previousUrl. Detailed fields (scheme, query keys, full URL)
+            // moved to .debug so they're still available when logLevel=debug but don't spam
+            // os_log / Sentry breadcrumbs in default (.warning) prod configs.
+            logger.info("[Navigation] host=\(url.host ?? "nil") path=\(url.path) previousUrl=\(previousUrl?.absoluteString ?? "nil") hasCode=\(hasCode) hasError=\(hasError)")
+            logger.debug("[Navigation] full url=\(url.absoluteString) scheme=\(url.scheme ?? "nil") queryKeys=\(queryKeys.isEmpty ? "none" : queryKeys.joined(separator: ", "))")
             
             // Add Sentry breadcrumb for all navigation attempts (not just errors)
             SentryHelper.addBreadcrumb(
@@ -503,9 +504,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             
             if let scheme = url.scheme, getAppURLSchemes().contains(scheme) {
                 let appSchemes = getAppURLSchemes()
-                logger.info("🔵 [Social Login Debug] Custom scheme detected: \(scheme)")
-                logger.info("🔵 [Social Login Debug] All app URL schemes: \(appSchemes)")
-                logger.info("🔵 [Social Login Debug] Custom scheme URL: \(url.absoluteString)")
+                logger.debug("🔵 [Social Login Debug] Custom scheme detected: \(scheme)")
+                logger.debug("🔵 [Social Login Debug] All app URL schemes: \(appSchemes)")
+                logger.debug("🔵 [Social Login Debug] Custom scheme URL: \(url.absoluteString)")
                 
                 // Log custom scheme detection
                 let queryItems = getQueryItems(url.absoluteString)
@@ -591,10 +592,10 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             // These flows use /oauth/account/redirect/iOS/{bundleId} or /oauth/account/redirect/iOS/{bundleId}/oauth/callback
             // This URL is detected as .loginRoutes but should be handled as HostedLoginCallback
             if isIOSRedirectPath(url.path) {
-                logger.info("🔵 [Social Login Debug] Intermediate redirect URL detected: \(url.absoluteString)")
+                logger.debug("🔵 [Social Login Debug] Intermediate redirect URL detected: \(url.absoluteString)")
                 let queryItems = getQueryItems(url.absoluteString)
                 let queryKeys = Array((queryItems ?? [:]).keys).sorted()
-                logger.info("🔵 [Social Login Debug] Intermediate redirect query params: \(queryKeys.joined(separator: ", "))")
+                logger.debug("🔵 [Social Login Debug] Intermediate redirect query params: \(queryKeys.joined(separator: ", "))")
                 
                 if let queryItems = queryItems, queryItems["code"] != nil {
                     logger.info("✅ [Social Login Debug] Intermediate redirect callback URL with code, handling as HostedLoginCallback")
@@ -632,14 +633,14 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             // These URLs are detected as .loginRoutes but should be handled as HostedLoginCallback
             // EXCEPT for OIDC callback - we need to let the server redirect to custom scheme first
             if routedPath.hasPrefix("/oauth/account/") {
-                logger.info("🔵 [Social Login Debug] OAuth account path detected: \(routedPath)")
+                logger.debug("🔵 [Social Login Debug] OAuth account path detected: \(routedPath)")
                 let queryItems = getQueryItems(url.absoluteString)
                 let queryKeys = Array((queryItems ?? [:]).keys).sorted()
-                logger.info("🔵 [Social Login Debug] OAuth account query params: \(queryKeys.joined(separator: ", "))")
+                logger.debug("🔵 [Social Login Debug] OAuth account query params: \(queryKeys.joined(separator: ", "))")
                 
                 if routedPath.contains("/oauth/account/oidc/callback") {
-                    logger.info("🔵 [Social Login Debug] OIDC callback URL detected, allowing server to redirect to custom scheme")
-                    logger.info("🔵 [Social Login Debug] OIDC callback URL: \(url.absoluteString)")
+                    logger.debug("🔵 [Social Login Debug] OIDC callback URL detected, allowing server to redirect to custom scheme")
+                    logger.debug("🔵 [Social Login Debug] OIDC callback URL: \(url.absoluteString)")
                     SentryHelper.addBreadcrumb(
                         "OIDC callback URL detected - allowing server redirect",
                         category: "social_login",
@@ -663,10 +664,10 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                         let previousScheme = previousUrl?.scheme ?? ""
                         let previousWasCustomScheme = !previousScheme.isEmpty && !previousScheme.hasPrefix("http")
                         
-                        logger.info("🔵 [Social Login Debug] /social/success check: previousUrl=\(previousUrl?.absoluteString ?? "nil"), previousScheme=\(previousScheme), previousWasCustomScheme=\(previousWasCustomScheme)")
+                        logger.debug("🔵 [Social Login Debug] /social/success check: previousUrl=\(previousUrl?.absoluteString ?? "nil"), previousScheme=\(previousScheme), previousWasCustomScheme=\(previousWasCustomScheme)")
                         
                         if previousWasCustomScheme {
-                            logger.info("🔵 [Social Login Debug] /social/success detected as final callback (Microsoft case, came from custom scheme, embedded mode)")
+                            logger.debug("🔵 [Social Login Debug] /social/success detected as final callback (Microsoft case, came from custom scheme, embedded mode)")
                             isSocialLoginFlow = true
                             SentryHelper.addBreadcrumb(
                                 "OAuth account callback with code detected",
@@ -681,7 +682,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                             )
                             return self.handleHostedLoginCallback(webView, url)
                         } else {
-                            logger.info("🔵 [Social Login Debug] /social/success detected as intermediate page (Google case, previousUrl was HTTPS/nil) - allowing normal navigation")
+                            logger.debug("🔵 [Social Login Debug] /social/success detected as intermediate page (Google case, previousUrl was HTTPS/nil) - allowing normal navigation")
                             isSocialLoginFlow = true
                             scheduleSocialSuccessWatchdog(for: webView, url: url)
                             return .allow
@@ -1330,19 +1331,22 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             baseUrl: fronteggAuth.baseUrl,
             bundleIdentifier: currentAppBundleIdentifier()
         )
-        logger.info("🔵 [Social Login Debug] Received URL: \(url.absoluteString)")
-        logger.info("🔵 [Social Login Debug] Expected redirect_uri: \(expectedRedirectUri)")
-        logger.info("🔵 [Social Login Debug] URL scheme: \(url.scheme ?? "nil")")
-        logger.info("🔵 [Social Login Debug] URL host: \(url.host ?? "nil")")
-        logger.info("🔵 [Social Login Debug] URL path: \(url.path)")
-        logger.info("🔵 [Social Login Debug] URL query: \(url.query ?? "nil")")
-        logger.info("🔵 [Social Login Debug] Previous URL: \(previousUrl?.absoluteString ?? "nil")")
-        logger.info("🔵 [Social Login Debug] Magic link redirect URI: \(magicLinkRedirectUri ?? "nil")")
-        logger.info("🔵 [Social Login Debug] App URL schemes: \(getAppURLSchemes())")
-        logger.info("🔵 [Social Login Debug] Is custom scheme match: \(getAppURLSchemes().contains(url.scheme ?? ""))")
-        logger.info("🔵 [Social Login Debug] URL matches expected redirect URI: \(matchedCallbackRedirectUri != nil)")
+        // Social-login debug block — left over from a one-time investigation, kept
+        // for diagnosability but demoted from .info to .debug so it's silenced
+        // under the default .warning logLevel and doesn't ship to Sentry breadcrumbs.
+        logger.debug("🔵 [Social Login Debug] Received URL: \(url.absoluteString)")
+        logger.debug("🔵 [Social Login Debug] Expected redirect_uri: \(expectedRedirectUri)")
+        logger.debug("🔵 [Social Login Debug] URL scheme: \(url.scheme ?? "nil")")
+        logger.debug("🔵 [Social Login Debug] URL host: \(url.host ?? "nil")")
+        logger.debug("🔵 [Social Login Debug] URL path: \(url.path)")
+        logger.debug("🔵 [Social Login Debug] URL query: \(url.query ?? "nil")")
+        logger.debug("🔵 [Social Login Debug] Previous URL: \(previousUrl?.absoluteString ?? "nil")")
+        logger.debug("🔵 [Social Login Debug] Magic link redirect URI: \(magicLinkRedirectUri ?? "nil")")
+        logger.debug("🔵 [Social Login Debug] App URL schemes: \(getAppURLSchemes())")
+        logger.debug("🔵 [Social Login Debug] Is custom scheme match: \(getAppURLSchemes().contains(url.scheme ?? ""))")
+        logger.debug("🔵 [Social Login Debug] URL matches expected redirect URI: \(matchedCallbackRedirectUri != nil)")
         if let matchedCallbackRedirectUri {
-            logger.info("🔵 [Social Login Debug] Matched callback redirect URI: \(matchedCallbackRedirectUri)")
+            logger.debug("🔵 [Social Login Debug] Matched callback redirect URI: \(matchedCallbackRedirectUri)")
         }
         
         let queryItems = getQueryItems(url.absoluteString)
@@ -1350,11 +1354,11 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         let allQueryParams = queryItems?.mapValues { $0 } ?? [:]
         
         // Log all query parameters (not just code) for debugging
-        logger.info("🔵 [Social Login Debug] All query parameters: \(queryKeys.joined(separator: ", "))")
+        logger.debug("🔵 [Social Login Debug] All query parameters: \(queryKeys.joined(separator: ", "))")
         for (key, value) in allQueryParams {
             let valueLength = value.count
             let valuePreview = valueLength > 50 ? String(value.prefix(50)) + "..." : value
-            logger.info("🔵 [Social Login Debug]   - \(key): \(valuePreview) (length: \(valueLength))")
+            logger.debug("🔵 [Social Login Debug]   - \(key): \(valuePreview) (length: \(valueLength))")
         }
         
         // Add comprehensive Sentry breadcrumb for callback handling
@@ -1441,19 +1445,19 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         let isMagicLink = redirectResolution.isMagicLink
 
         if isIOSRedirectPath(url.path) {
-            logger.info("🔵 [Social Login Debug] Detected intermediate redirect URL (magic link flow)")
-            logger.info("🔵 [Social Login Debug] Extracted intermediate redirect_uri: \(redirectUri)")
+            logger.debug("🔵 [Social Login Debug] Detected intermediate redirect URL (magic link flow)")
+            logger.debug("🔵 [Social Login Debug] Extracted intermediate redirect_uri: \(redirectUri)")
         } else if url.path.contains("/oauth/account/oidc/callback") {
-            logger.info("🔵 [Social Login Debug] Detected OIDC callback URL")
-            logger.info("🔵 [Social Login Debug] Using standard redirect_uri for OIDC token exchange: \(redirectUri)")
+            logger.debug("🔵 [Social Login Debug] Detected OIDC callback URL")
+            logger.debug("🔵 [Social Login Debug] Using standard redirect_uri for OIDC token exchange: \(redirectUri)")
         } else if url.path.contains("/oauth/account/social/success") && fronteggAuth.embeddedMode {
-            logger.info("🔵 [Social Login Debug] Detected social login success callback URL in embedded mode")
-            logger.info("🔵 [Social Login Debug] Using callback redirect_uri from social success payload: \(redirectUri)")
+            logger.debug("🔵 [Social Login Debug] Detected social login success callback URL in embedded mode")
+            logger.debug("🔵 [Social Login Debug] Using callback redirect_uri from social success payload: \(redirectUri)")
         } else if matchedCallbackRedirectUri != nil {
-            logger.info("🔵 [Social Login Debug] Detected generated callback alias, using actual callback redirect_uri: \(redirectUri)")
+            logger.debug("🔵 [Social Login Debug] Detected generated callback alias, using actual callback redirect_uri: \(redirectUri)")
         } else {
-            logger.info("🔵 [Social Login Debug] Detected regular OAuth callback URL")
-            logger.info("🔵 [Social Login Debug] Regular OAuth callback - using redirect_uri: \(redirectUri), isMagicLink: \(isMagicLink)")
+            logger.debug("🔵 [Social Login Debug] Detected regular OAuth callback URL")
+            logger.debug("🔵 [Social Login Debug] Regular OAuth callback - using redirect_uri: \(redirectUri), isMagicLink: \(isMagicLink)")
         }
         
         // For magic link flow, the server generates code without PKCE, so we shouldn't send code_verifier
@@ -1465,9 +1469,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         let isSocialLogin = isSocialLoginFlow || url.path.contains("/oauth/account/oidc/callback") || (url.path.contains("/oauth/account/social/success") && fronteggAuth.embeddedMode)
         let oauthFlow = currentOAuthFlow(defaultingTo: isSocialLogin ? .socialLogin : .login)
         
-        logger.info("🔵 [Social Login Debug] Final redirect_uri for token exchange: \(redirectUri)")
-        logger.info("🔵 [Social Login Debug] Is magic link flow: \(isMagicLink)")
-        logger.info("🔵 [Social Login Debug] Is social login flow: \(isSocialLogin)")
+        logger.debug("🔵 [Social Login Debug] Final redirect_uri for token exchange: \(redirectUri)")
+        logger.debug("🔵 [Social Login Debug] Is magic link flow: \(isMagicLink)")
+        logger.debug("🔵 [Social Login Debug] Is social login flow: \(isSocialLogin)")
         
         // Clear the magic link redirect_uri after using it
         magicLinkRedirectUri = nil
@@ -1488,13 +1492,13 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     self.logger.warning("⚠️ [Social Login Debug] Failed to get code_verifier from webview for social login: \(providerError). Falling back to CredentialManager.")
                 } else if verifierResolution.source == "webview_local_storage",
                           let verifier = verifierResolution.codeVerifier {
-                    self.logger.info("🔵 [Social Login Debug] Retrieved code_verifier from webview localStorage for social login (length: \(verifier.count))")
+                    self.logger.debug("🔵 [Social Login Debug] Retrieved code_verifier from webview localStorage for social login (length: \(verifier.count))")
                 }
                 let codeVerifier = verifierResolution.codeVerifier
                 let codeVerifierSource = verifierResolution.source
                 
-                self.logger.info("🔵 [Social Login Debug] Code verifier present: \(codeVerifier != nil ? "yes" : "no")")
-                self.logger.info("🔵 [Social Login Debug] Code verifier source: \(codeVerifierSource)")
+                self.logger.debug("🔵 [Social Login Debug] Code verifier present: \(codeVerifier != nil ? "yes" : "no")")
+                self.logger.debug("🔵 [Social Login Debug] Code verifier source: \(codeVerifierSource)")
                 self.logger.trace("Using redirect_uri: \(redirectUri), isMagicLink: \(isMagicLink), codeVerifier: \(codeVerifier != nil ? "provided" : "nil")")
 
                 if !isMagicLink && codeVerifier == nil {
@@ -1595,9 +1599,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             baseUrl: fronteggAuth.baseUrl,
             bundleIdentifier: currentAppBundleIdentifier()
         )
-        logger.info("🔵 [Social Login Debug] setSocialLoginRedirectUri called")
-        logger.info("🔵 [Social Login Debug] Social login pre-auth URL: \(url.absoluteString)")
-        logger.info("🔵 [Social Login Debug] Expected redirect URI to be added: \(expectedRedirectUri)")
+        logger.debug("🔵 [Social Login Debug] setSocialLoginRedirectUri called")
+        logger.debug("🔵 [Social Login Debug] Social login pre-auth URL: \(url.absoluteString)")
+        logger.debug("🔵 [Social Login Debug] Expected redirect URI to be added: \(expectedRedirectUri)")
         
         let queryItems = [
             URLQueryItem(name: "redirectUri", value: expectedRedirectUri)
@@ -1612,8 +1616,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         urlComps.queryItems = filteredQueryItems + queryItems
         
         let finalUrl = urlComps.url!
-        logger.info("🔵 [Social Login Debug] Added redirectUri to social login auth URL")
-        logger.info("🔵 [Social Login Debug] Final social login URL with redirect_uri: \(finalUrl.absoluteString)")
+        logger.debug("🔵 [Social Login Debug] Added redirectUri to social login auth URL")
+        logger.debug("🔵 [Social Login Debug] Final social login URL with redirect_uri: \(finalUrl.absoluteString)")
         logger.trace("added redirectUri to socialLogin auth url \(finalUrl)")
         
         let followUrl = finalUrl
