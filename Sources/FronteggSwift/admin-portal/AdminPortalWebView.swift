@@ -2,19 +2,27 @@
 //  AdminPortalWebView.swift
 //  FronteggSwift
 //
-//  POC: native admin portal via embedded WKWebView.
+//  Native admin portal via embedded WKWebView, using a "baton handoff" of the
+//  refresh-token rotation chain so the portal opens without a second login —
+//  for ALL login methods and both embedded/hosted modes.
 //
-//  Strategy (per current scope): do NOT inject or modify the mobile SDK's
-//  session into the WebView. Just open `${baseUrl}/oauth/portal` in a
-//  WKWebView that shares the SDK's persistent cookie store
-//  (`WKWebsiteDataStore.default()` + `WebViewShared.processPool`). Any web-
-//  style cookies (`fe_refresh_*`, `fe_device_*`) the user already has from
-//  prior in-app web flows are reused as-is. If they're missing or stale,
-//  the portal renders its own login form — the user logs in once and the
-//  resulting cookies persist for next time.
+//  Background (proven against the auth backend): the Frontegg refresh token is
+//  single-use and rotates on every read with no grace window. The SDK's
+//  background refresh loop and this portal WebView both need that one
+//  credential, so they cannot consume it concurrently without invalidating
+//  each other. See FronteggAuth+AdminPortalSession for the full rationale.
 //
-//  Bridging the iOS-app refresh token into the portal's cookie session is
-//  a follow-up; it requires server-side help we don't have here.
+//  Flow:
+//    open  → fronteggAuth.beginAdminPortalSession() pauses the SDK loop and
+//            returns the current refresh token. We clear any stale fe_refresh_*
+//            cookie from the WebView store and write the current token, then
+//            load /oauth/portal. The portal's own silent-authorize on mount
+//            recognizes the session (no second login) and from then on the
+//            portal is the sole consumer that rotates the token.
+//    close → we read the latest fe_refresh_* cookie value back from the WebView
+//            store (the portal's most recent rotation) and hand it to
+//            fronteggAuth.endAdminPortalSession(...), which makes the SDK adopt
+//            it and resumes the loop.
 //
 
 import Foundation
@@ -36,14 +44,14 @@ struct AdminPortalWebView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let conf = WKWebViewConfiguration()
-        // Share the SDK's process pool and persistent data store so any
-        // cookies the SDK's login webview wrote are visible here.
+        // Share the SDK's process pool and persistent data store so cookies
+        // are visible across the SDK's webviews and this one.
         conf.processPool = WebViewShared.processPool
         conf.websiteDataStore = .default()
 
         // Request the desktop layout so the portal renders the persistent
-        // sidebar + content side-by-side (matches what the PM sees in
-        // Chrome) instead of collapsing into a mobile drawer.
+        // sidebar + content side-by-side instead of collapsing into a mobile
+        // drawer.
         let prefs = WKWebpagePreferences()
         prefs.preferredContentMode = .desktop
         conf.defaultWebpagePreferences = prefs
@@ -52,13 +60,7 @@ struct AdminPortalWebView: UIViewRepresentable {
         // and JS evaluate. Material-UI's responsive hooks read
         // window.innerWidth, so this is what actually flips the breakpoint
         // from mobile to desktop. Runs at documentStart on the main frame
-        // only — overriding inside iframes (e.g. embedded social-login
-        // widgets) was causing mid-page re-layouts that disrupted the
-        // zoom-and-pan state.
-        //
-        // initial-scale lets WebKit auto-fit on first paint; minimum/maximum
-        // clamp pinch zoom to a sane range so panning a zoomed page stays
-        // smooth instead of going extreme.
+        // only.
         let viewportOverride = """
         (function() {
             var setViewport = function() {
@@ -85,24 +87,10 @@ struct AdminPortalWebView: UIViewRepresentable {
         // Desktop user-agent — backstop for any UA-sniffing branches in the
         // portal's responsive logic.
         webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-        // Opaque + solid background so nothing from the host view can bleed
-        // through any seam between the webview and the sheet edges. Use the
-        // *secondary* system background (light grey in light mode, near-black
-        // in dark mode) because that's what Frontegg's admin-portal body
-        // chrome uses — without the match, horizontal over-scroll bouncing
-        // flashes a colour that doesn't belong to the page.
         webView.isOpaque = true
         webView.backgroundColor = .secondarySystemBackground
         webView.scrollView.backgroundColor = .secondarySystemBackground
-        // Disable the auto safe-area inset that WKWebView applies, so the
-        // page content extends edge-to-edge (no grey strip above the home
-        // indicator).
         webView.scrollView.contentInsetAdjustmentBehavior = .never
-        // Explicit defaults for pinch-zoom-and-pan — when the viewport is
-        // wider than the screen and the user zooms in, the scroll view
-        // needs both bouncing and bouncesZoom for the rubber-band gesture
-        // to surface (some iOS versions disable bounces on certain
-        // contentInsetAdjustmentBehavior combos).
         webView.scrollView.bounces = true
         webView.scrollView.bouncesZoom = true
 
@@ -125,6 +113,14 @@ struct AdminPortalWebView: UIViewRepresentable {
         Coordinator(onClose: onClose)
     }
 
+    /// SwiftUI teardown hook — fires when the representable is removed (sheet
+    /// dismissed by swipe, programmatic dismiss, parent navigation, etc.).
+    /// This is the reliable place to reclaim the token, since the portal's
+    /// `window.close()` (→ webViewDidClose) only covers the in-page X button.
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        // DIAGNOSTIC: no reclaim — pure no-op build.
+    }
+
     /// Builds the admin portal URL. Pinning the application context via
     /// `?appId=<applicationId>` is required for multi-app workspaces — without
     /// it the portal renders "Application not found". Single-app workspaces
@@ -137,6 +133,42 @@ struct AdminPortalWebView: UIViewRepresentable {
         return components?.url
     }
 
+    /// The cookie name the Frontegg auth backend reads for the refresh-token
+    /// session. Strips ONLY the first dash of clientId — must match
+    /// `Api.swift`'s `cookieName` exactly (the format the SDK's own HTTP client
+    /// sends on every refresh / logout call). Earlier bridge attempts that
+    /// stripped all dashes or used applicationId produced a name the server
+    /// didn't recognize.
+    internal static func refreshCookieName(clientId: String) -> String {
+        var stripped = clientId
+        if let firstDash = stripped.firstIndex(of: "-") {
+            stripped.remove(at: firstDash)
+        }
+        return "fe_refresh_\(stripped)"
+    }
+
+    /// Build the `HTTPCookie` that seeds the portal WebView with the SDK's
+    /// current refresh token. Returns nil if there's no token or the baseUrl
+    /// is malformed (caller then loads the portal without seeding — it renders
+    /// its own login).
+    internal static func makeRefreshCookie(
+        refreshToken: String?,
+        baseUrl: String,
+        clientId: String
+    ) -> HTTPCookie? {
+        guard let refreshToken = refreshToken, !refreshToken.isEmpty else { return nil }
+        guard let url = URL(string: baseUrl), let host = url.host else { return nil }
+        let isSecure = url.scheme?.lowercased() == "https"
+        var properties: [HTTPCookiePropertyKey: Any] = [
+            .name: refreshCookieName(clientId: clientId),
+            .value: refreshToken,
+            .domain: host,
+            .path: "/",
+        ]
+        if isSecure { properties[.secure] = "TRUE" }
+        return HTTPCookie(properties: properties)
+    }
+
     @MainActor
     private func loadPortal(webView: WKWebView) async {
         guard let portalUrl = AdminPortalWebView.portalURL(
@@ -147,19 +179,33 @@ struct AdminPortalWebView: UIViewRepresentable {
             return
         }
 
-        // Snapshot existing cookies for visibility only — we do not modify them.
         let store = webView.configuration.websiteDataStore.httpCookieStore
+
+        // DIAGNOSTIC PASS (no-op): do NOT clear/seed/refresh. Just log what's in
+        // WKHTTPCookieStore at portal-open and what the SDK has stored, so we can
+        // see — on a real device — whether the login's cookie-family fe_refresh
+        // is present + fresh, or stale (rotated away by the SDK's URLSession-based
+        // refresh, which can't write WKHTTPCookieStore). Then load the portal
+        // exactly as the original pass-through did.
+        let expectedName = AdminPortalWebView.refreshCookieName(clientId: fronteggAuth.clientId)
+        let sdkTok = fronteggAuth.refreshToken ?? ""
+        let sdkPrefix = sdkTok.isEmpty ? "<none>" : (sdkTok.count > 8 ? "\(sdkTok.prefix(8))... len=\(sdkTok.count)" : "<short>")
+        logger.info("AdminPortal[DIAG]: expectedCookieName=\(expectedName) SDK.refreshToken=\(sdkPrefix)")
+
         let existing = await withCheckedContinuation { (cont: CheckedContinuation<[HTTPCookie], Never>) in
             store.getAllCookies { cont.resume(returning: $0) }
         }
         if let host = URL(string: fronteggAuth.baseUrl)?.host {
-            let scoped = existing.filter { c in
-                let domain = c.domain.hasPrefix(".") ? String(c.domain.dropFirst()) : c.domain
-                return host == domain || host.hasSuffix("." + domain)
-            }
-            logger.info("AdminPortal: WKHTTPCookieStore total=\(existing.count) scopedToHost=\(scoped.count)")
-            for c in scoped {
-                logger.info("AdminPortal:   \(c.name) domain=\(c.domain) path=\(c.path) secure=\(c.isSecure)")
+            let fe = existing.filter { ($0.name.hasPrefix("fe_refresh_") || $0.name.hasPrefix("fe_device_")) }
+                .filter { c in
+                    let d = c.domain.hasPrefix(".") ? String(c.domain.dropFirst()) : c.domain
+                    return host == d || host.hasSuffix("." + d)
+                }
+            logger.info("AdminPortal[DIAG]: WKHTTPCookieStore fe_* scoped to \(host): \(fe.count)")
+            for c in fe {
+                let vp = c.value.count > 8 ? "\(c.value.prefix(8))... len=\(c.value.count)" : "<short>"
+                let matchesSDK = (c.name == expectedName && c.value == sdkTok) ? " MATCHES-SDK" : ""
+                logger.info("AdminPortal[DIAG]:   \(c.name) value=\(vp) domain=\(c.domain) secure=\(c.isSecure)\(matchesSDK)")
             }
         }
 
@@ -177,15 +223,6 @@ struct AdminPortalWebView: UIViewRepresentable {
             self.onClose = onClose
         }
 
-        /// iOS 13+ per-navigation preferences callback. Setting
-        /// `preferredContentMode = .desktop` here (in addition to the
-        /// `defaultWebpagePreferences` we set on the configuration) is what
-        /// makes desktop layout stick across in-page back/forward and
-        /// BFCache restorations — without this, a few in-page navigations
-        /// can flip the layout back to mobile.
-        ///
-        /// When this method is implemented, the simpler 3-arg variant is
-        /// not called, so navigation-trace logging happens here too.
         func webView(_ webView: WKWebView,
                      decidePolicyFor navigationAction: WKNavigationAction,
                      preferences: WKWebpagePreferences,
@@ -197,10 +234,6 @@ struct AdminPortalWebView: UIViewRepresentable {
             decisionHandler(.allow, preferences)
         }
 
-        /// Re-apply the desktop viewport on every finished navigation as a
-        /// safety net — BFCache or fast same-document navigations can skip
-        /// the documentStart user script, leaving the page on whatever
-        /// viewport the document originally declared.
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             let reapply = """
             (function() {
@@ -234,7 +267,8 @@ struct AdminPortalWebView: UIViewRepresentable {
             logger.error("AdminPortal: didFailProvisionalNavigation \(error.localizedDescription)")
         }
 
-        // The portal's X button calls window.close() — bridge that to SwiftUI dismiss.
+        // The portal's X button calls window.close() — reclaim the token, then
+        // dismiss.
         func webViewDidClose(_ webView: WKWebView) {
             logger.info("AdminPortal: webViewDidClose — dismissing")
             onClose?()

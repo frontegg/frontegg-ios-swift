@@ -648,7 +648,7 @@ public class Api {
                     self.logger.info("Refresh with tenantId response: status=\(res.statusCode)")
                 }
             }
-            
+
             do {
                 let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
                 self.logger.info("Successfully decoded AuthResponse from refresh with tenantId")
@@ -734,7 +734,7 @@ public class Api {
                     self.logger.info("OAuth refresh response: status=\(res.statusCode)")
                 }
             }
-            
+
             do {
                 let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
                 self.logger.info("Successfully decoded AuthResponse from OAuth refresh")
@@ -794,12 +794,12 @@ public class Api {
             }
                         
             let (data, _) = try await postRequest(path: "oauth/token", body: body)
-            
+
             if let responseString = String(data: data, encoding: .utf8),
                responseString.contains("\"errors\"") || responseString.contains("\"error\"") {
                 return (nil, FronteggError.authError(.other(NSError(domain: "FronteggAuth", code: 400, userInfo: [NSLocalizedDescriptionKey: responseString]))))
             }
-            
+
             return (try JSONDecoder().decode(AuthResponse.self, from: data), nil)
         } catch {
             return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
@@ -1152,7 +1152,7 @@ public class Api {
     
     internal func getFeatureFlags() async throws -> String {
         let (stringData, _) = try await self.getRequest(path: "/flags", accessToken: nil)
-        
+
         return String(data: stringData, encoding: .utf8) ?? ""
     }
 }
