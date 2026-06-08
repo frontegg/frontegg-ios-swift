@@ -1,3 +1,175 @@
+## v1.3.9
+## Summary
+
+Port of [frontegg/frontegg-android-kotlin#257](https://github.com/frontegg/frontegg-android-kotlin/pull/257) to the Swift SDK. Closes the decision-logic gap behind FR-24821.
+
+The mobile SDK was only checking whether a feature/permission *key* was present in the `/user-entitlements` response — but the response is a **catalog** (features + their linked plans, expiry, feature flags, and per-rule condition graphs), not a list of "what the user has." Web does the full evaluation; mobile didn't. Result: a feature like `sso` linked to a plan with `defaultTreatment: "false"` came back as `isEntitled = true` on mobile even though web (correctly) said the user wasn't entitled.
+
+This PR ports [`@frontegg/entitlements-javascript-commons`](https://www.npmjs.com/package/@frontegg/entitlements-javascript-commons) (the canonical evaluator the React / JS / Next.js SDKs all run on) to Swift.
+
+**Complementary to [#265](https://github.com/frontegg/frontegg-ios-swift/pull/265)** — that PR handles cache invalidation on tenant switch and remains valid. This PR closes a different gap (the decision logic itself).
+
+## Why
+
+Yonatan's reproduction from FR-24821:
+
+```json
+{
+  "features": {
+    "sso": {"planIds": ["ID_1"], "expireTime": null}
+  },
+  "plans": {
+    "ID_1": {"defaultTreatment": "false"}
+  }
+}
+```
+
+Pre-fix mobile saw `"sso"` in `features` → `isEntitled = true`. Web (correctly) follows `sso.planIds[0]` → `plans.ID_1.defaultTreatment` → `"false"` → not entitled.
+
+## What landed
+
+| Layer | Files |
+|---|---|
+| Models (TS shapes ported 1:1) | `entitlements/UserEntitlementsContext.swift` — `FeatureDetail`, `Plan`, `FeatureFlag`, `Rule`, `Condition`, `Treatment`, `ConditionLogic`, **`FronteggOperation`** (prefix avoids collision with `Foundation.Operation`) |
+| Operations matrix | `entitlements/Operations.swift` — string (`in_list`/`starts_with`/`ends_with`/`contains`/`matches`), numeric (`equal`/`gt`/`gte`/`lt`/`lte`/`between`), boolean (`is`), date (`on`/`on_or_after`/`on_or_before`/`between`); sanitizer + handler per op, fails closed on type mismatch |
+| Evaluators | `entitlements/Evaluators.swift` — `ConditionEvaluator` → `RuleEvaluator` → `PlanEvaluator` / `FeatureFlagEvaluator` → `IsEntitledToFeature` (direct + flag + plan-targeting chain) → `IsEntitledToPermission` (wildcard match + linked-feature roll-up) |
+| Attribute prep | `entitlements/AttributesPreparer.swift` — merges custom + JWT claims with the same `frontegg.` / `jwt.` prefix scheme web uses |
+| Permission matching | `entitlements/PermissionMatcher.swift` — anchored wildcard regex with metachar escaping |
+| Parser | `entitlements/UserEntitlementsParser.swift` — lenient JSON → context; handles NSNumber/Bool bridging via `CFGetTypeID(n) == CFBooleanGetTypeID()` (Swift's `as? Double` accepts Bools through NSNumber otherwise) |
+| Wiring | `services/Entitlements.swift` (parse full context, keep legacy `featureKeys`/`permissionKeys` for backcompat), `auth/FronteggAuth+Entitlements.swift` (decode JWT claims from current access token via the existing `JWTHelper.decode`, thread them + new optional `customAttributes` param through `Attributes` — per Yonatan: attributes "should be in JWT") |
+
+## Backwards compatibility
+
+- Existing host-app code reading `auth.entitlements.state.featureKeys` / `permissionKeys` still works.
+- `getFeatureEntitlements(featureKey:)`, `getPermissionEntitlements(permissionKey:)`, `getEntitlements(options:)` get an additional optional `customAttributes` parameter defaulting to `nil` — existing call sites don't need to change.
+- `NotEntitledJustification` adds `BUNDLE_EXPIRED` to match web's enum.
+
+## Tests
+
+| Test class | What it covers |
+|---|---|
+| `ConditionEvaluatorTests` (14) | every operation kind + negate + malformed-payload + type-mismatch + null-attribute |
+| `PlanAndFeatureFlagEvaluatorTests` (5) | `defaultTreatment`, rule precedence, flag on/off |
+| `IsEntitledToFeatureTests` (8) | direct / flag / plan chain priorities, `BUNDLE_EXPIRED` aggregation, **FR-24821 repro** |
+| `IsEntitledToPermissionTests` (6) | wildcard matching, regex-meta escaping, linked-feature roll-up |
+| `UserEntitlementsParserTests` (6) | happy path (FR-24821 shape), `expireTime` nils, unknown operations dropped, malformed sub-objects dropped without crashing |
+
+Pre-existing `EntitlementsTests.test_load_withValidJson_updatesStateAndReturnsTrue` updated to use the new `UserEntitlementsContext` path (the old fixture relied on the exact bug this fix corrects).
+
+## Verification
+
+- [x] All 39 new entitlement tests pass
+- [x] `xcodebuild -scheme FronteggSwift -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.6' test` — **732 tests / 0 failures / 18 skipped**
+- [ ] Manual repro on iOS demo (Tenant A with SSO → switch to Tenant B without SSO → call `getFeatureEntitlements(featureKey: "sso")` → expect `.isEntitled == false`)
+
+## Related
+
+- [#265](https://github.com/frontegg/frontegg-ios-swift/pull/265) — cache invalidation on tenant switch (complementary, still valid)
+- [frontegg-android-kotlin#257](https://github.com/frontegg/frontegg-android-kotlin/pull/257) — the Android sibling of this PR
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+## Summary
+
+Customer flagged that the iOS SDK was exhausting their Sentry quota. The audit found the root cause: `SentryHelper.addBreadcrumb` ignored the configured `logLevel`, so setting `logLevel: warn` in `Frontegg.plist` silenced `os_log` output but did **nothing** to Sentry breadcrumbs. Combined with leftover dev-only info logs that should have been demoted long ago, a single login flow could emit 50–100+ breadcrumbs.
+
+## What's in this PR
+
+### Root cause — `addBreadcrumb` now respects `logLevel`
+A breadcrumb whose mapped `FeLogger.Level` is below the configured threshold is dropped before reaching the Sentry buffer. Mapping mirrors `FeLogger.emit`:
+
+| SentryLevel | FeLogger.Level | Behavior at default `.warning` |
+|---|---|---|
+| `.debug` | `.debug` | dropped |
+| `.info` | `.info` | **dropped** ← this is the actual fix |
+| `.warning` | `.warning` | emitted |
+| `.error` | `.error` | emitted |
+| `.fatal` | `.critical` | emitted |
+| `.none` | n/a | always dropped |
+
+At default `.warning`, every `.info` breadcrumb is now suppressed. Errors still ship.
+
+### Trim the noisy sites (per Diana's review with Raz)
+
+- **`CustomWebView` per-navigation block** — collapsed from 5 `logger.info` lines to **1 info summary** (`host`, `path`, `previousUrl`, `hasCode`, `hasError`); the full URL + scheme + query keys moved to `.debug`. We caught a real navigation bug with these logs once, so keeping the diagnostic signal at info matters — just not 5 lines per redirect.
+- **`🔵 [Social Login Debug]` block** — all **20 call sites** in `CustomWebView` demoted from `.info` to `.debug`. Leftover from a one-time social-login investigation, never gated off. Still surfaces when an integrator opts into `logLevel: debug`.
+- **`FronteggAuth+Connectivity` per-retry chatter** — `Refresh rescheduled…`, `handleOfflineLikeFailure: …`, `Scheduling retry in …` demoted to `.debug`. One log per retry tick × duration offline = the worst per-session offender. State-transition logs (offline-mode entered, network back, first failure) stay at `.info`.
+
+## Tests
+
+- **3 new `SentryLoggingTests` cases** covering the new gate at the default `.warning` level:
+  - `test_breadcrumbGating_atDefaultWarningLevel_dropsInfoAndDebug` — regression for the actual bug
+  - `test_breadcrumbGating_atDefaultWarningLevel_emitsWarningAndAbove` — errors / warnings still ship
+  - `test_breadcrumbGating_alwaysDropsSentryLevelNone`
+- **New `PlistHelper.resetLogLevelCacheForTesting()`** (DEBUG-only) so tests can invalidate the cached `logLevel` after toggling `testConfigOverride`.
+- Adjacent suites verified green: `CustomWebViewTests`, `FronteggAuthRefreshRecoveryTests`, `OfflineScenarioTests`, `LoggerDelegateTests`, `LogLevelMappingTests`.
+
+## Knobs (already existed — just calling out what works now)
+
+- `Frontegg.plist` → `logLevel` (default `warn`) **now also gates Sentry breadcrumbs**, not just `os_log`. This is the knob customers should reach for first.
+- `Frontegg.plist` → `enableSentryLogging` (default `true`) — hard kill switch for Sentry init.
+- Backend FF `mobile-enable-logging` — runtime kill switch via `SentryHelper.setSentryEnabledFromFeatureFlag(_:)`.
+
+## What is NOT in this PR
+
+- No change to `logError` / `logMessage` (those are real events, not breadcrumbs — they should keep shipping).
+- No change to the breadcrumb payload structure or sanitization. The `addBreadcrumb` signature is unchanged, so no caller updates needed.
+
+## Risk
+
+- Existing callers don't change behavior **except** that info-level breadcrumbs no longer ship at default `.warning`. If anyone was relying on info breadcrumbs being attached to error events, they should bump `logLevel` to `info` in plist (or wait for a separate "breadcrumb-only level" knob — out of scope).
+- CHANGELOG diff is noisy because the edit normalized CRLF→LF on the historical entries. No content changes to past entries.
+
+## Test plan
+
+- [x] Unit tests: `SentryLoggingTests` (17 cases, all green)
+- [x] Adjacent suites green
+- [ ] Manual: capture device logs + Sentry breadcrumb stream during a login flow on a build of demo app, confirm per-navigation Sentry breadcrumb is suppressed under default `.warning`
+- [ ] Manual: bump `logLevel: debug` in demo plist, confirm full debug stream comes back
+## Problem
+
+Customers reported being forced to log in a second time when opening the embedded admin portal, even though the SDK already had a valid session. Video evidence on both Android and iOS.
+
+## Root cause
+
+`AdminPortalWebView` shares the SDK's `WKWebsiteDataStore.default()`, which contains:
+
+- ✅ Cookies set by the SDK's embedded WKWebView login flows (password / embedded social)
+- ❌ **Not** cookies from `ASWebAuthenticationSession` (system browser; used for social / SAML / OIDC / browser SSO)
+
+Apple deliberately walls `ASWebAuthenticationSession`'s cookie jar off from the app's WKWebView. Users on a browser flow had no `fe_refresh_*` cookie in WKWebView → portal rendered its own login form.
+
+The original POC (#253) explicitly punted on this: *"Bridging the iOS-app refresh token into the portal's cookie session is a follow-up; it requires server-side help we don't have here."* Turns out **no server-side help is needed** — the auth server already reads `fe_refresh_*` cookies, we just need to put one there.
+
+## Fix
+
+Before loading `/oauth/portal`, write the SDK's refresh token into WKHTTPCookieStore as `fe_refresh_<appId-or-clientId>` (dashes stripped). Cookie-name format verified against `frontegg-nextjs/packages/nextjs/src/utils/cookies/index.ts` — auth backend reads this exact name from all SDKs.
+
+## Changes
+
+- `refreshCookieName(clientId:applicationId:)` — mirrors the Next.js rule: prefer `appId` when present, else `clientId`. Dashes stripped.
+- `makeRefreshCookie(...)` — builds the `HTTPCookie`. Returns nil when not logged in or baseUrl is malformed (portal falls back to its own login — same as before).
+- `loadPortal` — awaits `store.setCookie` before `webView.load(...)` to avoid a race where the GET fires before the cookie lands.
+- **Logout**: existing `FronteggAuth+Logout.swift / clearCookie()` already deletes cookies matching `^fe_refresh` regex. The bridged cookie matches by construction — verified with a regression test that pins the invariant.
+- 9 new unit tests in `AdminPortalWebViewTests` covering cookie name computation, nil/empty refresh token, malformed baseUrl, HTTPS vs HTTP, appId-vs-clientId precedence, and the logout-cleanup invariant.
+
+## Companion Android PR
+
+[frontegg/frontegg-android-kotlin#admin-portal-session-bridge](https://github.com/frontegg/frontegg-android-kotlin/pull/new/admin-portal-session-bridge) — same fix shape for Android, plus a new logout cookie-sweep there (Android's `FronteggAuthService.logout` didn't have one).
+
+## Test plan
+
+- [ ] CI: all existing checks pass (Build, Unit, TSan, e2e matrix)
+- [ ] Manual: log in via Google social (ASWebAuthenticationSession) → open admin portal → confirm no second login prompt
+- [ ] Manual: log in via embedded password → open admin portal → still works (regression check)
+- [ ] Manual: open admin portal while logged out → portal's own login form appears (current behavior preserved)
+- [ ] Manual: log in → open portal → close → logout → re-open portal → portal's login form (not the previously-bridged session)
+
+## Out of scope (follow-ups)
+
+- Custom `cookieDomain` support — current implementation scopes to the exact baseUrl host. Tenants on a parent domain (e.g. `.frontegg.com`) may need broader scoping.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
 ## v
 ## Summary
 
