@@ -2,27 +2,18 @@
 //  AdminPortalWebView.swift
 //  FronteggSwift
 //
-//  Native admin portal via embedded WKWebView, using a "baton handoff" of the
-//  refresh-token rotation chain so the portal opens without a second login —
-//  for ALL login methods and both embedded/hosted modes.
+//  Native admin portal via embedded WKWebView. The portal opens without a
+//  second login by handing the SDK's OAuth tokens to the hosted admin-box app
+//  through a JS bridge (AdminPortalBridge), rather than relying on the WebView
+//  cookie jar.
 //
-//  Background (proven against the auth backend): the Frontegg refresh token is
-//  single-use and rotates on every read with no grace window. The SDK's
-//  background refresh loop and this portal WebView both need that one
-//  credential, so they cannot consume it concurrently without invalidating
-//  each other. See FronteggAuth+AdminPortalSession for the full rationale.
-//
-//  Flow:
-//    open  → fronteggAuth.beginAdminPortalSession() pauses the SDK loop and
-//            returns the current refresh token. We clear any stale fe_refresh_*
-//            cookie from the WebView store and write the current token, then
-//            load /oauth/portal. The portal's own silent-authorize on mount
-//            recognizes the session (no second login) and from then on the
-//            portal is the sole consumer that rotates the token.
-//    close → we read the latest fe_refresh_* cookie value back from the WebView
-//            store (the portal's most recent rotation) and hand it to
-//            fronteggAuth.endAdminPortalSession(...), which makes the SDK adopt
-//            it and resumes the loop.
+//  Why the bridge instead of cookies: the Frontegg refresh cookie is single-use
+//  and rotates on every read, and in hosted-login mode it lives in the system
+//  browser where the app can't reach it at all. So seeding the WebView cookie
+//  jar is either stale (embedded) or impossible (hosted). Instead the portal
+//  detects the SDK via window.FronteggNativeBridgeFunctions and calls
+//  getTokens(), and native (the single source of truth) returns the current
+//  access/refresh token. See AdminPortalBridge for the full contract.
 //
 
 import Foundation
@@ -80,7 +71,23 @@ struct AdminPortalWebView: UIViewRepresentable {
         let viewportScript = WKUserScript(source: viewportOverride, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         conf.userContentController.addUserScript(viewportScript)
 
+        // JS <-> native bridge: lets the hosted admin-box app pull the SDK's
+        // OAuth tokens (and request authorize / close) instead of depending on
+        // the WebView cookie jar. Registered under the same handler name as the
+        // login-box bridge so FronteggNativeModule detects it, and the
+        // capability map is injected at documentStart so isAvailable() passes.
+        let bridge = AdminPortalBridge(onClose: onClose)
+        conf.userContentController.add(bridge, name: AdminPortalBridge.handlerName)
+        let bridgeFunctions = WKUserScript(
+            source: "window.FronteggNativeBridgeFunctions = \(AdminPortalBridge.capabilitiesJSON);",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        )
+        conf.userContentController.addUserScript(bridgeFunctions)
+        context.coordinator.bridge = bridge
+
         let webView = WKWebView(frame: .zero, configuration: conf)
+        bridge.webView = webView
         webView.allowsBackForwardNavigationGestures = true
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
@@ -133,42 +140,6 @@ struct AdminPortalWebView: UIViewRepresentable {
         return components?.url
     }
 
-    /// The cookie name the Frontegg auth backend reads for the refresh-token
-    /// session. Strips ONLY the first dash of clientId — must match
-    /// `Api.swift`'s `cookieName` exactly (the format the SDK's own HTTP client
-    /// sends on every refresh / logout call). Earlier bridge attempts that
-    /// stripped all dashes or used applicationId produced a name the server
-    /// didn't recognize.
-    internal static func refreshCookieName(clientId: String) -> String {
-        var stripped = clientId
-        if let firstDash = stripped.firstIndex(of: "-") {
-            stripped.remove(at: firstDash)
-        }
-        return "fe_refresh_\(stripped)"
-    }
-
-    /// Build the `HTTPCookie` that seeds the portal WebView with the SDK's
-    /// current refresh token. Returns nil if there's no token or the baseUrl
-    /// is malformed (caller then loads the portal without seeding — it renders
-    /// its own login).
-    internal static func makeRefreshCookie(
-        refreshToken: String?,
-        baseUrl: String,
-        clientId: String
-    ) -> HTTPCookie? {
-        guard let refreshToken = refreshToken, !refreshToken.isEmpty else { return nil }
-        guard let url = URL(string: baseUrl), let host = url.host else { return nil }
-        let isSecure = url.scheme?.lowercased() == "https"
-        var properties: [HTTPCookiePropertyKey: Any] = [
-            .name: refreshCookieName(clientId: clientId),
-            .value: refreshToken,
-            .domain: host,
-            .path: "/",
-        ]
-        if isSecure { properties[.secure] = "TRUE" }
-        return HTTPCookie(properties: properties)
-    }
-
     @MainActor
     private func loadPortal(webView: WKWebView) async {
         guard let portalUrl = AdminPortalWebView.portalURL(
@@ -179,36 +150,9 @@ struct AdminPortalWebView: UIViewRepresentable {
             return
         }
 
-        let store = webView.configuration.websiteDataStore.httpCookieStore
-
-        // DIAGNOSTIC PASS (no-op): do NOT clear/seed/refresh. Just log what's in
-        // WKHTTPCookieStore at portal-open and what the SDK has stored, so we can
-        // see — on a real device — whether the login's cookie-family fe_refresh
-        // is present + fresh, or stale (rotated away by the SDK's URLSession-based
-        // refresh, which can't write WKHTTPCookieStore). Then load the portal
-        // exactly as the original pass-through did.
-        let expectedName = AdminPortalWebView.refreshCookieName(clientId: fronteggAuth.clientId)
-        let sdkTok = fronteggAuth.refreshToken ?? ""
-        let sdkPrefix = sdkTok.isEmpty ? "<none>" : (sdkTok.count > 8 ? "\(sdkTok.prefix(8))... len=\(sdkTok.count)" : "<short>")
-        logger.info("AdminPortal[DIAG]: expectedCookieName=\(expectedName) SDK.refreshToken=\(sdkPrefix)")
-
-        let existing = await withCheckedContinuation { (cont: CheckedContinuation<[HTTPCookie], Never>) in
-            store.getAllCookies { cont.resume(returning: $0) }
-        }
-        if let host = URL(string: fronteggAuth.baseUrl)?.host {
-            let fe = existing.filter { ($0.name.hasPrefix("fe_refresh_") || $0.name.hasPrefix("fe_device_")) }
-                .filter { c in
-                    let d = c.domain.hasPrefix(".") ? String(c.domain.dropFirst()) : c.domain
-                    return host == d || host.hasSuffix("." + d)
-                }
-            logger.info("AdminPortal[DIAG]: WKHTTPCookieStore fe_* scoped to \(host): \(fe.count)")
-            for c in fe {
-                let vp = c.value.count > 8 ? "\(c.value.prefix(8))... len=\(c.value.count)" : "<short>"
-                let matchesSDK = (c.name == expectedName && c.value == sdkTok) ? " MATCHES-SDK" : ""
-                logger.info("AdminPortal[DIAG]:   \(c.name) value=\(vp) domain=\(c.domain) secure=\(c.isSecure)\(matchesSDK)")
-            }
-        }
-
+        // The portal authenticates via the native token bridge
+        // (AdminPortalBridge.getTokens), not the WebView cookie jar, so we just
+        // load the URL — no cookie seeding or rotation handling needed.
         logger.info("AdminPortal: loading \(portalUrl.absoluteString)")
         webView.load(URLRequest(url: portalUrl))
     }
@@ -218,6 +162,8 @@ struct AdminPortalWebView: UIViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         private let logger = getLogger("AdminPortalWebView")
         private let onClose: (() -> Void)?
+        /// Retains the JS<->native bridge for the lifetime of the WebView.
+        var bridge: AdminPortalBridge?
 
         init(onClose: (() -> Void)?) {
             self.onClose = onClose
