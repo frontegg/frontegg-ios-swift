@@ -11,7 +11,6 @@ final class AdminPortalBridge: NSObject, WKScriptMessageHandler {
         "getTokens": true,
         "requestAuthorize": true,
         "closeWindow": true,
-        "useNativeLoader": true,
     ]
 
     static var capabilitiesJSON: String {
