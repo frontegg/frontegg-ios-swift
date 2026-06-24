@@ -1,25 +1,5 @@
 ## v1.3.10
-## Problem
-Opening the embedded Admin Portal sends users to a login screen a second time — for hosted-login users especially, and on app restarts for embedded.
-
-## Root cause
-The portal authenticates via the `fe_refresh` **cookie** (cookie-family token), but the SDK holds an **OAuth-family** refresh token (from `/oauth/token`). Different token families — feeding the SDK token to the portal's `silent-authorize` returns **401**. In hosted-login mode the cookie isn't even reachable (it lives in the system browser); in embedded mode it's a single-use rotating value that goes stale on cold start.
-
-## Fix (native is the single source of truth)
-Hand the SDK's OAuth tokens to the hosted admin-box app through the existing `FronteggNativeBridge` JS seam, instead of relying on the WebView cookie jar.
-
-- Adds `AdminPortalBridge` (`getTokens` / `requestAuthorize` / `closeWindow`) on the portal `WKWebView`, under the same handler name the login-box bridge uses; capability map injected at documentStart.
-- `getTokens` resolves **asynchronously** via `window.FronteggNativeBridgeCallbacks` (WKWebView can't return synchronously) and refreshes-if-needed first.
-- **Origin-gates** `getTokens` to the configured `baseUrl` so a redirected/compromised page can't exfiltrate the refresh token.
-- Removes the abandoned cookie approach (synthetic-cookie bridge + diagnostics, cookie-name/seed helpers + their tests).
-
-## Companion PRs (ship together)
-admin-box (`FronteggNativeModule` + `silentOAuthRefreshTokenV3` + actions interception) · frontegg-android-kotlin (`AdminPortalBridge`) · oauth-service (hosted-login mode; `ProtectedRoute` must call the silent path on first load).
-
-## Verification
-`xcodebuild` build ✅ · `AdminPortalWebViewTests` 8/8 ✅
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+- Added: Admin Portal hosted-login mode support — opening the embedded Admin Portal no longer forces a second login (native token bridge).
 
 ## v1.3.9
 ## Summary
