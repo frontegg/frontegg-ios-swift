@@ -40,6 +40,7 @@ public struct FronteggWebView: UIViewRepresentable {
                 "shouldPromptSocialLoginConsent": fronteggApp.shouldPromptSocialLoginConsent,
                 "suggestSavePassword": fronteggApp.shouldSuggestSavePassword,
                 "useNativeLoader": true,
+                "getTokens": true,
             ])
             jsObject = String(data: jsonData, encoding: .utf8) ?? "{}"
         } catch {

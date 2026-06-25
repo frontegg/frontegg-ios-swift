@@ -200,8 +200,81 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
                 hideLoaderWorkItem = workItem
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
             }
+        case "getTokens":
+            handleGetTokens(callbackId: message.callbackId)
         default:
             return
+        }
+    }
+
+    // MARK: - Native token bridge (getTokens)
+    // Lets the embedded login box (e.g. step-up / re-auth) bootstrap from the
+    // existing native session instead of the cookie token-refresh that 401s in
+    // the WebView — the same fix the Admin Portal uses. Resolves into the
+    // redux-store's window.FronteggNativeBridgeCallbacks registry.
+
+    private func handleGetTokens(callbackId: String?) {
+        guard let callbackId = callbackId else {
+            logger.error("getTokens: missing callbackId")
+            return
+        }
+        Task { @MainActor in
+            guard self.isTrustedBridgeOrigin() else {
+                self.logger.error("getTokens refused — untrusted origin \(self.webView?.url?.absoluteString ?? "?")")
+                self.rejectBridge(callbackId: callbackId, message: "untrusted_origin")
+                return
+            }
+
+            _ = await FronteggAuth.shared.refreshTokenIfNeeded()
+
+            guard let accessToken = FronteggAuth.shared.accessToken,
+                  let refreshToken = FronteggAuth.shared.refreshToken,
+                  !accessToken.isEmpty, !refreshToken.isEmpty else {
+                self.rejectBridge(callbackId: callbackId, message: "no_tokens")
+                return
+            }
+
+            self.resolveBridge(callbackId: callbackId, jsonObject: [
+                "accessToken": accessToken,
+                "refreshToken": refreshToken,
+            ])
+        }
+    }
+
+    @MainActor
+    private func isTrustedBridgeOrigin() -> Bool {
+        guard let current = webView?.url,
+              let base = URL(string: FronteggAuth.shared.baseUrl) else { return false }
+        return current.scheme == base.scheme
+            && current.host == base.host
+            && current.port == base.port
+    }
+
+    private func resolveBridge(callbackId: String, jsonObject: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: jsonObject),
+              let json = String(data: data, encoding: .utf8) else {
+            rejectBridge(callbackId: callbackId, message: "serialize_failed")
+            return
+        }
+        let js = """
+        (function(){var r=window.FronteggNativeBridgeCallbacks; if(r && r["\(callbackId)"]){ r["\(callbackId)"].resolve(\(json)); delete r["\(callbackId)"]; }})();
+        """
+        evaluateBridge(js)
+    }
+
+    private func rejectBridge(callbackId: String, message: String) {
+        let safe = message
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let js = """
+        (function(){var r=window.FronteggNativeBridgeCallbacks; if(r && r["\(callbackId)"]){ r["\(callbackId)"].reject("\(safe)"); delete r["\(callbackId)"]; }})();
+        """
+        evaluateBridge(js)
+    }
+
+    private func evaluateBridge(_ js: String) {
+        DispatchQueue.main.async { [weak self] in
+            self?.webView?.evaluateJavaScript(js, completionHandler: nil)
         }
     }
 }
