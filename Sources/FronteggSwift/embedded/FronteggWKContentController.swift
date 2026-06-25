@@ -219,9 +219,9 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
             return
         }
         Task { @MainActor in
-            guard self.isTrustedBridgeOrigin() else {
+            guard Self.isTrustedBridgeOrigin(currentURL: self.webView?.url, baseURL: FronteggAuth.shared.baseUrl) else {
                 self.logger.error("getTokens refused — untrusted origin \(self.webView?.url?.absoluteString ?? "?")")
-                self.rejectBridge(callbackId: callbackId, message: "untrusted_origin")
+                self.evaluateBridge(Self.rejectCallbackJS(callbackId: callbackId, message: "untrusted_origin"))
                 return
             }
 
@@ -230,46 +230,50 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
             guard let accessToken = FronteggAuth.shared.accessToken,
                   let refreshToken = FronteggAuth.shared.refreshToken,
                   !accessToken.isEmpty, !refreshToken.isEmpty else {
-                self.rejectBridge(callbackId: callbackId, message: "no_tokens")
+                self.evaluateBridge(Self.rejectCallbackJS(callbackId: callbackId, message: "no_tokens"))
                 return
             }
 
-            self.resolveBridge(callbackId: callbackId, jsonObject: [
-                "accessToken": accessToken,
-                "refreshToken": refreshToken,
-            ])
+            let json = Self.tokensJSON(accessToken: accessToken, refreshToken: refreshToken)
+            self.evaluateBridge(Self.resolveCallbackJS(callbackId: callbackId, json: json))
         }
     }
 
-    @MainActor
-    private func isTrustedBridgeOrigin() -> Bool {
-        guard let current = webView?.url,
-              let base = URL(string: FronteggAuth.shared.baseUrl) else { return false }
+    /// Same-origin check (scheme + host + port) gating the getTokens bridge.
+    static func isTrustedBridgeOrigin(currentURL: URL?, baseURL: String) -> Bool {
+        guard let current = currentURL,
+              let base = URL(string: baseURL) else { return false }
         return current.scheme == base.scheme
             && current.host == base.host
             && current.port == base.port
     }
 
-    private func resolveBridge(callbackId: String, jsonObject: [String: Any]) {
-        guard let data = try? JSONSerialization.data(withJSONObject: jsonObject),
-              let json = String(data: data, encoding: .utf8) else {
-            rejectBridge(callbackId: callbackId, message: "serialize_failed")
-            return
+    /// Serializes the native tokens for the getTokens resolve payload.
+    static func tokensJSON(accessToken: String, refreshToken: String) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: [
+            "accessToken": accessToken,
+            "refreshToken": refreshToken,
+        ]), let json = String(data: data, encoding: .utf8) else {
+            return "{}"
         }
-        let js = """
-        (function(){var r=window.FronteggNativeBridgeCallbacks; if(r && r["\(callbackId)"]){ r["\(callbackId)"].resolve(\(json)); delete r["\(callbackId)"]; }})();
-        """
-        evaluateBridge(js)
+        return json
     }
 
-    private func rejectBridge(callbackId: String, message: String) {
+    /// JS that resolves the redux-store getTokens callback with the native tokens.
+    static func resolveCallbackJS(callbackId: String, json: String) -> String {
+        return """
+        (function(){var r=window.FronteggNativeBridgeCallbacks; if(r && r["\(callbackId)"]){ r["\(callbackId)"].resolve(\(json)); delete r["\(callbackId)"]; }})();
+        """
+    }
+
+    /// JS that rejects the redux-store getTokens callback (backslash + quote escaped).
+    static func rejectCallbackJS(callbackId: String, message: String) -> String {
         let safe = message
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
-        let js = """
+        return """
         (function(){var r=window.FronteggNativeBridgeCallbacks; if(r && r["\(callbackId)"]){ r["\(callbackId)"].reject("\(safe)"); delete r["\(callbackId)"]; }})();
         """
-        evaluateBridge(js)
     }
 
     private func evaluateBridge(_ js: String) {

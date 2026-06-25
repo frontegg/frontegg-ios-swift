@@ -19,6 +19,31 @@ public struct FronteggWebView: UIViewRepresentable {
         self.fronteggAuth = FronteggAuth.shared;
     }
 
+    /// Capability map injected as `window.FronteggNativeBridgeFunctions` into the
+    /// embedded login WebView. `getTokens` lets the login box (step-up / re-auth)
+    /// bootstrap from the native session instead of the cookie refresh that 401s.
+    static func bridgeFunctions(
+        loginWithSocialLogin: Bool,
+        loginWithCustomSocialLoginProvider: Bool,
+        loginWithSocialLoginProvider: Bool,
+        loginWithSSO: Bool,
+        loginWithCustomSSO: Bool,
+        shouldPromptSocialLoginConsent: Bool,
+        suggestSavePassword: Bool
+    ) -> [String: Any] {
+        return [
+            "loginWithSocialLogin": loginWithSocialLogin,
+            "loginWithCustomSocialLoginProvider": loginWithCustomSocialLoginProvider,
+            "loginWithSocialLoginProvider": loginWithSocialLoginProvider,
+            "loginWithSSO": loginWithSSO,
+            "loginWithCustomSSO": loginWithCustomSSO,
+            "shouldPromptSocialLoginConsent": shouldPromptSocialLoginConsent,
+            "suggestSavePassword": suggestSavePassword,
+            "useNativeLoader": true,
+            "getTokens": true,
+        ]
+    }
+
     public func makeUIView(context: Context) -> WKWebView {
         logger.trace("FronteggWebView::makeUIView::start")
         FronteggRuntime.testingLog(
@@ -31,17 +56,15 @@ public struct FronteggWebView: UIViewRepresentable {
         let fronteggApp = FronteggApp.shared
         let jsObject: String
         do {
-            let jsonData = try JSONSerialization.data(withJSONObject: [
-                "loginWithSocialLogin": fronteggApp.handleLoginWithSocialLogin,
-                "loginWithCustomSocialLoginProvider": fronteggApp.handleLoginWithCustomSocialLoginProvider,
-                "loginWithSocialLoginProvider": fronteggApp.handleLoginWithSocialProvider,
-                "loginWithSSO": fronteggApp.handleLoginWithSSO,
-                "loginWithCustomSSO": fronteggApp.handleLoginWithCustomSSO,
-                "shouldPromptSocialLoginConsent": fronteggApp.shouldPromptSocialLoginConsent,
-                "suggestSavePassword": fronteggApp.shouldSuggestSavePassword,
-                "useNativeLoader": true,
-                "getTokens": true,
-            ])
+            let jsonData = try JSONSerialization.data(withJSONObject: FronteggWebView.bridgeFunctions(
+                loginWithSocialLogin: fronteggApp.handleLoginWithSocialLogin,
+                loginWithCustomSocialLoginProvider: fronteggApp.handleLoginWithCustomSocialLoginProvider,
+                loginWithSocialLoginProvider: fronteggApp.handleLoginWithSocialProvider,
+                loginWithSSO: fronteggApp.handleLoginWithSSO,
+                loginWithCustomSSO: fronteggApp.handleLoginWithCustomSSO,
+                shouldPromptSocialLoginConsent: fronteggApp.shouldPromptSocialLoginConsent,
+                suggestSavePassword: fronteggApp.shouldSuggestSavePassword
+            ))
             jsObject = String(data: jsonData, encoding: .utf8) ?? "{}"
         } catch {
             logger.error("Failed to serialize JSON: \(error)")
