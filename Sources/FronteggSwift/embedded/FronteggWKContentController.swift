@@ -200,8 +200,85 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
                 hideLoaderWorkItem = workItem
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
             }
+        case "getTokens":
+            handleGetTokens(callbackId: message.callbackId)
         default:
             return
+        }
+    }
+
+    // MARK: - Native token bridge (getTokens)
+    // Lets the embedded login box (e.g. step-up / re-auth) bootstrap from the
+    // existing native session instead of the cookie token-refresh that 401s in
+    // the WebView — the same fix the Admin Portal uses. Resolves into the
+    // redux-store's window.FronteggNativeBridgeCallbacks registry.
+
+    private func handleGetTokens(callbackId: String?) {
+        guard let callbackId = callbackId else {
+            logger.error("getTokens: missing callbackId")
+            return
+        }
+        Task { @MainActor in
+            guard Self.isTrustedBridgeOrigin(currentURL: self.webView?.url, baseURL: FronteggAuth.shared.baseUrl) else {
+                self.logger.error("getTokens refused — untrusted origin \(self.webView?.url?.absoluteString ?? "?")")
+                self.evaluateBridge(Self.rejectCallbackJS(callbackId: callbackId, message: "untrusted_origin"))
+                return
+            }
+
+            _ = await FronteggAuth.shared.refreshTokenIfNeeded()
+
+            guard let accessToken = FronteggAuth.shared.accessToken,
+                  let refreshToken = FronteggAuth.shared.refreshToken,
+                  !accessToken.isEmpty, !refreshToken.isEmpty else {
+                self.evaluateBridge(Self.rejectCallbackJS(callbackId: callbackId, message: "no_tokens"))
+                return
+            }
+
+            let json = Self.tokensJSON(accessToken: accessToken, refreshToken: refreshToken)
+            self.evaluateBridge(Self.resolveCallbackJS(callbackId: callbackId, json: json))
+        }
+    }
+
+    /// Same-origin check (scheme + host + port) gating the getTokens bridge.
+    static func isTrustedBridgeOrigin(currentURL: URL?, baseURL: String) -> Bool {
+        guard let current = currentURL,
+              let base = URL(string: baseURL) else { return false }
+        return current.scheme == base.scheme
+            && current.host == base.host
+            && current.port == base.port
+    }
+
+    /// Serializes the native tokens for the getTokens resolve payload.
+    static func tokensJSON(accessToken: String, refreshToken: String) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: [
+            "accessToken": accessToken,
+            "refreshToken": refreshToken,
+        ]), let json = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return json
+    }
+
+    /// JS that resolves the redux-store getTokens callback with the native tokens.
+    static func resolveCallbackJS(callbackId: String, json: String) -> String {
+        return """
+        (function(){var r=window.FronteggNativeBridgeCallbacks; if(r && r["\(callbackId)"]){ r["\(callbackId)"].resolve(\(json)); delete r["\(callbackId)"]; }})();
+        """
+    }
+
+    /// JS that rejects the redux-store getTokens callback (backslash + quote escaped).
+    static func rejectCallbackJS(callbackId: String, message: String) -> String {
+        let safe = message
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return """
+        (function(){var r=window.FronteggNativeBridgeCallbacks; if(r && r["\(callbackId)"]){ r["\(callbackId)"].reject("\(safe)"); delete r["\(callbackId)"]; }})();
+        """
+    }
+
+    private func evaluateBridge(_ js: String) {
+        DispatchQueue.main.async { [weak self] in
+            self?.webView?.evaluateJavaScript(js, completionHandler: nil)
         }
     }
 }

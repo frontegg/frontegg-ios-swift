@@ -209,39 +209,45 @@ final class StepUpAuthenticatorTests: XCTestCase {
         )
     }
 
-    /// When the host app runs without embedded mode, `stepUp(...)` keeps the
-    /// existing `ASWebAuthenticationSession` route. This test asserts that
-    /// none of the embedded-WebView routing state is touched — otherwise a
-    /// later embedded login could pick up a stale `pendingAppLink` /
-    /// `activeEmbeddedOAuthFlow` and silently start a step-up navigation.
-    func test_stepUp_in_nonEmbeddedMode_does_not_touch_embedded_webview_state() {
+    /// Step-up now ALWAYS routes through the embedded bridge WebView — like the
+    /// Admin Portal — regardless of the app's login mode. The embedded WebView can
+    /// reuse the existing native session via the getTokens bridge, while a system
+    /// browser (ASWebAuthenticationSession) cannot, which white-pages / forces a
+    /// second login for hosted-login apps. So even with `embeddedMode = false`
+    /// the embedded-WebView routing state must be set up.
+    func test_stepUp_in_nonEmbeddedMode_also_routes_through_embedded_webview() throws {
         let auth = FronteggAuth.shared
         auth.embeddedMode = false
 
-        stepUpAuthenticator.stepUp(maxAge: 30) { _ in }
+        stepUpAuthenticator.stepUp(maxAge: 30) { _ in /* embeddedLogin no-ops without a host app under XCTest */ }
 
         waitForMainQueue()
 
         XCTAssertTrue(
             auth.isStepUpAuthorization,
-            "isStepUpAuthorization is set regardless of the routing branch"
+            "isStepUpAuthorization must be set for the step-up flow"
         )
         XCTAssertFalse(
             auth.isLoading,
-            "Global isLoading is cleared regardless of the routing branch"
+            "Global isLoading must be cleared before handing off to the embedded WebView"
         )
         XCTAssertEqual(
             auth.activeEmbeddedOAuthFlow,
-            .login,
-            "Non-embedded path must not flip the embedded OAuth flow to .stepUp"
+            .stepUp,
+            "Step-up now always uses the embedded WebView, so the flow is .stepUp even when embeddedMode is false"
         )
-        XCTAssertNil(
-            auth.pendingAppLink,
-            "Non-embedded path must not push a pendingAppLink — that URL belongs to the embedded WebView"
-        )
-        XCTAssertFalse(
+        XCTAssertTrue(
             auth.webLoading,
-            "Non-embedded path must not toggle the embedded WebView loader"
+            "Embedded WebView loader must be shown while it navigates to the step-up URL"
+        )
+
+        let pendingAppLink = try XCTUnwrap(
+            auth.pendingAppLink,
+            "Step-up must push the authorize URL as pendingAppLink for the embedded WebView, even in non-embedded mode"
+        )
+        XCTAssertTrue(
+            pendingAppLink.absoluteString.hasPrefix("\(testBaseUrl)/oauth/authorize"),
+            "Step-up authorize URL must point at /oauth/authorize, got: \(pendingAppLink.absoluteString)"
         )
     }
 

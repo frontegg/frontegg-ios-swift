@@ -65,24 +65,15 @@ class StepUpAuthenticator {
             FronteggAuth.shared.setIsStepUpAuthorization(true)
             FronteggAuth.shared.setIsLoading(false)
 
-            if FronteggAuth.shared.embeddedMode {
-                FronteggAuth.shared.activeEmbeddedOAuthFlow = .stepUp
-                FronteggAuth.shared.pendingAppLink = authorizeUrl
-                FronteggAuth.shared.setWebLoading(true)
-                FronteggAuth.shared.embeddedLogin(updatedCompletion, loginHint: nil)
-                return
-            }
-
-            let oauthCallback = FronteggAuth.shared.createOauthCallbackHandler(
-                updatedCompletion,
-                pendingOAuthState: Self.pendingOAuthState(from: authorizeUrl),
-                flow: .stepUp
-            )
-            WebAuthenticator.shared.start(authorizeUrl, completionHandler: oauthCallback)
+            // Always present step-up in the embedded bridge webview (like the Admin
+            // Portal), regardless of the app's login mode. The embedded webview reuses
+            // the existing native session via the getTokens bridge; a system browser
+            // (ASWebAuthenticationSession) cannot, which white-pages / forces a second
+            // login for hosted-login apps.
+            FronteggAuth.shared.activeEmbeddedOAuthFlow = .stepUp
+            FronteggAuth.shared.pendingAppLink = authorizeUrl
+            FronteggAuth.shared.setWebLoading(true)
+            FronteggAuth.shared.embeddedLogin(updatedCompletion, loginHint: nil)
         }
-    }
-
-    private static func pendingOAuthState(from url: URL) -> String? {
-        CredentialManager.pendingOAuthState(from: url)
     }
 }
