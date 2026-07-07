@@ -75,7 +75,9 @@ public class AuthorizeUrlGenerator {
             queryParams.append(URLQueryItem(name: "acr_values", value: StepUpConstants.ACR_VALUE))
             
             if let maxAge = maxAge {
-                queryParams.append(URLQueryItem(name: "max_age", value: String(maxAge)))
+                // OIDC max_age is integer seconds; String(TimeInterval) emits "60.0",
+                // which is non-spec and can be mishandled downstream.
+                queryParams.append(URLQueryItem(name: "max_age", value: String(Int(maxAge))))
             }
         } else {
             queryParams.append(URLQueryItem(name: "prompt", value: "login"))
