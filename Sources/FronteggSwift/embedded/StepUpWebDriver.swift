@@ -74,6 +74,26 @@ enum StepUpWebDriver {
 
             window.history.replaceState(null, '', loc.origin + target);
             report('routed to ' + basename + '/account/step-up (maxAge=' + maxAge + ')');
+
+            // Diagnostics (self-terminating): trace what the box does after the redirect so
+            // the native log alone shows whether StepUpPage renders / the session generate
+            // fires, without needing Safari Web Inspector. TODO: drop before final PR.
+            try {
+              var origFetch = window.fetch;
+              window.fetch = function (input, init) {
+                try {
+                  var u = (typeof input === 'string') ? input : (input && input.url) || '';
+                  if (u.indexOf('step-up') !== -1) { report('fetch ' + ((init && init.method) || 'GET') + ' ' + u); }
+                } catch (e) {}
+                return origFetch.apply(this, arguments);
+              };
+            } catch (e) {}
+            var ticks = 0;
+            var iv = setInterval(function () {
+              ticks++;
+              report('t+' + ticks + 's path=' + window.location.pathname);
+              if (ticks >= 8) { clearInterval(iv); }
+            }, 1000);
           } catch (e) {
             report('error: ' + (e && e.message ? e.message : e));
           }
