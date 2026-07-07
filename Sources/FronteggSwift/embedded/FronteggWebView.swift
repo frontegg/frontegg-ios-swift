@@ -73,8 +73,20 @@ public struct FronteggWebView: UIViewRepresentable {
         
         let jsScript = WKUserScript(source: "window.FronteggNativeBridgeFunctions = \(jsObject);", injectionTime: .atDocumentStart, forMainFrameOnly: false)
         userContentController.addUserScript(jsScript)
-        
-        
+
+        // FR-24939: the deployed hosted-login box has no native step-up handling on the
+        // path it bootstraps through, so an embedded step-up authorize URL renders blank.
+        // While presenting a step-up flow, inject a script that routes the box to its
+        // step-up page and points the post-MFA redirect back at the original authorize
+        // URL (see StepUpWebDriver). Guarded to the step-up flow so normal login is untouched.
+        if fronteggAuth.activeEmbeddedOAuthFlow == .stepUp, let authorizeUrl = fronteggAuth.pendingAppLink {
+            userContentController.add(StepUpWebDriverDiagnostics(), name: StepUpWebDriver.messageHandlerName)
+            userContentController.addUserScript(
+                WKUserScript(source: StepUpWebDriver.script(authorizeUrl: authorizeUrl), injectionTime: .atDocumentStart, forMainFrameOnly: true)
+            )
+        }
+
+
         if #available(iOS 16, *) {
             // Passkeys avaialble in webview
         } else {
