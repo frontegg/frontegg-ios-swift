@@ -56,9 +56,25 @@ extension FronteggAuth {
     }
 
     func clearTransientConnectivityStateAfterAuthenticatedSuccess() {
-        invalidateConnectivityObservers()
-        stopOfflineMonitoring()
+        cancelPendingOfflineDebounce()
         lastAttemptReason = nil
+
+        // Don't tear connectivity observation down entirely on success. With a live
+        // session we keep a cheap, path-only (no /test poll) observer armed so a LATER
+        // offline transition is still detected — the full polling monitor is
+        // re-escalated on the next committed disconnect (see disconnectedFromInternet).
+        // Without this, isOfflineMode stopped updating after the first offline→online
+        // cycle. (FR-25783)
+        let hasRuntimeSession = self.isAuthenticated
+            || self.accessToken != nil
+            || self.refreshToken != nil
+
+        if hasRuntimeSession {
+            ensurePassiveConnectivityMonitoringActive()
+        } else {
+            invalidateConnectivityObservers()
+            stopOfflineMonitoring()
+        }
     }
 
     public func reconnectedToInternet(expectedGeneration: UInt64? = nil) {
@@ -138,7 +154,23 @@ extension FronteggAuth {
             }
             // Only set offline if still disconnected (best effort via lastAttemptReason or state)
             // We rely on reconnectedToInternet() to cancel this when path is back.
+            let wasOffline = self.isOfflineMode
             self.setIsOfflineMode(true)
+
+            // Escalate a passive (path-only) observer to the full polling monitor once we
+            // actually commit to offline, so recovery is gated by an active /test probe.
+            // A bare NWPath `.satisfied` can falsely report reachable on captive portals /
+            // server-blocked networks; the /test poll re-detects real recovery. Only for an
+            // authenticated session — the unauthenticated logout monitor keeps its lightweight
+            // path-only behavior. (FR-25783)
+            if !wasOffline {
+                let hasRuntimeSession = self.isAuthenticated
+                    || self.accessToken != nil
+                    || self.refreshToken != nil
+                if hasRuntimeSession {
+                    self.ensureOfflineMonitoringActive(emitInitialState: false)
+                }
+            }
         }
         offlineDebounceWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + debounce, execute: work)
@@ -514,9 +546,36 @@ extension FronteggAuth {
         )
     }
 
-    /// Starts network monitoring so that `reconnectedToInternet()` fires on a later connectivity transition.
+    /// Starts full network monitoring (event-driven path + periodic `/test` probe) so that
+    /// `reconnectedToInternet()` fires on a later connectivity transition. Used while offline
+    /// so recovery is gated by an active server probe.
     /// Safe to call multiple times — stops existing monitoring first to avoid duplicates.
     func ensureOfflineMonitoringActive(intervalOverride: TimeInterval? = nil, emitInitialState: Bool = false) {
+        armConnectivityMonitoring(
+            intervalOverride: intervalOverride,
+            emitInitialState: emitInitialState,
+            enableActiveProbe: true
+        )
+    }
+
+    /// Starts a passive, path-only connectivity observer (no periodic `/test` poll) so a later
+    /// disconnect is detected while the app is healthy/online, without the network cost of an
+    /// always-on server probe. The full polling monitor is re-escalated from
+    /// `disconnectedFromInternet` once we actually commit to offline. (FR-25783)
+    /// Safe to call multiple times — stops existing monitoring first to avoid duplicates.
+    func ensurePassiveConnectivityMonitoringActive(intervalOverride: TimeInterval? = nil) {
+        armConnectivityMonitoring(
+            intervalOverride: intervalOverride,
+            emitInitialState: false,
+            enableActiveProbe: false
+        )
+    }
+
+    private func armConnectivityMonitoring(
+        intervalOverride: TimeInterval?,
+        emitInitialState: Bool,
+        enableActiveProbe: Bool
+    ) {
         let config = try? PlistHelper.fronteggConfig()
         let monitoringInterval = intervalOverride ?? config?.networkMonitoringInterval ?? 10
 
@@ -537,10 +596,11 @@ extension FronteggAuth {
         NetworkStatusMonitor.startBackgroundMonitoring(
             interval: monitoringInterval,
             emitInitialState: emitInitialState,
+            enableActiveProbe: enableActiveProbe,
             onChange: nil
         )
         self.logger.info(
-            "Started offline network monitoring (interval: \(monitoringInterval)s, emitInitialState: \(emitInitialState))"
+            "Started \(enableActiveProbe ? "offline" : "passive path-only") network monitoring (interval: \(monitoringInterval)s, emitInitialState: \(emitInitialState), activeProbe: \(enableActiveProbe))"
         )
     }
 

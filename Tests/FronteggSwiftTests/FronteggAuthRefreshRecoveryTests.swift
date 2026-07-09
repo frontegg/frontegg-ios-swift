@@ -238,6 +238,66 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertEqual(auth.user?.email, "retry-me@example.com")
     }
 
+    /// FR-25783: After an authenticated online success the SDK must keep a
+    /// connectivity observer armed so a LATER offline transition is still
+    /// detected. The previous behavior tore monitoring down completely on
+    /// success, so `isOfflineMode` stopped updating after the first
+    /// offline→online cycle.
+    func test_refreshTokenIfNeeded_authenticatedSuccess_keepsPassiveConnectivityMonitoringActive() async throws {
+        api.refreshResult = .success(try makeAuthResponse(email: "cycle@example.com", refreshToken: "refresh-token-new"))
+        api.enqueueJSON(path: mePath, statusCode: 200, json: TestDataFactory.makeUser(email: "cycle@example.com"))
+        api.enqueueJSON(path: tenantsPath, statusCode: 200, json: makeTenantsResponse())
+
+        let refreshed = await auth.refreshTokenIfNeeded()
+
+        XCTAssertTrue(refreshed)
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertFalse(auth.isOfflineMode)
+
+        let snapshot = NetworkStatusMonitor._testSnapshot()
+        XCTAssertTrue(
+            snapshot.monitoringActive,
+            "A passive connectivity observer must stay armed after authenticated success so a later offline transition is still detected (FR-25783)"
+        )
+        XCTAssertFalse(
+            snapshot.activeProbeEnabled,
+            "Healthy-online monitoring should be path-only (no periodic /test poll)"
+        )
+    }
+
+    /// FR-25783: When a passive (path-only) observer commits to offline, it must
+    /// escalate to the full /test-polling monitor so recovery is gated by an active
+    /// server probe (a bare NWPath `.satisfied` can falsely report reachable on
+    /// captive-portal / server-blocked networks). This is the second half of the
+    /// offline→online→offline cycle that previously stopped updating.
+    func test_passiveMonitoring_committedDisconnect_escalatesToFullMonitoringAndFlipsOffline() async throws {
+        // Deterministic monitor view; the disconnect is driven manually below.
+        NetworkStatusMonitor._testSetReachabilityOverride(true)
+        _ = try seedAuthenticatedSession(email: "escalate@example.com", expirationOffset: 3600)
+
+        // Healthy-online steady state: passive (path-only) observer armed.
+        auth.ensurePassiveConnectivityMonitoringActive()
+        let armed = NetworkStatusMonitor._testSnapshot()
+        XCTAssertTrue(armed.monitoringActive)
+        XCTAssertFalse(armed.activeProbeEnabled, "Precondition: healthy-online monitoring is passive")
+        XCTAssertFalse(auth.isOfflineMode)
+
+        // A committed disconnect (debounce elapses without a reconnect cancelling it).
+        auth.disconnectedFromInternet()
+        try? await Task.sleep(nanoseconds: 2_400_000_000) // > 2.0s default offline debounce
+
+        XCTAssertTrue(
+            auth.isOfflineMode,
+            "A disconnect after the first cycle must still flip isOfflineMode (FR-25783)"
+        )
+        let escalated = NetworkStatusMonitor._testSnapshot()
+        XCTAssertTrue(escalated.monitoringActive)
+        XCTAssertTrue(
+            escalated.activeProbeEnabled,
+            "Committing to offline should escalate the passive observer to the full /test-polling monitor"
+        )
+    }
+
     func test_refreshTokenIfNeeded_refreshSucceeds_flakyTenantsEndpoint_retriesAndAuthenticates() async throws {
         api.refreshResult = .success(try makeAuthResponse(email: "retry-tenants@example.com", refreshToken: "refresh-token-new"))
         api.enqueueJSON(path: mePath, statusCode: 200, json: TestDataFactory.makeUser(email: "retry-tenants@example.com"))
@@ -368,7 +428,10 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertNotEqual(auth.accessToken, cachedAccessToken)
         XCTAssertTrue(auth.isAuthenticated)
         XCTAssertFalse(auth.isOfflineMode)
-        XCTAssertFalse(snapshot.monitoringActive)
+        // FR-25783: after an authenticated success the observer stays armed in passive
+        // (path-only) mode instead of being torn down, so a later disconnect is still seen.
+        XCTAssertTrue(snapshot.monitoringActive)
+        XCTAssertFalse(snapshot.activeProbeEnabled)
         XCTAssertEqual(auth.user?.email, "startup-refresh@example.com")
     }
 
@@ -396,7 +459,10 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertEqual(auth.refreshToken, "refresh-token-new")
         XCTAssertTrue(auth.isAuthenticated)
         XCTAssertFalse(auth.isOfflineMode)
-        XCTAssertFalse(snapshot.monitoringActive)
+        // FR-25783: after an authenticated success the observer stays armed in passive
+        // (path-only) mode instead of being torn down, so a later disconnect is still seen.
+        XCTAssertTrue(snapshot.monitoringActive)
+        XCTAssertFalse(snapshot.activeProbeEnabled)
     }
 
     func test_getOrRefreshAccessTokenAsync_destinationUnreachable_preservesCachedTokenAndStartsOfflineMonitoring() async throws {
