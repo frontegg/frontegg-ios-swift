@@ -187,6 +187,12 @@ public enum NetworkStatusMonitor {
     private static var _monitorSessionGeneration: UInt64 = 0
     private static var _probeGeneration: UInt64 = 0
     private static var _emitInitialState = true
+    /// When `false`, the session runs in *passive* mode: only the event-driven
+    /// `NWPathMonitor` is used (no periodic `/test` probe timer, and a satisfied
+    /// path is treated as reachable without an active server probe). Passive mode
+    /// is a low-cost way to keep observing connectivity while healthy/online so a
+    /// later disconnect is still detected. (FR-25783)
+    private static var _activeProbeEnabled = true
 
     // MARK: Handler storage (token-backed) + stable index mapping
     public struct OnChangeToken: Hashable { fileprivate let id = UUID() }
@@ -271,9 +277,13 @@ public enum NetworkStatusMonitor {
 
     /// Start background monitoring and receive callbacks on changes.
     /// When `emitInitialState` is `true`, handlers also receive the current state once monitoring starts.
+    /// When `enableActiveProbe` is `false`, monitoring runs in *passive* mode: only the
+    /// event-driven `NWPathMonitor` runs — no periodic `/test` probe timer — and a
+    /// satisfied network path is treated as reachable without an active server probe.
     public static func startBackgroundMonitoring(
         interval: TimeInterval = 10,
         emitInitialState: Bool = true,
+        enableActiveProbe: Bool = true,
         onChange: ((Bool) -> Void)? = nil
     ) {
         // Prevent multiple simultaneous starts - check and set flag atomically
@@ -288,6 +298,7 @@ public enum NetworkStatusMonitor {
         sessionGeneration = _monitorSessionGeneration
         _probeGeneration &+= 1
         _emitInitialState = emitInitialState
+        _activeProbeEnabled = enableActiveProbe
         _monitoringLock.unlock()
         
         // Stop any existing monitoring resources (defensive cleanup)
@@ -339,10 +350,12 @@ public enum NetworkStatusMonitor {
         pathMonitor = monitor
         monitor.start(queue: pathQueue)
 
-        // Periodic active probe (only if strict mode is configured)
+        // Periodic active probe (only if strict mode is configured AND active probing is enabled).
+        // Passive sessions (enableActiveProbe == false) skip the recurring /test poll entirely
+        // and rely on the event-driven NWPathMonitor above.
         // Schedule timer to start after the full interval to avoid duplicate initial call
         // (pathUpdateHandler already provides the initial check when monitor.start() is called)
-        if configuredBaseURLString != nil {
+        if configuredBaseURLString != nil && enableActiveProbe {
             let t = DispatchSource.makeTimerSource(queue: backgroundQueue)
             t.schedule(deadline: .now() + interval, repeating: interval)
             t.setEventHandler {
@@ -371,6 +384,7 @@ public enum NetworkStatusMonitor {
         _monitorSessionGeneration &+= 1
         _probeGeneration &+= 1
         _emitInitialState = true
+        _activeProbeEnabled = true
         _monitoringLock.unlock()
         _initialCheckLock.lock()
         _hasInitialCheckFired = false
@@ -459,7 +473,10 @@ public enum NetworkStatusMonitor {
             return
         }
 
-        if configuredBaseURLString == nil {
+        // In passive mode (no active probe), a satisfied path is treated as reachable
+        // without hitting /test — same as when no strict base URL is configured.
+        let activeProbeEnabled = _monitoringLock.withLock { _activeProbeEnabled }
+        if configuredBaseURLString == nil || !activeProbeEnabled {
             updateCached(true, forceEmit: forceEmit, suppressEmit: suppressEmit)
             return
         }
@@ -629,6 +646,7 @@ extension NetworkStatusMonitor {
             _monitorSessionGeneration = 0
             _probeGeneration = 0
             _emitInitialState = true
+            _activeProbeEnabled = true
         }
         _initialCheckLock.withLock {
             _hasInitialCheckFired = false
@@ -697,6 +715,7 @@ extension NetworkStatusMonitor {
         hasCachedReachable: Bool,
         monitoringActive: Bool,
         emitInitialState: Bool,
+        activeProbeEnabled: Bool,
         hasInitialCheckFired: Bool,
         handlerCount: Int,
         indexMapCount: Int
@@ -712,7 +731,8 @@ extension NetworkStatusMonitor {
         let monitoring = _monitoringLock.withLock {
             (
                 monitoringActive: _isMonitoringActive,
-                emitInitialState: _emitInitialState
+                emitInitialState: _emitInitialState,
+                activeProbeEnabled: _activeProbeEnabled
             )
         }
         let initialCheckFired = _initialCheckLock.withLock { _hasInitialCheckFired }
@@ -721,6 +741,7 @@ extension NetworkStatusMonitor {
             hasCachedReachable: state.hasCachedReachable,
             monitoringActive: monitoring.monitoringActive,
             emitInitialState: monitoring.emitInitialState,
+            activeProbeEnabled: monitoring.activeProbeEnabled,
             hasInitialCheckFired: initialCheckFired,
             handlerCount: state.handlerCount,
             indexMapCount: state.indexMapCount
