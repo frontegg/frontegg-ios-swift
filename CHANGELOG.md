@@ -1,3 +1,107 @@
+## v1.3.11
+## Problem
+
+Step-up authentication (and any embedded re-auth that already has a session) renders a **blank page / forces a second login** in embedded mode — the same bug class the Admin Portal had before its native-token-bridge fix.
+
+**Root cause:** step-up opens the embedded login box (`FronteggWebView` → `/oauth/authorize` with `acr_values`/`max_age`). That WebView advertised `window.FronteggNativeBridgeFunctions` **without `getTokens`**, and `FronteggWKContentController` had no `getTokens` handler. With no native-token path, the login box (`@frontegg/redux-store` ≥ 7.113.0) falls back to the cookie token-refresh — which 401s inside the WebView → blank box. The `getTokens` bridge previously lived **only** in `AdminPortalBridge`, so step-up never benefited.
+
+## Fix
+
+Mirror the Admin Portal bridge into the embedded login WebView:
+- `FronteggWebView.swift` — advertise `"getTokens": true` in the injected capabilities.
+- `FronteggWKContentController.swift` — handle `getTokens` → trusted-origin check → `refreshTokenIfNeeded()` → resolve `{accessToken, refreshToken}` into the redux-store's `window.FronteggNativeBridgeCallbacks` registry (the same protocol the Admin Portal uses).
+
+Notes:
+- **Fresh login is unaffected** — with no session, `getTokens` resolves `no_tokens` and the box falls through to the normal login flow.
+- **Step-up still challenges** — the `acr_values`/`max_age` in the authorize URL drive the MFA prompt; `getTokens` only fixes the bootstrap (so the box renders instead of white-paging).
+- **Non-embedded path** (`ASWebAuthenticationSession`) can't host a native bridge; step-up that must reuse the session should run in `embeddedMode`.
+
+## Verification
+- ✅ `xcodebuild -scheme FronteggSwift -destination 'generic/platform=iOS'` → **BUILD SUCCEEDED**.
+- ⏳ End-to-end (react-native step-up with no blank page) needs a release + bumping the FronteggSwift pin in [frontegg-react-native#73](https://github.com/frontegg/frontegg-react-native/pull/73).
+
+Relates to **FR-24939**. Android equivalent: separate PR in `frontegg-android-kotlin`.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+## Problem
+
+Even with the `getTokens` bridge ([#275](https://github.com/frontegg/frontegg-ios-swift/pull/275)) and the hosted-login box's step-up render fix ([admin-box#2865](https://github.com/frontegg/admin-box/pull/2865), deployed in 7.118.0), a native step-up still renders a **blank page instead of the MFA challenge**.
+
+**Root cause:** the box renders its step-up page (`StepUpPage`) only when the WebView is *at* the step-up route (`/oauth/account/step-up`) with the native token bridge present. A native step-up authorize URL (`acr_values` + `max_age`) instead bootstraps the box on its **prelogin** path and never navigates to that route on its own — it is silently token-refreshed and the box renders blank. A clean SDK loads `/oauth/authorize` → 302 → `/oauth/prelogin`, silent-refreshes, and stops there; nothing routes it onward to `/oauth/account/step-up`.
+
+## Fix
+
+Two parts:
+
+1. **`AuthorizeUrlGenerator.swift`** — emit integer `max_age`. `String(TimeInterval)` produced `max_age=60.0`, which is non-spec (OIDC `max_age` is integer seconds) and can be mishandled downstream.
+
+2. **`StepUpWebDriver.swift` + `FronteggWebView.swift`** — while presenting a step-up flow, inject a `documentStart` script that, before the box reads the document:
+   - seeds the box's step-up `localStorage` contract (`SHOULD_STEP_UP`, `FRONTEGG_OAUTH_STEP_UP_MAX_AGE`),
+   - rewrites the URL to the box's step-up route (`<basename>/account/step-up`) so the box renders `StepUpPage`, and
+   - points the box's after-auth redirect (`FRONTEGG_AFTER_AUTH_REDIRECT_URL`) back at the original authorize URL.
+
+   On completion the box performs a full navigation to that authorize URL — now with an elevated session — yielding a stepped-up `code` that the existing `CustomWebView` OAuth callback already captures. No new native token-capture path is required.
+
+Guarded to `activeEmbeddedOAuthFlow == .stepUp`, so normal login is untouched.
+
+## Verification
+
+- ✅ `xcodebuild -scheme demo -sdk iphonesimulator` → **BUILD SUCCEEDED**.
+- ✅ **On-device** (iPhone 16 Pro sim, demo app against a tenant on the deployed box with #2865). Tapped a sensitive action → native log:
+  - `AuthorizeUrlGenerator: .../oauth/authorize?...acr_values=…multi-factor&max_age=60` (integer)
+  - → 302 → `/oauth/prelogin?…acr_values&max_age=60`
+  - → `[step-up] routed to /oauth/account/step-up (maxAge=60)`
+  - → `CustomWebView urlType: loginRoutes .../oauth/account/step-up`
+  - → box mounts `StepUpPage` → `POST /identity/resources/auth/v1/user/step-up/generate` → **200**
+  - → token refreshed + saved, WebView dismissed cleanly — **no blank page, no error, no "login already in progress" stall.**
+
+**Requires** the box-side render fix ([admin-box#2865](https://github.com/frontegg/admin-box/pull/2865), deployed in 7.118.0): the driver routes the WebView to the step-up route; #2865 is what renders `StepUpPage` there. Both halves are needed.
+
+Relates to **FR-24939**. Android equivalent (`frontegg-android-kotlin`) and the react-native native-pin bump are follow-ups.
+## Summary
+
+Fixes [FR-25783](https://frontegg.atlassian.net/browse/FR-25783) — `FronteggState.isOfflineMode` stopped updating after the first offline→online cycle for an authenticated session.
+
+## Root cause
+
+The offline connectivity observer was coupled to the auth-refresh lifecycle. Every authenticated success funneled through `clearTransientConnectivityStateAfterAuthenticatedSuccess()`, which **fully tore monitoring down** (`stopOfflineMonitoring()` + generation bump). Monitoring was only ever re-armed from failure/offline paths — never after a healthy success:
+
+1. Go offline → a refresh fails → `handleOfflineLikeFailure` sets `isOfflineMode=true` and arms monitoring (gen G1).
+2. Go online → armed monitor fires reachable → `reconnectedToInternet(G1)` sets `isOfflineMode=false` → triggers a refresh.
+3. Refresh **succeeds** → `clearTransientConnectivityStateAfterAuthenticatedSuccess()` stops monitoring, bumps to G2. **Now nothing observes connectivity.**
+4. Go offline again → no observer → `disconnectedFromInternet` never fires → `isOfflineMode` stays `false` until some later request/refresh happens to fail.
+
+The teardown-on-success was intentional (to avoid a forever `/test` poll while healthy), so this is a design fix, not a one-liner.
+
+## Fix — passive/full connectivity state machine
+
+| State | Observer | Cost |
+|-------|----------|------|
+| Healthy + online + authenticated | **Passive** `NWPathMonitor` only | ~free, event-driven — no `/test` poll |
+| Offline | **Full** monitor (path + `/test` poll) | detects real recovery, incl. captive portals |
+
+- **De-escalate on success** — `clearTransientConnectivityStateAfterAuthenticatedSuccess` now arms a passive, path-only observer when a runtime session exists. Central choke point, so it covers the runtime `$accessToken` path, credential-hydration success, and startup.
+- **Escalate on disconnect** — `disconnectedFromInternet` escalates to the full `/test`-polling monitor once it commits to offline (only on the `false→true` transition, only for an authenticated session), so recovery isn't fooled by a bare `NWPath.satisfied` on a captive portal.
+- **New passive mode** in `NetworkStatusMonitor.startBackgroundMonitoring` via `enableActiveProbe` (default `true` → fully source-compatible; no existing behavior changes).
+
+## Tests
+
+- New regression test: connectivity monitoring stays passive-active after an authenticated success.
+- New escalation test: a committed disconnect flips `isOfflineMode` and escalates to the full monitor (drives the offline→online→offline cycle).
+- Updated the two existing tests that codified the old teardown behavior.
+- Full suite green: **745 tests, 0 failures**. Library release build passes.
+
+## Notes
+
+- The ticket says "works in 1.3.0," but git shows this coupling landed in `2f2bae3` **before** the 1.3.0 tag — the version attribution is imprecise; the root cause holds regardless.
+- No CHANGELOG entry here (this repo adds those in dedicated release commits). Suggest a `Fixed:` entry at the next release.
+- Optional follow-up: a demo-app E2E test driving a real double offline↔online cycle.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
+[FR-25783]: https://frontegg.atlassian.net/browse/FR-25783?atlOrigin=eyJpIjoiNWRkNTljNzYxNjVmNDY3MDlhMDU5Y2ZhYzA5YTRkZjUiLCJwIjoiZ2l0aHViLWNvbS1KU1cifQ
+
 ## v1.3.10
 - Added: Admin Portal hosted-login mode support — opening the embedded Admin Portal no longer forces a second login (native token bridge).
 

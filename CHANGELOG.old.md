@@ -1,3 +1,6 @@
+## v1.3.10
+- Added: Admin Portal hosted-login mode support — opening the embedded Admin Portal no longer forces a second login (native token bridge).
+
 ## v1.3.9
 - Fixed: entitlement checks now run the full decision-logic evaluation on device (plans, feature flags, and per-rule conditions), matching the web SDKs — a feature gated by a plan's `defaultTreatment: false` no longer reports `isEntitled = true`. (FR-24821)
 - Changed: Sentry breadcrumbs now respect the configured `logLevel`, and verbose info-level logs were trimmed — sharply reduces Sentry/log volume at the default `warn` level.
