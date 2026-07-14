@@ -1,3 +1,10 @@
+## v1.3.11
+
+- Fixed: embedded step-up renders the MFA challenge instead of a blank page — the embedded login WebView now exposes the native `getTokens` token bridge (the same protocol the Admin Portal uses), and a new step-up web driver routes the hosted login box to its step-up page and completes with an elevated (stepped-up) token via the existing OAuth callback. Requires hosted login box ≥ 7.118.0. (FR-24939 — [#275](https://github.com/frontegg/frontegg-ios-swift/pull/275), [#278](https://github.com/frontegg/frontegg-ios-swift/pull/278))
+- Fixed: the step-up authorize URL now emits OIDC-compliant integer `max_age` (`60`, previously `60.0`). ([#278](https://github.com/frontegg/frontegg-ios-swift/pull/278))
+- Fixed: the connectivity observer stays alive across repeated offline/online cycles, so automatic offline recovery keeps working after multiple network drops. (FR-25783 — [#277](https://github.com/frontegg/frontegg-ios-swift/pull/277))
+- Added: embedded step-up E2E coverage (`testEmbeddedStepUpMfaChallenge`) exercising the full `acr_values` → step-up page → elevated-token flow against the mock auth server. ([#278](https://github.com/frontegg/frontegg-ios-swift/pull/278))
+
 ## v1.3.10
 - Added: Admin Portal hosted-login mode support — opening the embedded Admin Portal no longer forces a second login (native token bridge).
 
@@ -71,7 +78,6 @@ Differential verified by temporarily removing `entitlements.clear()` from `setCr
 
 - [frontegg-android-kotlin#254](https://github.com/frontegg/frontegg-android-kotlin/pull/254) — the equivalent Android fix this is ported from.
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 ## v1.3.6
 
@@ -100,7 +106,6 @@ Pulling the job is cleaner than leaving it as a 25-min advisory failure on every
 - [ ] No red \`Unit Tests (Thread Sanitizer)\` mark on this PR
 - [ ] After merge, future PRs no longer run TSan
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 ## v1.3.5
 ## Summary
