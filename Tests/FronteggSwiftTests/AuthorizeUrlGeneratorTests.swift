@@ -112,7 +112,8 @@ final class AuthorizeUrlGeneratorTests: XCTestCase {
     func test_generate_stepUp_with_maxAge_adds_param() {
         let (url, _) = AuthorizeUrlGenerator.shared.generate(stepUp: true, maxAge: 300)
         let params = queryItems(from: url)
-        XCTAssertEqual(params["max_age"], "300.0")
+        // OIDC max_age is integer seconds (not "300.0").
+        XCTAssertEqual(params["max_age"], "300")
     }
 
     // MARK: - organization

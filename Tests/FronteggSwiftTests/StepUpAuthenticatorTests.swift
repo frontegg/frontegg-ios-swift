@@ -200,8 +200,8 @@ final class StepUpAuthenticatorTests: XCTestCase {
         )
         XCTAssertEqual(
             params["max_age"],
-            "60.0",
-            "Step-up URL must propagate the maxAge requested by the host app"
+            "60",
+            "Step-up URL must propagate the maxAge requested by the host app (OIDC integer seconds)"
         )
         XCTAssertNil(
             params["prompt"],
