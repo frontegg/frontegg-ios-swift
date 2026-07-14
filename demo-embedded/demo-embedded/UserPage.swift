@@ -287,6 +287,14 @@ struct UserPage: View {
     private var testAccessTokenDiagnostics: some View {
         let diagnostics = currentAccessTokenDiagnostics
         return VStack(spacing: 0) {
+            // E2E-only step-up trigger. Mirrors the "Sensitive action" button but without the
+            // trailing .padding modifier (which makes the accessibility element the padded
+            // container so XCUITest taps don't reach the inner Button), and positioned near the
+            // top of the scroll view so it is reliably hittable in the embedded E2E suite.
+            Button("E2E Step Up") {
+                handleSensitiveAction()
+            }
+            .accessibilityIdentifier("E2EStepUpButton")
             Text(diagnostics.version)
                 .font(.system(size: 1))
                 .foregroundColor(.clear)
