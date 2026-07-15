@@ -23,8 +23,18 @@ extension FronteggAuth {
                 self.activeEmbeddedOAuthFlow = .login
             }
             if self.loginCompletion != nil {
-                logger.info("Login request ignored, Embedded login already in progress.")
-                return
+                // Only treat the pending completion as "in progress" while the
+                // embedded login UI is actually on screen. Otherwise it is a
+                // stale leftover from an abandoned attempt (e.g. a login whose
+                // modal was never presented) and must not block login for the
+                // rest of the process.
+                if rootVC.presentedViewController is UIHostingController<EmbeddedLoginModal> {
+                    logger.info("Login request ignored, Embedded login already in progress.")
+                    return
+                }
+                logger.info("Replacing stale loginCompletion from an abandoned login attempt")
+                self.loginCompletion?(.failure(FronteggError.authError(.operationCanceled)))
+                self.loginCompletion = nil
             }
             self.loginCompletion = { result in
                 _completion?(result)
