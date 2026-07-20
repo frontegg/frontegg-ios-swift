@@ -347,10 +347,16 @@ extension FronteggAuth {
             return false
         }
 
-        if self.refreshingToken {
+        // Atomically claim the refresh slot. The previous `if self.refreshingToken`
+        // check-then-set was non-atomic (setRefreshingToken dispatches async to
+        // main), letting two concurrent refreshes both proceed and issue
+        // duplicate rotating-refresh-token requests — the loser 401'd and cleared
+        // credentials (spurious logout). The actor serializes entry (FR-25927).
+        guard await self.refreshGate.tryBegin() else {
             self.logger.info("Skip refreshing token - already in progress")
             return false
         }
+        defer { Task { await self.refreshGate.end() } }
 
         self.logger.info("Refreshing token")
         setRefreshingToken(true)

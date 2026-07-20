@@ -48,6 +48,8 @@ public class FronteggAuth: FronteggState {
     
     let logger = getLogger("FronteggAuth")
     public let credentialManager: CredentialManager
+    // Serializes token-refresh entry so only one refresh runs at a time (FR-25927).
+    let refreshGate = RefreshGate()
     // internal for extension access (FronteggAuth+MFA.swift)
     var multiFactorAuthenticator: MultiFactorAuthenticator
     // internal for extension access (FronteggAuth+StepUp.swift)
