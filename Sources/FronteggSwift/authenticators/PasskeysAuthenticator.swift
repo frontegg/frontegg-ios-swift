@@ -10,7 +10,25 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
     static let shared = PasskeysAuthenticator()
     
     private var callbackAction: ((_ data: WebAuthnCallbackData?, _ error: Error?) -> Void)?
+    // Completion for the native `startWebAuthn` registration flow. Held
+    // separately from `callbackAction` because the ASAuthorization delegate
+    // clears `callbackAction` as soon as it returns, while the registration
+    // isn't actually finished until the async `verifyNewDeviceSession` call
+    // resolves. Signalling through this slot keeps the caller's completion
+    // alive across that delegate boundary.
+    var registrationCompletion: FronteggAuth.ConditionCompletionHandler?
     private var logger = getLogger("PasskeysAuthenticator")
+
+    /// Injectable transport for `verifyNewDeviceSession`, so the completion
+    /// wiring can be exercised without a live network round-trip.
+    typealias VerifyTransport = (URLRequest) async -> (data: Data?, response: URLResponse?, error: Error?)
+
+    /// Delivers the registration result exactly once and clears the slot.
+    private func completeRegistration(_ error: FronteggError?) {
+        let completion = self.registrationCompletion
+        self.registrationCompletion = nil
+        completion?(error)
+    }
     
     // MARK: - WebAuthn Registration
     
@@ -18,16 +36,21 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
         let baseUrl = FronteggAuth.shared.baseUrl
         
         if let completion = completion  {
+            // Held across the ASAuthorization delegate boundary; `callbackAction`
+            // is cleared by the delegate before `verifyNewDeviceSession` resolves.
+            self.registrationCompletion = completion
             self.callbackAction = { (data, error) in
                 if let regsitration = data as? WebauthnRegistration {
-                    self.verifyNewDeviceSession(publicKey: regsitration)
+                    Task { await self.verifyNewDeviceSession(publicKey: regsitration) }
                 } else {
+                    // Errors raised before ASAuthorization runs (e.g. failing to
+                    // fetch registration options) still surface here.
                     if error == nil {
-                        completion(nil)
+                        self.completeRegistration(nil)
                     }else if let frotneggError = error as? FronteggError {
-                        completion(frotneggError)
+                        self.completeRegistration(frotneggError)
                     } else {
-                        completion(FronteggError.authError(.unknown))
+                        self.completeRegistration(FronteggError.authError(.unknown))
                     }
                 }
             }
@@ -133,7 +156,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
         if let callback = self.callbackAction {
             callback(regsitration, nil)
         } else {
-            self.verifyNewDeviceSession(publicKey: regsitration)
+            Task { await self.verifyNewDeviceSession(publicKey: regsitration) }
         }
     }
     
@@ -231,67 +254,70 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
     
     // MARK: - Verify New Device Session
     
-    private func verifyNewDeviceSession(publicKey: WebauthnRegistration) {
-        let baseUrl = FronteggAuth.shared.baseUrl
-        
+    func verifyNewDeviceSession(
+        publicKey: WebauthnRegistration,
+        baseUrl overrideBaseUrl: String? = nil,
+        accessToken overrideAccessToken: String? = nil,
+        verifyTransport: VerifyTransport? = nil
+    ) async {
+        let baseUrl = overrideBaseUrl ?? FronteggAuth.shared.baseUrl
+
         guard let url = URL(string: "\(baseUrl)/frontegg/identity/resources/users/webauthn/v1/devices/verify"),
-              let accessToken = FronteggAuth.shared.accessToken else {
+              let accessToken = overrideAccessToken ?? FronteggAuth.shared.accessToken else {
             logger.error("Invalid base URL or missing access token")
-            
-            self.callbackAction?(nil, FronteggError.authError(.unknown))
+
+            self.completeRegistration(FronteggError.authError(.unknown))
             return
         }
-        
+
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "authorization")
         request.setValue(baseUrl, forHTTPHeaderField: "origin")
-        
+
         do {
             let jsonData = try JSONSerialization.data(withJSONObject: publicKey.toDictionary())
             request.httpBody = jsonData
-            
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                if let error = error {
-                    self.logger.error("Error verifying new device session: \(error.localizedDescription)")
-                    self.callbackAction?(nil, error)
-                    return
-                }
-                
-                guard let data = data else {
-                    self.logger.error("No data received")
-                    self.callbackAction?(nil, FronteggError.authError(.invalidPasskeysRequest))
-                    return
-                }
-                
-                do {
-                    
-                    if let dataStr = String(data:data, encoding: .utf8),
-                       let httpResponse = response as? HTTPURLResponse,
-                       dataStr.isEmpty, httpResponse.statusCode < 300 {
-                        self.logger.debug("Response from verify succeeded with empty body")
-                        self.callbackAction?(nil, nil)
-                    }else {
-                        
-                        if let jsonResponse = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                            self.logger.debug("Response from verify endpoint: \(jsonResponse)")
-                            self.callbackAction?(jsonResponse, nil)
-                        } else {
-                            self.logger.error("Invalid JSON structure in response")
-                            self.callbackAction?(nil, FronteggError.authError(.invalidPasskeysRequest))
-                        }
-                    }
-                } catch {
-                    self.logger.error("Error parsing JSON: \(error.localizedDescription)")
-                    self.callbackAction?(nil, error)
-                }
-            }
-            
-            task.resume()
         } catch {
             logger.error("Failed to serialize request body: \(error.localizedDescription)")
-            self.callbackAction?(nil, error)
+            self.completeRegistration(error as? FronteggError ?? FronteggError.authError(.unknown))
+            return
+        }
+
+        let transport: VerifyTransport = verifyTransport ?? { request in
+            await withCheckedContinuation { continuation in
+                URLSession.shared.dataTask(with: request) { data, response, error in
+                    continuation.resume(returning: (data, response, error))
+                }.resume()
+            }
+        }
+
+        let (data, response, error) = await transport(request)
+
+        if let error = error {
+            self.logger.error("Error verifying new device session: \(error.localizedDescription)")
+            self.completeRegistration(error as? FronteggError ?? FronteggError.authError(.failedToAuthenticate))
+            return
+        }
+
+        guard let data = data else {
+            self.logger.error("No data received")
+            self.completeRegistration(FronteggError.authError(.invalidPasskeysRequest))
+            return
+        }
+
+        if let dataStr = String(data: data, encoding: .utf8),
+           let httpResponse = response as? HTTPURLResponse,
+           dataStr.isEmpty, httpResponse.statusCode < 300 {
+            self.logger.debug("Response from verify succeeded with empty body")
+            self.completeRegistration(nil)
+        } else if let jsonResponse = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            self.logger.debug("Response from verify endpoint: \(jsonResponse)")
+            self.completeRegistration(nil)
+        } else {
+            self.logger.error("Invalid JSON structure in response")
+            self.completeRegistration(FronteggError.authError(.invalidPasskeysRequest))
         }
     }
     
