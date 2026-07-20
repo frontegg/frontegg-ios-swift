@@ -41,6 +41,13 @@ struct WebauthnRegistration {
     /// Initializes the WebauthnRegistration with data from a platform public key credential registration.
     /// - Parameter credential: An instance of `ASAuthorizationPlatformPublicKeyCredentialRegistration`
     /// which contains the WebAuthn registration data returned by the platform.
+    /// Memberwise initializer used to build a registration from already-decoded
+    /// values (e.g. tests, or a non-ASAuthorization source).
+    init(id: String, response: WebauthnRegistrationResponse) {
+        self.id = id
+        self.response = response
+    }
+
     init(credential: ASAuthorizationPlatformPublicKeyCredentialRegistration) {
         // Convert credential data into Base64-encoded strings
         self.id = credential.credentialID.toEncodedBase64()
