@@ -48,6 +48,14 @@ struct WebauthnAssertion {
     /// Initializes the WebauthnAssertion with data from a platform public key credential assertion.
     /// - Parameter credential: An instance of `ASAuthorizationPlatformPublicKeyCredentialAssertion`
     /// which contains the WebAuthn data returned by the platform.
+    /// Memberwise initializer used to build an assertion from already-decoded
+    /// values (e.g. tests, or a non-ASAuthorization source).
+    init(id: String, rawId: String, response: WebauthnAssertionResponse) {
+        self.id = id
+        self.rawId = rawId
+        self.response = response
+    }
+
     init(credential: ASAuthorizationPlatformPublicKeyCredentialAssertion) {
         // Convert credential data into Base64-encoded strings
         self.id = credential.credentialID.toEncodedBase64()

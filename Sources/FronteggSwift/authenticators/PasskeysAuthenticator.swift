@@ -173,43 +173,64 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
         }
     }
     // MARK: - Passkeys Login
-    func loginWithPasskeys(_ completion: FronteggAuth.CompletionHandler? = nil, _ retries: Int = 3) async {
+    func loginWithPasskeys(
+        _ completion: FronteggAuth.CompletionHandler? = nil,
+        _ retries: Int = 3,
+        auth: FronteggAuth = FronteggAuth.shared,
+        performAssertion: ((Data, String) async throws -> WebauthnAssertion)? = nil
+    ) async {
         do {
-    
+
             DispatchQueue.main.async {
-                FronteggAuth.shared.setIsLoading(true)
+                auth.setIsLoading(true)
             }
-            
-            let prelogin = try await FronteggAuth.shared.api.preloginWebauthn()
-                    
+
+            let prelogin = try await auth.api.preloginWebauthn()
+
             // Await the challenge response from the credential assertion request
-            let assertion = try await performCredentialAssertionRequest(challenge: prelogin.challenge, rpId: prelogin.rpId)
-            
-            
-            let authResponse = try await FronteggAuth.shared.api.postloginWebauthn(assertion: assertion)
-            
-            await FronteggAuth.shared.setCredentials(accessToken: authResponse.access_token, refreshToken: authResponse.refresh_token)
-            
-            
+            let assertion: WebauthnAssertion
+            if let performAssertion {
+                assertion = try await performAssertion(prelogin.challenge, prelogin.rpId)
+            } else {
+                assertion = try await performCredentialAssertionRequest(challenge: prelogin.challenge, rpId: prelogin.rpId)
+            }
+
+
+            let authResponse = try await auth.api.postloginWebauthn(assertion: assertion)
+
+            await auth.setCredentials(accessToken: authResponse.access_token, refreshToken: authResponse.refresh_token)
+
+            // Signal completion on success — previously the flow ended here and
+            // never invoked the handler, hanging any caller awaiting it.
+            await MainActor.run { auth.setIsLoading(false) }
+            if let user = auth.user {
+                completion?(.success(user))
+            } else {
+                completion?(.failure(.authError(.failedToAuthenticate)))
+            }
+
         } catch {
             if let fronteggError = error as? FronteggError {
+                // Reset the loader on the FronteggError failure path — previously
+                // only the generic-error branch did, leaving it spinning forever.
+                await MainActor.run { auth.setIsLoading(false) }
                 completion?(.failure(fronteggError))
             }else {
-                
+
                 if let m = error as? AuthenticationServices.ASAuthorizationError,
                    m.errorCode == 1004,
                    retries > 0 {
                     logger.error("Retrying loginWithPasskeys due to error: \(error.localizedDescription)")
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: {
                         Task{
-                            await self.loginWithPasskeys(completion, retries - 1)
+                            await self.loginWithPasskeys(completion, retries - 1, auth: auth, performAssertion: performAssertion)
                         }
                     })
                 }else {
                     logger.error("Error during loginWithPasskeys: \(error.localizedDescription)")
-                    
+
                     DispatchQueue.main.async {
-                        FronteggAuth.shared.setIsLoading(false)
+                        auth.setIsLoading(false)
                     }
                     completion?(.failure(.authError(.failedToAuthenticate)))
                 }
