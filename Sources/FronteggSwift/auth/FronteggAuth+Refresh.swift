@@ -7,6 +7,23 @@ import Foundation
 import Dispatch
 
 extension FronteggAuth {
+    /// Run `work` on the main thread while guarding against a same-thread
+    /// deadlock. When already on the main thread, `work` runs directly;
+    /// otherwise it is dispatched via `runSync` (e.g. `DispatchQueue.main.sync`).
+    /// `isMainThread`/`runSync` are injectable so the decision is unit-testable
+    /// without reproducing a real deadlock.
+    static func applyOnMain(
+        isMainThread: Bool,
+        runSync: (@escaping () -> Void) -> Void,
+        work: @escaping () -> Void
+    ) {
+        if isMainThread {
+            work()
+        } else {
+            runSync(work)
+        }
+    }
+
     func isAutoRefreshBlocked(source: RefreshInvocationSource) -> Bool {
         let disableAutoRefresh = (try? PlistHelper.fronteggConfig())?.disableAutoRefresh ?? false
         return disableAutoRefresh && source == .internalAuto
@@ -42,9 +59,14 @@ extension FronteggAuth {
                         let tenantId = user.activeTenant.id
                         if let tenantToken = try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .refreshToken) {
                             logger.info("Reloaded refresh token for tenant \(tenantId) from keychain in refreshTokenWhenNeeded")
-                            DispatchQueue.main.sync {
-                                setRefreshToken(tenantToken)
-                            }
+                            // Guard against a same-thread deadlock: the only caller
+                            // (applicationDidBecomeActive) is @MainActor, so an
+                            // unconditional main.sync here froze the app (FR-25925).
+                            FronteggAuth.applyOnMain(
+                                isMainThread: Thread.isMainThread,
+                                runSync: { DispatchQueue.main.sync(execute: $0) },
+                                work: { self.setRefreshToken(tenantToken) }
+                            )
                         } else {
                             logger.debug("No refresh token available for tenant \(tenantId). Exiting...")
                             return
@@ -53,9 +75,14 @@ extension FronteggAuth {
                         let tenantId = offlineUser.activeTenant.id
                         if let tenantToken = try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .refreshToken) {
                             logger.info("Reloaded refresh token for tenant \(tenantId) from keychain in refreshTokenWhenNeeded")
-                            DispatchQueue.main.sync {
-                                setRefreshToken(tenantToken)
-                            }
+                            // Guard against a same-thread deadlock: the only caller
+                            // (applicationDidBecomeActive) is @MainActor, so an
+                            // unconditional main.sync here froze the app (FR-25925).
+                            FronteggAuth.applyOnMain(
+                                isMainThread: Thread.isMainThread,
+                                runSync: { DispatchQueue.main.sync(execute: $0) },
+                                work: { self.setRefreshToken(tenantToken) }
+                            )
                         } else {
                             logger.debug("No refresh token available for tenant \(tenantId). Exiting...")
                             return
