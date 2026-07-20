@@ -48,6 +48,14 @@ public struct EmbeddedLoginModal: View {
         }
         .onDisappear {
             self.fronteggAuth.setWebLoading(false)
+            guard !self.fronteggAuth.isAuthenticated else { return }
+            guard let rootVC = VCHolder.shared.vc else { return }
+            // Avoid canceling a newer embedded login if this onDisappear is delayed
+            // after a replacement modal was already presented.
+            if rootVC.presentedViewController is UIHostingController<EmbeddedLoginModal> {
+                return
+            }
+            self.fronteggAuth.loginCompletion?(.failure(.authError(.operationCanceled)))
         }
         .environmentObject(fronteggAuth)
     }

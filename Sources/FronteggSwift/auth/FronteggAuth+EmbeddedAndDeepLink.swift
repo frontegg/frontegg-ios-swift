@@ -22,9 +22,14 @@ extension FronteggAuth {
             if self.pendingAppLink == nil {
                 self.activeEmbeddedOAuthFlow = .login
             }
-            if self.loginCompletion != nil {
-                logger.info("Login request ignored, Embedded login already in progress.")
-                return
+            if let staleCompletion = self.loginCompletion {
+                if rootVC.presentedViewController is UIHostingController<EmbeddedLoginModal> {
+                    logger.info("Login request ignored, Embedded login already in progress.")
+                    return
+                }
+                logger.warning("Clearing stale embedded login completion — modal not presented")
+                self.loginCompletion = nil
+                staleCompletion(.failure(.authError(.operationCanceled)))
             }
             self.loginCompletion = { result in
                 _completion?(result)
