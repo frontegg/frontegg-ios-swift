@@ -182,7 +182,11 @@ public struct User: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
         self.id = try container.decode(String.self, forKey: .id)
-        self.email = try container.decode(String.self, forKey: .email)
+        // FR-26108: phone-only users have no `email` in their /me response (they are identified by
+        // phoneNumber). Decode it leniently so the session can still be established; consumers that
+        // need an identifier fall back to `phoneNumber`. Kept as a non-optional String (default "")
+        // to avoid a source-breaking API change for the many `user.email` call sites and wrappers.
+        self.email = try container.decodeIfPresent(String.self, forKey: .email) ?? ""
         self.mfaEnrolled = (try? container.decodeIfPresent(Bool.self, forKey: .mfaEnrolled)) ?? false
         self.name = try container.decode(String.self, forKey: .name)
         self.profilePictureUrl = try container.decode(String.self, forKey: .profilePictureUrl)
