@@ -1,3 +1,25 @@
+## v1.3.13
+## FR-26108 — SDK fails to establish session when `/me` omits `email` for phone-only users
+
+Phone-only users log in successfully (OAuth completes), but the SDK then fails loading the profile from `/me`. For these users `/me` **has no `email` field** (they're identified by `phoneNumber`). `User.init(from:)` decoded `email` as a **required** `String`, so decoding threw:
+
+```
+keyNotFound(CodingKeys("email"), … "No value associated with key … (\"email\")")
+→ FronteggError.failedToLoadUserData("The data couldn't be read because it is missing.")
+```
+
+…and the session was never established.
+
+## Fix
+Decode `email` with `decodeIfPresent(...) ?? ""` so a missing `email` no longer aborts decoding.
+
+**Why `""` and not `email: String?`:** the ticket suggested making `email` optional, but `email` is a `public var email: String` read in many places — inside the SDK (e.g. `CustomWebView` builds `"userEmail": user.email`, several log sites) and in the RN/Flutter/Capacitor wrappers, which JSON-serialize the `User` and whose Dart/TS models type `email` as non-nullable. Turning it into `String?` is a **source-breaking** change that ripples across all of those (and would reintroduce the same missing-field failure in the wrappers' non-null parsing). Defaulting to `""` resolves the crash without breaking the public API; callers that need an identifier for phone-only accounts use `phoneNumber`. If the team prefers the fully-optional model in a major bump, that can be a follow-up.
+
+Other required fields (`id`, `name`, `tenants`, …) are unchanged — `test_initWithDictionary_throws_whenMissingRequiredFields` still passes.
+
+## Tests
+`UserTests.test_decode_succeeds_forPhoneOnlyUser_whenEmailMissing` — builds a phone-only `/me` payload (no `email`, `phoneNumber: +19152178654`), **RED reproduced the exact `keyNotFound` error → GREEN**. Verified on the iOS Simulator via `xcodebuild test`: full `UserTests` (17) + `ApiMeTests`/`ApiMeRecoveryTests`/`UserFromJWTTests` (28 total) pass, 0 failures.
+
 ## v1.3.12
 ## Summary
 `embeddedLogin` called `exit(500)` when `getRootVC()` returned nil — terminating the **host app**. That branch is reachable in scene-based apps during startup, or when login is triggered before a window exists. Under XCTest it returned without invoking the completion handler, hanging the caller.
