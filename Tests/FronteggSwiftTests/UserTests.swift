@@ -58,6 +58,20 @@ final class UserTests: XCTestCase {
         XCTAssertNil(user.metadata)
     }
     
+    func test_decode_succeeds_forPhoneOnlyUser_whenEmailMissing() throws {
+        // FR-26108: phone-only users authenticate successfully, but their /me response omits the
+        // `email` field entirely (they are identified by phoneNumber). Decoding must not fail —
+        // otherwise the session is never established.
+        var userDict = TestDataFactory.makeUser(phoneNumber: "+19152178654")
+        userDict.removeValue(forKey: "email")
+
+        let data = try TestDataFactory.jsonData(from: userDict)
+        let user = try JSONDecoder().decode(User.self, from: data)
+
+        XCTAssertEqual(user.email, "")
+        XCTAssertEqual(user.phoneNumber, "+19152178654")
+    }
+
     func test_decode_defaultsMfaEnrolledToFalse_whenMissing() throws {
         var userDict = TestDataFactory.makeUser()
         userDict.removeValue(forKey: "mfaEnrolled")
