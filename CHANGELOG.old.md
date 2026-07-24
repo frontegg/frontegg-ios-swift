@@ -1,3 +1,84 @@
+## v1.3.12
+## Summary
+`embeddedLogin` called `exit(500)` when `getRootVC()` returned nil — terminating the **host app**. That branch is reachable in scene-based apps during startup, or when login is triggered before a window exists. Under XCTest it returned without invoking the completion handler, hanging the caller.
+
+A library must never kill the host process. This surfaces `.couldNotFindRootViewController` through the completion handler so the caller can recover.
+
+## Test
+`EmbeddedLoginRootViewControllerTests`. Full FronteggSwiftTests suite green (747 tests).
+
+Fixes FR-25926.
+## Summary
+Both `enableSessionPerTenant` branches of `refreshTokenWhenNeeded` reloaded the tenant refresh token with an unconditional `DispatchQueue.main.sync {}`. The only caller, `applicationDidBecomeActive`, is `@MainActor` — so on the main thread `main.sync` deadlocked the app (permanent freeze / watchdog kill). The legacy non-per-tenant branch already guarded with `Thread.isMainThread`.
+
+Extracts the anti-deadlock decision into `FronteggAuth.applyOnMain` (run directly when already on main, dispatch otherwise) and routes both per-tenant branches through it. The helper's primitives are injectable, so the rule is unit-tested without reproducing a real deadlock.
+
+## Test
+`RefreshTokenMainThreadGuardTests`. Full FronteggSwiftTests suite green (747 tests).
+
+Fixes FR-25925.
+## Summary
+The single-flight guard was `if self.refreshingToken { return }` followed by `setRefreshingToken(true)`. Because `setRefreshingToken` dispatches async to main, the check-then-set was **non-atomic**: two concurrent refreshes (scheduled timer, foreground, reconnect, `getOrRefreshAccessTokenAsync`) could both pass the guard and issue duplicate `POST /oauth/token` with the same rotating refresh token. The loser got 401 `failedToRefreshToken`, credentials were cleared and `isAuthenticated=false` — a **spontaneous logout** of a valid session.
+
+Introduces a `RefreshGate` actor whose `tryBegin()` atomically claims the refresh slot; `refreshTokenIfNeededInternal` now gates entry through it. The published `refreshingToken` flag is retained for UI observers but is no longer the concurrency guard. Loser semantics (return false / skip) are unchanged, keeping the fix low-risk on this core path.
+
+## Test
+`RefreshGateTests` (concurrent `tryBegin` → exactly one winner). Full suite green (747 tests), including the refresh-recovery / 401-logout / retry tests.
+
+Fixes FR-25927.
+## Problem (FR-26003)
+
+The native passkey **registration** flow (`startWebAuthn`) never invoked its completion on success.
+
+`authorizationController(didCompleteWithAuthorization:)` clears `callbackAction` as soon as it returns. But registration isn't actually finished at that point — it still has to POST to the `webauthn/v1/devices/verify` endpoint via the async `verifyNewDeviceSession`. That call signalled its success/failure through the now-`nil` `callbackAction`, so the result was silently dropped and the caller's completion never fired.
+
+## Fix
+
+- Add a dedicated `registrationCompletion` slot that survives the ASAuthorization delegate boundary; `verifyNewDeviceSession` now delivers the registration result through it (via a `completeRegistration` helper that fires exactly once).
+- Make `verifyNewDeviceSession` `async` with an injectable transport (`VerifyTransport`), so the completion wiring is unit-testable without a live network round-trip.
+- Add a memberwise `WebauthnRegistration` initializer for test construction.
+
+Success/failure semantics of the verify response are unchanged — only the delivery path is fixed.
+
+## Tests
+
+New `PasskeysRegistrationCompletionTests`:
+- empty-body 2xx verify → completion fires with no error
+- transport error → completion fires with an error
+
+Written TDD (both failed on the pre-fix signaling for the exact drop, then passed). Full suite green: **747 tests, 0 failures**.
+## Summary
+`loginWithPasskeys` had two defects:
+- The **success** path ended at `setCredentials` and never invoked `completion`, hanging any caller awaiting the result.
+- The `FronteggError` **failure** branch called `completion` but never reset `isLoading`, leaving the loader spinning forever (only the generic-error branch reset it).
+
+Refactors `loginWithPasskeys` to take an injectable `auth` + assertion provider so both outcomes are unit-testable, then invokes `completion` (.success/.failure) and resets `isLoading` on every exit path. Adds a memberwise `WebauthnAssertion` initializer so a canned assertion can be supplied in tests.
+
+> Scope: **login path only.** The registration-path completion bug (`callbackAction` nil'd before `verifyNewDeviceSession` resolves) needs a separate ASAuthorization delegate-lifetime change and is tracked as FR-26003.
+
+## Test
+`PasskeysLoginCompletionTests` (success + failure). Full suite green (747 tests).
+
+Fixes FR-25928 (login path).
+Fixes the DSN-hijack half of FR-25990. **No dependency or deployment-target changes.**
+
+## Problem — DSN hijack
+
+The SDK called `SentrySDK.start()` with Frontegg's hardcoded DSN on init, binding the **process-global** Sentry client to our DSN. A host app running its own Sentry then had its events routed to Frontegg's project instead of the customer's.
+
+## Fix
+
+Build a private `SentryClient` + `SentryHub` and route all Frontegg telemetry (errors, messages, breadcrumbs, user, tags, scope) through it. We never call `SentrySDK.start()`, so the host app's global Sentry is untouched — Sentry's recommended pattern for embedded SDKs. Per-call context is layered on a copy of the hub scope (`Scope(scope: hub.scope)`) so global metadata is preserved. Breadcrumb redaction, `logLevel` gating, and offline caching are unchanged.
+
+## Test
+
+`SentryIsolatedHubTests.test_initialize_doesNotStartGlobalSentrySDK` asserts `SentrySDK.isEnabled` stays `false` after `initialize()` — RED before, GREEN after. Full unit-test suite green (**753 tests**).
+
+## Part 2 (Xcode 26.6 build failure) — intentionally NOT here
+
+The ticket's second symptom (`failed to build module 'Sentry'` on Xcode 26.6) could **not be reproduced** on a clean SPM build with the exact toolchain (Xcode 26.6 / 17F113, Swift 6.3.3, sentry-cocoa 8.58.0): the static `Sentry` product builds fine for both simulator and device. The customer is on v1.3.11 (SPM-only; CocoaPods tops out at 1.2.76), so their failure appears specific to their app's build environment. Pending the customer's full error log + build settings before shipping a linking-model change (`Sentry-Dynamic`) or a v9 bump (which would break iOS 14). Tracked separately.
+Fixed problem with login blocking.
+
 ## v1.3.11
 
 - Fixed: embedded step-up renders the MFA challenge instead of a blank page — the embedded login WebView now exposes the native `getTokens` token bridge (the same protocol the Admin Portal uses), and a new step-up web driver routes the hosted login box to its step-up page and completes with an elevated (stepped-up) token via the existing OAuth callback. Requires hosted login box ≥ 7.118.0. (FR-24939 — [#275](https://github.com/frontegg/frontegg-ios-swift/pull/275), [#278](https://github.com/frontegg/frontegg-ios-swift/pull/278))
