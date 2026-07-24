@@ -54,7 +54,18 @@ public class FronteggAuth: FronteggState {
     var multiFactorAuthenticator: MultiFactorAuthenticator
     // internal for extension access (FronteggAuth+StepUp.swift)
     var stepUpAuthenticator: StepUpAuthenticator
-    public var api: Api
+    // Lock-protected storage for the public `api` accessor below. Same hazard
+    // as `featureFlags`: `api` is reassigned during region switches and on
+    // every test's setUp via manualInit, while async work from a prior setUp's
+    // startPostConnectivityServices() (e.g. SocialLoginUrlGenerator.reloadConfigs)
+    // may still be reading it on a GCD worker. Serialize all access to avoid
+    // the data race (caught by ThreadSanitizer).
+    private let apiLock = NSLock()
+    private var _api: Api
+    public var api: Api {
+        get { apiLock.withLock { _api } }
+        set { apiLock.withLock { _api = newValue } }
+    }
     // Lock-protected storage for the public `featureFlags` accessor below.
     // FronteggAuth.featureFlags is reassigned during region switches and on
     // every test's setUp via manualInit, while async work from a prior
@@ -145,10 +156,12 @@ public class FronteggAuth: FronteggState {
         self.baseUrl = baseUrl
         self.clientId = clientId
         self.applicationId = applicationId
-        self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
-        self._featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self.api))
-        self.entitlements = Entitlements(.init(api: self.api, enabled: entitlementsEnabled))
-        self.multiFactorAuthenticator = MultiFactorAuthenticator(api: api, baseUrl: baseUrl)
+        // Assign the backing store directly: phase-1 init can't call the
+        // computed `api` getter (a method) before super.init().
+        self._api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
+        self._featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self._api))
+        self.entitlements = Entitlements(.init(api: self._api, enabled: entitlementsEnabled))
+        self.multiFactorAuthenticator = MultiFactorAuthenticator(api: _api, baseUrl: baseUrl)
         self.stepUpAuthenticator = StepUpAuthenticator(credentialManager: credentialManager)
         
         super.init()
