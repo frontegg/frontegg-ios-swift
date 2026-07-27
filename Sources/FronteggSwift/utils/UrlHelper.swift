@@ -81,6 +81,16 @@ func currentAppBundleIdentifier() -> String {
     return Bundle.main.bundleIdentifier?.lowercased() ?? ""
 }
 
+/// Raw-cased bundle identifier for use in https App-Link paths, which are
+/// case-sensitive (unlike custom URL schemes, which are lowercased above).
+func currentAppRawBundleIdentifier() -> String {
+    if !FronteggApp.shared.bundleIdentifier.isEmpty {
+        return FronteggApp.shared.bundleIdentifier
+    }
+
+    return Bundle.main.bundleIdentifier ?? ""
+}
+
 private var cachedAppURLSchemesLock = NSLock()
 private var cachedAppURLSchemes: [String]?
 
@@ -172,9 +182,38 @@ func routedAppPath(
     return actualPath.isEmpty ? "/" : actualPath
 }
 
+/// Path of the App-Link (Universal Link) OAuth callback for this app.
+/// Mirrors Android's `/oauth/account/redirect/android/{packageName}` and matches
+/// the routes Frontegg's hosted AASA file publishes
+/// (`"/oauth/account/redirect/ios/{bundleId}/*"`).
+/// The bundle identifier keeps its original casing: unlike custom URL schemes,
+/// https paths are case-sensitive, and the AASA routes publish the bundle id
+/// as-is (Android likewise uses the raw `packageName`).
+func assetLinksRedirectPath(bundleIdentifier: String) -> String {
+    return "/oauth/account/redirect/ios/\(bundleIdentifier)"
+}
+
+/// Whether the opt-in `useAssetLinks` App-Link (https) redirect is in effect.
+/// `ASWebAuthenticationSession.Callback.https` requires iOS 17.4, so on older
+/// versions this returns `false` and the SDK falls back to the default
+/// custom-scheme redirect end-to-end.
+func isAssetLinksRedirectEnabled(
+    useAssetLinks: Bool = FronteggApp.shared.useAssetLinks
+) -> Bool {
+    guard useAssetLinks else {
+        return false
+    }
+    if #available(iOS 17.4, *) {
+        return true
+    }
+    return false
+}
+
 func supportedGeneratedRedirectUris(
     baseUrl: String = FronteggApp.shared.baseUrl,
-    bundleIdentifier: String = currentAppBundleIdentifier()
+    bundleIdentifier: String = currentAppBundleIdentifier(),
+    useAssetLinks: Bool = isAssetLinksRedirectEnabled(),
+    rawBundleIdentifier: String = currentAppRawBundleIdentifier()
 ) -> [String] {
     guard
         let urlComponents = URLComponents(string: baseUrl),
@@ -192,6 +231,20 @@ func supportedGeneratedRedirectUris(
 
     var seen = Set<String>()
     var uris: [String] = []
+
+    // App-Link (https) redirect goes first so `generateRedirectUri()` picks it;
+    // the custom-scheme URIs stay in the list so previously issued callbacks
+    // keep matching after the option is flipped.
+    if useAssetLinks {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = host
+        components.path = assetLinksRedirectPath(bundleIdentifier: rawBundleIdentifier)
+
+        if let uri = components.url?.absoluteString, seen.insert(uri).inserted {
+            uris.append(uri)
+        }
+    }
 
     for path in candidatePaths {
         var components = URLComponents()

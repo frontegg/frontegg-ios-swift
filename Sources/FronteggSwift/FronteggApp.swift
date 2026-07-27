@@ -111,6 +111,16 @@ public class FronteggApp {
     public var handleLoginWithSocialProvider:Bool = true
     public var backgroundColor: UIColor? = nil
     public var entitlementsEnabled: Bool = false
+    /// Opt-in App-Link (https Universal Link) OAuth redirect — parity with Android's `useAssetsLinks`.
+    ///
+    /// When `true`, the generated OAuth redirect URI becomes
+    /// `https://{baseUrl host}/oauth/account/redirect/ios/{bundleIdentifier}`
+    /// (matching the routes published by Frontegg's hosted AASA file) instead of the
+    /// default custom-scheme `{bundleIdentifier}://.../ios/oauth/callback`.
+    ///
+    /// Requires iOS 17.4+ (`ASWebAuthenticationSession.Callback.https`); on older
+    /// versions the SDK silently falls back to the custom-scheme redirect.
+    public var useAssetLinks: Bool = false
     /// Convenience alias over `FeLogger.delegate`.
     ///
     /// Set `FeLogger.delegate` directly if you need to capture logs before
@@ -182,6 +192,7 @@ public class FronteggApp {
         self.backgroundColor = UIColor(named: config.backgroundColor ?? "#FFFFFF") ?? .white
         self.loginOrganizationAlias = config.loginOrganizationAlias
         self.entitlementsEnabled = config.entitlementsEnabled
+        self.useAssetLinks = config.useAssetLinks
 
         if FronteggApp.clearKeychain(config: config) {
             self.credentialManager.clear()
@@ -306,7 +317,8 @@ public class FronteggApp {
                 enableSentryLogging: config.enableSentryLogging,
                 sentryMaxQueueSize: config.sentryMaxQueueSize,
                 loginOrganizationAlias: config.loginOrganizationAlias,
-                entitlementsEnabled: config.entitlementsEnabled
+                entitlementsEnabled: config.entitlementsEnabled,
+                useAssetLinks: config.useAssetLinks
             )
             PlistHelper.testConfigOverride = overridden
         } else {
@@ -324,7 +336,8 @@ public class FronteggApp {
             handleLoginWithCustomSSO:Bool = false,
             handleLoginWithCustomSocialLoginProvider:Bool = true,
             handleLoginWithSocialProvider:Bool = true,
-            entitlementsEnabled: Bool = false
+            entitlementsEnabled: Bool = false,
+            useAssetLinks: Bool = false
     ) {
         self.baseUrl = baseUrl
         self.clientId = cliendId
@@ -339,6 +352,7 @@ public class FronteggApp {
         self.handleLoginWithCustomSocialLoginProvider = handleLoginWithCustomSocialLoginProvider
         self.handleLoginWithSocialProvider = handleLoginWithSocialProvider
         self.entitlementsEnabled = entitlementsEnabled
+        self.useAssetLinks = useAssetLinks
 
         self.auth.manualInit(baseUrl: baseUrl, clientId: cliendId, applicationId: applicationId, entitlementsEnabled: entitlementsEnabled)
     }
