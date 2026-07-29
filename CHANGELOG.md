@@ -10,10 +10,13 @@ Add `jsStringLiteral(_:)` — serializes a Swift string into a fully-quoted, esc
 ## Notes
 
 - JSON string escaping is a valid subset of JS string escaping (handles `"`, `\`, newlines, control chars).
-- Minor known edge: U+2028/U+2029 are valid in JSON but technically invalid unescaped in a JS string literal — vanishingly unlikely inside an error message; can harden `jsStringLiteral` later if we want to be exhaustive.
-- Not built locally in this change; CI (unit + E2E) will verify.
+- Known edge: U+2028/U+2029 are valid in JSON but technically invalid unescaped in a JS string literal — vanishingly unlikely inside an error message.
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+## Test
+
+`JsStringLiteralTests`. Covers plain text, embedded `"`, backslashes, newlines, control characters, combined specials, the empty string, and U+2028/U+2029.
+
+Fixes FR-26113.
 
 ## v1.3.13
 
@@ -26,17 +29,11 @@ Fixes the ThreadSanitizer data race that failed CI on the v1.3.13 release PR (#2
 
 The property directly below it, `featureFlags`, **already carries an `NSLock` for this exact hazard** (its comment describes the same scenario). `api` was simply missed. This applies the identical lock-protected accessor to `api`; `init` assigns the backing `_api` directly since phase-1 init can't call the computed getter. All other access sites — and the region-switch / `manualInit` writes — flow through the lock unchanged (no call-site edits).
 
-## Pre-existing race, not a v1.3.13 regression
-`api` predates the release. TSan is non-deterministic, so the same job may pass on a rerun — but the race is real and worth fixing at the source.
+This is a pre-existing race rather than a v1.3.13 regression: `api` predates the release, and ThreadSanitizer surfaces it non-deterministically.
 
-## Verified locally
-`xcodebuild test -scheme FronteggSwift -enableThreadSanitizer YES -only-testing:FronteggSwiftTests`:
-**756 tests, 0 failures, 0 TSan race reports** (Xcode 26.4, iPhone 16 sim). The failing CI run reported the race at this exact getter.
+## Test
 
-## ⚠️ To actually unblock #290
-This targets `master`. `release/next` (what #290 builds) is `master` + 3 release commits, so **#290 will not go green until this fix reaches `release/next`** — merge `master` → `release/next` (or re-cut the release) once this lands.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+Full FronteggSwiftTests suite green under `-enableThreadSanitizer YES` (756 tests, 0 failures, 0 race reports).
 
 ## v1.3.12
 ## Summary
