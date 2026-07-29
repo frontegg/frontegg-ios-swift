@@ -1,3 +1,20 @@
+## v1.3.14
+## Summary
+
+Fixes #288 (FR-26113). In the embedded passkey bridge, `error.localizedDescription` was interpolated **raw** into `evaluateJavaScript("…reject(\"\(msg)\")")`. Any message containing a `"`, `\`, or newline breaks the injected JS statement — the call fails silently and the page's credential promise is **never rejected**, hanging the login box's passkey flow (the reported symptom).
+
+## Fix
+
+Add `jsStringLiteral(_:)` — serializes a Swift string into a fully-quoted, escaped JS string literal via `JSONSerialization` — and use it at the two `reject(...)` call sites in `FronteggWKContentController` (also fixes the "occorred" → "occurred" typo).
+
+## Notes
+
+- JSON string escaping is a valid subset of JS string escaping (handles `"`, `\`, newlines, control chars).
+- Minor known edge: U+2028/U+2029 are valid in JSON but technically invalid unescaped in a JS string literal — vanishingly unlikely inside an error message; can harden `jsStringLiteral` later if we want to be exhaustive.
+- Not built locally in this change; CI (unit + E2E) will verify.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
 ## v1.3.13
 
 - Fixed: the SDK failed to establish a session for phone-only accounts whose `/me` response omits `email` (they are identified by `phoneNumber`) — `email` is now decoded leniently (defaults to `""` when absent) so profile decoding no longer aborts. (FR-26108 — [#289](https://github.com/frontegg/frontegg-ios-swift/pull/289))
