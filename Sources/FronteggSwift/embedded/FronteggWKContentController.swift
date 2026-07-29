@@ -100,11 +100,12 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
                        let jsonString = String(data: jsonData, encoding: .utf8) {
                         webView.evaluateJavaScript("window.navigator.credentials.helpers.listeners.get(\"\(callbackId)\").resolve(\(jsonString))")
                     } else {
-                        webView.evaluateJavaScript("window.navigator.credentials.helpers.listeners.get(\"\(callbackId)\").reject(\"\(error?.localizedDescription ?? "Unknown error occorred")\")")
+                        let reason = error?.localizedDescription ?? "Unknown error occurred"
+                        webView.evaluateJavaScript("window.navigator.credentials.helpers.listeners.get(\"\(callbackId)\").reject(\(Self.jsStringLiteral(reason)))")
                     }
                 }
             } catch {
-                webView.evaluateJavaScript("window.navigator.credentials.helpers.listeners.get(\"\(callbackId)\").reject(\"\(error.localizedDescription)\")")
+                webView.evaluateJavaScript("window.navigator.credentials.helpers.listeners.get(\"\(callbackId)\").reject(\(Self.jsStringLiteral(error.localizedDescription)))")
             }
             
         case "loginWithSSO":
@@ -280,5 +281,20 @@ class FronteggWKContentController: NSObject, WKScriptMessageHandler {
         DispatchQueue.main.async { [weak self] in
             self?.webView?.evaluateJavaScript(js, completionHandler: nil)
         }
+    }
+
+    /// Serializes a Swift string into a quoted, fully-escaped JS string literal
+    /// (handling quotes, backslashes, newlines and other control characters).
+    /// Interpolating raw error messages into `evaluateJavaScript` breaks the
+    /// injected statement whenever the message contains a `"`, `\` or newline —
+    /// the call then fails silently and the page's credential promise is never
+    /// rejected, hanging the passkey flow. Returns a literal that already
+    /// includes its surrounding quotes, e.g. `"the \"message\""`.
+    static func jsStringLiteral(_ value: String) -> String {
+        if let data = try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed]),
+           let literal = String(data: data, encoding: .utf8) {
+            return literal
+        }
+        return "\"\""
     }
 }
