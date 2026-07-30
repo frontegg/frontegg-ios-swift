@@ -1,5 +1,6 @@
 ## v1.3.14
 
+- Added: opt-in App-Link (https) OAuth redirect. Setting `useAssetLinks` in `Frontegg.plist` routes the OAuth callback through `https://{your-frontegg-domain}/oauth/account/redirect/ios/{bundleId}` instead of the custom URL scheme, matching Android's `useAssetsLinks`. Off by default, and requires iOS 17.4+ — older versions fall back to the custom-scheme callback. (FR-26224 — [#294](https://github.com/frontegg/frontegg-ios-swift/pull/294))
 - Fixed: a failed or cancelled passkey sign-in could leave the embedded login box hanging instead of surfacing the error — error messages containing a quote, backslash or newline broke the JavaScript the bridge injected to reject the credential request, so the login page's promise never settled. (FR-26113 — [#292](https://github.com/frontegg/frontegg-ios-swift/pull/292))
 
 ## v1.3.13
