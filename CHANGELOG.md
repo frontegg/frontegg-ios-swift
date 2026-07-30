@@ -1,25 +1,11 @@
+## v1.3.14
+
+- Fixed: a failed or cancelled passkey sign-in could leave the embedded login box hanging instead of surfacing the error — error messages containing a quote, backslash or newline broke the JavaScript the bridge injected to reject the credential request, so the login page's promise never settled. (FR-26113 — [#292](https://github.com/frontegg/frontegg-ios-swift/pull/292))
+
 ## v1.3.13
 
 - Fixed: the SDK failed to establish a session for phone-only accounts whose `/me` response omits `email` (they are identified by `phoneNumber`) — `email` is now decoded leniently (defaults to `""` when absent) so profile decoding no longer aborts. (FR-26108 — [#289](https://github.com/frontegg/frontegg-ios-swift/pull/289))
-## Summary
-
-Fixes the ThreadSanitizer data race that failed CI on the v1.3.13 release PR (#290).
-
-`FronteggAuth.api` was an **unsynchronized mutable property**. It's reassigned on the main thread (`manualInit`, region switches) while async work from a prior `startPostConnectivityServices()` — `SocialLoginUrlGenerator.reloadConfigs()` — can still read it on a GCD worker. TSan flagged the read/write race (`FronteggAuth.api.getter`).
-
-The property directly below it, `featureFlags`, **already carries an `NSLock` for this exact hazard** (its comment describes the same scenario). `api` was simply missed. This applies the identical lock-protected accessor to `api`; `init` assigns the backing `_api` directly since phase-1 init can't call the computed getter. All other access sites — and the region-switch / `manualInit` writes — flow through the lock unchanged (no call-site edits).
-
-## Pre-existing race, not a v1.3.13 regression
-`api` predates the release. TSan is non-deterministic, so the same job may pass on a rerun — but the race is real and worth fixing at the source.
-
-## Verified locally
-`xcodebuild test -scheme FronteggSwift -enableThreadSanitizer YES -only-testing:FronteggSwiftTests`:
-**756 tests, 0 failures, 0 TSan race reports** (Xcode 26.4, iPhone 16 sim). The failing CI run reported the race at this exact getter.
-
-## ⚠️ To actually unblock #290
-This targets `master`. `release/next` (what #290 builds) is `master` + 3 release commits, so **#290 will not go green until this fix reaches `release/next`** — merge `master` → `release/next` (or re-cut the release) once this lands.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+- Fixed: a data race on the internal `api` client — it could be reassigned during a region switch or `manualInit` while background work was still reading it. Access is now serialized, matching the existing handling of `featureFlags`. ([#291](https://github.com/frontegg/frontegg-ios-swift/pull/291))
 
 ## v1.3.12
 ## Summary

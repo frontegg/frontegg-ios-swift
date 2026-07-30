@@ -1,3 +1,8 @@
+## v1.3.13
+
+- Fixed: the SDK failed to establish a session for phone-only accounts whose `/me` response omits `email` (they are identified by `phoneNumber`) — `email` is now decoded leniently (defaults to `""` when absent) so profile decoding no longer aborts. (FR-26108 — [#289](https://github.com/frontegg/frontegg-ios-swift/pull/289))
+- Fixed: a data race on the internal `api` client — it could be reassigned during a region switch or `manualInit` while background work was still reading it. Access is now serialized, matching the existing handling of `featureFlags`. ([#291](https://github.com/frontegg/frontegg-ios-swift/pull/291))
+
 ## v1.3.12
 ## Summary
 `embeddedLogin` called `exit(500)` when `getRootVC()` returned nil — terminating the **host app**. That branch is reachable in scene-based apps during startup, or when login is triggered before a window exists. Under XCTest it returned without invoking the completion handler, hanging the caller.
