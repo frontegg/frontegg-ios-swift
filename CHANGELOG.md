@@ -1,39 +1,11 @@
 ## v1.3.14
-## Summary
 
-Fixes #288 (FR-26113). In the embedded passkey bridge, `error.localizedDescription` was interpolated **raw** into `evaluateJavaScript("…reject(\"\(msg)\")")`. Any message containing a `"`, `\`, or newline breaks the injected JS statement — the call fails silently and the page's credential promise is **never rejected**, hanging the login box's passkey flow (the reported symptom).
-
-## Fix
-
-Add `jsStringLiteral(_:)` — serializes a Swift string into a fully-quoted, escaped JS string literal via `JSONSerialization` — and use it at the two `reject(...)` call sites in `FronteggWKContentController` (also fixes the "occorred" → "occurred" typo).
-
-## Notes
-
-- JSON string escaping is a valid subset of JS string escaping (handles `"`, `\`, newlines, control chars).
-- Known edge: U+2028/U+2029 are valid in JSON but technically invalid unescaped in a JS string literal — vanishingly unlikely inside an error message.
-
-## Test
-
-`JsStringLiteralTests`. Covers plain text, embedded `"`, backslashes, newlines, control characters, combined specials, the empty string, and U+2028/U+2029.
-
-Fixes FR-26113.
+- Fixed: a failed or cancelled passkey sign-in could leave the embedded login box hanging instead of surfacing the error — error messages containing a quote, backslash or newline broke the JavaScript the bridge injected to reject the credential request, so the login page's promise never settled. (FR-26113 — [#292](https://github.com/frontegg/frontegg-ios-swift/pull/292))
 
 ## v1.3.13
 
 - Fixed: the SDK failed to establish a session for phone-only accounts whose `/me` response omits `email` (they are identified by `phoneNumber`) — `email` is now decoded leniently (defaults to `""` when absent) so profile decoding no longer aborts. (FR-26108 — [#289](https://github.com/frontegg/frontegg-ios-swift/pull/289))
-## Summary
-
-Fixes the ThreadSanitizer data race that failed CI on the v1.3.13 release PR (#290).
-
-`FronteggAuth.api` was an **unsynchronized mutable property**. It's reassigned on the main thread (`manualInit`, region switches) while async work from a prior `startPostConnectivityServices()` — `SocialLoginUrlGenerator.reloadConfigs()` — can still read it on a GCD worker. TSan flagged the read/write race (`FronteggAuth.api.getter`).
-
-The property directly below it, `featureFlags`, **already carries an `NSLock` for this exact hazard** (its comment describes the same scenario). `api` was simply missed. This applies the identical lock-protected accessor to `api`; `init` assigns the backing `_api` directly since phase-1 init can't call the computed getter. All other access sites — and the region-switch / `manualInit` writes — flow through the lock unchanged (no call-site edits).
-
-This is a pre-existing race rather than a v1.3.13 regression: `api` predates the release, and ThreadSanitizer surfaces it non-deterministically.
-
-## Test
-
-Full FronteggSwiftTests suite green under `-enableThreadSanitizer YES` (756 tests, 0 failures, 0 race reports).
+- Fixed: a data race on the internal `api` client — it could be reassigned during a region switch or `manualInit` while background work was still reading it. Access is now serialized, matching the existing handling of `featureFlags`. ([#291](https://github.com/frontegg/frontegg-ios-swift/pull/291))
 
 ## v1.3.12
 ## Summary
