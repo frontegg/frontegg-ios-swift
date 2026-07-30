@@ -202,6 +202,84 @@ final class CustomWebViewTests: XCTestCase {
         XCTAssertTrue(resolution.isMagicLink)
     }
 
+    // MARK: - App-Link (https) OAuth callback vs. intermediate redirect
+    //
+    // With `useAssetLinks` on, the ordinary OAuth callback is an https URL on the
+    // same `/oauth/account/redirect/ios/{bundleId}` path that magic link, invite,
+    // forgot password and unlock account use. Classifying it as a magic link
+    // drops the PKCE code verifier, so the token exchange is rejected and
+    // embedded login fails.
+
+    private func appLinkResolution(
+        url: String,
+        magicLinkRedirectUri: String? = nil,
+        useAssetLinks: Bool
+    ) -> (redirectUri: String, isMagicLink: Bool) {
+        CustomWebView.resolveHostedCallbackRedirect(
+            url: URL(string: url)!,
+            magicLinkRedirectUri: magicLinkRedirectUri,
+            baseUrl: "https://auth.example.com",
+            bundleIdentifier: "com.frontegg.demo",
+            embeddedMode: true,
+            useAssetLinks: useAssetLinks,
+            rawBundleIdentifier: "com.frontegg.Demo"
+        )
+    }
+
+    func test_resolveHostedCallbackRedirect_appLinkCallbackIsNotAMagicLink_whenFlagOn() {
+        let resolution = appLinkResolution(
+            url: "https://auth.example.com/oauth/account/redirect/ios/com.frontegg.Demo?code=123&state=abc",
+            useAssetLinks: true
+        )
+
+        XCTAssertFalse(
+            resolution.isMagicLink,
+            "the App-Link OAuth callback must keep its PKCE code verifier"
+        )
+        XCTAssertEqual(
+            resolution.redirectUri,
+            "https://auth.example.com/oauth/account/redirect/ios/com.frontegg.Demo"
+        )
+    }
+
+    /// Guards the pre-1.3.14 behaviour: with the option off, an https URL on this
+    /// path is an intermediate redirect and must still be treated as one.
+    func test_resolveHostedCallbackRedirect_appLinkShapedUrlStaysMagicLink_whenFlagOff() {
+        let resolution = appLinkResolution(
+            url: "https://auth.example.com/oauth/account/redirect/ios/com.frontegg.Demo?code=123&state=abc",
+            useAssetLinks: false
+        )
+
+        XCTAssertTrue(resolution.isMagicLink)
+    }
+
+    /// Genuine intermediate redirects carry a trailing segment, so they do not
+    /// match a generated redirect URI and stay on the magic-link path.
+    func test_resolveHostedCallbackRedirect_intermediateRedirectStaysMagicLink_whenFlagOn() {
+        let resolution = appLinkResolution(
+            url: "https://auth.example.com/oauth/account/redirect/ios/com.frontegg.Demo/google?code=123",
+            useAssetLinks: true
+        )
+
+        XCTAssertTrue(resolution.isMagicLink)
+        XCTAssertEqual(
+            resolution.redirectUri,
+            "https://auth.example.com/oauth/account/redirect/ios/com.frontegg.Demo/google"
+        )
+    }
+
+    /// Conservative guard: if a magic-link flow is already in progress, keep the
+    /// existing classification even for an App-Link-shaped callback.
+    func test_resolveHostedCallbackRedirect_inFlightMagicLinkWins_whenFlagOn() {
+        let resolution = appLinkResolution(
+            url: "https://auth.example.com/oauth/account/redirect/ios/com.frontegg.Demo?code=123",
+            magicLinkRedirectUri: "https://auth.example.com/oauth/account/redirect/ios/com.frontegg.Demo",
+            useAssetLinks: true
+        )
+
+        XCTAssertTrue(resolution.isMagicLink)
+    }
+
     func test_resolveHostedCallbackRedirect_intermediateRedirectPreservesNonDefaultPort() {
         let resolution = CustomWebView.resolveHostedCallbackRedirect(
             url: URL(
