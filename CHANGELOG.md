@@ -1,3 +1,56 @@
+## v1.3.15
+v1.3.14 shipped **two** changes but the changelog only recorded one.
+
+`#294` (opt-in App-Link https OAuth redirect, FR-26224) merged to `master` before the release PR #295 was merged, so it **is** in the 1.3.14 tag — the tag sits on the release merge commit (`35242ca`), whose second parent is `master`. Verified two ways: `git merge-base --is-ancestor bd878fd 35242ca` passes, and `UrlHelper.swift` at `ref=1.3.14` contains the App-Link symbols.
+
+This adds the missing entry. The [published release notes](https://github.com/frontegg/frontegg-ios-swift/releases/tag/1.3.14) have already been corrected to match, so a customer reading either source now sees both changes.
+## What the log showed
+
+A device log of the FR-26132 failure has **918 lines between the OAuth callback and the toast, and zero of them from the SDK**:
+
+```
+16:20:57.075  DEBUG   | FronteggAuth: OAuth callback URL: com.frontegg.demo://…&code=4/0AXEQxID…
+                        ← 918 lines, none from the SDK
+16:20:58.393  WARNING | FronteggAuth: Embedded OAuth error recovery did not settle in time.
+                        Presenting pending OAuth error and clearing the loader.
+```
+
+That silence is the clue: there are exactly two ways this path can fail, and **both are invisible by construction**.
+
+**1. `loadInWebView` was a silent no-op.**
+```swift
+func loadInWebView(_ url: URL) {
+    guard let webView = webview else { return }   // no log, no error, no completion
+```
+When the social-login flow runs in `ASWebAuthenticationSession`, the embedded `WKWebView` can be nil. The callback parses fine, the `/oauth/account/social/success` URL is built — and then the load quietly does nothing. The exchange never starts. 1.25s later the embedded-OAuth recovery timeout fires and reports `failedToExtractCode`, which is misleading: the code *was* extracted.
+
+**2. The "callback could not be parsed" branch logged only to Sentry.** `SentryHelper.logMessage` is gated on `isSentryEnabled()`, which requires the remote `mobile-enable-logging` flag — off by default for all tenants. So that branch emits nothing to the device log *and* nothing to Sentry.
+
+## Changes
+
+- `loadInWebView` returns whether it issued the load, and logs an error when no webview is attached.
+- The caller **fails fast** with `.couldNotFindRootViewController` instead of falling through to the recovery timeout. A social login that cannot hand off now reports an accurate error immediately rather than a misleading one 1.3s later.
+- The parse-failure branch logs through `logger` as well as Sentry.
+
+No public API change — `.couldNotFindRootViewController` already exists, and `loadInWebView` is internal and `@discardableResult`.
+
+## Tests
+
+`SocialLoginWebViewHandoffTests` — written test-first. The red run failed to compile (`cannot convert value of type '()' to expected argument type 'Bool'`) precisely because the contract did not exist.
+
+- no webview attached → handoff reports failure
+- webview attached → handoff reports success (so the contract is not trivially satisfied by always returning false)
+
+Green locally: **53 tests, 0 failures** — the 2 new ones plus `UrlHelperTests` (24) and `SocialLoginUrlGeneratorTests` as regression cover.
+
+## What this does and does not do
+
+This makes the failure **diagnosable and honest**. It does not yet identify which of the two branches fires in the wild — the two are one log line apart in diagnosis and quite different in fix, and I would rather not guess.
+
+FR-26132 reproduces in-house (`com.frontegg.demo` on `app-bv4uq4gr7esi.frontegg.com`), so one repro on a build with this change answers it definitively without waiting on the customer.
+
+Worth noting as a pattern: an error path that logs *only* to Sentry is effectively dead code in the field while `mobile-enable-logging` is off — which is exactly why this bug could not be diagnosed from the logs customers sent.
+
 ## v1.3.14
 
 - Added: opt-in App-Link (https) OAuth redirect. Setting `useAssetLinks` in `Frontegg.plist` routes the OAuth callback through `https://{your-frontegg-domain}/oauth/account/redirect/ios/{bundleId}` instead of the custom URL scheme, matching Android's `useAssetsLinks`. Off by default, and requires iOS 17.4+ — older versions fall back to the custom-scheme callback. (FR-26224 — [#294](https://github.com/frontegg/frontegg-ios-swift/pull/294))
