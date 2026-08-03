@@ -58,4 +58,49 @@ final class SocialLoginWebViewHandoffTests: XCTestCase {
     // unrelated suite on CI. That cost is not worth guarding against an implementation
     // that always returns false; the loaded path is covered by the E2E suites, which
     // drive a real webview.
+
+    /// Drives the real callback from the 2026-08-02 device capture through the callback
+    /// handler with no webview attached — the configuration that failed in the field.
+    ///
+    /// This distinguishes the two branches that both produced silence before this change:
+    /// `.failedToExtractCode` means the callback could not be parsed, `.couldNotFindRootViewController`
+    /// means it parsed fine and the handoff to the webview is what failed.
+    func test_realWorldCallback_withNoWebView_failsAtHandoffNotAtParsing() {
+        let recordedBaseUrl = "https://app-bv4uq4gr7esi.frontegg.com"
+        let recordedBundleId = "com.frontegg.demo"
+        let recordedCallback = "com.frontegg.demo://app-bv4uq4gr7esi.frontegg.com/ios/oauth/callback?state=%7B%22appId%22%3A%22%22%2C%22platform%22%3A%22ios%22%2C%22provider%22%3A%22google%22%2C%22bundleId%22%3A%22com.frontegg.demo%22%2C%22action%22%3A%22login%22%7D&iss=https%3A%2F%2Faccounts.google.com&code=4%2F0AXEQxIDPLnd_sH0KYzhz6eF7x0fVPQ3_q1_7qe3Uz7ygOBj1Cmza4LqACC8Fa4-z91OBOw&scope=email+profile&authuser=0&hd=frontegg.com&prompt=none&social-login-callback=true"
+
+        PlistHelper.testConfigOverride = FronteggPlist(
+            lateInit: true,
+            payload: .singleRegion(.init(baseUrl: recordedBaseUrl, clientId: testClientId)),
+            keepUserLoggedInAfterReinstall: false
+        )
+        FronteggApp.shared.manualInit(baseUrl: recordedBaseUrl, cliendId: testClientId)
+        FronteggApp.shared.bundleIdentifier = recordedBundleId
+        FronteggAuth.shared.webview = nil
+
+        let settled = expectation(description: "social login callback settles")
+        var received: FronteggError?
+
+        FronteggAuth.shared.handleSocialLoginOAuthCallback(
+            providerString: "google",
+            callbackURL: URL(string: recordedCallback)!,
+            error: nil
+        ) { result in
+            if case .failure(let error) = result { received = error }
+            settled.fulfill()
+        }
+
+        // Before this change the flow never settled here — the completion was dropped and
+        // only the 1.25s recovery timeout surfaced anything.
+        wait(for: [settled], timeout: 5)
+
+        guard case .authError(let authError)? = received else {
+            return XCTFail("expected an auth error, got \(String(describing: received))")
+        }
+        XCTAssertEqual(
+            authError.failureReason, "couldNotFindRootViewController",
+            "expected the handoff to be the failure point; got \(String(describing: authError.failureReason))"
+        )
+    }
 }
