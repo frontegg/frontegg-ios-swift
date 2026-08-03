@@ -87,6 +87,10 @@ extension FronteggAuth {
             }
 
             guard let finalURL = self.handleSocialLoginCallback(callbackURL) else {
+                // Logged locally as well as to Sentry: Sentry reporting is gated on the
+                // remote `mobile-enable-logging` flag, which is off by default, so a
+                // Sentry-only message leaves this failure invisible in the field (FR-26132).
+                self.logger.error("Social login callback could not be parsed; cannot build the success URL. Callback path: \(callbackURL.path), provider: \(providerString)")
                 SentryHelper.logMessage(
                     "Social login callback could not be parsed (hosted)",
                     level: .warning,
@@ -111,7 +115,17 @@ extension FronteggAuth {
             await SocialLoginUrlGenerator.shared.reinjectCodeVerifierIntoWebview(
                 for: callbackQueryItems?["state"]
             )
-            self.loadInWebView(finalURL)
+            // Fail fast when there is no webview to hand off to. Previously this returned
+            // silently, so the exchange never started and the only symptom was the
+            // embedded-OAuth recovery timeout reporting a misleading `failedToExtractCode`
+            // ~1.3s later, with nothing logged in between (FR-26132).
+            guard self.loadInWebView(finalURL) else {
+                self.completeSocialLoginFailure(
+                    FronteggError.authError(.couldNotFindRootViewController),
+                    completion: completion
+                )
+                return
+            }
         }
     }
 
@@ -209,10 +223,23 @@ extension FronteggAuth {
         }
     }
 
-    func loadInWebView(_ url: URL) {
-        guard let webView = webview else { return }
+    /// Hands a URL to the embedded webview.
+    ///
+    /// Returns `false` when no webview is attached, so the caller can fail fast with an
+    /// accurate error. This used to return silently: with the social-login flow running in
+    /// `ASWebAuthenticationSession` the embedded webview can be nil, in which case the
+    /// `/oauth/account/social/success` exchange never started, nothing was logged, and the
+    /// only symptom was the embedded-OAuth recovery timeout surfacing a misleading
+    /// "failed to extract code" ~1.3s later (FR-26132).
+    @discardableResult
+    func loadInWebView(_ url: URL) -> Bool {
+        guard let webView = webview else {
+            logger.error("Cannot load \(url.path) — no embedded webview is attached. The social-login exchange cannot continue.")
+            return false
+        }
         let request = URLRequest(url: url, cachePolicy: .reloadRevalidatingCacheData)
         webView.load(request)
+        return true
     }
 
     internal func loginWithApple(_ _completion: @escaping FronteggAuth.CompletionHandler)  {
