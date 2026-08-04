@@ -1,3 +1,11 @@
+## v1.3.16
+
+- Fixed: with `useAssetLinks` enabled, embedded login failed with an `ER-00001` error and a reloading login box. The App-Link callback was being treated as a magic link, which dropped the PKCE code verifier from the token exchange. Introduced in 1.3.14; the option is off by default, so only apps that had explicitly enabled it were affected. (FR-26308 — [#299](https://github.com/frontegg/frontegg-ios-swift/pull/299))
+
+## v1.3.15
+
+- Fixed: when a social login could not be handed back to the embedded login view, the SDK now reports the failure immediately instead of surfacing a misleading "failed to get extract code" error about a second later. (FR-26132 — [#300](https://github.com/frontegg/frontegg-ios-swift/pull/300))
+
 ## v1.3.14
 
 - Added: opt-in App-Link (https) OAuth redirect. Setting `useAssetLinks` in `Frontegg.plist` routes the OAuth callback through `https://{your-frontegg-domain}/oauth/account/redirect/ios/{bundleId}` instead of the custom URL scheme, matching Android's `useAssetsLinks`. Off by default, and requires iOS 17.4+ — older versions fall back to the custom-scheme callback. (FR-26224 — [#294](https://github.com/frontegg/frontegg-ios-swift/pull/294))

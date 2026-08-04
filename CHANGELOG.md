@@ -1,3 +1,8 @@
+## v1.3.17
+## v1.3.16
+
+- Fixed: with `useAssetLinks` enabled, embedded login failed with an `ER-00001` error and a reloading login box. The App-Link callback was being treated as a magic link, which dropped the PKCE code verifier from the token exchange. Introduced in 1.3.14; the option is off by default, so only apps that had explicitly enabled it were affected. (FR-26308 — [#299](https://github.com/frontegg/frontegg-ios-swift/pull/299))
+
 ## v1.3.16
 
 - Fixed: with `useAssetLinks` enabled, embedded login failed with an `ER-00001` error and a reloading login box. The App-Link callback was being treated as a magic link, which dropped the PKCE code verifier from the token exchange. Introduced in 1.3.14; the option is off by default, so only apps that had explicitly enabled it were affected. (FR-26308 — [#299](https://github.com/frontegg/frontegg-ios-swift/pull/299))
