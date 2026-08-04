@@ -277,9 +277,31 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         magicLinkRedirectUri: String?,
         baseUrl: String,
         bundleIdentifier: String,
-        embeddedMode: Bool
+        embeddedMode: Bool,
+        useAssetLinks: Bool = isAssetLinksRedirectEnabled(),
+        rawBundleIdentifier: String = currentAppRawBundleIdentifier()
     ) -> (redirectUri: String, isMagicLink: Bool) {
         if Self.isIOSRedirectPath(url.path) {
+            // With `useAssetLinks` enabled the ordinary OAuth callback is an
+            // App-Link (https) URL on exactly this path shape, so it reaches the
+            // intermediate-redirect branch below and gets tagged as a magic
+            // link — which drops the PKCE code verifier and makes the token
+            // exchange fail. Claim it here instead, but only when it matches a
+            // *generated* redirect URI and no magic-link flow is in progress,
+            // so genuine intermediate redirects (magic link, invite, forgot
+            // password, unlock account — all of which carry a trailing path
+            // segment) still fall through unchanged.
+            if magicLinkRedirectUri == nil,
+               let matchedAppLinkRedirectUri = matchedGeneratedRedirectUri(
+                   url,
+                   baseUrl: baseUrl,
+                   bundleIdentifier: bundleIdentifier,
+                   useAssetLinks: useAssetLinks,
+                   rawBundleIdentifier: rawBundleIdentifier
+               ) {
+                return (matchedAppLinkRedirectUri, false)
+            }
+
             if let extractedRedirectUri = Self.extractIntermediateRedirectUri(url) {
                 return (extractedRedirectUri, true)
             }

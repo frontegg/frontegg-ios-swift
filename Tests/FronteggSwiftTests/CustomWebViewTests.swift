@@ -202,6 +202,84 @@ final class CustomWebViewTests: XCTestCase {
         XCTAssertTrue(resolution.isMagicLink)
     }
 
+    // MARK: - App-Link (https) OAuth callback vs. intermediate redirect
+    //
+    // With `useAssetLinks` on, the ordinary OAuth callback is an https URL on the
+    // same `/oauth/account/redirect/ios/{bundleId}` path that magic link, invite,
+    // forgot password and unlock account use. Classifying it as a magic link
+    // drops the PKCE code verifier, so the token exchange is rejected and
+    // embedded login fails.
+
+    private func appLinkResolution(
+        url: String,
+        magicLinkRedirectUri: String? = nil,
+        useAssetLinks: Bool
+    ) -> (redirectUri: String, isMagicLink: Bool) {
+        CustomWebView.resolveHostedCallbackRedirect(
+            url: URL(string: url)!,
+            magicLinkRedirectUri: magicLinkRedirectUri,
+            baseUrl: "https://auth.example.com",
+            bundleIdentifier: "com.frontegg.demo",
+            embeddedMode: true,
+            useAssetLinks: useAssetLinks,
+            rawBundleIdentifier: "com.frontegg.Demo"
+        )
+    }
+
+    func test_resolveHostedCallbackRedirect_appLinkCallbackIsNotAMagicLink_whenFlagOn() {
+        let resolution = appLinkResolution(
+            url: "https://auth.example.com/oauth/account/redirect/ios/com.frontegg.Demo?code=123&state=abc",
+            useAssetLinks: true
+        )
+
+        XCTAssertFalse(
+            resolution.isMagicLink,
+            "the App-Link OAuth callback must keep its PKCE code verifier"
+        )
+        XCTAssertEqual(
+            resolution.redirectUri,
+            "https://auth.example.com/oauth/account/redirect/ios/com.frontegg.Demo"
+        )
+    }
+
+    /// Guards the pre-1.3.14 behaviour: with the option off, an https URL on this
+    /// path is an intermediate redirect and must still be treated as one.
+    func test_resolveHostedCallbackRedirect_appLinkShapedUrlStaysMagicLink_whenFlagOff() {
+        let resolution = appLinkResolution(
+            url: "https://auth.example.com/oauth/account/redirect/ios/com.frontegg.Demo?code=123&state=abc",
+            useAssetLinks: false
+        )
+
+        XCTAssertTrue(resolution.isMagicLink)
+    }
+
+    /// Genuine intermediate redirects carry a trailing segment, so they do not
+    /// match a generated redirect URI and stay on the magic-link path.
+    func test_resolveHostedCallbackRedirect_intermediateRedirectStaysMagicLink_whenFlagOn() {
+        let resolution = appLinkResolution(
+            url: "https://auth.example.com/oauth/account/redirect/ios/com.frontegg.Demo/google?code=123",
+            useAssetLinks: true
+        )
+
+        XCTAssertTrue(resolution.isMagicLink)
+        XCTAssertEqual(
+            resolution.redirectUri,
+            "https://auth.example.com/oauth/account/redirect/ios/com.frontegg.Demo/google"
+        )
+    }
+
+    /// Conservative guard: if a magic-link flow is already in progress, keep the
+    /// existing classification even for an App-Link-shaped callback.
+    func test_resolveHostedCallbackRedirect_inFlightMagicLinkWins_whenFlagOn() {
+        let resolution = appLinkResolution(
+            url: "https://auth.example.com/oauth/account/redirect/ios/com.frontegg.Demo?code=123",
+            magicLinkRedirectUri: "https://auth.example.com/oauth/account/redirect/ios/com.frontegg.Demo",
+            useAssetLinks: true
+        )
+
+        XCTAssertTrue(resolution.isMagicLink)
+    }
+
     func test_resolveHostedCallbackRedirect_intermediateRedirectPreservesNonDefaultPort() {
         let resolution = CustomWebView.resolveHostedCallbackRedirect(
             url: URL(
@@ -521,5 +599,65 @@ final class CustomWebViewTests: XCTestCase {
 
         let data = try JSONSerialization.data(withJSONObject: payload, options: [])
         return try XCTUnwrap(String(data: data, encoding: .utf8))
+    }
+
+    // MARK: - FR-26308: the verifier must survive, not just the classification
+
+    /// The classification tests above prove the App-Link callback is no longer tagged
+    /// as a magic link. This closes the loop on the symptom the customer actually hit:
+    /// `isMagicLink` short-circuits `resolveHostedCallbackCodeVerifier` to
+    /// `codeVerifier: nil`, so the exchange went out without PKCE and the server
+    /// rejected it with ER-00001 ("Code verifier used: no" in the device trace).
+    ///
+    /// Classifying correctly is only worth anything if the verifier then survives.
+    func test_appLinkCallbackKeepsTheCodeVerifier_whenNotClassifiedAsMagicLink() async {
+        clearOAuthState()
+        defer { clearOAuthState() }
+
+        // A plain embedded login resolves by oauth-state match with `allowFallback: false`,
+        // so the verifier has to be registered against the state the callback carries —
+        // the loose `saveCodeVerifier` fallback is deliberately not consulted here.
+        CredentialManager.registerPendingOAuth(
+            state: "app-link-state",
+            codeVerifier: "verifier-for-app-link-callback"
+        )
+
+        let resolution = await CustomWebView.resolveHostedCallbackCodeVerifier(
+            isMagicLink: false,
+            isSocialLogin: false,
+            oauthState: "app-link-state",
+            socialVerifierProvider: {
+                XCTFail("a plain embedded login must not consult the social verifier provider")
+                return ""
+            }
+        )
+
+        XCTAssertEqual(
+            resolution.codeVerifier, "verifier-for-app-link-callback",
+            "the PKCE verifier must reach the token exchange — dropping it is what produced ER-00001"
+        )
+        XCTAssertNotEqual(resolution.source, "magic_link")
+    }
+
+    /// The inverse, so the assertion above cannot pass by accident: a genuine magic
+    /// link still drops the verifier by design, and #299 must not change that.
+    func test_genuineMagicLinkStillDropsTheCodeVerifier() async {
+        clearOAuthState()
+        defer { clearOAuthState() }
+
+        CredentialManager.saveCodeVerifier("verifier-that-must-be-ignored")
+
+        let resolution = await CustomWebView.resolveHostedCallbackCodeVerifier(
+            isMagicLink: true,
+            isSocialLogin: false,
+            oauthState: nil,
+            socialVerifierProvider: {
+                XCTFail("a magic link must not consult the social verifier provider")
+                return ""
+            }
+        )
+
+        XCTAssertNil(resolution.codeVerifier, "a magic link carries no PKCE verifier")
+        XCTAssertEqual(resolution.source, "magic_link")
     }
 }

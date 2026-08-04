@@ -92,16 +92,68 @@ final class AssetLinksRedirectTests: XCTestCase {
 
     // MARK: - Callback matching
     //
-    // NOTE: `matchedGeneratedRedirectUri` is deliberately NOT covered here.
-    // It forwards to `supportedGeneratedRedirectUris` without exposing a
-    // `useAssetLinks` parameter, so the new default argument
-    // (`isAssetLinksRedirectEnabled()` -> `FronteggApp.shared.useAssetLinks`)
-    // is always evaluated — which initializes the `FronteggApp.shared`
-    // singleton and traps on a missing Frontegg.plist when this class is the
-    // first to touch it. The pre-existing suite only passes because other
-    // tests initialize the singleton first, so the coupling is order-dependent.
-    //
-    // Adding a `useAssetLinks` parameter to `matchedGeneratedRedirectUri`
-    // (threaded through to `supportedGeneratedRedirectUris`) would keep these
-    // URL utilities pure and make https-callback matching testable.
+    // `matchedGeneratedRedirectUri` now takes an explicit `useAssetLinks`
+    // parameter (threaded through to `supportedGeneratedRedirectUris`), so these
+    // cases no longer evaluate the `FronteggApp.shared.useAssetLinks` default
+    // argument and no longer depend on another test having initialized the
+    // singleton first.
+
+    private func matched(_ url: String, useAssetLinks: Bool) -> String? {
+        // Every argument is passed explicitly, including `rawBundleIdentifier` —
+        // its default (`currentAppRawBundleIdentifier()`) reads
+        // `FronteggApp.shared`, which traps on a missing Frontegg.plist if this
+        // class is the first to touch the singleton.
+        matchedGeneratedRedirectUri(
+            URL(string: url)!,
+            baseUrl: baseUrl,
+            bundleIdentifier: lowerBundleId,
+            useAssetLinks: useAssetLinks,
+            rawBundleIdentifier: bundleId
+        )
+    }
+
+    func test_matchedGeneratedRedirectUri_matchesAppLinkCallback_whenFlagOn() {
+        XCTAssertEqual(
+            matched(
+                "https://auth.example.com/oauth/account/redirect/ios/\(bundleId)?code=123",
+                useAssetLinks: true
+            ),
+            "https://auth.example.com/oauth/account/redirect/ios/\(bundleId)"
+        )
+    }
+
+    /// The App-Link URI is only a candidate when the option is on — otherwise an
+    /// https URL on that path is an intermediate redirect (magic link, invite,
+    /// forgot password), not this app's OAuth callback.
+    func test_matchedGeneratedRedirectUri_ignoresAppLinkCallback_whenFlagOff() {
+        XCTAssertNil(
+            matched(
+                "https://auth.example.com/oauth/account/redirect/ios/\(bundleId)?code=123",
+                useAssetLinks: false
+            )
+        )
+    }
+
+    /// Custom-scheme callbacks keep matching after the flip, so callbacks issued
+    /// before the option was enabled are not orphaned.
+    func test_matchedGeneratedRedirectUri_stillMatchesCustomScheme_whenFlagOn() {
+        XCTAssertEqual(
+            matched(
+                "\(lowerBundleId)://auth.example.com/ios/oauth/callback?code=123",
+                useAssetLinks: true
+            ),
+            "\(lowerBundleId)://auth.example.com/ios/oauth/callback"
+        )
+    }
+
+    /// A genuine intermediate redirect carries a trailing segment, so it must not
+    /// be mistaken for the generated App-Link callback even with the flag on.
+    func test_matchedGeneratedRedirectUri_ignoresIntermediateRedirect_whenFlagOn() {
+        XCTAssertNil(
+            matched(
+                "https://auth.example.com/oauth/account/redirect/ios/\(bundleId)/google?code=123",
+                useAssetLinks: true
+            )
+        )
+    }
 }

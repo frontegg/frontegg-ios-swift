@@ -267,7 +267,9 @@ func supportedGeneratedRedirectUris(
 func matchedGeneratedRedirectUri(
     _ url: URL,
     baseUrl: String = FronteggApp.shared.baseUrl,
-    bundleIdentifier: String = currentAppBundleIdentifier()
+    bundleIdentifier: String = currentAppBundleIdentifier(),
+    useAssetLinks: Bool = isAssetLinksRedirectEnabled(),
+    rawBundleIdentifier: String = currentAppRawBundleIdentifier()
 ) -> String? {
     guard
         let actual = URLComponents(url: url, resolvingAgainstBaseURL: false),
@@ -281,7 +283,9 @@ func matchedGeneratedRedirectUri(
 
     for candidateUri in supportedGeneratedRedirectUris(
         baseUrl: baseUrl,
-        bundleIdentifier: bundleIdentifier
+        bundleIdentifier: bundleIdentifier,
+        useAssetLinks: useAssetLinks,
+        rawBundleIdentifier: rawBundleIdentifier
     ) {
         guard let expected = URLComponents(string: candidateUri) else {
             continue
@@ -304,7 +308,9 @@ func matchedGeneratedRedirectUri(
 func matchedGeneratedRedirectUri(
     _ redirectUri: String,
     baseUrl: String = FronteggApp.shared.baseUrl,
-    bundleIdentifier: String = currentAppBundleIdentifier()
+    bundleIdentifier: String = currentAppBundleIdentifier(),
+    useAssetLinks: Bool = isAssetLinksRedirectEnabled(),
+    rawBundleIdentifier: String = currentAppRawBundleIdentifier()
 ) -> String? {
     guard let url = URL(string: redirectUri) else {
         return nil
@@ -313,7 +319,9 @@ func matchedGeneratedRedirectUri(
     return matchedGeneratedRedirectUri(
         url,
         baseUrl: baseUrl,
-        bundleIdentifier: bundleIdentifier
+        bundleIdentifier: bundleIdentifier,
+        useAssetLinks: useAssetLinks,
+        rawBundleIdentifier: rawBundleIdentifier
     )
 }
 
