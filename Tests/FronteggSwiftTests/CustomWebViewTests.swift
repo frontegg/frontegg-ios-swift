@@ -600,4 +600,64 @@ final class CustomWebViewTests: XCTestCase {
         let data = try JSONSerialization.data(withJSONObject: payload, options: [])
         return try XCTUnwrap(String(data: data, encoding: .utf8))
     }
+
+    // MARK: - FR-26308: the verifier must survive, not just the classification
+
+    /// The classification tests above prove the App-Link callback is no longer tagged
+    /// as a magic link. This closes the loop on the symptom the customer actually hit:
+    /// `isMagicLink` short-circuits `resolveHostedCallbackCodeVerifier` to
+    /// `codeVerifier: nil`, so the exchange went out without PKCE and the server
+    /// rejected it with ER-00001 ("Code verifier used: no" in the device trace).
+    ///
+    /// Classifying correctly is only worth anything if the verifier then survives.
+    func test_appLinkCallbackKeepsTheCodeVerifier_whenNotClassifiedAsMagicLink() async {
+        clearOAuthState()
+        defer { clearOAuthState() }
+
+        // A plain embedded login resolves by oauth-state match with `allowFallback: false`,
+        // so the verifier has to be registered against the state the callback carries —
+        // the loose `saveCodeVerifier` fallback is deliberately not consulted here.
+        CredentialManager.registerPendingOAuth(
+            state: "app-link-state",
+            codeVerifier: "verifier-for-app-link-callback"
+        )
+
+        let resolution = await CustomWebView.resolveHostedCallbackCodeVerifier(
+            isMagicLink: false,
+            isSocialLogin: false,
+            oauthState: "app-link-state",
+            socialVerifierProvider: {
+                XCTFail("a plain embedded login must not consult the social verifier provider")
+                return ""
+            }
+        )
+
+        XCTAssertEqual(
+            resolution.codeVerifier, "verifier-for-app-link-callback",
+            "the PKCE verifier must reach the token exchange — dropping it is what produced ER-00001"
+        )
+        XCTAssertNotEqual(resolution.source, "magic_link")
+    }
+
+    /// The inverse, so the assertion above cannot pass by accident: a genuine magic
+    /// link still drops the verifier by design, and #299 must not change that.
+    func test_genuineMagicLinkStillDropsTheCodeVerifier() async {
+        clearOAuthState()
+        defer { clearOAuthState() }
+
+        CredentialManager.saveCodeVerifier("verifier-that-must-be-ignored")
+
+        let resolution = await CustomWebView.resolveHostedCallbackCodeVerifier(
+            isMagicLink: true,
+            isSocialLogin: false,
+            oauthState: nil,
+            socialVerifierProvider: {
+                XCTFail("a magic link must not consult the social verifier provider")
+                return ""
+            }
+        )
+
+        XCTAssertNil(resolution.codeVerifier, "a magic link carries no PKCE verifier")
+        XCTAssertEqual(resolution.source, "magic_link")
+    }
 }
