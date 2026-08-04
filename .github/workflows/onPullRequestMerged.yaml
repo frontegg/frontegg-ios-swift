@@ -7,6 +7,14 @@ on:
 env:
   CI: true
 
+# The job pushes the release/next branch and opens the release PR. Without an
+# explicit grant GITHUB_TOKEN is read-only wherever the org default has been
+# tightened, and the run fails with a 403 on git access — leaving no release PR
+# for the merged change.
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   createReleasePullRequest:
     if: "!contains(join(github.event.pull_request.labels.*.name, ','), 'Release') && github.event.pull_request.merged == true"
@@ -75,15 +83,20 @@ jobs:
             DESCRIPTION="## v${{ steps.incremented-version.outputs.result }}"
           fi
 
-          # Append current PR description if available
-          if [[ -n "${{ github.event.pull_request.number }}" ]]; then
-            PR_METADATA=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}")
-
-            CURRENT_PR_BODY=$(echo "$PR_METADATA" | jq -r '.body // ""')
-            DESCRIPTION="$DESCRIPTION"$'\n'"$CURRENT_PR_BODY"
-          fi
+          # The body of the merged PR is deliberately NOT appended here.
+          #
+          # This description becomes the release PR body, which the
+          # onReleasePullRequestUpdated workflow writes verbatim into
+          # CHANGELOG.md and which is published as the GitHub release notes.
+          # Appending the merged PR's body pushed engineering prose —
+          # investigation notes, device logs, code blocks, tooling attribution —
+          # straight into customer-facing documentation. Several entries had to
+          # be rewritten by hand afterwards.
+          #
+          # The release PR body is the changelog, so it is authored
+          # deliberately: an editor adds a one-line, user-facing entry per
+          # change. Editing the release PR re-triggers the changelog sync, so
+          # entries can be added as further changes land in the release.
 
           # Store in GitHub Actions output
           {
@@ -134,7 +147,9 @@ jobs:
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          path: ${{ secrets.GITHUB_WORKSPACE }}
+          # `path` previously read secrets.GITHUB_WORKSPACE — a secret of that
+          # name does not exist, so it resolved to an empty string. Omitted so
+          # the action uses the checkout directory, which is what was intended.
           commit-message: "Update v${{ steps.incremented-version.outputs.result }}"
           committer: GitHub <noreply@github.com>
           author: "${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>"

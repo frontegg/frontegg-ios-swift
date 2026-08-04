@@ -7,6 +7,13 @@ on:
     branches:
       - master
 
+# This job commits the regenerated CHANGELOG back to the release branch, so it
+# needs write access. Without an explicit grant GITHUB_TOKEN is read-only
+# wherever the org default has been tightened, and the changelog silently stops
+# tracking the release PR description.
+permissions:
+  contents: write
+
 jobs:
   updateChangelog:
     runs-on: 'ubuntu-latest'
