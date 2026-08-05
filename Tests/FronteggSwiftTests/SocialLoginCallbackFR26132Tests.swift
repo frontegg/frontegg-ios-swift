@@ -181,10 +181,41 @@ final class SocialLoginSuccessUrlConstructionTests: XCTestCase {
 
         let items = URLComponents(url: successUrl, resolvingAgainstBaseURL: false)?.queryItems ?? []
         let state = items.first { $0.name == "state" }?.value
-        XCTAssertNotNil(state, "state was dropped from the success URL")
-        XCTAssertTrue(
-            state?.contains("google") ?? false,
-            "state payload was mangled in transit: \(state ?? "nil")"
+
+        // Building through URLComponents percent-encodes more of the raw-JSON state
+        // than the old string interpolation did (`:` and `,` are escaped too). That
+        // is only a wire-level difference — what the server decodes must be byte-for
+        // byte what the SDK intended to send.
+        let callbackState = URLComponents(string: callbackUrlString)?
+            .queryItems?.first { $0.name == "state" }?.value
+        XCTAssertEqual(
+            state,
+            SocialLoginUrlGenerator.canonicalizeSocialState(callbackState ?? ""),
+            "state payload did not survive the round-trip through the success URL"
+        )
+    }
+
+    /// The authorization code contains `/` and may contain other characters that
+    /// encode differently depending on how the query is assembled. It must decode
+    /// back to exactly what the provider sent.
+    func test_successUrl_decodesToTheExactValuesTheProviderSent() {
+        let url = URL(string: callbackUrlString)!
+        let sent = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+
+        guard let successUrl = FronteggAuth.shared.handleSocialLoginCallback(url) else {
+            return XCTFail("no success URL was produced")
+        }
+
+        let received = URLComponents(url: successUrl, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(
+            received.first { $0.name == "code" }?.value,
+            sent.first { $0.name == "code" }?.value,
+            "the authorization code was altered by the query encoding"
+        )
+        XCTAssertEqual(
+            received.first { $0.name == "redirectUri" }?.value,
+            "com.frontegg.demo://app-bv4uq4gr7esi.frontegg.com/ios/oauth/callback",
+            "the redirect uri was altered by the query encoding"
         )
     }
 
