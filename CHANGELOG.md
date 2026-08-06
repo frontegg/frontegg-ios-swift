@@ -1,5 +1,8 @@
 ## v1.3.17
 
+- Fixed: social sign-in could fail on recent iOS versions with a "Failed to get extract code" error, even though the user had already authenticated with the provider successfully. Some values returned by the provider contain characters that must be escaped in a URL, and they were not being escaped when the SDK built the URL that completes the exchange — so iOS rejected it and sign-in stopped about a second later. Retrying did not help. No app or configuration changes are needed. (FR-26132 — [#305](https://github.com/frontegg/frontegg-ios-swift/pull/305))
+- Improved: when a social login callback cannot be processed, the SDK now logs the specific reason it was rejected instead of a single generic message, making these reports faster to diagnose. (FR-26132 — [#305](https://github.com/frontegg/frontegg-ios-swift/pull/305))
+
 ## v1.3.16
 
 - Fixed: with `useAssetLinks` enabled, embedded login failed with an `ER-00001` error and a reloading login box. The App-Link callback was being treated as a magic link, which dropped the PKCE code verifier from the token exchange. Introduced in 1.3.14; the option is off by default, so only apps that had explicitly enabled it were affected. (FR-26308 — [#299](https://github.com/frontegg/frontegg-ios-swift/pull/299))
