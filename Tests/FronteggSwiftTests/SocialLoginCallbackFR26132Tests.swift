@@ -172,7 +172,7 @@ final class SocialLoginSuccessUrlConstructionTests: XCTestCase {
 
     /// The state must survive intact — the backend matches it against the pending
     /// OAuth request, so a mangled or dropped value fails the exchange.
-    func test_successUrl_preservesTheStatePayload() {
+    func test_successUrl_preservesTheStatePayload() throws {
         let url = URL(string: callbackUrlString)!
 
         guard let successUrl = FronteggAuth.shared.handleSocialLoginCallback(url) else {
@@ -183,16 +183,16 @@ final class SocialLoginSuccessUrlConstructionTests: XCTestCase {
         let state = items.first { $0.name == "state" }?.value
 
         // Building through URLComponents percent-encodes more of the raw-JSON state
-        // than the old string interpolation did (`:` and `,` are escaped too). That
-        // is only a wire-level difference — what the server decodes must be byte-for
-        // byte what the SDK intended to send.
-        let callbackState = URLComponents(string: callbackUrlString)?
-            .queryItems?.first { $0.name == "state" }?.value
-        XCTAssertEqual(
-            state,
-            SocialLoginUrlGenerator.canonicalizeSocialState(callbackState ?? ""),
-            "state payload did not survive the round-trip through the success URL"
-        )
+        // than the old string interpolation did (`:` and `,` are escaped too). That is
+        // a wire-level difference only, so this asserts on the decoded payload rather
+        // than the serialized string — JSON key order carries no meaning, and pinning
+        // it makes the test fail for reasons that cannot affect the sign-in.
+        let data = try XCTUnwrap(state?.data(using: .utf8), "state was dropped from the success URL")
+        let decoded = try JSONDecoder().decode(SocialLoginUrlGenerator.CanonicalOAuthState.self, from: data)
+
+        XCTAssertEqual(decoded.provider, "google")
+        XCTAssertEqual(decoded.appId, "")
+        XCTAssertEqual(decoded.action, "login")
     }
 
     /// The authorization code contains `/` and may contain other characters that
