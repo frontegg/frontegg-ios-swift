@@ -170,13 +170,60 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         Self.isIOSRedirectPath(path)
     }
 
-    private func hasOAuthErrorParameters(_ queryItems: [String: String]?) -> Bool {
+    private static func hasOAuthErrorParameters(_ queryItems: [String: String]?) -> Bool {
         guard let queryItems else { return false }
 
         let rawError = queryItems["error"]?.trimmingCharacters(in: .whitespacesAndNewlines)
         let rawDescription = queryItems["error_description"]?.trimmingCharacters(in: .whitespacesAndNewlines)
 
         return !(rawError?.isEmpty ?? true) || !(rawDescription?.isEmpty ?? true)
+    }
+
+    private func hasOAuthErrorParameters(_ queryItems: [String: String]?) -> Bool {
+        Self.hasOAuthErrorParameters(queryItems)
+    }
+
+    /// Whether this callback is the tail of an unlock-account deep link rather than a real
+    /// OAuth result (FR-26330).
+    ///
+    /// Unlock sends the user through `/oauth/account/unlock`, then an intermediate
+    /// `/oauth/account/redirect/ios/{bundleId}` hop, and finally to the app's callback —
+    /// and neither of the last two carries a `code`. A codeless callback otherwise means a
+    /// cancelled login, so without this the flow is reported as `operationCanceled`: the app
+    /// opens, dismisses the login view and drops the user on a fresh login screen.
+    ///
+    /// The preceding hop is the only reliable evidence, which is why `didFinish` keeps
+    /// `previousUrl` for the codeless intermediate. `magicLinkRedirectUri` cannot serve here:
+    /// `didFinish` nils it on exactly that hop, so any check requiring it to be non-nil is
+    /// unreachable in this flow.
+    ///
+    /// Returns false whenever the callback carries a `code` or an OAuth error, so genuine
+    /// results — including real failures — still reach the OAuth handler.
+    /// Returns the user to a fresh login page after an unlock-account deep link, instead of
+    /// leaving the embedded view on a spinner or reporting a cancelled login.
+    private func completeUnlockFlow() {
+        logger.info("Detected unlock account flow completion, returning to a fresh login page")
+        magicLinkRedirectUri = nil
+        previousUrl = nil
+        DispatchQueue.main.async {
+            self.reloadFreshLoginPage()
+        }
+    }
+
+    static func isUnlockFlowCompletion(url: URL, previousUrl: URL?) -> Bool {
+        let queryItems = getQueryItems(url.absoluteString)
+        guard queryItems?["code"] == nil, !hasOAuthErrorParameters(queryItems) else {
+            return false
+        }
+
+        guard let previousUrl else { return false }
+
+        if previousUrl.path.range(of: "/oauth/account/unlock", options: [.caseInsensitive]) != nil {
+            return true
+        }
+
+        guard isIOSRedirectPath(previousUrl.path) else { return false }
+        return getQueryItems(previousUrl.absoluteString)?["code"] == nil
     }
 
     private func oauthFailureDetailsOrFallback(
@@ -572,6 +619,13 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                         ]
                     )
                     return self.handleHostedLoginCallback(webView, url)
+                } else if Self.isUnlockFlowCompletion(url: url, previousUrl: previousUrl) {
+                    // FR-26330, for the case where the page navigates to the callback itself
+                    // (JS or a link). A *server* redirect to this custom scheme never reaches
+                    // this delegate at all — WebKit fails the navigation instead — so that
+                    // path is handled in didFailProvisionalNavigation.
+                    completeUnlockFlow()
+                    return .cancel
                 } else {
                     logger.warning("⚠️ [Social Login Debug] Custom scheme URL detected but no code parameter found")
                     logger.warning("⚠️ [Social Login Debug] URL: \(url.absoluteString)")
@@ -926,66 +980,16 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
 
             switch urlType {
             case .HostedLoginCallback:
-                // Check if this is unlock account flow - custom scheme URL without code after unlock
-                // In unlock account flow, after unlock, server redirects to /oauth/account/redirect/iOS/{bundleId}
-                // (without code), then redirects to custom scheme URL (also without code)
-                // In this case, we should just allow the user to login normally, not treat it as OAuth callback
-                let urlScheme = url.scheme ?? ""
-                let appSchemes = getAppURLSchemes()
-                let isCustomScheme = !urlScheme.isEmpty && (appSchemes.contains(urlScheme) || !urlScheme.hasPrefix("http"))
-                let queryItems = getQueryItems(url.absoluteString)
-                let hasCode = queryItems?["code"] != nil
-                
-                logger.info("HostedLoginCallback check - urlScheme: \(urlScheme), appSchemes: \(appSchemes), isCustomScheme: \(isCustomScheme), hasCode: \(hasCode), previousUrl: \(previousUrl?.absoluteString ?? "nil"), magicLinkRedirectUri: \(magicLinkRedirectUri ?? "nil")")
-                
-                if isCustomScheme && !hasCode {
-                    logger.info("Custom scheme URL without code detected. Previous URL: \(previousUrl?.absoluteString ?? "nil"), magicLinkRedirectUri: \(magicLinkRedirectUri ?? "nil")")
-                    
-                    // Check if magicLinkRedirectUri was set but URL doesn't have code
-                    // This indicates unlock account flow or similar flow that doesn't use OAuth callback
-                    // We check this FIRST because it's the most reliable indicator
-                    if magicLinkRedirectUri != nil {
-                        // Also check if previous URL was intermediate redirect without code
-                        var shouldIgnore = false
-                        if let prevUrl = previousUrl {
-                            // If previous URL was intermediate redirect without code, definitely unlock account flow
-                            let prevHasCode = getQueryItems(prevUrl.absoluteString)?["code"] != nil
-                            let previousWasIOSRedirect = isIOSRedirectPath(prevUrl.path)
-                            shouldIgnore = previousWasIOSRedirect && !prevHasCode
-                            logger.info("Previous URL check - path contains /oauth/account/redirect/ios/: \(previousWasIOSRedirect), prevHasCode: \(prevHasCode), shouldIgnore: \(shouldIgnore)")
-                        } else {
-                            // If no previous URL but magicLinkRedirectUri is set, likely unlock account flow
-                            shouldIgnore = true
-                            logger.info("No previous URL but magicLinkRedirectUri is set, shouldIgnore: true")
-                        }
-                        
-                        if shouldIgnore {
-                            logger.info("Detected unlock account flow completion - custom scheme URL without code after intermediate redirect, allowing normal login")
-                            // Clear magicLinkRedirectUri as it's not needed for unlock account flow
-                            magicLinkRedirectUri = nil
-                            previousUrl = nil
-                            // Reset webview to initial state by loading fresh login page
-                            // This ensures the app returns to initial state after unlock account flow
-                            DispatchQueue.main.async {
-                                self.reloadFreshLoginPage()
-                            }
-                            return .cancel
-                        }
-                    }
-                    
-                    // Check if we came directly from unlock account flow
-                    if let prevUrl = previousUrl, prevUrl.path.contains("/oauth/account/unlock") {
-                        logger.info("Detected unlock account flow completion - custom scheme URL without code after unlock, allowing normal login")
-                        // Clear magicLinkRedirectUri as it's not needed for unlock account flow
-                        magicLinkRedirectUri = nil
-                        previousUrl = nil
-                        // Reset webview to initial state by loading fresh login page
-                        // This ensures the app returns to initial state after unlock account flow
-                        DispatchQueue.main.async {
-                            self.reloadFreshLoginPage()
-                        }
-                        return .cancel
-                    }
+                // FR-26330: an unlock-account deep link ends on a codeless callback, which
+                // otherwise reads as a cancelled login. Reachable here for App-Link (https)
+                // callbacks; custom-scheme ones are claimed by the branch above.
+                //
+                // Replaces a check gated on `magicLinkRedirectUri != nil` that could never
+                // fire: `didFinish` nils it on the very intermediate hop that identifies this
+                // flow. The preceding URL is the signal that actually survives.
+                if Self.isUnlockFlowCompletion(url: url, previousUrl: previousUrl) {
+                    completeUnlockFlow()
+                    return .cancel
                 }
                 return self.handleHostedLoginCallback(webView, url)
             case .SocialOauthPreLogin:
@@ -1369,6 +1373,18 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         if recoverHostedCallbackFromFailedNavigationIfNeeded(webView: webView, error: error) {
             return
         }
+
+        // FR-26330: the unlock-account flow ends with the server redirecting to the app's
+        // callback scheme. WebKit will not hand an unregistered scheme to
+        // decidePolicyFor — it fails the navigation with WebKitErrorDomain 102 — so this is
+        // the only place that redirect surfaces. Without this the 102 branch below returns
+        // silently, the loader is never cleared, and the user sits on a spinner forever.
+        if let failingURL = failingNavigationURL(from: error),
+           Self.isUnlockFlowCompletion(url: failingURL, previousUrl: previousUrl) {
+            completeUnlockFlow()
+            return
+        }
+
         if(statusCode==102){
             // interrupted by frontegg webview
             return;
