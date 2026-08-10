@@ -439,6 +439,10 @@ final class LocalMockAuthServer {
             response = handleTenants(request)
         case ("POST", "/oauth/logout/token"):
             response = handleLogout(request)
+        case ("GET", "/auth/saml/callback"):
+            response = handleSamlAssertionDeadEnd()
+        case ("GET", "/oauth/account/saml/callback"):
+            response = handleSamlCallbackLandingPage()
         default:
             response = jsonResponse(status: 404, payload: ["error": "Unhandled route \(request.method) \(request.path)"])
         }
@@ -607,6 +611,21 @@ final class LocalMockAuthServer {
                 hostedState: hostedState,
                 email: email
             )
+        }
+
+        // FR-26387: the failing shape. The IdP consumes its assertion, the identity service
+        // authenticates the user and issues a refresh cookie, but then lands the WebView on
+        // /oauth/account/saml/callback stripped of every parameter — no code, no state — so
+        // the hosted login box has nothing to resume and the app's redirect_uri is never
+        // reached.
+        if email.hasSuffix("@saml-deadend.com") {
+            let body = """
+            <h1>OKTA SAML Dead-End Mock</h1>
+            <form action="/auth/saml/callback" method="get">
+              <button type="submit">Login With Okta</button>
+            </form>
+            """
+            return htmlResponse(status: 200, title: "OKTA SAML Dead-End Mock", body: body)
         }
 
         if email.hasSuffix("@oidc-domain.com") {
@@ -1485,6 +1504,31 @@ final class LocalMockAuthServer {
             statusCode: status,
             headers: ["Content-Type": "text/plain; charset=utf-8"],
             body: Data(body.utf8)
+        )
+    }
+
+    /// FR-26387: the assertion succeeds — a refresh cookie is issued — but the redirect drops
+    /// the OAuth session entirely, exactly as the customer capture shows.
+    static let samlDeadEndEmail = "saml-deadend@frontegg.com"
+
+    private func handleSamlAssertionDeadEnd() -> HTTPResponse {
+        let issuedRefreshToken = state.issueRefreshToken(email: Self.samlDeadEndEmail)
+        let cookieValue = "fe_refresh_demo_embedded_e2e=\(issuedRefreshToken.token); Path=/; HttpOnly; SameSite=None"
+        return redirectResponse(
+            location: currentAppBaseURL()
+                .appendingPathComponent("oauth/account/saml/callback")
+                .absoluteString,
+            additionalHeaders: ["Set-Cookie": cookieValue]
+        )
+    }
+
+    /// Stands in for the hosted login box re-bootstrapping on the assertion callback with
+    /// nothing to resume — in the capture it just renders and stops.
+    private func handleSamlCallbackLandingPage() -> HTTPResponse {
+        htmlResponse(
+            status: 200,
+            title: "SAML Callback",
+            body: "<h1>SAML Callback Landing</h1>"
         )
     }
 
