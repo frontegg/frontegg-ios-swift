@@ -26,6 +26,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     private var previousUrl: URL? = nil
     private var isSocialLoginFlow: Bool = false
     private var socialSuccessWatchdogWorkItem: DispatchWorkItem? = nil
+    /// Guards the FR-26387 SSO cookie recovery so the assertion-callback page finishing
+    /// more than once cannot start a second authorize round trip.
+    private var ssoCookieRecoveryStarted: Bool = false
     private let socialSuccessWatchdogDelay: TimeInterval = 5.0
 
     func setActiveOAuthFlow(_ flow: FronteggOAuthFlow) {
@@ -1071,6 +1074,82 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     }
 
     
+    /// Splits the `name=value` cookie strings from `extractAuthCookiesFromWebView` into the
+    /// tokens the authorize call needs, or nil when there is no usable refresh cookie.
+    ///
+    /// Only the first `=` separates name from value: token values can carry base64url `=`
+    /// padding, and splitting on every `=` would truncate them.
+    static func ssoRecoveryTokens(
+        refreshCookie: String?,
+        deviceCookie: String?
+    ) -> (refreshToken: String, deviceToken: String?)? {
+        func value(of cookie: String?) -> String? {
+            guard let cookie = cookie else { return nil }
+            let parts = cookie.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2, !parts[1].isEmpty else { return nil }
+            return String(parts[1])
+        }
+
+        guard let refreshToken = value(of: refreshCookie) else { return nil }
+        return (refreshToken, value(of: deviceCookie))
+    }
+
+    /// Completes an SSO login from the `fe_refresh_*` cookie the identity service set on the
+    /// assertion callback (FR-26387).
+    ///
+    /// Only the WebView cookie is accepted. The social-login recovery above falls back to the
+    /// keychain, which is right there because that flow reaches a post-login page; here the
+    /// page proves an assertion was just consumed but not whose, so a keychain token left by a
+    /// previous user could silently sign the wrong account back in.
+    private func recoverSsoLoginFromWebViewCookies() {
+        guard !ssoCookieRecoveryStarted else {
+            logger.trace("SSO cookie recovery already started, skipping")
+            return
+        }
+        ssoCookieRecoveryStarted = true
+
+        logger.info("SSO assertion callback reached without a code, recovering session from WebView cookies")
+
+        Task { [weak self] in
+            guard let self = self else { return }
+
+            // The Set-Cookie on the assertion callback lands in the WebView cookie store
+            // asynchronously; the same 0.5s settle the social-login recovery uses.
+            try? await Task.sleep(nanoseconds: 500_000_000)
+
+            let (refreshTokenCookie, deviceTokenCookie) = await self.extractAuthCookiesFromWebView()
+
+            guard let tokens = CustomWebView.ssoRecoveryTokens(
+                refreshCookie: refreshTokenCookie,
+                deviceCookie: deviceTokenCookie
+            ) else {
+                self.logger.warning("No usable refresh token cookie after SSO assertion callback, leaving the login box in place")
+                self.ssoCookieRecoveryStarted = false
+                return
+            }
+
+            do {
+                let user = try await self.fronteggAuth.requestAuthorizeAsync(
+                    refreshToken: tokens.refreshToken,
+                    deviceTokenCookie: tokens.deviceToken
+                )
+                self.logger.info("SSO login completed from WebView cookies")
+                _ = await MainActor.run {
+                    self.fronteggAuth.loginCompletion?(.success(user))
+                    if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
+                        presentingVC.dismiss(animated: true)
+                        VCHolder.shared.vc = nil
+                    }
+                }
+            } catch {
+                // Leave the login box on screen so the user can retry rather than dropping
+                // them onto an error with no way forward.
+                self.logger.error("Failed to complete SSO login from WebView cookies: \(error)")
+                self.ssoCookieRecoveryStarted = false
+            }
+        }
+    }
+
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         logger.trace("didStartProvisionalNavigation")
         if let url = webView.url {
@@ -1173,6 +1252,13 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 }
 
             }
+            // FR-26387: the SSO assertion callback is a dead end — the login box has no
+            // pending OAuth session to resume, so no code ever reaches the app. The session
+            // is valid though, so finish it natively from the refresh cookie.
+            if isSsoCallbackWithoutCode(url, baseUrl: fronteggAuth.baseUrl) {
+                recoverSsoLoginFromWebViewCookies()
+            }
+
             if urlType == .loginRoutes || urlType == .Unknown {
                 logger.info("hiding Loader screen")
                 if(fronteggAuth.webLoading) {
