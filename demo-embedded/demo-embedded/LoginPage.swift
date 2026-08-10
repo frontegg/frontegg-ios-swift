@@ -219,6 +219,11 @@ struct LoginBody: View {
         }
         .buttonStyle(PrimaryButtonStyle())
         .accessibilityIdentifier("E2ESimulateMisroutedDeepLinkButton")
+        Button("E2E Unlock Account Deep Link") {
+            simulateUnlockAccountDeepLink()
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .accessibilityIdentifier("E2EUnlockAccountDeepLinkButton")
     }
 
     /// Regression for the SkyPath multi-app AASA wrong-app routing case:
@@ -248,6 +253,21 @@ struct LoginBody: View {
         ]
         guard let url = components.url else {
             print("E2E mis-routed deep link: failed to build URL")
+            return
+        }
+
+        _ = fronteggAuth.handleOpenUrl(url)
+    }
+
+    /// Regression for FR-26330: delivers the unlock-account deep link the way the mail
+    /// client does. The mock server then runs the real tail of that flow — an intermediate
+    /// `/oauth/account/redirect/ios/{bundleId}` hop and a final custom-scheme callback,
+    /// neither carrying a code. The SDK used to read that as a cancelled login and dismiss
+    /// the login view; it should instead return the user to a fresh login page.
+    private func simulateUnlockAccountDeepLink() {
+        guard let baseUrl = DemoEmbeddedTestMode.baseUrl,
+              let url = URL(string: "\(baseUrl)/oauth/account/unlock?token=e2e-unlock-token") else {
+            print("E2E unlock deep link: missing base url")
             return
         }
 
