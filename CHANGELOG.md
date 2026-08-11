@@ -1,3 +1,5 @@
+## v1.3.18
+
 ## v1.3.17
 
 - Fixed: social sign-in could fail on recent iOS versions with a "Failed to get extract code" error, even though the user had already authenticated with the provider successfully. Some values returned by the provider contain characters that must be escaped in a URL, and they were not being escaped when the SDK built the URL that completes the exchange — so iOS rejected it and sign-in stopped about a second later. Retrying did not help. No app or configuration changes are needed. (FR-26132 — [#305](https://github.com/frontegg/frontegg-ios-swift/pull/305))
