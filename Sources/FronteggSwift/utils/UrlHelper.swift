@@ -182,22 +182,8 @@ func routedAppPath(
     return actualPath.isEmpty ? "/" : actualPath
 }
 
-/// Path the identity service lands on after it consumes a SAML assertion.
 let ssoAssertionCallbackPath = "/oauth/account/saml/callback"
 
-/// Whether `url` is the SSO assertion callback reached without an authorization code.
-///
-/// FR-26387: after a successful SAML round trip the identity service redirects the embedded
-/// WebView to `/oauth/account/saml/callback` with no query string at all — no `code`, no
-/// `state`. The `RelayState` minted at `sso/prelogin` only carries tenant/email/application,
-/// never the pending OAuth session, so the hosted login box has nothing to resume and the
-/// app's `redirect_uri` is never reached. The session itself is valid: the same response
-/// that lands here sets the `fe_refresh_*` cookie. The SDK completes the login from that
-/// cookie rather than waiting for a code that never arrives.
-///
-/// Deliberately scoped to the assertion-callback path. That path is only reachable by an
-/// actual assertion POST from the identity provider, so a stale `fe_refresh_*` cookie left
-/// over from an earlier session can never trigger the recovery on an ordinary login page.
 func isSsoCallbackWithoutCode(
     _ url: URL,
     baseUrl: String = FronteggApp.shared.baseUrl
@@ -216,8 +202,6 @@ func isSsoCallbackWithoutCode(
 
     let queryItems = getQueryItems(url.absoluteString)
 
-    // A code means the normal OAuth exchange owns the flow; an error means the attempt
-    // genuinely failed and must surface rather than be papered over by a leftover cookie.
     return queryItems?["code"] == nil && queryItems?["error"] == nil
 }
 

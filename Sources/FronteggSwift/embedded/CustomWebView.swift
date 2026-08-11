@@ -26,8 +26,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     private var previousUrl: URL? = nil
     private var isSocialLoginFlow: Bool = false
     private var socialSuccessWatchdogWorkItem: DispatchWorkItem? = nil
-    /// Guards the FR-26387 SSO cookie recovery so the assertion-callback page finishing
-    /// more than once cannot start a second authorize round trip.
     private var ssoCookieRecoveryStarted: Bool = false
     private let socialSuccessWatchdogDelay: TimeInterval = 5.0
 
@@ -81,7 +79,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
 
     /// Outcome the social-success watchdog can take when it fires. Pure value
     /// so the decision logic can be unit-tested without WKWebView/FronteggAuth.
-    ///
     /// Crucially there is no `.reload` case: reloading
     /// `/oauth/account/social/success` would re-submit the authorization
     /// code, which fails the second post-login attempt and replaces a useful
@@ -105,7 +102,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     /// out as `internal static` so tests can construct the same item with
     /// stub callbacks and assert its side effects without standing up a real
     /// WKWebView or the FronteggAuth singleton.
-    ///
     /// `pathProvider` is invoked when the item fires (so the test can simulate
     /// the user navigating away mid-timeout). `onHideLoader` receives the
     /// only intentional side effect — there is no `onReload` callback because
@@ -205,13 +201,13 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             fallbackError: fallbackError
         )
     }
-    
-    
+
+
     override var inputAccessoryView: UIView? {
         // remove/replace the default accessory view
         return accessoryView
     }
-    
+
     private static func isCancelledAsAuthenticationLoginError(_ error: Error) -> Bool {
         (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue
     }
@@ -355,7 +351,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             ?? generateRedirectUri(baseUrl: baseUrl, bundleIdentifier: bundleIdentifier)
         return (fallbackRedirectUri, magicLinkRedirectUri != nil)
     }
-    
+
     func webView(
         _ webView: WKWebView,
         createWebViewWith configuration: WKWebViewConfiguration,
@@ -377,7 +373,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         
         return nil
     }
-    
+
     func webView(_ _webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
         let webView = _webView
         let url = navigationAction.request.url
@@ -1005,7 +1001,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             return .allow
         }
     }
-    
+
     private func getAppURLSchemes() -> [String] {
         
         if let schemes = cachedUrlSchemes {
@@ -1024,7 +1020,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             .flatMap { $0 }
         return cachedUrlSchemes ?? []
     }
-    
+
     /// Extracts authentication cookies (fe_refresh and fe_device) from WebView's cookie store
     /// Returns tuple of (refreshTokenCookie, deviceTokenCookie) where cookies are in format "name=value"
     private func extractAuthCookiesFromWebView() async -> (String?, String?) {
@@ -1073,12 +1069,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         return (refreshTokenCookie, deviceTokenCookie)
     }
 
-    
-    /// Splits the `name=value` cookie strings from `extractAuthCookiesFromWebView` into the
-    /// tokens the authorize call needs, or nil when there is no usable refresh cookie.
-    ///
-    /// Only the first `=` separates name from value: token values can carry base64url `=`
-    /// padding, and splitting on every `=` would truncate them.
+
     static func ssoRecoveryTokens(
         refreshCookie: String?,
         deviceCookie: String?
@@ -1094,13 +1085,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         return (refreshToken, value(of: deviceCookie))
     }
 
-    /// Completes an SSO login from the `fe_refresh_*` cookie the identity service set on the
-    /// assertion callback (FR-26387).
-    ///
-    /// Only the WebView cookie is accepted. The social-login recovery above falls back to the
-    /// keychain, which is right there because that flow reaches a post-login page; here the
-    /// page proves an assertion was just consumed but not whose, so a keychain token left by a
-    /// previous user could silently sign the wrong account back in.
     private func recoverSsoLoginFromWebViewCookies() {
         guard !ssoCookieRecoveryStarted else {
             logger.trace("SSO cookie recovery already started, skipping")
@@ -1113,8 +1097,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         Task { [weak self] in
             guard let self = self else { return }
 
-            // The Set-Cookie on the assertion callback lands in the WebView cookie store
-            // asynchronously; the same 0.5s settle the social-login recovery uses.
             try? await Task.sleep(nanoseconds: 500_000_000)
 
             let (refreshTokenCookie, deviceTokenCookie) = await self.extractAuthCookiesFromWebView()
@@ -1142,8 +1124,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     }
                 }
             } catch {
-                // Leave the login box on screen so the user can retry rather than dropping
-                // them onto an error with no way forward.
                 self.logger.error("Failed to complete SSO login from WebView cookies: \(error)")
                 self.ssoCookieRecoveryStarted = false
             }
@@ -1172,7 +1152,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             self.fronteggAuth.setWebLoading(false)
         }
     }
-    
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         logger.trace("didFinish")
         if let url = webView.url {
@@ -1252,9 +1232,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 }
 
             }
-            // FR-26387: the SSO assertion callback is a dead end — the login box has no
-            // pending OAuth session to resume, so no code ever reaches the app. The session
-            // is valid though, so finish it natively from the refresh cookie.
             if isSsoCallbackWithoutCode(url, baseUrl: fronteggAuth.baseUrl) {
                 recoverSsoLoginFromWebViewCookies()
             }
@@ -1326,7 +1303,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             self.fronteggAuth.setWebLoading(false)
         }
     }
-    
+
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         
@@ -1385,7 +1362,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         _ = handleHostedLoginCallback(webView, failingURL)
         return true
     }
-    
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError _error: Error) {
         let error = _error as NSError
         let statusCode = error.code
@@ -1426,8 +1403,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         let content = generateErrorPage(message: errorMessage, url: url, status: statusCode)
         webView.loadHTMLString(content, baseURL: nil)
     }
-    
-    
+
+
     private func handleHostedLoginCallback(_ webView: WKWebView?, _ url: URL) -> WKNavigationActionPolicy {
         cancelSocialSuccessWatchdog()
         let expectedRedirectUri = generateRedirectUri(
@@ -1699,8 +1676,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         }
         return .cancel
     }
-    
-    
+
+
     private func setSocialLoginRedirectUri(_ _webView:WKWebView?, _ url:URL) -> WKNavigationActionPolicy {
         let webView = _webView
         let expectedRedirectUri = generateRedirectUri(
@@ -1771,7 +1748,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         
         return .cancel
     }
-    
+
     private func startExternalBrowser(_ _webView:WKWebView?, _ url:URL, _ ephemeralSession:Bool = true) -> Void {
         
         let webView = _webView
@@ -1892,7 +1869,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             }
         }
     }
-    
+
     private func handleSocialLoginRedirectToBrowser(_ _webView:WKWebView?, _ socialLoginUrl:URL) -> Void {
         
         let webView = _webView
@@ -1915,15 +1892,15 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             }
         }
     }
-    
-    
-    
+
+
+
     private func openExternalBrowser(_ _webView:WKWebView?, _ url:URL) -> WKNavigationActionPolicy {
         let webView = _webView
         self.startExternalBrowser(webView, url, true)
         return .cancel
     }
-    
+
     override open var safeAreaInsets: UIEdgeInsets {
         return UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
     }

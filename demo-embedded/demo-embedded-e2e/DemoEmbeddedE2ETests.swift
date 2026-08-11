@@ -120,17 +120,6 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         waitForUserEmail("test@saml-domain.com")
     }
 
-    /// FR-26387: SkyPath's users authenticate with their IdP and are then told
-    /// "Failed to login with SSO".
-    ///
-    /// The customer capture shows SAML succeeding — the identity service issues a refresh
-    /// cookie — and then landing the WebView on /oauth/account/saml/callback with no query
-    /// string at all. The RelayState never carries the pending OAuth session, so the hosted
-    /// login box has nothing to resume, no code ever reaches the app, and the SDK waits for a
-    /// callback that is never produced. This replays that exact shape.
-    ///
-    /// The fix completes the login from the refresh cookie the assertion already set, so the
-    /// discriminator is simply whether the user ends up authenticated.
     func testEmbeddedSamlDeadEndRecoversFromRefreshCookie() throws {
         launchApp(resetState: true)
         waitForScreen("LoginPageRoot")
@@ -139,8 +128,6 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         app.getWebLabel("OKTA SAML Dead-End Mock").waitUntilExists(timeout: 20)
         app.getWebButton("Login With Okta").safeTap()
 
-        // The assertion callback is where the flow dies without the fix: the box renders and
-        // nothing further happens.
         XCTAssertTrue(
             Self.server.waitForRequest(method: "GET", path: "/oauth/account/saml/callback", timeout: 20),
             "SAML should land on the assertion callback. \(screenDebugSummary())"

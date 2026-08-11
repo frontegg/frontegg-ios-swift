@@ -613,11 +613,6 @@ final class LocalMockAuthServer {
             )
         }
 
-        // FR-26387: the failing shape. The IdP consumes its assertion, the identity service
-        // authenticates the user and issues a refresh cookie, but then lands the WebView on
-        // /oauth/account/saml/callback stripped of every parameter — no code, no state — so
-        // the hosted login box has nothing to resume and the app's redirect_uri is never
-        // reached.
         if email.hasSuffix("@saml-deadend.com") {
             let body = """
             <h1>OKTA SAML Dead-End Mock</h1>
@@ -1507,8 +1502,6 @@ final class LocalMockAuthServer {
         )
     }
 
-    /// FR-26387: the assertion succeeds — a refresh cookie is issued — but the redirect drops
-    /// the OAuth session entirely, exactly as the customer capture shows.
     static let samlDeadEndEmail = "saml-deadend@frontegg.com"
 
     private func handleSamlAssertionDeadEnd() -> HTTPResponse {
@@ -1522,8 +1515,6 @@ final class LocalMockAuthServer {
         )
     }
 
-    /// Stands in for the hosted login box re-bootstrapping on the assertion callback with
-    /// nothing to resume — in the capture it just renders and stops.
     private func handleSamlCallbackLandingPage() -> HTTPResponse {
         htmlResponse(
             status: 200,

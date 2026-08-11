@@ -19,7 +19,6 @@ enum DemoEmbeddedTestMode {
     static let requestAuthorizeRefreshToken = "signup-refresh-token"
     static let embeddedPasswordEmail = "test@frontegg.com"
     static let embeddedSAMLEmail = "test@saml-domain.com"
-    /// FR-26387: routes the mock IdP to the dead-end assertion callback (no code, no state).
     static let embeddedSAMLDeadEndEmail = "test@saml-deadend.com"
     static let embeddedOIDCEmail = "test@oidc-domain.com"
 
