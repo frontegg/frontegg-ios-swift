@@ -120,6 +120,22 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         waitForUserEmail("test@saml-domain.com")
     }
 
+    func testEmbeddedSamlDeadEndRecoversFromRefreshCookie() throws {
+        launchApp(resetState: true)
+        waitForScreen("LoginPageRoot")
+        tapButton("E2EEmbeddedSAMLDeadEndButton")
+
+        app.getWebLabel("OKTA SAML Dead-End Mock").waitUntilExists(timeout: 20)
+        app.getWebButton("Login With Okta").safeTap()
+
+        XCTAssertTrue(
+            Self.server.waitForRequest(method: "GET", path: "/oauth/account/saml/callback", timeout: 20),
+            "SAML should land on the assertion callback. \(screenDebugSummary())"
+        )
+
+        waitForUserEmail(LocalMockAuthServer.samlDeadEndEmail, timeout: 30)
+    }
+
     func testEmbeddedOidcLogin() throws {
         launchApp(resetState: true)
         waitForScreen("LoginPageRoot")

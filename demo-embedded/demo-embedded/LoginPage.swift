@@ -175,6 +175,11 @@ struct LoginBody: View {
         }
         .buttonStyle(PrimaryButtonStyle())
         .accessibilityIdentifier("E2EEmbeddedSAMLButton")
+        Button("E2E Embedded SAML Dead-End") {
+            fronteggAuth.login(loginHint: DemoEmbeddedTestMode.embeddedSAMLDeadEndEmail)
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .accessibilityIdentifier("E2EEmbeddedSAMLDeadEndButton")
         Button("E2E Embedded OIDC Login") {
             fronteggAuth.login(loginHint: DemoEmbeddedTestMode.embeddedOIDCEmail)
         }

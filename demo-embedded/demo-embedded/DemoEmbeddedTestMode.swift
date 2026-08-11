@@ -19,6 +19,7 @@ enum DemoEmbeddedTestMode {
     static let requestAuthorizeRefreshToken = "signup-refresh-token"
     static let embeddedPasswordEmail = "test@frontegg.com"
     static let embeddedSAMLEmail = "test@saml-domain.com"
+    static let embeddedSAMLDeadEndEmail = "test@saml-deadend.com"
     static let embeddedOIDCEmail = "test@oidc-domain.com"
 
     static var isEnabled: Bool {

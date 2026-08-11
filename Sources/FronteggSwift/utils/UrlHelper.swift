@@ -182,6 +182,29 @@ func routedAppPath(
     return actualPath.isEmpty ? "/" : actualPath
 }
 
+let ssoAssertionCallbackPath = "/oauth/account/saml/callback"
+
+func isSsoCallbackWithoutCode(
+    _ url: URL,
+    baseUrl: String = FronteggApp.shared.baseUrl
+) -> Bool {
+    guard
+        let baseHost = URLComponents(string: baseUrl)?.host?.lowercased(),
+        let urlHost = url.host?.lowercased(),
+        baseHost == urlHost
+    else {
+        return false
+    }
+
+    guard routedAppPath(url, baseUrl: baseUrl) == ssoAssertionCallbackPath else {
+        return false
+    }
+
+    let queryItems = getQueryItems(url.absoluteString)
+
+    return queryItems?["code"] == nil && queryItems?["error"] == nil
+}
+
 /// Path of the App-Link (Universal Link) OAuth callback for this app.
 /// Mirrors Android's `/oauth/account/redirect/android/{packageName}` and matches
 /// the routes Frontegg's hosted AASA file publishes
