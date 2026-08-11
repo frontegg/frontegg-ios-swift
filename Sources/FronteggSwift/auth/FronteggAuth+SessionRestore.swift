@@ -304,6 +304,19 @@ extension FronteggAuth {
         return StoredTokens(refreshToken: refreshToken, accessToken: accessToken, keychainUnavailable: keychainUnavailable)
     }
 
+    static var isProtectedDataAvailable: Bool {
+        #if canImport(UIKit)
+        #if DEBUG
+        if let override = testProtectedDataAvailableOverride {
+            return override
+        }
+        #endif
+        return UIApplication.shared.isProtectedDataAvailable
+        #else
+        return true
+        #endif
+    }
+
     func awaitProtectedDataAvailability(_ resume: @escaping () -> Void) {
         #if canImport(UIKit)
         let waiter = ProtectedDataAvailabilityWaiter()
@@ -322,7 +335,7 @@ extension FronteggAuth {
         ]
 
         DispatchQueue.main.async {
-            if UIApplication.shared.isProtectedDataAvailable {
+            if Self.isProtectedDataAvailable {
                 handler(Notification(name: UIApplication.protectedDataDidBecomeAvailableNotification))
             }
         }

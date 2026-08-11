@@ -8,6 +8,9 @@ final class SessionRestoreLockedKeychainTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        NetworkStatusMonitor._testReset()
+        FronteggAuth.testNetworkPathAvailabilityOverride = true
+        FronteggAuth.testProtectedDataAvailableOverride = nil
         credentialManager = CredentialManager(serviceKey: "frontegg-locked-keychain-\(UUID().uuidString)")
         auth = FronteggAuth(
             baseUrl: "https://test.example.com",
@@ -20,12 +23,46 @@ final class SessionRestoreLockedKeychainTests: XCTestCase {
             isLateInit: true,
             entitlementsEnabled: false
         )
+        auth.setInitializing(true)
     }
 
     override func tearDown() {
         auth = nil
         credentialManager = nil
+        FronteggAuth.testNetworkPathAvailabilityOverride = nil
+        FronteggAuth.testProtectedDataAvailableOverride = nil
+        NetworkStatusMonitor._testReset()
         super.tearDown()
+    }
+
+    private func waitUntil(timeout: TimeInterval = 3, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        return condition()
+    }
+
+    private func tokenReader(_ value: String) -> (CFDictionary, UnsafeMutablePointer<AnyObject?>?) -> OSStatus {
+        return { _, result in
+            result?.pointee = Data(value.utf8) as AnyObject
+            return errSecSuccess
+        }
+    }
+
+    func testDeferredRestoreRestoresSessionOnceKeychainBecomesReadable() {
+        FronteggAuth.testProtectedDataAvailableOverride = false
+        credentialManager.copyMatching = { _, _ in errSecInteractionNotAllowed }
+
+        auth.initializeSubscriptions()
+        XCTAssertNil(auth.refreshToken)
+
+        FronteggAuth.testProtectedDataAvailableOverride = true
+        credentialManager.copyMatching = tokenReader("stored-refresh-token")
+        NotificationCenter.default.post(name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
+
+        XCTAssertTrue(waitUntil { self.auth.refreshToken == "stored-refresh-token" })
     }
 
     func testLockedKeychainIsFlaggedSoRestoreCanBeDeferred() {

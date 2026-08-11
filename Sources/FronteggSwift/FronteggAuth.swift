@@ -24,6 +24,7 @@ public class FronteggAuth: FronteggState {
     
 #if DEBUG
     static var testNetworkPathAvailabilityOverride: Bool? = nil
+    static var testProtectedDataAvailableOverride: Bool? = nil
 #endif
 
     public var embeddedMode: Bool
