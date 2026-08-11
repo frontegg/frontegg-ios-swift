@@ -111,27 +111,12 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         assertNoConnectionScreenDoesNotAppear(duration: 1)
     }
 
-    /// FR-26330: the unlock-account deep link opened the app and then dropped the user on a
-    /// fresh login screen.
-    ///
-    /// The flow's defining property is that no hop after the unlock page carries an
-    /// authorization code: `/oauth/account/unlock` redirects to an intermediate
-    /// `/oauth/account/redirect/ios/{bundleId}`, which redirects to the app's custom-scheme
-    /// callback, and neither carries one. A codeless callback otherwise means a cancelled
-    /// login, so the SDK reported `operationCanceled`, dismissed the login view and returned
-    /// the user to the app's own login screen with nothing accomplished.
-    ///
-    /// Asserted through the surviving login view rather than through logs: on the failure the
-    /// webview is torn down, on the fix it stays up showing a fresh login page. Verified to
-    /// fail without the fix.
     func testUnlockAccountDeepLinkKeepsTheLoginViewOpen() throws {
         launchApp(resetState: true)
         waitForScreen("LoginPageRoot")
 
         tapButton("E2EUnlockAccountDeepLinkButton")
 
-        // The webview has to reach the end of the redirect chain before the assertion means
-        // anything — the callback hop is what used to tear it down.
         XCTAssertTrue(
             Self.server.waitForRequest(
                 method: "GET",
@@ -141,13 +126,6 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
             "Unlock should redirect through the intermediate hop. \(screenDebugSummary())"
         )
 
-        // The rendered login page is the discriminator. WebKit refuses the server redirect to
-        // the app's own scheme and fails the navigation, so without the fix the embedded view
-        // sits on a spinner forever — confirmed on a simulator.
-        //
-        // Two weaker assertions were tried first and both passed against the broken build:
-        // the webview count (the view is never torn down either way) and the authorize request
-        // count (an unrelated authorize arrives during startup and satisfies it).
         XCTAssertTrue(
             app.getWebLabel("Mock Embedded Login").waitUntilExists(timeout: 20).exists,
             "Unlock should land the user back on a fresh login page rather than a stuck loader. \(screenDebugSummary())"

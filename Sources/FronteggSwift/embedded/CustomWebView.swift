@@ -183,24 +183,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         Self.hasOAuthErrorParameters(queryItems)
     }
 
-    /// Whether this callback is the tail of an unlock-account deep link rather than a real
-    /// OAuth result (FR-26330).
-    ///
-    /// Unlock sends the user through `/oauth/account/unlock`, then an intermediate
-    /// `/oauth/account/redirect/ios/{bundleId}` hop, and finally to the app's callback —
-    /// and neither of the last two carries a `code`. A codeless callback otherwise means a
-    /// cancelled login, so without this the flow is reported as `operationCanceled`: the app
-    /// opens, dismisses the login view and drops the user on a fresh login screen.
-    ///
-    /// The preceding hop is the only reliable evidence, which is why `didFinish` keeps
-    /// `previousUrl` for the codeless intermediate. `magicLinkRedirectUri` cannot serve here:
-    /// `didFinish` nils it on exactly that hop, so any check requiring it to be non-nil is
-    /// unreachable in this flow.
-    ///
-    /// Returns false whenever the callback carries a `code` or an OAuth error, so genuine
-    /// results — including real failures — still reach the OAuth handler.
-    /// Returns the user to a fresh login page after an unlock-account deep link, instead of
-    /// leaving the embedded view on a spinner or reporting a cancelled login.
     private func completeUnlockFlow() {
         logger.info("Detected unlock account flow completion, returning to a fresh login page")
         magicLinkRedirectUri = nil
@@ -620,10 +602,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     )
                     return self.handleHostedLoginCallback(webView, url)
                 } else if Self.isUnlockFlowCompletion(url: url, previousUrl: previousUrl) {
-                    // FR-26330, for the case where the page navigates to the callback itself
-                    // (JS or a link). A *server* redirect to this custom scheme never reaches
-                    // this delegate at all — WebKit fails the navigation instead — so that
-                    // path is handled in didFailProvisionalNavigation.
                     completeUnlockFlow()
                     return .cancel
                 } else {
@@ -980,13 +958,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
 
             switch urlType {
             case .HostedLoginCallback:
-                // FR-26330: an unlock-account deep link ends on a codeless callback, which
-                // otherwise reads as a cancelled login. Reachable here for App-Link (https)
-                // callbacks; custom-scheme ones are claimed by the branch above.
-                //
-                // Replaces a check gated on `magicLinkRedirectUri != nil` that could never
-                // fire: `didFinish` nils it on the very intermediate hop that identifies this
-                // flow. The preceding URL is the signal that actually survives.
                 if Self.isUnlockFlowCompletion(url: url, previousUrl: previousUrl) {
                     completeUnlockFlow()
                     return .cancel
@@ -1374,11 +1345,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             return
         }
 
-        // FR-26330: the unlock-account flow ends with the server redirecting to the app's
-        // callback scheme. WebKit will not hand an unregistered scheme to
-        // decidePolicyFor — it fails the navigation with WebKitErrorDomain 102 — so this is
-        // the only place that redirect surfaces. Without this the 102 branch below returns
-        // silently, the loader is never cleared, and the user sits on a spinner forever.
         if let failingURL = failingNavigationURL(from: error),
            Self.isUnlockFlowCompletion(url: failingURL, previousUrl: previousUrl) {
             completeUnlockFlow()

@@ -239,9 +239,6 @@ class MockAuthHandler(BaseHTTPRequestHandler):
             self.handle_logout()
             return
 
-        # FR-26330 unlock-account tail. Its defining property is that no hop after the
-        # unlock page carries an authorization code, which the SDK used to read as a
-        # cancelled login.
         if self.command == "GET" and path == "/oauth/account/unlock":
             host = self.headers.get("Host", "127.0.0.1")
             self.send_redirect(
@@ -254,7 +251,6 @@ class MockAuthHandler(BaseHTTPRequestHandler):
                 path[len("/oauth/account/redirect/ios/"):].split("/")[0]
                 or "com.frontegg.demo"
             )
-            # Deliberately no code and no error.
             self.send_redirect(f"{bundle_id}://127.0.0.1/ios/oauth/callback")
             return
 

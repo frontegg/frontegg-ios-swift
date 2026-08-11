@@ -1528,12 +1528,6 @@ final class LocalMockAuthServer {
         )
     }
 
-    /// FR-26330: reproduces the unlock-account tail, whose defining property is that no hop
-    /// after the unlock page carries an authorization code.
-    ///
-    /// `/oauth/account/unlock` -> `/oauth/account/redirect/ios/{bundleId}` -> the app's
-    /// custom-scheme callback, all codeless. The SDK used to read that final codeless
-    /// callback as a cancelled login and dismiss the login view.
     private func handleUnlockAccount() -> HTTPResponse {
         redirectResponse(
             location: currentAppBaseURL()
@@ -1549,7 +1543,6 @@ final class LocalMockAuthServer {
             .first
             .map(String.init) ?? Self.embeddedDemoBundleIdentifier
 
-        // Deliberately no code and no error, matching the reported flow.
         return redirectResponse(location: "\(bundleId)://\(baseURL.host ?? "127.0.0.1")/ios/oauth/callback")
     }
 
