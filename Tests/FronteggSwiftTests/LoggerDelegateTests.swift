@@ -13,23 +13,41 @@ private final class SpyLoggerDelegate: FronteggLoggerDelegate {
         let tag: String
     }
 
-    private(set) var events: [Event] = []
+    private let lock = NSRecursiveLock()
+    private var storage: [Event] = []
+
+    var events: [Event] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
 
     func fronteggSDK(didLog message: String, level: FeLogger.Level, tag: String) {
-        events.append(.init(message: message, level: level, tag: tag))
+        lock.lock()
+        storage.append(.init(message: message, level: level, tag: tag))
+        lock.unlock()
     }
 }
 
 private final class ReentrantLoggerDelegate: FronteggLoggerDelegate {
     private let nestedLogger = FeLogger(label: "NestedLogger")
-    private(set) var events: [SpyLoggerDelegate.Event] = []
+    private let lock = NSRecursiveLock()
+    private var storage: [SpyLoggerDelegate.Event] = []
+
+    var events: [SpyLoggerDelegate.Event] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
 
     init() {
         nestedLogger.logLevel = .trace
     }
 
     func fronteggSDK(didLog message: String, level: FeLogger.Level, tag: String) {
-        events.append(.init(message: message, level: level, tag: tag))
+        lock.lock()
+        storage.append(.init(message: message, level: level, tag: tag))
+        lock.unlock()
         nestedLogger.info("nested info log")
     }
 }
