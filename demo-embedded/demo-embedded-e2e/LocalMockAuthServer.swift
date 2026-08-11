@@ -443,6 +443,11 @@ final class LocalMockAuthServer {
             response = handleSamlAssertionDeadEnd()
         case ("GET", "/oauth/account/saml/callback"):
             response = handleSamlCallbackLandingPage()
+        case ("GET", "/oauth/account/unlock"):
+            response = handleUnlockAccount()
+        case let (method, path) where method == "GET"
+            && path.hasPrefix("/oauth/account/redirect/ios/"):
+            response = handleUnlockIntermediateRedirect(path: path)
         default:
             response = jsonResponse(status: 404, payload: ["error": "Unhandled route \(request.method) \(request.path)"])
         }
@@ -1522,6 +1527,26 @@ final class LocalMockAuthServer {
             body: "<h1>SAML Callback Landing</h1>"
         )
     }
+
+    private func handleUnlockAccount() -> HTTPResponse {
+        redirectResponse(
+            location: currentAppBaseURL()
+                .appendingPathComponent("oauth/account/redirect/ios/\(Self.embeddedDemoBundleIdentifier)")
+                .absoluteString
+        )
+    }
+
+    private func handleUnlockIntermediateRedirect(path: String) -> HTTPResponse {
+        let bundleId = path
+            .dropFirst("/oauth/account/redirect/ios/".count)
+            .split(separator: "/")
+            .first
+            .map(String.init) ?? Self.embeddedDemoBundleIdentifier
+
+        return redirectResponse(location: "\(bundleId)://\(baseURL.host ?? "127.0.0.1")/ios/oauth/callback")
+    }
+
+    static let embeddedDemoBundleIdentifier = "com.frontegg.demo"
 
     private func redirectResponse(
         location: String,

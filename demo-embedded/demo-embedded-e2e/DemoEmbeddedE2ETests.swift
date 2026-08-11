@@ -111,6 +111,31 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         assertNoConnectionScreenDoesNotAppear(duration: 1)
     }
 
+    func testUnlockAccountDeepLinkKeepsTheLoginViewOpen() throws {
+        launchApp(resetState: true)
+        waitForScreen("LoginPageRoot")
+
+        tapButton("E2EUnlockAccountDeepLinkButton")
+
+        XCTAssertTrue(
+            Self.server.waitForRequest(
+                method: "GET",
+                path: "/oauth/account/redirect/ios/\(LocalMockAuthServer.embeddedDemoBundleIdentifier)",
+                timeout: 15
+            ),
+            "Unlock should redirect through the intermediate hop. \(screenDebugSummary())"
+        )
+
+        XCTAssertTrue(
+            app.getWebLabel("Mock Embedded Login").waitUntilExists(timeout: 20).exists,
+            "Unlock should land the user back on a fresh login page rather than a stuck loader. \(screenDebugSummary())"
+        )
+        XCTAssertFalse(
+            app.staticTexts["UserEmailValue"].exists,
+            "Unlock must not authenticate anyone. \(screenDebugSummary())"
+        )
+    }
+
     func testEmbeddedSamlLogin() throws {
         launchApp(resetState: true)
         waitForScreen("LoginPageRoot")
