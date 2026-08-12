@@ -7,6 +7,23 @@
 import Foundation
 import WebKit
 import Combine
+#if canImport(UIKit)
+import UIKit
+#endif
+
+private final class ProtectedDataAvailabilityWaiter {
+    private let lock = NSLock()
+    private var resumed = false
+    var observers: [NSObjectProtocol] = []
+
+    func claim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if resumed { return false }
+        resumed = true
+        return true
+    }
+}
 
 private let authenticatedStartupNetworkAssessmentTimeout: UInt64 = 500_000_000
 
@@ -209,9 +226,43 @@ extension FronteggAuth {
             self.setShowLoader(initializingValue || (!isAuthenticatedValue && isLoadingValue))
         }.store(in: &subscribers)
         
+        let stored = loadStoredTokens(enableSessionPerTenant: enableSessionPerTenant)
+
+        if stored.refreshToken == nil, stored.accessToken == nil, stored.keychainUnavailable {
+            logger.warning("Keychain unavailable at startup, deferring session restore until protected data is available")
+            awaitProtectedDataAvailability { [weak self] in
+                guard let self = self else { return }
+                let retried = self.loadStoredTokens(enableSessionPerTenant: enableSessionPerTenant)
+                self.completeStartupSessionRestore(refreshToken: retried.refreshToken, accessToken: retried.accessToken)
+            }
+            return
+        }
+
+        completeStartupSessionRestore(refreshToken: stored.refreshToken, accessToken: stored.accessToken)
+    }
+
+    struct StoredTokens {
+        let refreshToken: String?
+        let accessToken: String?
+        let keychainUnavailable: Bool
+    }
+
+    func loadStoredTokens(enableSessionPerTenant: Bool) -> StoredTokens {
         var refreshToken: String? = nil
         var accessToken: String? = nil
-        
+        var keychainUnavailable = false
+
+        func read(_ load: () throws -> String?) -> String? {
+            do {
+                return try load()
+            } catch CredentialManager.KeychainError.keychainUnavailable {
+                keychainUnavailable = true
+                return nil
+            } catch {
+                return nil
+            }
+        }
+
         if enableSessionPerTenant {
             var tenantId: String? = credentialManager.getLastActiveTenantId()
             
@@ -230,15 +281,15 @@ extension FronteggAuth {
             }
             
             if let tenantId = tenantId {
-                refreshToken = try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .refreshToken)
-                accessToken = try? credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .accessToken)
+                refreshToken = read { try credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .refreshToken) }
+                accessToken = read { try credentialManager.getTokenForTenant(tenantId: tenantId, tokenType: .accessToken) }
             }
             
             // Only fall back to legacy tokens if BOTH tenant-specific tokens are nil
             // This prevents discarding valid tenant-specific tokens during partial migration scenarios
             if refreshToken == nil && accessToken == nil {
-                if let legacyRefreshToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue),
-                   let legacyAccessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue) {
+                if let legacyRefreshToken = read({ try credentialManager.get(key: KeychainKeys.refreshToken.rawValue) }),
+                   let legacyAccessToken = read({ try credentialManager.get(key: KeychainKeys.accessToken.rawValue) }) {
                     logger.warning("No tenant-specific tokens found, falling back to legacy tokens (migration scenario)")
                     refreshToken = legacyRefreshToken
                     accessToken = legacyAccessToken
@@ -246,10 +297,57 @@ extension FronteggAuth {
             }
         } else {
             // Legacy behavior: load global tokens
-            refreshToken = try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue)
-            accessToken = try? credentialManager.get(key: KeychainKeys.accessToken.rawValue)
+            refreshToken = read { try credentialManager.get(key: KeychainKeys.refreshToken.rawValue) }
+            accessToken = read { try credentialManager.get(key: KeychainKeys.accessToken.rawValue) }
         }
-        
+
+        return StoredTokens(refreshToken: refreshToken, accessToken: accessToken, keychainUnavailable: keychainUnavailable)
+    }
+
+    static var isProtectedDataAvailable: Bool {
+        #if canImport(UIKit)
+        #if DEBUG
+        if let override = testProtectedDataAvailableOverride {
+            return override
+        }
+        #endif
+        return UIApplication.shared.isProtectedDataAvailable
+        #else
+        return true
+        #endif
+    }
+
+    func awaitProtectedDataAvailability(_ resume: @escaping () -> Void) {
+        #if canImport(UIKit)
+        let waiter = ProtectedDataAvailabilityWaiter()
+        let center = NotificationCenter.default
+
+        let handler: (Notification) -> Void = { _ in
+            guard waiter.claim() else { return }
+            waiter.observers.forEach { center.removeObserver($0) }
+            waiter.observers = []
+            resume()
+        }
+
+        waiter.observers = [
+            center.addObserver(forName: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil, queue: .main, using: handler),
+            center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main, using: handler)
+        ]
+
+        DispatchQueue.main.async {
+            if Self.isProtectedDataAvailable {
+                handler(Notification(name: UIApplication.protectedDataDidBecomeAvailableNotification))
+            }
+        }
+        #else
+        resume()
+        #endif
+    }
+
+    func completeStartupSessionRestore(refreshToken: String?, accessToken: String?) {
+        let config = try? PlistHelper.fronteggConfig()
+        let enableOfflineMode = config?.enableOfflineMode ?? false
+
         // Explicit state categories for startup restore
         let hasAnySessionArtifacts = (refreshToken != nil || accessToken != nil)
         let canRestoreOfflineAuthenticatedState = (accessToken != nil) ||
