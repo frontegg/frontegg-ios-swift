@@ -439,6 +439,15 @@ final class LocalMockAuthServer {
             response = handleTenants(request)
         case ("POST", "/oauth/logout/token"):
             response = handleLogout(request)
+        case ("GET", "/auth/saml/callback"):
+            response = handleSamlAssertionDeadEnd()
+        case ("GET", "/oauth/account/saml/callback"):
+            response = handleSamlCallbackLandingPage()
+        case ("GET", "/oauth/account/unlock"):
+            response = handleUnlockAccount()
+        case let (method, path) where method == "GET"
+            && path.hasPrefix("/oauth/account/redirect/ios/"):
+            response = handleUnlockIntermediateRedirect(path: path)
         default:
             response = jsonResponse(status: 404, payload: ["error": "Unhandled route \(request.method) \(request.path)"])
         }
@@ -607,6 +616,16 @@ final class LocalMockAuthServer {
                 hostedState: hostedState,
                 email: email
             )
+        }
+
+        if email.hasSuffix("@saml-deadend.com") {
+            let body = """
+            <h1>OKTA SAML Dead-End Mock</h1>
+            <form action="/auth/saml/callback" method="get">
+              <button type="submit">Login With Okta</button>
+            </form>
+            """
+            return htmlResponse(status: 200, title: "OKTA SAML Dead-End Mock", body: body)
         }
 
         if email.hasSuffix("@oidc-domain.com") {
@@ -1487,6 +1506,47 @@ final class LocalMockAuthServer {
             body: Data(body.utf8)
         )
     }
+
+    static let samlDeadEndEmail = "saml-deadend@frontegg.com"
+
+    private func handleSamlAssertionDeadEnd() -> HTTPResponse {
+        let issuedRefreshToken = state.issueRefreshToken(email: Self.samlDeadEndEmail)
+        let cookieValue = "fe_refresh_demo_embedded_e2e=\(issuedRefreshToken.token); Path=/; HttpOnly; SameSite=None"
+        return redirectResponse(
+            location: currentAppBaseURL()
+                .appendingPathComponent("oauth/account/saml/callback")
+                .absoluteString,
+            additionalHeaders: ["Set-Cookie": cookieValue]
+        )
+    }
+
+    private func handleSamlCallbackLandingPage() -> HTTPResponse {
+        htmlResponse(
+            status: 200,
+            title: "SAML Callback",
+            body: "<h1>SAML Callback Landing</h1>"
+        )
+    }
+
+    private func handleUnlockAccount() -> HTTPResponse {
+        redirectResponse(
+            location: currentAppBaseURL()
+                .appendingPathComponent("oauth/account/redirect/ios/\(Self.embeddedDemoBundleIdentifier)")
+                .absoluteString
+        )
+    }
+
+    private func handleUnlockIntermediateRedirect(path: String) -> HTTPResponse {
+        let bundleId = path
+            .dropFirst("/oauth/account/redirect/ios/".count)
+            .split(separator: "/")
+            .first
+            .map(String.init) ?? Self.embeddedDemoBundleIdentifier
+
+        return redirectResponse(location: "\(bundleId)://\(baseURL.host ?? "127.0.0.1")/ios/oauth/callback")
+    }
+
+    static let embeddedDemoBundleIdentifier = "com.frontegg.demo"
 
     private func redirectResponse(
         location: String,

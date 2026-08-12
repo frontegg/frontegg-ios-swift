@@ -111,6 +111,31 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         assertNoConnectionScreenDoesNotAppear(duration: 1)
     }
 
+    func testUnlockAccountDeepLinkKeepsTheLoginViewOpen() throws {
+        launchApp(resetState: true)
+        waitForScreen("LoginPageRoot")
+
+        tapButton("E2EUnlockAccountDeepLinkButton")
+
+        XCTAssertTrue(
+            Self.server.waitForRequest(
+                method: "GET",
+                path: "/oauth/account/redirect/ios/\(LocalMockAuthServer.embeddedDemoBundleIdentifier)",
+                timeout: 15
+            ),
+            "Unlock should redirect through the intermediate hop. \(screenDebugSummary())"
+        )
+
+        XCTAssertTrue(
+            app.getWebLabel("Mock Embedded Login").waitUntilExists(timeout: 20).exists,
+            "Unlock should land the user back on a fresh login page rather than a stuck loader. \(screenDebugSummary())"
+        )
+        XCTAssertFalse(
+            app.staticTexts["UserEmailValue"].exists,
+            "Unlock must not authenticate anyone. \(screenDebugSummary())"
+        )
+    }
+
     func testEmbeddedSamlLogin() throws {
         launchApp(resetState: true)
         waitForScreen("LoginPageRoot")
@@ -118,6 +143,22 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         app.getWebLabel("OKTA SAML Mock Server").waitUntilExists()
         app.getWebButton("Login With Okta").safeTap()
         waitForUserEmail("test@saml-domain.com")
+    }
+
+    func testEmbeddedSamlDeadEndRecoversFromRefreshCookie() throws {
+        launchApp(resetState: true)
+        waitForScreen("LoginPageRoot")
+        tapButton("E2EEmbeddedSAMLDeadEndButton")
+
+        app.getWebLabel("OKTA SAML Dead-End Mock").waitUntilExists(timeout: 20)
+        app.getWebButton("Login With Okta").safeTap()
+
+        XCTAssertTrue(
+            Self.server.waitForRequest(method: "GET", path: "/oauth/account/saml/callback", timeout: 20),
+            "SAML should land on the assertion callback. \(screenDebugSummary())"
+        )
+
+        waitForUserEmail(LocalMockAuthServer.samlDeadEndEmail, timeout: 30)
     }
 
     func testEmbeddedOidcLogin() throws {

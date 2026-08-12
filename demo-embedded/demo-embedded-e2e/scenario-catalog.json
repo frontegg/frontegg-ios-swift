@@ -169,6 +169,16 @@
       "method": "testAuthenticatedRelaunchWithExpiredAccessTokenAndFreshRefreshToken",
       "title": "Relaunch with expired access token refreshes via valid refresh token",
       "description": "Logs in with a very short access TTL, terminates after access expires but before refresh expires, relaunches, and verifies the token is refreshed."
+    },
+    {
+      "method": "testEmbeddedSamlDeadEndRecoversFromRefreshCookie",
+      "title": "SAML assertion-callback dead end still signs the user in",
+      "description": "Replays the reported SSO failure: the mock IdP consumes its assertion and the server issues a refresh cookie, then lands the WebView on /oauth/account/saml/callback with no code and no state, so the hosted login box has no OAuth session to resume. Verifies the SDK completes the login from that refresh cookie instead of waiting for a callback that never arrives."
+    },
+    {
+      "method": "testUnlockAccountDeepLinkKeepsTheLoginViewOpen",
+      "title": "Unlock-account deep link returns to a fresh login page",
+      "description": "Delivers the unlock-account deep link and follows the codeless tail of that flow (an intermediate /oauth/account/redirect/ios/{bundleId} hop, then the app's callback scheme). WebKit fails the redirect to an unregistered scheme, so without the fix the embedded view sits on a spinner forever; verifies the SDK instead returns the user to a rendered login page and authenticates nobody."
     }
   ]
 }

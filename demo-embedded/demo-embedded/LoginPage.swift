@@ -175,6 +175,11 @@ struct LoginBody: View {
         }
         .buttonStyle(PrimaryButtonStyle())
         .accessibilityIdentifier("E2EEmbeddedSAMLButton")
+        Button("E2E Embedded SAML Dead-End") {
+            fronteggAuth.login(loginHint: DemoEmbeddedTestMode.embeddedSAMLDeadEndEmail)
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .accessibilityIdentifier("E2EEmbeddedSAMLDeadEndButton")
         Button("E2E Embedded OIDC Login") {
             fronteggAuth.login(loginHint: DemoEmbeddedTestMode.embeddedOIDCEmail)
         }
@@ -214,6 +219,11 @@ struct LoginBody: View {
         }
         .buttonStyle(PrimaryButtonStyle())
         .accessibilityIdentifier("E2ESimulateMisroutedDeepLinkButton")
+        Button("E2E Unlock Account Deep Link") {
+            simulateUnlockAccountDeepLink()
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .accessibilityIdentifier("E2EUnlockAccountDeepLinkButton")
     }
 
     /// Regression for the SkyPath multi-app AASA wrong-app routing case:
@@ -243,6 +253,16 @@ struct LoginBody: View {
         ]
         guard let url = components.url else {
             print("E2E mis-routed deep link: failed to build URL")
+            return
+        }
+
+        _ = fronteggAuth.handleOpenUrl(url)
+    }
+
+    private func simulateUnlockAccountDeepLink() {
+        guard let baseUrl = DemoEmbeddedTestMode.baseUrl,
+              let url = URL(string: "\(baseUrl)/oauth/account/unlock?token=e2e-unlock-token") else {
+            print("E2E unlock deep link: missing base url")
             return
         }
 
