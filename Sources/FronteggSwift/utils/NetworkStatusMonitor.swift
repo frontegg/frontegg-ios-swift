@@ -166,7 +166,11 @@ private func checkServerConnectivity(
 
 public enum NetworkStatusMonitor {
     // Configuration
-    private static var configuredBaseURLString: String?
+    private static var _configuredBaseURLString: String?
+    private static var configuredBaseURLString: String? {
+        get { stateLock.withLock { _configuredBaseURLString } }
+        set { stateLock.withLock { _configuredBaseURLString = newValue } }
+    }
 #if DEBUG
     private static var testReachabilityOverride: Bool?
 #endif
@@ -632,9 +636,9 @@ extension NetworkStatusMonitor {
         backgroundTimer = nil
         pathMonitor?.cancel()
         pathMonitor = nil
-        configuredBaseURLString = nil
 
         stateLock.withLock {
+            _configuredBaseURLString = nil
             testReachabilityOverride = nil
             _onChangeHandlers.removeAll()
             _indexMap.removeAll()
