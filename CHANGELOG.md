@@ -1,3 +1,5 @@
+## v1.3.19
+
 ## v1.3.18
 
 - Fixed: SSO sign-in could return the user to the login screen with `Failed to login with SSO`, even though authentication with the identity provider (Google, Microsoft) had already succeeded. After a successful assertion the SDK was left waiting for a callback that never arrived; it now completes the sign-in from the session issued by that same response. No app or configuration changes are needed. (FR-26387 — [#306](https://github.com/frontegg/frontegg-ios-swift/pull/306))
