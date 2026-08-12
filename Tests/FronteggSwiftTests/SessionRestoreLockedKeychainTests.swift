@@ -9,6 +9,7 @@ final class SessionRestoreLockedKeychainTests: XCTestCase {
     override func setUp() {
         super.setUp()
         NetworkStatusMonitor._testReset()
+        PlistHelper.testConfigOverride = nil
         FronteggAuth.testNetworkPathAvailabilityOverride = true
         FronteggAuth.testProtectedDataAvailableOverride = nil
         credentialManager = CredentialManager(serviceKey: "frontegg-locked-keychain-\(UUID().uuidString)")
@@ -31,6 +32,7 @@ final class SessionRestoreLockedKeychainTests: XCTestCase {
         credentialManager = nil
         FronteggAuth.testNetworkPathAvailabilityOverride = nil
         FronteggAuth.testProtectedDataAvailableOverride = nil
+        PlistHelper.testConfigOverride = nil
         NetworkStatusMonitor._testReset()
         super.tearDown()
     }
