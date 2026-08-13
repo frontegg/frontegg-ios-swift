@@ -1,3 +1,8 @@
+## v1.3.18
+
+- Fixed: SSO sign-in could return the user to the login screen with `Failed to login with SSO`, even though authentication with the identity provider (Google, Microsoft) had already succeeded. After a successful assertion the SDK was left waiting for a callback that never arrived; it now completes the sign-in from the session issued by that same response. No app or configuration changes are needed. (FR-26387 — [#306](https://github.com/frontegg/frontegg-ios-swift/pull/306))
+- Fixed: tapping the unlock link in an account-lockout email opened the app and hung on a loading spinner, with no way to reach the login screen short of restarting. The SDK now recognises a completed unlock and returns the user to a fresh login page. No app or configuration changes are needed. (FR-26330 — [#307](https://github.com/frontegg/frontegg-ios-swift/pull/307))
+
 ## v1.3.17
 
 - Fixed: social sign-in could fail on recent iOS versions with a "Failed to get extract code" error, even though the user had already authenticated with the provider successfully. Some values returned by the provider contain characters that must be escaped in a URL, and they were not being escaped when the SDK built the URL that completes the exchange — so iOS rejected it and sign-in stopped about a second later. Retrying did not help. No app or configuration changes are needed. (FR-26132 — [#305](https://github.com/frontegg/frontegg-ios-swift/pull/305))
