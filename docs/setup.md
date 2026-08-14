@@ -21,21 +21,23 @@ This section walks you through configuring the Frontegg Swift SDK, including set
 - Replace `{{FRONTEGG_BASE_URL}}` with your Frontegg domain, i.e `app-xxxx.frontegg.com` 
 - Replace `{{FRONTEGG_CLIENT_ID}}` with your Frontegg client ID.
 
-## Register your domain with Frontegg
+## Register your app with Frontegg
 
-To enable domain-based features, you must register your associated domain with Frontegg for each environment. To do this:
+Frontegg serves the `apple-app-site-association` file on your authentication domain. For Universal Links and passkeys to work, your app must be registered in that file for each environment. To do this:
 
-1. Generate an environment token as desxcribed in [this guide](https://docs.frontegg.com/reference/getting-started-with-your-api).
+1. Generate an environment token as described in [this guide](https://docs.frontegg.com/reference/getting-started-with-your-api).
 
 2. Send a `POST` request to the following endpoint: `POST https://api.frontegg.com/vendors/resources/associated-domains/v1/ios`. Example payload:
 
 ```json
 {
-  "appId": "{{ASSOCIATED_DOMAIN}}"
+  "appId": "{{TEAM_ID}}.{{BUNDLE_ID}}"
 }
 ```
 
-Replace `{{ASSOCIATED_DOMAIN}}` with the domain you want to use (e.g., `example.com`).
+Replace `{{TEAM_ID}}` with your Apple Team ID and `{{BUNDLE_ID}}` with your app's bundle identifier — for example, `ABCDE12345.com.example.app`. You can find your Team ID in the [Apple Developer portal](https://developer.apple.com/account) under **Membership details**, or in Xcode under **Signing & Capabilities**.
+
+> **Warning:** `appId` is your app's identifier, **not** a domain. The API accepts any string without validation, but a domain registered here produces an `apple-app-site-association` entry that iOS silently ignores — Universal Links and passkeys will not work, with no error anywhere. (The *domain* belongs in the Xcode **Associated Domains** capability in the next step; the two values are different things.)
 
 
 3. Configure associated domains in Xcode:
