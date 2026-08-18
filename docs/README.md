@@ -1,27 +1,45 @@
-# Frontegg iOS SDK
+<p align="center">
+  <img src="https://raw.githubusercontent.com/frontegg/frontegg-ios-swift/master/images/frontegg-swift.png" alt="Frontegg iOS SDK" width="640" />
+</p>
 
-![Frontegg_iOS_SDK (Swift)](/images/frontegg-swift.png)
+<h1 align="center">Frontegg iOS SDK</h1>
 
-Authentication and user management for your iOS app, in a few lines of Swift.
+<p align="center">
+  <strong>Authentication and user management for your iOS app — in a few lines of Swift.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/frontegg/frontegg-ios-swift/releases"><img src="https://img.shields.io/github/v/release/frontegg/frontegg-ios-swift?label=release&color=6c47ff" alt="Latest release" /></a>
+  <img src="https://img.shields.io/badge/platform-iOS%2014%2B-lightgrey" alt="iOS 14+" />
+  <img src="https://img.shields.io/badge/Swift-5.3%2B-orange" alt="Swift 5.3+" />
+  <img src="https://img.shields.io/badge/SPM-compatible-brightgreen" alt="Swift Package Manager" />
+  <a href="https://github.com/frontegg/frontegg-ios-swift/blob/master/LICENSE"><img src="https://img.shields.io/github/license/frontegg/frontegg-ios-swift?color=blue" alt="MIT License" /></a>
+</p>
+
+---
 
 [Frontegg](https://frontegg.com/) is a self-served user management platform for modern SaaS
-applications. This SDK brings hosted login, SSO, MFA, passkeys, RBAC and multi-tenancy to iOS —
-and keeps sessions alive by refreshing tokens in the background, so you never handle a token
-yourself.
+applications. Drop this SDK in and your app gets a production login screen, a live session, and a
+user object — without you writing an auth flow or touching a token.
 
-**Requirements:** iOS 14+ · Swift 5.3+
+| | |
+| --- | --- |
+| **Hosted or embedded login** | Frontegg's login box in a webview, or your own UI on top of the API |
+| **Every method your tenants need** | Email, social, SSO, magic link, passkeys, MFA and step-up |
+| **Sessions that stay alive** | Tokens refresh in the background; offline mode keeps users working without a connection |
+| **Built for multi-tenant SaaS** | Multi-tenancy, RBAC, entitlements, multi-region and multi-app support |
 
 ---
 
 ## Install
 
-Add the package in Xcode via **File → Add Packages**, using:
+In Xcode, choose **File → Add Packages** and enter:
 
 ```
 https://github.com/frontegg/frontegg-ios-swift
 ```
 
-Or declare it in a `Package.swift` manifest:
+Or declare it in `Package.swift`:
 
 ```swift
 dependencies: [
@@ -29,19 +47,19 @@ dependencies: [
 ]
 ```
 
-The [releases page](https://github.com/frontegg/frontegg-ios-swift/releases) lists the current version.
+> Requires **iOS 14+** and **Swift 5.3+**. The [releases page](https://github.com/frontegg/frontegg-ios-swift/releases) has the current version.
 
 ## Quick start
 
-**1. Allow the redirect URLs.** In the Frontegg Portal, under **[ENVIRONMENT] → Authentication →
-Login method**, make sure hosted login is on and add:
+**1 · Allow the redirect URLs.** In the Frontegg Portal, under **[ENVIRONMENT] → Authentication →
+Login method**, turn hosted login on and add:
 
 ```
 {{IOS_BUNDLE_IDENTIFIER}}://{{FRONTEGG_BASE_URL}}/ios/oauth/callback
 {{FRONTEGG_BASE_URL}}/oauth/authorize
 ```
 
-**2. Add `Frontegg.plist`** to your project root. Your domain and client ID are in the Portal under
+**2 · Add `Frontegg.plist`** to your project root. Your domain and client ID are in the Portal under
 **[ENVIRONMENT] → Keys & domains**.
 
 ```xml
@@ -55,7 +73,7 @@ Login method**, make sure hosted login is on and add:
 </plist>
 ```
 
-**3. Wrap your root view.**
+**3 · Wrap your root view.**
 
 ```swift
 import SwiftUI
@@ -73,7 +91,7 @@ struct DemoApp: App {
 }
 ```
 
-**4. Read the authentication state** anywhere below it.
+**4 · Read the authentication state** anywhere below it.
 
 ```swift
 struct MyApp: View {
@@ -89,8 +107,8 @@ struct MyApp: View {
 }
 ```
 
-That is a working login. Building with UIKit instead? See the
-[Get Started guide](https://ios-swift-guide.frontegg.com/#/getting-started).
+That is a working login. Building with UIKit instead? The
+[Get Started guide](https://ios-swift-guide.frontegg.com/#/getting-started) covers it.
 
 ## Documentation
 
@@ -120,8 +138,8 @@ Six runnable projects, each a complete integration:
 
 No Frontegg account yet? [Sign up free](https://portal.us.frontegg.com/signup).
 
-Questions or something broken? Reach the team at
-[support.frontegg.com](https://support.frontegg.com/frontegg/directories), or
+Questions, or something broken? Reach the team at
+[support.frontegg.com](https://support.frontegg.com/frontegg/directories) or
 [open an issue](https://github.com/frontegg/frontegg-ios-swift/issues).
 
 Licensed under the [MIT License](https://github.com/frontegg/frontegg-ios-swift/blob/master/LICENSE).
