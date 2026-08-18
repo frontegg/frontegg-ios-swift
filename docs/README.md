@@ -17,10 +17,95 @@ This repository includes:
 - [Usage Examples](https://ios-swift-guide.frontegg.com/#/usage) with common implementation patterns
 - [Advanced Topics](https://ios-swift-guide.frontegg.com/#/advanced) for complex integration scenarios
 - An [Offline Mode](https://ios-swift-guide.frontegg.com/#/offline-mode) guide for custom offline UI, reconnect behavior, and logout expectations
-- A [Hosted](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo), [Embedded](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-embedded), [Application-Id](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-application-id), and [Multi-Region](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-multi-region) example projects to help you get started quickly
+- Example projects to help you get started quickly: [Hosted](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo), [Embedded](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-embedded), [UIKit](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-uikit), [Application-Id](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-application-id), [Multi-Region](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-multi-region) and [Auto-Login](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-auto-login)
 
 For full documentation, visit the Frontegg Developer Portal:  
 🔗 [https://developers.frontegg.com](https://developers.frontegg.com)
+
+---
+
+## ✅ Requirements
+
+- iOS 14 or later
+- Swift 5.3 or later
+
+## 📦 Installation
+
+The SDK is distributed through the Swift Package Manager.
+
+In Xcode, go to **File → Add Packages**, enter `https://github.com/frontegg/frontegg-ios-swift`, and click **Add Package**.
+
+Or add it to a `Package.swift` manifest:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/frontegg/frontegg-ios-swift.git", from: "1.3.19")
+]
+```
+
+Check the [releases page](https://github.com/frontegg/frontegg-ios-swift/releases) for the current version.
+
+## 🚀 Quick start
+
+**1. Allow the redirect URLs.** In the Frontegg Portal, go to **[ENVIRONMENT] → Authentication → Login method**, make sure hosted login is on, and add:
+
+```
+{{IOS_BUNDLE_IDENTIFIER}}://{{FRONTEGG_BASE_URL}}/ios/oauth/callback
+{{FRONTEGG_BASE_URL}}/oauth/authorize
+```
+
+**2. Add `Frontegg.plist`** to your project root:
+
+```xml
+<plist version="1.0">
+  <dict>
+    <key>baseUrl</key>
+    <string>https://{{FRONTEGG_BASE_URL}}</string>
+    <key>clientId</key>
+    <string>{{FRONTEGG_CLIENT_ID}}</string>
+  </dict>
+</plist>
+```
+
+Your domain and client ID are in the Portal under **[ENVIRONMENT] → Keys & domains**.
+
+**3. Wrap your root view:**
+
+```swift
+import SwiftUI
+import FronteggSwift
+
+@main
+struct DemoApp: App {
+    var body: some Scene {
+        WindowGroup {
+            FronteggWrapper {
+                MyApp()
+            }
+        }
+    }
+}
+```
+
+**4. Read the authentication state** anywhere below it:
+
+```swift
+struct MyApp: View {
+    @EnvironmentObject var fronteggAuth: FronteggAuth
+
+    var body: some View {
+        if fronteggAuth.isAuthenticated {
+            MainAppView()
+        } else {
+            Button("Login") { fronteggAuth.login() }
+        }
+    }
+}
+```
+
+Token refresh is handled for you in the background.
+
+Using UIKit instead, or need the full configuration reference? See the [Get Started guide](https://ios-swift-guide.frontegg.com/#/getting-started).
 
 ---
 
