@@ -212,6 +212,31 @@ To force logout when a user reinstalls the app, update your `Frontegg.plist` fil
 
 By default `keepUserLoggedInAfterReinstall` is `true`.
 
+## Disable auto refresh
+
+The SDK refreshes tokens automatically. To take full control of when that happens, set `disableAutoRefresh` in `Frontegg.plist`:
+
+```xml
+<key>disableAutoRefresh</key>
+<true/>
+```
+
+- Defaults to `false`.
+- When `true`, all internal refresh flows are blocked, including timers and offline-mode refreshing.
+- Explicit calls such as `getOrRefreshAccessTokenAsync()` still work, so you can refresh on your own schedule.
+
+## Entitlements
+
+The SDK can load and check user entitlements — features and permissions — from the Frontegg Entitlements API. Set `entitlementsEnabled` to `true` in `Frontegg.plist`, then:
+
+1. Entitlements are fetched automatically on login. You can also call `FronteggApp.shared.auth.loadEntitlements(forceRefresh:completion:)` yourself. By default (`forceRefresh: false`) the SDK uses the cached entitlements when available and makes no network call; pass `forceRefresh: true` to always fetch from `GET .../frontegg/entitlements/api/v2/user-entitlements`.
+2. Check against the cached state:
+   - `getFeatureEntitlements(featureKey:)` — by feature key
+   - `getPermissionEntitlements(permissionKey:)` — by permission key
+   - `getEntitlements(options:)` — unified check with `EntitledToOptions.featureKey(_)` or `.permissionKey(_)`
+
+Every check after `loadEntitlements` reads in-memory state, so there are no further network calls. The cache is cleared on logout. The raw cached keys are available via `FronteggApp.shared.auth.entitlements.state` (`EntitlementState`: `featureKeys`, `permissionKeys`).
+
 ## Logging
 
 The SDK includes built-in logging capabilities to help you debug and monitor your application.

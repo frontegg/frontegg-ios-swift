@@ -1,69 +1,145 @@
-# Frontegg iOS SDK
-![Frontegg_iOS_SDK (Swift)](/images/frontegg-swift.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/frontegg/frontegg-ios-swift/master/images/frontegg-swift.png" alt="Frontegg iOS SDK" width="640" />
+</p>
 
-Welcome to the official **Frontegg iOS SDK** — your all-in-one solution for
-integrating authentication and user management into your iOS mobile
-app. [Frontegg](https://frontegg.com/) is a self-served user management platform, built for modern
-SaaS applications. Easily implement authentication, SSO, RBAC, multi-tenancy, and more — all from a
-single SDK.
+<h1 align="center">Frontegg iOS SDK</h1>
 
-## 📚 Documentation
+<p align="center">
+  <strong>Authentication and user management for your iOS app — in a few lines of Swift.</strong>
+</p>
 
-This repository includes:
-
-- A [Get Started](https://ios-swift-guide.frontegg.com/#/getting-started) guide for quick integration
-- A [Setup Guide](https://ios-swift-guide.frontegg.com/#/setup) with detailed setup instructions
-- An [API Reference](https://ios-swift-guide.frontegg.com/#/api) for detailed SDK functionality
-- [Usage Examples](https://ios-swift-guide.frontegg.com/#/usage) with common implementation patterns
-- [Advanced Topics](https://ios-swift-guide.frontegg.com/#/advanced) for complex integration scenarios
-- An [Offline Mode](https://ios-swift-guide.frontegg.com/#/offline-mode) guide for custom offline UI, reconnect behavior, and logout expectations
-- A [Hosted](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo), [Embedded](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-embedded), [Application-Id](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-application-id), and [Multi-Region](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-multi-region) example projects to help you get started quickly
-
-For full documentation, visit the Frontegg Developer Portal:  
-🔗 [https://developers.frontegg.com](https://developers.frontegg.com)
+<p align="center">
+  <a href="https://github.com/frontegg/frontegg-ios-swift/releases"><img src="https://img.shields.io/github/v/release/frontegg/frontegg-ios-swift?label=release&color=6c47ff" alt="Latest release" /></a>
+  <img src="https://img.shields.io/badge/platform-iOS%2014%2B-lightgrey" alt="iOS 14+" />
+  <img src="https://img.shields.io/badge/Swift-5.3%2B-orange" alt="Swift 5.3+" />
+  <img src="https://img.shields.io/badge/SPM-compatible-brightgreen" alt="Swift Package Manager" />
+  <a href="https://github.com/frontegg/frontegg-ios-swift/blob/master/LICENSE"><img src="https://img.shields.io/github/license/frontegg/frontegg-ios-swift?color=blue" alt="MIT License" /></a>
+</p>
 
 ---
 
-## Advanced
+[Frontegg](https://frontegg.com/) is a self-served user management platform for modern SaaS
+applications. Drop this SDK in and your app gets a production login screen, a live session, and a
+user object — without you writing an auth flow or touching a token.
 
-### Disable Auto Refresh
+| | |
+| --- | --- |
+| **Hosted or embedded login** | Frontegg's login box in a webview, or your own UI on top of the API |
+| **Every method your tenants need** | Email, social, SSO, magic link, passkeys, MFA and step-up |
+| **Sessions that stay alive** | Tokens refresh in the background; offline mode keeps users working without a connection |
+| **Built for multi-tenant SaaS** | Multi-tenancy, RBAC, entitlements, multi-region and multi-app support |
 
-You can disable automatic token refresh by adding `disableAutoRefresh` to `Frontegg.plist`:
+---
 
-```xml
-<key>disableAutoRefresh</key>
-<true/>
+## Install
+
+In Xcode, choose **File → Add Packages** and enter:
+
+```
+https://github.com/frontegg/frontegg-ios-swift
 ```
 
-Behavior:
+Or declare it in `Package.swift`:
 
-- Default value is `false` (auto refresh is enabled).
-- When `disableAutoRefresh` is `true`, SDK internal/automatic refresh flows are blocked(including offline mode refreshing, timers and etc.).
-- Manual refresh calls (for example, `getOrRefreshAccessTokenAsync()`) still work.
-- This lets apps fully control when token refresh happens while keeping explicit refresh APIs available.
+```swift
+dependencies: [
+    .package(url: "https://github.com/frontegg/frontegg-ios-swift.git", from: "1.3.19")
+]
+```
 
-### Entitlements
+> Requires **iOS 14+** and **Swift 5.3+**. The [releases page](https://github.com/frontegg/frontegg-ios-swift/releases) has the current version.
 
-The SDK can load and check user entitlements (features and permissions) from the Frontegg Entitlements API. Enable entitlements in `Frontegg.plist` with `entitlementsEnabled: true`, then:
+## Quick start
 
-1. Entitlements are fetched automatically on login. You can also call `FronteggApp.shared.auth.loadEntitlements(forceRefresh:completion:)` yourself: by default (`forceRefresh: false`) the SDK uses cached entitlements when available (no network call). Pass `forceRefresh: true` to always fetch from the API (`GET .../frontegg/entitlements/api/v2/user-entitlements`).
-2. Use the cached state for local checks:
-   - `getFeatureEntitlements(featureKey:)` — check by feature key
-   - `getPermissionEntitlements(permissionKey:)` — check by permission key
-   - `getEntitlements(options:)` — unified check with `EntitledToOptions.featureKey(_)` or `.permissionKey(_)`
+**1 · Allow the redirect URLs.** In the Frontegg Portal, under **[ENVIRONMENT] → Authentication →
+Login method**, turn hosted login on and add:
 
-All checks after `loadEntitlements` use in-memory state only (no extra network calls). Cache is cleared on logout. Access the raw cached set of keys via `FronteggApp.shared.auth.entitlements.state` (`EntitlementState`: `featureKeys`, `permissionKeys`).
+```
+{{IOS_BUNDLE_IDENTIFIER}}://{{FRONTEGG_BASE_URL}}/ios/oauth/callback
+{{FRONTEGG_BASE_URL}}/oauth/authorize
+```
 
----
+**2 · Add `Frontegg.plist`** to your project root. Your domain and client ID are in the Portal under
+**[ENVIRONMENT] → Keys & domains**.
 
-## 🧑‍💻 Getting Started with Frontegg
+```xml
+<plist version="1.0">
+  <dict>
+    <key>baseUrl</key>
+    <string>https://{{FRONTEGG_BASE_URL}}</string>
+    <key>clientId</key>
+    <string>{{FRONTEGG_CLIENT_ID}}</string>
+  </dict>
+</plist>
+```
 
-Don't have a Frontegg account yet?  
-Sign up here → [https://portal.us.frontegg.com/signup](https://portal.us.frontegg.com/signup)
+**3 · Wrap your root view.**
 
----
+```swift
+import SwiftUI
+import FronteggSwift
 
-## 💬 Support
+@main
+struct DemoApp: App {
+    var body: some Scene {
+        WindowGroup {
+            FronteggWrapper {
+                MyApp()
+            }
+        }
+    }
+}
+```
 
-Need help? Our team is here for you:  
-[https://support.frontegg.com/frontegg/directories](https://support.frontegg.com/frontegg/directories)
+**4 · Read the authentication state** anywhere below it.
+
+```swift
+struct MyApp: View {
+    @EnvironmentObject var fronteggAuth: FronteggAuth
+
+    var body: some View {
+        if fronteggAuth.isAuthenticated {
+            MainAppView()
+        } else {
+            Button("Login") { fronteggAuth.login() }
+        }
+    }
+}
+```
+
+That is a working login. Building with UIKit instead? The
+[Get Started guide](https://ios-swift-guide.frontegg.com/#/getting-started) covers it.
+
+## Documentation
+
+| Guide | What it covers |
+| --- | --- |
+| [Get Started](https://ios-swift-guide.frontegg.com/#/getting-started) | SwiftUI and UIKit integration, end to end |
+| [Setup](https://ios-swift-guide.frontegg.com/#/setup) | Detailed configuration |
+| [API Reference](https://ios-swift-guide.frontegg.com/#/api) | Every method the SDK exposes |
+| [Usage Examples](https://ios-swift-guide.frontegg.com/#/usage) | Common implementation patterns |
+| [Advanced Topics](https://ios-swift-guide.frontegg.com/#/advanced) | Multi-region, multi-app, passkeys, step-up, entitlements, logging |
+| [Offline Mode](https://ios-swift-guide.frontegg.com/#/offline-mode) | Custom offline UI, reconnect behaviour, logout expectations |
+
+Full platform documentation lives at [developers.frontegg.com](https://developers.frontegg.com).
+
+## Example apps
+
+Six runnable projects, each a complete integration:
+
+[Hosted](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo) ·
+[Embedded](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-embedded) ·
+[UIKit](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-uikit) ·
+[Application-Id](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-application-id) ·
+[Multi-Region](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-multi-region) ·
+[Auto-Login](https://github.com/frontegg/frontegg-ios-swift/tree/master/demo-auto-login)
+
+## Support
+
+No Frontegg account yet? [Sign up free](https://portal.us.frontegg.com/signup).
+
+Questions, or something broken? Reach the team at
+[support.frontegg.com](https://support.frontegg.com/frontegg/directories) or
+[open an issue](https://github.com/frontegg/frontegg-ios-swift/issues).
+
+Licensed under the [MIT License](https://github.com/frontegg/frontegg-ios-swift/blob/master/LICENSE).
