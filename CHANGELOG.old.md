@@ -1,3 +1,7 @@
+## v1.3.20
+
+- Fixed: with `useAssetLinks` enabled, sign-in could fail to return to the app for environments whose Frontegg base URL includes a path — for example `https://api.example.com/fe-auth`, where a shared domain routes a prefix through to Frontegg. The App-Link callback was built without that path, so it matched neither the association file published for the app nor the redirect URI registered for it: iOS never handed the callback back and the browser was left on a page the shared domain does not serve, after the user had already authenticated. The callback now carries the path, and the previous form keeps working so sessions issued before upgrading are unaffected. Environments whose base URL has no path are unchanged. (FR-26673 — [#318](https://github.com/frontegg/frontegg-ios-swift/pull/318))
+
 ## v1.3.18
 
 - Fixed: SSO sign-in could return the user to the login screen with `Failed to login with SSO`, even though authentication with the identity provider (Google, Microsoft) had already succeeded. After a successful assertion the SDK was left waiting for a callback that never arrived; it now completes the sign-in from the session issued by that same response. No app or configuration changes are needed. (FR-26387 — [#306](https://github.com/frontegg/frontegg-ios-swift/pull/306))

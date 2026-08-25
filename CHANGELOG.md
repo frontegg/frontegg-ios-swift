@@ -1,3 +1,7 @@
+## v1.3.20
+
+- Fixed: with `useAssetLinks` enabled, sign-in could fail to return to the app for environments whose Frontegg base URL includes a path — for example `https://api.example.com/fe-auth`, where a shared domain routes a prefix through to Frontegg. The App-Link callback was built without that path, so it matched neither the association file published for the app nor the redirect URI registered for it: iOS never handed the callback back and the browser was left on a page the shared domain does not serve, after the user had already authenticated. The callback now carries the path, and the previous form keeps working so sessions issued before upgrading are unaffected. Environments whose base URL has no path are unchanged. (FR-26673 — [#318](https://github.com/frontegg/frontegg-ios-swift/pull/318))
+
 ## v1.3.19
 
 - Fixed: users could be signed out when the app relaunched while the keychain was temporarily unreadable — for example after a device reboot, before the phone had been unlocked. A read that failed for that reason was indistinguishable from having no session stored, so the SDK reported the user as signed out without contacting the server. It now waits until the device is unlocked and restores the session. No app or configuration changes are needed. (FR-26384 — [#310](https://github.com/frontegg/frontegg-ios-swift/pull/310))
