@@ -212,8 +212,13 @@ func isSsoCallbackWithoutCode(
 /// The bundle identifier keeps its original casing: unlike custom URL schemes,
 /// https paths are case-sensitive, and the AASA routes publish the bundle id
 /// as-is (Android likewise uses the raw `packageName`).
-func assetLinksRedirectPath(bundleIdentifier: String) -> String {
-    return "/oauth/account/redirect/ios/\(bundleIdentifier)"
+///
+/// `basePath` is the path component of the configured base URL. A vendor exposing
+/// Frontegg under a prefix on a shared domain serves its association file through
+/// the same prefix, so the callback it publishes carries it too and the SDK has to
+/// send that exact form.
+func assetLinksRedirectPath(bundleIdentifier: String, basePath: String = "") -> String {
+    return "\(basePath)/oauth/account/redirect/ios/\(bundleIdentifier)"
 }
 
 /// Whether the opt-in `useAssetLinks` App-Link (https) redirect is in effect.
@@ -258,14 +263,28 @@ func supportedGeneratedRedirectUris(
     // App-Link (https) redirect goes first so `generateRedirectUri()` picks it;
     // the custom-scheme URIs stay in the list so previously issued callbacks
     // keep matching after the option is flipped.
+    //
+    // When the base URL carries a path, the prefixed form leads: that is what the
+    // vendor's association file publishes and what the OS will match. The root
+    // form stays behind it as an alias, because apps already in the field were
+    // issued that URI and their allow-list entries still carry it.
     if useAssetLinks {
-        var components = URLComponents()
-        components.scheme = "https"
-        components.host = host
-        components.path = assetLinksRedirectPath(bundleIdentifier: rawBundleIdentifier)
+        let assetLinksPaths = basePath.isEmpty
+            ? [assetLinksRedirectPath(bundleIdentifier: rawBundleIdentifier)]
+            : [
+                assetLinksRedirectPath(bundleIdentifier: rawBundleIdentifier, basePath: basePath),
+                assetLinksRedirectPath(bundleIdentifier: rawBundleIdentifier),
+            ]
 
-        if let uri = components.url?.absoluteString, seen.insert(uri).inserted {
-            uris.append(uri)
+        for path in assetLinksPaths {
+            var components = URLComponents()
+            components.scheme = "https"
+            components.host = host
+            components.path = path
+
+            if let uri = components.url?.absoluteString, seen.insert(uri).inserted {
+                uris.append(uri)
+            }
         }
     }
 
