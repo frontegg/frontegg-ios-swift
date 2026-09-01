@@ -156,8 +156,30 @@ public class FronteggApp {
     public var shouldPromptSocialLoginConsent:Bool = true
     
     public var shouldSuggestSavePassword:Bool = false
-    
-    
+
+    /// Theme overrides applied to the embedded login box, in the same shape as the
+    /// `themeV2.loginBox` object returned by `/frontegg/metadata?entityName=adminBox`
+    /// (for example `["loginBox": ["palette": ["primary": ["main": "#3F6655"]]]]`).
+    ///
+    /// Values are deep-merged over the environment's configuration, so keys left
+    /// unset keep whatever the Frontegg environment already defines. Set this
+    /// before calling `login()`.
+    ///
+    /// Use this when appearance is resolved at runtime — for example a multi-brand
+    /// app that fetches each brand's logo and colours from its own backend — and so
+    /// cannot be expressed as static per-environment portal configuration.
+    /// Embedded mode only.
+    public var loginBoxThemeOptions: [String: Any]? = nil
+
+    /// Copy overrides applied to the embedded login box, in the same shape as the
+    /// `localizations` object returned by `/frontegg/metadata?entityName=adminBox`
+    /// (for example `["en": ["loginBox": ["login": ["title": "Sign-in"]]]]`).
+    ///
+    /// Deep-merged over the environment's configuration, like
+    /// ``loginBoxThemeOptions``. Embedded mode only.
+    public var loginBoxLocalizations: [String: Any]? = nil
+
+
     public var regionData: [RegionConfig] = []
     let credentialManager: CredentialManager
     let logger = getLogger("FronteggApp")

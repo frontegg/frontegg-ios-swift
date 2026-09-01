@@ -74,6 +74,19 @@ public struct FronteggWebView: UIViewRepresentable {
         let jsScript = WKUserScript(source: "window.FronteggNativeBridgeFunctions = \(jsObject);", injectionTime: .atDocumentStart, forMainFrameOnly: false)
         userContentController.addUserScript(jsScript)
 
+        // Apply host-supplied theme/copy overrides to the login box. Scoped to the
+        // main frame so third-party frames (captcha, social providers) keep the
+        // untouched `fetch`. No-op unless the app set one of the properties.
+        if let customizationScript = LoginBoxCustomization.script(
+            themeOptions: fronteggApp.loginBoxThemeOptions,
+            localizations: fronteggApp.loginBoxLocalizations
+        ) {
+            logger.debug("Injecting login box customization overrides")
+            userContentController.addUserScript(
+                WKUserScript(source: customizationScript, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+            )
+        }
+
         // FR-24939: a native step-up authorize URL bootstraps the hosted-login box on its
         // prelogin path, which never navigates to the step-up route on its own, so the box
         // renders blank instead of the MFA challenge. While presenting a step-up flow, inject
