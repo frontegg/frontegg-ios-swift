@@ -85,6 +85,10 @@ public struct FronteggWebView: UIViewRepresentable {
             userContentController.addUserScript(
                 WKUserScript(source: customizationScript, injectionTime: .atDocumentStart, forMainFrameOnly: true)
             )
+        } else if fronteggApp.loginBoxThemeOptions != nil || fronteggApp.loginBoxLocalizations != nil {
+            // Set but unusable — almost always a value JSONSerialization cannot encode
+            // (UIColor, Date, ...). Without this the box silently renders unbranded.
+            logger.error("Login box overrides were set but could not be encoded; check that all values are JSON types (String, NSNumber, Array, Dictionary, NSNull)")
         }
 
         // FR-24939: a native step-up authorize URL bootstraps the hosted-login box on its
