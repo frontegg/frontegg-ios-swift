@@ -74,9 +74,6 @@ public struct FronteggWebView: UIViewRepresentable {
         let jsScript = WKUserScript(source: "window.FronteggNativeBridgeFunctions = \(jsObject);", injectionTime: .atDocumentStart, forMainFrameOnly: false)
         userContentController.addUserScript(jsScript)
 
-        // Apply host-supplied theme/copy overrides to the login box. Scoped to the
-        // main frame so third-party frames (captcha, social providers) keep the
-        // untouched `fetch`. No-op unless the app set one of the properties.
         if let customizationScript = LoginBoxCustomization.script(
             themeOptions: fronteggApp.loginBoxThemeOptions,
             localizations: fronteggApp.loginBoxLocalizations
@@ -85,10 +82,6 @@ public struct FronteggWebView: UIViewRepresentable {
             userContentController.addUserScript(
                 WKUserScript(source: customizationScript, injectionTime: .atDocumentStart, forMainFrameOnly: true)
             )
-        } else if fronteggApp.loginBoxThemeOptions != nil || fronteggApp.loginBoxLocalizations != nil {
-            // Set but unusable — almost always a value JSONSerialization cannot encode
-            // (UIColor, Date, ...). Without this the box silently renders unbranded.
-            logger.error("Login box overrides were set but could not be encoded; check that all values are JSON types (String, NSNumber, Array, Dictionary, NSNull)")
         }
 
         // FR-24939: a native step-up authorize URL bootstraps the hosted-login box on its

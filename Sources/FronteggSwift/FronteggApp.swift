@@ -169,7 +169,9 @@ public class FronteggApp {
     /// app that fetches each brand's logo and colours from its own backend — and so
     /// cannot be expressed as static per-environment portal configuration.
     /// Embedded mode only.
-    public var loginBoxThemeOptions: [String: Any]? = nil
+    public var loginBoxThemeOptions: [String: Any]? = nil {
+        didSet { reportUnencodableOverrides(loginBoxThemeOptions, name: "loginBoxThemeOptions") }
+    }
 
     /// Copy overrides applied to the embedded login box, in the same shape as the
     /// `localizations` object returned by `/frontegg/metadata?entityName=adminBox`
@@ -177,7 +179,17 @@ public class FronteggApp {
     ///
     /// Deep-merged over the environment's configuration, like
     /// ``loginBoxThemeOptions``. Embedded mode only.
-    public var loginBoxLocalizations: [String: Any]? = nil
+    public var loginBoxLocalizations: [String: Any]? = nil {
+        didSet { reportUnencodableOverrides(loginBoxLocalizations, name: "loginBoxLocalizations") }
+    }
+
+    private func reportUnencodableOverrides(_ value: [String: Any]?, name: String) {
+        guard let value, !value.isEmpty,
+              let keyPath = LoginBoxCustomization.invalidKeyPath(in: value) else {
+            return
+        }
+        logger.error("\(name) contains a value at \(keyPath) that is not a JSON type (String, NSNumber, Array, Dictionary, NSNull); the login box overrides will be ignored")
+    }
 
 
     public var regionData: [RegionConfig] = []
