@@ -38,6 +38,14 @@ extension FronteggAuth {
             let loginModal = EmbeddedLoginModal(parentVC: rootVC)
             let hostingController = UIHostingController(rootView: loginModal)
             hostingController.modalPresentationStyle = .fullScreen
+            // Transparent so the host app's surface shows through any frame the
+            // SwiftUI content has not painted. `EmbeddedLoginModal` declares no
+            // background of its own, so the hosting controller's view fell back to
+            // `.systemBackground` — pure white in light mode — and that showed as a
+            // full-screen white field over the host during the OAuth redirect, for up
+            // to ~2.5s on a measured iOS sign-in. Making the web view transparent was
+            // not enough on its own: this view sits behind it.
+            hostingController.view.backgroundColor = .clear
 
             if(rootVC.presentedViewController?.classForCoder == hostingController.classForCoder){
                 rootVC.presentedViewController?.dismiss(animated: false)
@@ -361,6 +369,14 @@ extension FronteggAuth {
         let loginModal = EmbeddedLoginModal(parentVC: rootVC)
         let hostingController = UIHostingController(rootView: loginModal)
         hostingController.modalPresentationStyle = .fullScreen
+        // Transparent so the host app's surface shows through any frame the
+        // SwiftUI content has not painted. `EmbeddedLoginModal` declares no
+        // background of its own, so the hosting controller's view fell back to
+        // `.systemBackground` — pure white in light mode — and that showed as a
+        // full-screen white field over the host during the OAuth redirect, for up
+        // to ~2.5s on a measured iOS sign-in. Making the web view transparent was
+        // not enough on its own: this view sits behind it.
+        hostingController.view.backgroundColor = .clear
 
         let presented = rootVC.presentedViewController
         if presented is UIHostingController<EmbeddedLoginModal> {
