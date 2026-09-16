@@ -3,6 +3,7 @@ import Network
 
 final class LocalMockAuthServer {
     private let readinessTimeout: TimeInterval = 10
+    private let listenerCancellationTimeout: TimeInterval = 5
     private let mockedOAuthDelayRangeMs = 100...300
     private let listenerQueue = DispatchQueue(label: "com.frontegg.demo-embedded-e2e.mock-server")
     private let state = MockAuthState()
@@ -72,8 +73,18 @@ final class LocalMockAuthServer {
     }
 
     func stop() {
-        listener?.cancel()
-        listener = nil
+        guard let listener else { return }
+        self.listener = nil
+
+        if case .cancelled = listener.state { return }
+
+        // cancel() is asynchronous; returning before .cancelled leaves the port bound.
+        let cancelled = DispatchSemaphore(value: 0)
+        listener.stateUpdateHandler = { state in
+            if case .cancelled = state { cancelled.signal() }
+        }
+        listener.cancel()
+        _ = cancelled.wait(timeout: .now() + listenerCancellationTimeout)
     }
 
     func launchEnvironment(
