@@ -181,8 +181,13 @@ final class LoggerDelegateTests: XCTestCase {
         FeLogger.delegate = nil
         logger.info("second message")
 
+        // Filter by tag to isolate from SDK singleton log noise (e.g. FronteggApp.shared
+        // initialized by other tests emitting events via applicationDidBecomeActive).
+        // Without this the assertion fails on unrelated events, which the slower
+        // interleaving under Thread Sanitizer makes considerably more likely.
+        let relevant = spy.events.filter { $0.tag == "NilDelegateTest" }
         XCTAssertEqual(
-            spy.events,
+            relevant,
             [.init(message: "first message", level: .info, tag: "NilDelegateTest")]
         )
     }
