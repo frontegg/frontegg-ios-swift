@@ -18,7 +18,7 @@ extension FronteggAuth {
             return
         }
 
-        let completion = _completion ?? { res in
+        let completion = FronteggAuth.onMainThread(_completion) ?? { res in
 
         }
 
@@ -53,7 +53,7 @@ extension FronteggAuth {
 
     public func loginWithPopup(window: UIWindow?, ephemeralSession: Bool? = true, loginHint: String? = nil, loginAction: String? = nil, _completion: FronteggAuth.CompletionHandler? = nil) {
 
-        let completion = _completion ?? { res in
+        let completion = FronteggAuth.onMainThread(_completion) ?? { res in
 
         }
 
@@ -78,7 +78,7 @@ extension FronteggAuth {
         action: SocialLoginAction = SocialLoginAction.login
     ) {
 
-        let completion = _completion ?? { res in
+        let completion = FronteggAuth.onMainThread(_completion) ?? { res in
 
         }
 
@@ -159,7 +159,7 @@ extension FronteggAuth {
 
 
     public func loginWithSSO(email: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
-        let completion = _completion ?? self.loginCompletion ?? { res in
+        let completion = FronteggAuth.onMainThread(_completion ?? self.loginCompletion) ?? { res in
 
         }
         let (authorizeUrl, codeVerifier) = AuthorizeUrlGenerator.shared.generate(loginHint: email, remainCodeVerifier: true)
@@ -174,7 +174,7 @@ extension FronteggAuth {
     }
 
     public func loginWithCustomSSO(ssoUrl: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
-        let completion = _completion ?? self.loginCompletion ?? { res in
+        let completion = FronteggAuth.onMainThread(_completion ?? self.loginCompletion) ?? { res in
 
         }
 
