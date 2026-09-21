@@ -13,6 +13,8 @@ struct UserPage: View {
     @State private var entitlementUnifiedPermission: Entitlement?
     @State private var entitlementsLoading = false
     @State private var showAdminPortal = false
+    @State private var showTenantSwitcher = false
+    @State private var showSecurityCenter = false
     // Active tenant on the most recent entitlements render. See FR-24821 —
     // without this, the UI shows stale verdicts after switchTenant until the
     // user manually re-taps "Load entitlements".
@@ -38,6 +40,30 @@ struct UserPage: View {
                 .ignoresSafeArea(edges: .bottom),alignment: .bottom)
             .sheet(isPresented: $showAdminPortal) {
                 AdminPortalView()
+            }
+            .sheet(isPresented: $showTenantSwitcher) {
+                NavigationView {
+                    FronteggTenantSwitcher(showsSearch: true) { result in
+                        if case .success = result {
+                            showTenantSwitcher = false
+                        }
+                    }
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { showTenantSwitcher = false }
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $showSecurityCenter) {
+                NavigationView {
+                    FronteggSecurityCenter(stepUpMaxAge: 300)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { showSecurityCenter = false }
+                            }
+                        }
+                }
             }
             // Auto-refresh entitlements after switchTenant — see FR-24821.
             .onChange(of: fronteggAuth.user?.activeTenant.id) { newTenantId in
@@ -96,6 +122,10 @@ struct UserPage: View {
                     adminPortalButton
                     Spacer().frame(height: 16)
                     entitlementsSection
+                    Spacer().frame(height: 16)
+                    tenantSwitcherButton
+                    Spacer().frame(height: 12)
+                    securityCenterButton
                     Spacer().frame(height: 24)
                 }
             }
@@ -121,6 +151,24 @@ struct UserPage: View {
         .accessibilityIdentifier("OpenAdminPortalButton")
     }
     
+    private var tenantSwitcherButton: some View {
+        Button("Switch Account") {
+            showTenantSwitcher = true
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .padding(.horizontal, 8)
+        .accessibilityIdentifier("OpenTenantSwitcherButton")
+    }
+
+    private var securityCenterButton: some View {
+        Button("Security Center") {
+            showSecurityCenter = true
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .padding(.horizontal, 8)
+        .accessibilityIdentifier("OpenSecurityCenterButton")
+    }
+
     private var getAccessTokenButton: some View {
         Button("Get Current Access Token") {
             Task {
