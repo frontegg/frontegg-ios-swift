@@ -352,7 +352,8 @@ public class FronteggApp {
                 sentryMaxQueueSize: config.sentryMaxQueueSize,
                 loginOrganizationAlias: config.loginOrganizationAlias,
                 entitlementsEnabled: config.entitlementsEnabled,
-                useAssetLinks: config.useAssetLinks
+                useAssetLinks: config.useAssetLinks,
+                enableDPoP: config.enableDPoP
             )
             PlistHelper.testConfigOverride = overridden
         } else {
