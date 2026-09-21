@@ -533,6 +533,7 @@ When the app is reopened without network, the SDK restores the session from keyc
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `lateInit` | Boolean | `false` | Enable late initialization (allows SDK to initialize without full config) |
+| `enableAppAttest` | Boolean | `false` | Enable App Attest key management via `FronteggApp.shared.appAttest` (see [App Attest](#app-attest-device-attestation)) |
 
 ### Multi-Region Configuration
 
@@ -763,6 +764,70 @@ func performSensitiveAction() {
     print("Secure action performed.")
 }
 ```
+
+## App Attest (device attestation)
+
+Opt-in support for Apple [App Attest](https://developer.apple.com/documentation/devicecheck/establishing-your-app-s-integrity) (iOS 14+). The SDK manages the App Attest key and produces attestations and assertions; it does not send them to Frontegg. Verify them on your own backend.
+
+### Enable
+
+1. Set `enableAppAttest` to `true` in `Frontegg.plist`.
+2. In Xcode, add the **App Attest** capability, or add the entitlement to your `.entitlements` file:
+
+```xml
+<key>com.apple.developer.devicecheck.appattest-environment</key>
+<string>production</string>
+```
+
+Use `development` while testing against Apple's sandbox. App Attest is unavailable on the simulator, so `isSupported` is `false` there.
+
+### Attest the key
+
+Fetch a one-time challenge from your server, attest, and send the result back for verification:
+
+```swift
+let appAttest = FronteggApp.shared.appAttest
+
+guard appAttest.isSupported else { return }
+
+let challenge = try await myBackend.fetchAttestationChallenge()
+let attestation = try await appAttest.attestKey(challenge: challenge)
+try await myBackend.verifyAttestation(
+    keyId: attestation.keyId,
+    attestationObject: attestation.attestationObject,
+    challenge: challenge
+)
+```
+
+The client data hash is `SHA256(challenge)`. The key identifier is stored in the keychain under `<keychainService>.appattest`, so it is reused across launches and survives logout. If the system rejects the stored key, the SDK generates a new key and retries attestation once.
+
+### Sign requests
+
+After the key is attested, sign each request with an assertion over request data that includes a fresh server challenge:
+
+```swift
+let requestData = try JSONEncoder().encode(payloadWithChallenge)
+let headers = try await appAttest.assertionHeaders(for: requestData)
+// X-Frontegg-App-Attest-Key-Id, X-Frontegg-App-Attest-Assertion (base64)
+```
+
+Use `generateAssertion(for:)` to get the raw assertion instead.
+
+### Errors
+
+`FronteggAppAttestError`:
+
+| Case | Meaning |
+|------|---------|
+| `disabled` | `enableAppAttest` is not set |
+| `unsupported` | Simulator, unsupported device, or missing entitlement |
+| `keyNotAttested` | No key yet; call `attestKey(challenge:)` |
+| `keyInvalidated` | The key is no longer valid (for example after a restore to a new device); call `attestKey(challenge:)` again |
+| `invalidKey` | A fresh key was also rejected |
+| `serverUnavailable` | Apple's service is unreachable; retry later |
+| `failed(String)` | Any other failure |
+
+Call `resetKey()` to discard the stored key.
 
 ## Admin portal (BETA)
 
