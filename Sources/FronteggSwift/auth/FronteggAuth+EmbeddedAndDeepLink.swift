@@ -13,6 +13,7 @@ import AuthenticationServices
 extension FronteggAuth {
 
     public func embeddedLogin(_ _completion: FronteggAuth.CompletionHandler? = nil, loginHint: String?) {
+        let _completion = FronteggAuth.onMainThread(_completion)
 
         if let rootVC = self.getRootVC() {
             FronteggRuntime.testingLog(
@@ -372,6 +373,7 @@ extension FronteggAuth {
     }
 
     public func  switchTenant(tenantId:String,_ completion: FronteggAuth.CompletionHandler? = nil) {
+        let completion = FronteggAuth.onMainThread(completion)
 
         self.logger.info("Switching tenant to: \(tenantId)")
         if let currentUser = self.user {

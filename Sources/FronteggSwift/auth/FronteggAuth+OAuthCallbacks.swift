@@ -341,6 +341,15 @@ extension FronteggAuth {
     }
 
 
+    /// Returns a valid access token, refreshing it when it expires within 15 seconds.
+    ///
+    /// Waits up to 20 seconds for an in-flight login, initialization or refresh to settle first.
+    /// - Returns: The access token, or `nil` when there is no stored session or the server rejected
+    ///   the refresh token (the user has to sign in again). With `enableOfflineMode`, a connectivity
+    ///   failure returns the cached token instead of throwing.
+    /// - Throws: `FronteggError` whose `category` is `.network` or `.server(statusCode:)` once refresh
+    ///   retries are exhausted, or `.authenticationFailed` when in-flight work did not settle in time.
+    ///   Rethrows `CancellationError` when the calling task is cancelled.
     public func getOrRefreshAccessTokenAsync() async throws -> String? {
         self.logger.info("Waiting for isLoading | initializing | refreshingToken indicators")
 
@@ -426,6 +435,7 @@ extension FronteggAuth {
         }
 
         var attempts = 0
+        var lastError: Error?
         while attempts < 5 {
             do {
                 var data: AuthResponse
@@ -487,6 +497,7 @@ extension FronteggAuth {
 
                 // Note: FronteggError is a custom enum, not a URL/POSIX error.
                 // Real connectivity errors (URLError) are caught by the generic catch below.
+                lastError = error
                 attempts += 1
                 try await Task.sleep(nanoseconds: 1_000_000_000) // Sleep for 1 second before retrying
             } catch {
@@ -511,12 +522,13 @@ extension FronteggAuth {
                     return self.accessToken
                 }
 
+                lastError = error
                 attempts += 1
                 try await Task.sleep(nanoseconds: 1_000_000_000) // Sleep for 1 second before retrying
             }
         }
 
-        throw FronteggError.authError(.failedToAuthenticate)
+        throw lastError.map(FronteggError.from) ?? FronteggError.authError(.failedToAuthenticate)
     }
 
     public func getOrRefreshAccessToken(_ completion: @escaping FronteggAuth.AccessTokenHandler) {
@@ -677,4 +689,15 @@ extension FronteggAuth {
     public typealias LogoutHandler = (Result<Bool, FronteggError>) -> Void
 
     public typealias ConditionCompletionHandler = (_ error: FronteggError?) -> Void
+
+    static func onMainThread<T>(_ completion: ((T) -> Void)?) -> ((T) -> Void)? {
+        guard let completion else { return nil }
+        return { value in
+            if Thread.isMainThread {
+                completion(value)
+            } else {
+                DispatchQueue.main.async { completion(value) }
+            }
+        }
+    }
 }

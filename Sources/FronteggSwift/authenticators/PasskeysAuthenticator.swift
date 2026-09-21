@@ -25,7 +25,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
 
     /// Delivers the registration result exactly once and clears the slot.
     private func completeRegistration(_ error: FronteggError?) {
-        let completion = self.registrationCompletion
+        let completion = FronteggAuth.onMainThread(self.registrationCompletion)
         self.registrationCompletion = nil
         completion?(error)
     }
@@ -45,13 +45,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
                 } else {
                     // Errors raised before ASAuthorization runs (e.g. failing to
                     // fetch registration options) still surface here.
-                    if error == nil {
-                        self.completeRegistration(nil)
-                    }else if let frotneggError = error as? FronteggError {
-                        self.completeRegistration(frotneggError)
-                    } else {
-                        self.completeRegistration(FronteggError.authError(.unknown))
-                    }
+                    self.completeRegistration(error.map(FronteggError.from))
                 }
             }
         }
@@ -255,7 +249,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
                     DispatchQueue.main.async {
                         auth.setIsLoading(false)
                     }
-                    completion?(.failure(.authError(.failedToAuthenticate)))
+                    completion?(.failure(FronteggError.from(error)))
                 }
             }
         }
@@ -302,7 +296,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
             request.httpBody = jsonData
         } catch {
             logger.error("Failed to serialize request body: \(error.localizedDescription)")
-            self.completeRegistration(error as? FronteggError ?? FronteggError.authError(.unknown))
+            self.completeRegistration(FronteggError.from(error))
             return
         }
 
@@ -318,7 +312,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
 
         if let error = error {
             self.logger.error("Error verifying new device session: \(error.localizedDescription)")
-            self.completeRegistration(error as? FronteggError ?? FronteggError.authError(.failedToAuthenticate))
+            self.completeRegistration(FronteggError.from(error))
             return
         }
 

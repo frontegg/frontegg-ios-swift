@@ -144,7 +144,7 @@ extension FronteggAuth {
         FronteggRuntime.testingLog(
             "E2E handleSocialLogin start provider=\(providerString) custom=\(custom) action=\(action.rawValue)"
         )
-        let done = completion ?? { _ in }
+        let done = FronteggAuth.onMainThread(completion) ?? { _ in }
 
         // Special-case Apple to keep branching explicit and fast.
         if providerString == "apple" {
@@ -271,7 +271,7 @@ extension FronteggAuth {
                         completion(.failure(error as! FronteggError))
                     }else {
                         self.logger.error(error.localizedDescription)
-                        completion(.failure(FronteggError.authError(.unknown)))
+                        completion(.failure(FronteggError.from(error)))
                     }
 
                 }
