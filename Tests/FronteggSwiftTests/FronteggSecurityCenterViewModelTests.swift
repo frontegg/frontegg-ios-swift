@@ -1,5 +1,6 @@
 import XCTest
 import Combine
+import AuthenticationServices
 @testable import FronteggSwift
 
 @MainActor
@@ -221,6 +222,42 @@ final class FronteggSecurityCenterViewModelTests: XCTestCase {
 
         XCTAssertNil(viewModel.errorMessage)
         XCTAssertEqual(service.listPasskeysCalls, 0)
+    }
+
+    func testAddPasskeyCancelledAtTheSystemSheetDoesNotSurfaceError() async {
+        service.actionError = ASAuthorizationError(.canceled)
+        let viewModel = makeViewModel()
+
+        await viewModel.addPasskey()
+
+        XCTAssertNil(viewModel.errorMessage)
+    }
+
+    func testAddPasskeyWrappedSystemCancelDoesNotSurfaceError() async {
+        service.actionError = FronteggError.authError(.other(ASAuthorizationError(.canceled)))
+        let viewModel = makeViewModel()
+
+        await viewModel.addPasskey()
+
+        XCTAssertNil(viewModel.errorMessage)
+    }
+
+    func testAddPasskeyUnknownErrorStillSurfaces() async {
+        service.actionError = FronteggError.authError(.unknown)
+        let viewModel = makeViewModel()
+
+        await viewModel.addPasskey()
+
+        XCTAssertNotNil(viewModel.errorMessage)
+    }
+
+    func testAddPasskeyFailedSystemAuthorizationSurfacesError() async {
+        service.actionError = ASAuthorizationError(.failed)
+        let viewModel = makeViewModel()
+
+        await viewModel.addPasskey()
+
+        XCTAssertNotNil(viewModel.errorMessage)
     }
 
     func testAddPasskeyFailureSurfacesError() async {
