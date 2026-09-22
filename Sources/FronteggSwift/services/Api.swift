@@ -50,19 +50,75 @@ public class Api {
     private let applicationId: String?
     private var cookieName: String
     private let credentialManager: CredentialManager
+    internal let dpop: FronteggDPoP?
     
     init(baseUrl: String, clientId: String, applicationId: String?) {
         self.baseUrl = baseUrl
         self.clientId = clientId
         self.applicationId = applicationId
+        let config = try? PlistHelper.fronteggConfig()
+        self.credentialManager = CredentialManager(serviceKey: config?.keychainService ?? "frontegg")
+        self.dpop = config?.enableDPoP == true ? FronteggDPoP(credentialManager: self.credentialManager) : nil
+        self.cookieName = Api.refreshCookieName(clientId: clientId)
+    }
+
+    init(baseUrl: String, clientId: String, applicationId: String?, dpop: FronteggDPoP?) {
+        self.baseUrl = baseUrl
+        self.clientId = clientId
+        self.applicationId = applicationId
         let configuredServiceKey = (try? PlistHelper.fronteggConfig())?.keychainService ?? "frontegg"
         self.credentialManager = CredentialManager(serviceKey: configuredServiceKey)
-        
+        self.dpop = dpop
+        self.cookieName = Api.refreshCookieName(clientId: clientId)
+    }
+
+    private static func refreshCookieName(clientId: String) -> String {
         var clientIdWithoutFirstDash = clientId
         if let firstDashIndex = clientId.firstIndex(of: "-") {
             clientIdWithoutFirstDash.remove(at: firstDashIndex)
         }
-        self.cookieName = "fe_refresh_\(clientIdWithoutFirstDash)"
+        return "fe_refresh_\(clientIdWithoutFirstDash)"
+    }
+
+    internal static func isDPoPBoundEndpoint(_ url: URL) -> Bool {
+        url.path.hasSuffix("/oauth/token")
+    }
+
+    private func attachDPoPProof(to request: inout URLRequest, dpop: FronteggDPoP, nonce: String?) throws {
+        guard let url = request.url, let method = request.httpMethod else { return }
+        do {
+            let proof = try dpop.proof(method: method, url: url, nonce: nonce ?? dpop.nonce(for: url))
+            request.setValue(proof, forHTTPHeaderField: "DPoP")
+        } catch {
+            logger.error("Failed to create DPoP proof, not sending request: \(error)")
+            throw error
+        }
+    }
+
+    private func performDPoPBoundRequest(
+        _ request: URLRequest,
+        dpop: FronteggDPoP,
+        timeout: Int,
+        followRedirect: Bool
+    ) async throws -> (Data, URLResponse) {
+        var request = request
+        try attachDPoPProof(to: &request, dpop: dpop, nonce: nil)
+        let (data, response) = try await performData(for: request, timeout: timeout, followRedirect: followRedirect)
+        guard let http = response as? HTTPURLResponse else { return (data, response) }
+        dpop.recordNonce(from: http)
+
+        guard FronteggDPoP.isNonceChallenge(http, data: data),
+              let nonce = http.value(forHTTPHeaderField: "DPoP-Nonce") else {
+            return (data, response)
+        }
+
+        logger.info("DPoP nonce required, retrying once")
+        try attachDPoPProof(to: &request, dpop: dpop, nonce: nonce)
+        let retried = try await performData(for: request, timeout: timeout, followRedirect: followRedirect)
+        if let retriedHttp = retried.1 as? HTTPURLResponse {
+            dpop.recordNonce(from: retriedHttp)
+        }
+        return retried
     }
 
     internal func addHttpBreadcrumb(
@@ -279,24 +335,14 @@ public class Api {
         // Apply per-task timeout (covers the whole transfer for this request)
         request.timeoutInterval = TimeInterval(timeout)
         
-        // Session-level timeouts (cover request + resource)
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = TimeInterval(timeout)          // idle time between bytes / request phase
-        config.timeoutIntervalForResource = TimeInterval(timeout)         // total resource load time
-        config.waitsForConnectivity = false                               // fail fast if offline (optional)
-        
-        // Choose session (with or without redirect following)
-        let session: URLSession
-        if followRedirect {
-            session = URLSession(configuration: config)
-        } else {
-            let redirectHandler = RedirectHandler()
-            session = URLSession(configuration: config, delegate: redirectHandler, delegateQueue: nil)
-        }
-        
         let start = Date()
         do {
-            let (data, response) = try await session.data(for: request)
+            let (data, response): (Data, URLResponse)
+            if let dpop, Api.isDPoPBoundEndpoint(url) {
+                (data, response) = try await performDPoPBoundRequest(request, dpop: dpop, timeout: timeout, followRedirect: followRedirect)
+            } else {
+                (data, response) = try await performData(for: request, timeout: timeout, followRedirect: followRedirect)
+            }
             let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
             let statusCode = (response as? HTTPURLResponse)?.statusCode
             TraceIdLogger.shared.extractAndLogTraceId(from: response)
