@@ -26,6 +26,7 @@ extension FronteggAuth {
             if let staleCompletion = self.loginCompletion {
                 if rootVC.presentedViewController is UIHostingController<EmbeddedLoginModal> {
                     logger.info("Login request ignored, Embedded login already in progress.")
+                    _completion?(.failure(.authError(.operationCanceled)))
                     return
                 }
                 logger.warning("Clearing stale embedded login completion — modal not presented")
