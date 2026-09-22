@@ -1,3 +1,5 @@
+## v1.3.22
+
 ## v1.3.21
 
 - Added: runtime theme and copy overrides for the embedded login box. `FronteggApp.shared.loginBoxThemeOptions` and `FronteggApp.shared.loginBoxLocalizations` take the same shapes as `themeV2` and `localizations` in the environment's login-box configuration, and are deep-merged over it — keys the override does not mention keep whatever the environment defines. This covers appearance that is only known at runtime, such as a white-labeled app resolving each brand's logo and colours from its own backend, which per-environment configuration cannot express. Set them before calling `login()`; both default to `nil`, so apps that do not set them are unaffected. Embedded mode only — hosted mode runs outside the app's WebView. Requires a hosted login box that applies host-supplied overrides; against an older login box the properties are ignored and the environment's own branding is rendered. ([#320](https://github.com/frontegg/frontegg-ios-swift/pull/320))
