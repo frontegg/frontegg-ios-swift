@@ -8,7 +8,13 @@
 //
 
 import XCTest
+import SwiftUI
 @testable import FronteggSwift
+
+private final class PresentingRootViewController: UIViewController {
+    var stubPresented: UIViewController?
+    override var presentedViewController: UIViewController? { stubPresented }
+}
 
 final class EmbeddedLoginRootViewControllerTests: XCTestCase {
 
@@ -36,6 +42,8 @@ final class EmbeddedLoginRootViewControllerTests: XCTestCase {
     }
 
     override func tearDown() {
+        auth?.testRootViewControllerOverride = nil
+        auth?.loginCompletion = nil
         auth?.cancelScheduledTokenRefresh()
         auth = nil
         Thread.sleep(forTimeInterval: 0.1)
@@ -67,5 +75,63 @@ final class EmbeddedLoginRootViewControllerTests: XCTestCase {
         guard case .authError(.couldNotFindRootViewController) = receivedError else {
             return XCTFail("Expected .couldNotFindRootViewController, got \(String(describing: receivedError))")
         }
+    }
+
+    private func presentEmbeddedModalWithInFlightLogin() -> () -> Int {
+        let root = PresentingRootViewController()
+        root.stubPresented = UIHostingController(rootView: EmbeddedLoginModal(parentVC: nil))
+        auth.testRootViewControllerOverride = root
+        var firstCallerCompletions = 0
+        auth.loginCompletion = { _ in firstCallerCompletions += 1 }
+        return { firstCallerCompletions }
+    }
+
+    func testEmbeddedLoginWhileModalPresentedCompletesSecondCallerWithOperationCanceled() {
+        let firstCallerCompletions = presentEmbeddedModalWithInFlightLogin()
+
+        let completed = expectation(description: "second embeddedLogin completion is invoked")
+        var receivedError: FronteggError?
+        var completedOnMainThread = false
+
+        auth.embeddedLogin({ result in
+            completedOnMainThread = Thread.isMainThread
+            if case .failure(let error) = result {
+                receivedError = error
+            }
+            completed.fulfill()
+        }, loginHint: nil)
+
+        wait(for: [completed], timeout: 2.0)
+
+        guard case .authError(.operationCanceled) = receivedError else {
+            return XCTFail("Expected .operationCanceled, got \(String(describing: receivedError))")
+        }
+        XCTAssertEqual(receivedError?.category, .cancelled)
+        XCTAssertTrue(completedOnMainThread)
+        XCTAssertNotNil(auth.loginCompletion, "In-flight login completion must be preserved")
+        XCTAssertEqual(firstCallerCompletions(), 0)
+    }
+
+    func testLoginAsyncWhileEmbeddedModalPresentedThrowsInsteadOfHanging() {
+        let firstCallerCompletions = presentEmbeddedModalWithInFlightLogin()
+
+        let finished = expectation(description: "loginAsync returns")
+        var thrown: Error?
+        let auth = self.auth!
+        Task {
+            do {
+                _ = try await auth.loginAsync()
+            } catch {
+                thrown = error
+            }
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2.0)
+
+        guard case .authError(.operationCanceled)? = thrown as? FronteggError else {
+            return XCTFail("Expected .operationCanceled, got \(String(describing: thrown))")
+        }
+        XCTAssertEqual(firstCallerCompletions(), 0)
     }
 }
