@@ -121,6 +121,10 @@ public class FronteggApp {
     /// Requires iOS 17.4+ (`ASWebAuthenticationSession.Callback.https`); on older
     /// versions the SDK silently falls back to the custom-scheme redirect.
     public var useAssetLinks: Bool = false
+    /// Opt-in App Attest support, enabled with `enableAppAttest` in `Frontegg.plist`.
+    ///
+    /// The SDK does not send attestations to Frontegg; use this to attest the app to your own backend.
+    public let appAttest: FronteggAppAttest
     /// Convenience alias over `FeLogger.delegate`.
     ///
     /// Set `FeLogger.delegate` directly if you need to capture logs before
@@ -227,6 +231,7 @@ public class FronteggApp {
         self.loginOrganizationAlias = config.loginOrganizationAlias
         self.entitlementsEnabled = config.entitlementsEnabled
         self.useAssetLinks = config.useAssetLinks
+        self.appAttest = FronteggAppAttest(isEnabled: config.enableAppAttest, keychainService: config.keychainService)
 
         if FronteggApp.clearKeychain(config: config) {
             self.credentialManager.clear()
