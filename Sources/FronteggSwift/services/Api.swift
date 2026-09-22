@@ -84,14 +84,14 @@ public class Api {
         url.path.hasSuffix("/oauth/token")
     }
 
-    private func attachDPoPProof(to request: inout URLRequest, dpop: FronteggDPoP, nonce: String?) {
+    private func attachDPoPProof(to request: inout URLRequest, dpop: FronteggDPoP, nonce: String?) throws {
         guard let url = request.url, let method = request.httpMethod else { return }
         do {
             let proof = try dpop.proof(method: method, url: url, nonce: nonce ?? dpop.nonce(for: url))
             request.setValue(proof, forHTTPHeaderField: "DPoP")
         } catch {
-            logger.error("Failed to create DPoP proof: \(error)")
-            SentryHelper.logError(error, context: ["dpop": ["stage": "proof"]])
+            logger.error("Failed to create DPoP proof, not sending request: \(error)")
+            throw error
         }
     }
 
@@ -102,7 +102,7 @@ public class Api {
         followRedirect: Bool
     ) async throws -> (Data, URLResponse) {
         var request = request
-        attachDPoPProof(to: &request, dpop: dpop, nonce: nil)
+        try attachDPoPProof(to: &request, dpop: dpop, nonce: nil)
         let (data, response) = try await performData(for: request, timeout: timeout, followRedirect: followRedirect)
         guard let http = response as? HTTPURLResponse else { return (data, response) }
         dpop.recordNonce(from: http)
@@ -113,7 +113,7 @@ public class Api {
         }
 
         logger.info("DPoP nonce required, retrying once")
-        attachDPoPProof(to: &request, dpop: dpop, nonce: nonce)
+        try attachDPoPProof(to: &request, dpop: dpop, nonce: nonce)
         let retried = try await performData(for: request, timeout: timeout, followRedirect: followRedirect)
         if let retriedHttp = retried.1 as? HTTPURLResponse {
             dpop.recordNonce(from: retriedHttp)

@@ -353,6 +353,7 @@ private final class DPoPTransportApi: Api {
     }
 
     var stubs: [Stub] = []
+    var onRequest: (() -> Void)?
     private(set) var requests: [URLRequest] = []
 
     init(dpop: FronteggDPoP?) {
@@ -361,6 +362,7 @@ private final class DPoPTransportApi: Api {
 
     override func performData(for request: URLRequest, timeout: Int, followRedirect: Bool) async throws -> (Data, URLResponse) {
         requests.append(request)
+        onRequest?()
         let stub = stubs.isEmpty ? Stub(statusCode: 200, headers: [:], body: DPoPTransportApi.tokenBody) : stubs.removeFirst()
         let response = HTTPURLResponse(url: request.url!, statusCode: stub.statusCode, httpVersion: nil, headerFields: stub.headers)!
         return (Data(stub.body.utf8), response)
@@ -501,6 +503,50 @@ final class DPoPApiTests: XCTestCase {
         XCTAssertEqual(api.requests.count, 2)
     }
 
+    func test_proofFailure_refreshIsNotSentAndFailsWithoutRefreshTokenError() async {
+        keyStorage.loadError = lockedKeychain
+        let api = DPoPTransportApi(dpop: makeDPoP())
+
+        do {
+            _ = try await api.refreshToken(refreshToken: "rt")
+            XCTFail("Expected refresh to fail")
+        } catch FronteggDPoPError.keyUnavailable {
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+
+        XCTAssertTrue(api.requests.isEmpty)
+    }
+
+    func test_proofFailure_codeExchangeIsNotSent() async {
+        keyStorage.loadError = lockedKeychain
+        let api = DPoPTransportApi(dpop: makeDPoP())
+
+        let (response, error) = await api.exchangeToken(code: "code", redirectUrl: "app://cb", codeVerifier: "v")
+
+        XCTAssertNil(response)
+        XCTAssertNotNil(error)
+        XCTAssertTrue(api.requests.isEmpty)
+    }
+
+    func test_proofFailureOnNonceRetry_retryIsNotSent() async {
+        let api = DPoPTransportApi(dpop: makeDPoP())
+        api.stubs = [
+            .init(statusCode: 400, headers: ["DPoP-Nonce": "nonce-1"], body: DPoPTransportApi.nonceChallengeBody),
+        ]
+        api.onRequest = { [unowned self] in self.keyStorage.loadError = lockedKeychain }
+
+        do {
+            _ = try await api.refreshToken(refreshToken: "rt")
+            XCTFail("Expected refresh to fail")
+        } catch FronteggDPoPError.keyUnavailable {
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+
+        XCTAssertEqual(api.requests.count, 1)
+    }
+
     func test_nonNonceError_isNotRetried() async throws {
         let api = DPoPTransportApi(dpop: makeDPoP())
         api.stubs = [
@@ -513,5 +559,78 @@ final class DPoPApiTests: XCTestCase {
         } catch {}
 
         XCTAssertEqual(api.requests.count, 1)
+    }
+}
+
+// MARK: - Session handling
+
+final class DPoPRefreshSessionTests: XCTestCase {
+
+    private var auth: FronteggAuth!
+    private var credentialManager: CredentialManager!
+    private var keyStorage: InMemoryDPoPKeyStorage!
+
+    override func setUp() {
+        super.setUp()
+        NetworkStatusMonitor._testReset()
+        let serviceKey = "frontegg-dpop-refresh-\(UUID().uuidString)"
+        credentialManager = CredentialManager(serviceKey: serviceKey)
+        PlistHelper.testConfigOverride = FronteggPlist(
+            keychainService: serviceKey,
+            payload: .singleRegion(.init(baseUrl: "https://test.example.com", clientId: "test-client-id")),
+            keepUserLoggedInAfterReinstall: true,
+            enableOfflineMode: false
+        )
+        FronteggAuth.testNetworkPathAvailabilityOverride = true
+        keyStorage = InMemoryDPoPKeyStorage()
+
+        auth = FronteggAuth(
+            baseUrl: "https://test.example.com",
+            clientId: "test-client-id",
+            applicationId: nil,
+            credentialManager: credentialManager,
+            isRegional: false,
+            regionData: [],
+            embeddedMode: false,
+            isLateInit: true,
+            entitlementsEnabled: false
+        )
+        auth.setInitializing(false)
+        auth.setIsLoading(false)
+    }
+
+    override func tearDown() {
+        auth.cancelScheduledTokenRefresh()
+        NetworkStatusMonitor._testReset()
+        credentialManager.clear()
+        PlistHelper.testConfigOverride = nil
+        FronteggAuth.testNetworkPathAvailabilityOverride = nil
+        auth = nil
+        credentialManager = nil
+        super.tearDown()
+    }
+
+    func test_refresh_withLockedDPoPKey_keepsSessionAndSendsNothing() async throws {
+        keyStorage.loadError = lockedKeychain
+        let api = DPoPTransportApi(dpop: FronteggDPoP(storage: keyStorage.storage, preferSecureEnclave: false))
+        auth.api = api
+        let accessToken = try TestDataFactory.makeJWT(payloadDict: [
+            "sub": "user-1",
+            "email": "dpop@example.com",
+            "tenantId": "tenant-123",
+            "tenantIds": ["tenant-123"],
+            "exp": Int(Date().timeIntervalSince1970 - 60),
+        ])
+        auth.setAccessToken(accessToken)
+        auth.setRefreshToken("refresh-token-existing")
+        auth.setIsAuthenticated(true)
+
+        let refreshed = await auth.refreshTokenIfNeeded()
+
+        XCTAssertFalse(refreshed)
+        XCTAssertTrue(api.requests.isEmpty)
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertEqual(auth.refreshToken, "refresh-token-existing")
+        XCTAssertEqual(auth.accessToken, accessToken)
     }
 }
