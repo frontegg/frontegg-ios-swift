@@ -802,6 +802,9 @@ public class Api {
 
             return (try JSONDecoder().decode(AuthResponse.self, from: data), nil)
         } catch {
+            if error is URLError || isConnectivityError(error) {
+                return (nil, FronteggError.authError(.other(error)))
+            }
             return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
         }
     }
