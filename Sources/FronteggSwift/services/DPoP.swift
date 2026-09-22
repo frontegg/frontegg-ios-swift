@@ -8,19 +8,32 @@ import Foundation
 public enum FronteggDPoPError: Error {
     case disabled
     case missingAccessToken
+    case keyUnavailable(Error)
 }
 
 struct DPoPKeyStorage {
-    let load: () -> String?
-    let save: (String) -> Void
+    let load: () throws -> String?
+    let save: (String) throws -> Void
     let delete: () -> Void
 
     static let keychainAccount = "fe_dpop_signing_key"
 
     static func keychain(_ credentialManager: CredentialManager) -> DPoPKeyStorage {
         DPoPKeyStorage(
-            load: { try? credentialManager.get(key: keychainAccount) },
-            save: { try? credentialManager.save(key: keychainAccount, value: $0) },
+            load: {
+                do {
+                    return try credentialManager.get(key: keychainAccount)
+                } catch CredentialManager.KeychainError.unknown(errSecItemNotFound) {
+                    return nil
+                }
+            },
+            save: {
+                try credentialManager.save(
+                    key: keychainAccount,
+                    value: $0,
+                    accessibility: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+                )
+            },
             delete: { credentialManager.delete(key: keychainAccount) }
         )
     }
@@ -57,11 +70,10 @@ public final class FronteggDPoP {
             }
         }
 
-        init?(serialized: String) {
+        init?(serialized: String) throws {
             if serialized.hasPrefix(Self.secureEnclavePrefix),
-               let data = Data(base64Encoded: String(serialized.dropFirst(Self.secureEnclavePrefix.count))),
-               let key = try? SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: data) {
-                self = .secureEnclave(key)
+               let data = Data(base64Encoded: String(serialized.dropFirst(Self.secureEnclavePrefix.count))) {
+                self = .secureEnclave(try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: data))
             } else if serialized.hasPrefix(Self.softwarePrefix),
                       let data = Data(base64Encoded: String(serialized.dropFirst(Self.softwarePrefix.count))),
                       let key = try? P256.Signing.PrivateKey(rawRepresentation: data) {
@@ -72,7 +84,14 @@ public final class FronteggDPoP {
         }
 
         static func generate(preferSecureEnclave: Bool) -> SigningKey {
-            if preferSecureEnclave, let key = try? SecureEnclave.P256.Signing.PrivateKey() {
+            if preferSecureEnclave,
+               let accessControl = SecAccessControlCreateWithFlags(
+                   nil,
+                   kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+                   .privateKeyUsage,
+                   nil
+               ),
+               let key = try? SecureEnclave.P256.Signing.PrivateKey(accessControl: accessControl) {
                 return .secureEnclave(key)
             }
             return .software(P256.Signing.PrivateKey())
@@ -110,7 +129,7 @@ public final class FronteggDPoP {
     ///   - accessToken: when set, the proof carries `ath` (required when calling a resource server with a DPoP-bound token).
     ///   - nonce: a server-provided `DPoP-Nonce` value.
     public func proof(method: String, url: URL, accessToken: String? = nil, nonce: String? = nil) throws -> String {
-        let key = loadOrCreateKey()
+        let key = try loadOrCreateKey()
 
         let header: [String: Any] = [
             "typ": "dpop+jwt",
@@ -132,7 +151,12 @@ public final class FronteggDPoP {
         }
 
         let signingInput = try "\(Self.encode(header)).\(Self.encode(claims))"
-        let signature = try key.signature(for: Data(signingInput.utf8))
+        let signature: Data
+        do {
+            signature = try key.signature(for: Data(signingInput.utf8))
+        } catch {
+            throw FronteggDPoPError.keyUnavailable(error)
+        }
         return "\(signingInput).\(signature.toEncodedBase64())"
     }
 
@@ -146,13 +170,13 @@ public final class FronteggDPoP {
     }
 
     /// The public key used for proofs, as a JWK.
-    public func publicJWK() -> [String: String] {
-        Self.jwk(for: loadOrCreateKey().publicKey)
+    public func publicJWK() throws -> [String: String] {
+        Self.jwk(for: try loadOrCreateKey().publicKey)
     }
 
     /// RFC 7638 JWK thumbprint (`jkt`) of the proof key.
-    public func thumbprint() -> String {
-        let jwk = publicJWK()
+    public func thumbprint() throws -> String {
+        let jwk = try publicJWK()
         let canonical = "{\"crv\":\"\(jwk["crv"]!)\",\"kty\":\"\(jwk["kty"]!)\",\"x\":\"\(jwk["x"]!)\",\"y\":\"\(jwk["y"]!)\"}"
         return Data(SHA256.hash(data: Data(canonical.utf8))).toEncodedBase64()
     }
@@ -240,16 +264,33 @@ public final class FronteggDPoP {
         try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes]).toEncodedBase64()
     }
 
-    private func loadOrCreateKey() -> SigningKey {
-        Self.keyLock.withLock {
-            if let stored = storage.load() {
-                if let key = SigningKey(serialized: stored) {
-                    return key
+    private func loadOrCreateKey() throws -> SigningKey {
+        try Self.keyLock.withLock {
+            let stored: String?
+            do {
+                stored = try storage.load()
+            } catch {
+                logger.warning("DPoP key is unavailable: \(error)")
+                throw FronteggDPoPError.keyUnavailable(error)
+            }
+            if let stored {
+                do {
+                    if let key = try SigningKey(serialized: stored) {
+                        return key
+                    }
+                } catch {
+                    logger.warning("DPoP key could not be restored: \(error)")
+                    throw FronteggDPoPError.keyUnavailable(error)
                 }
-                logger.warning("Stored DPoP key is unreadable, generating a new one")
+                logger.warning("Stored DPoP key is malformed, generating a new one")
             }
             let key = SigningKey.generate(preferSecureEnclave: preferSecureEnclave)
-            storage.save(key.serialized)
+            do {
+                try storage.save(key.serialized)
+            } catch {
+                logger.warning("DPoP key could not be stored: \(error)")
+                throw FronteggDPoPError.keyUnavailable(error)
+            }
             return key
         }
     }

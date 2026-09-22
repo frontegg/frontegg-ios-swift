@@ -9,15 +9,27 @@ import XCTest
 
 private final class InMemoryDPoPKeyStorage {
     var value: String?
+    var loadError: Error?
+    var saveError: Error?
+    private(set) var saveCount = 0
 
     var storage: DPoPKeyStorage {
         DPoPKeyStorage(
-            load: { [unowned self] in self.value },
-            save: { [unowned self] in self.value = $0 },
+            load: { [unowned self] in
+                if let loadError = self.loadError { throw loadError }
+                return self.value
+            },
+            save: { [unowned self] in
+                if let saveError = self.saveError { throw saveError }
+                self.saveCount += 1
+                self.value = $0
+            },
             delete: { [unowned self] in self.value = nil }
         )
     }
 }
+
+private let lockedKeychain = CredentialManager.KeychainError.keychainUnavailable(errSecInteractionNotAllowed)
 
 private struct DecodedProof {
     let header: [String: Any]
@@ -183,13 +195,77 @@ final class DPoPTests: XCTestCase {
         XCTAssertNotEqual(keyStorage.value, "sw:not-a-key")
     }
 
+    func test_lockedKeychain_throwsWithoutReplacingStoredKey() throws {
+        let url = URL(string: "https://auth.example.com/oauth/token")!
+        let original = try DecodedProof(makeDPoP().proof(method: "POST", url: url))
+        let storedKey = keyStorage.value
+        keyStorage.loadError = lockedKeychain
+
+        XCTAssertThrowsError(try makeDPoP().proof(method: "POST", url: url)) { error in
+            guard case FronteggDPoPError.keyUnavailable = error else {
+                return XCTFail("unexpected error \(error)")
+            }
+        }
+        XCTAssertEqual(keyStorage.saveCount, 1)
+        XCTAssertEqual(keyStorage.value, storedKey)
+
+        keyStorage.loadError = nil
+        let afterUnlock = try DecodedProof(makeDPoP().proof(method: "POST", url: url))
+        XCTAssertEqual(afterUnlock.jwk, original.jwk)
+    }
+
+    func test_keySaveFailure_throwsInsteadOfSigningWithUnpersistedKey() {
+        keyStorage.saveError = lockedKeychain
+
+        XCTAssertThrowsError(try makeDPoP().proof(method: "POST", url: URL(string: "https://auth.example.com/oauth/token")!)) { error in
+            guard case FronteggDPoPError.keyUnavailable = error else {
+                return XCTFail("unexpected error \(error)")
+            }
+        }
+        XCTAssertNil(keyStorage.value)
+    }
+
+    func test_undecodableSecureEnclaveKey_throwsWithoutReplacingStoredKey() {
+        let stored = "se:" + Data(repeating: 7, count: 64).base64EncodedString()
+        keyStorage.value = stored
+
+        XCTAssertThrowsError(try makeDPoP().proof(method: "POST", url: URL(string: "https://auth.example.com/oauth/token")!)) { error in
+            guard case FronteggDPoPError.keyUnavailable = error else {
+                return XCTFail("unexpected error \(error)")
+            }
+        }
+        XCTAssertEqual(keyStorage.value, stored)
+        XCTAssertEqual(keyStorage.saveCount, 0)
+    }
+
+    func test_keychainStorage_missingItemLoadsNil() throws {
+        let credentialManager = CredentialManager(serviceKey: "dpop-tests-\(UUID().uuidString)")
+        credentialManager.copyMatching = { _, _ in errSecItemNotFound }
+
+        XCTAssertNil(try DPoPKeyStorage.keychain(credentialManager).load())
+    }
+
+    func test_keychainStorage_lockedKeychainThrows() {
+        let credentialManager = CredentialManager(serviceKey: "dpop-tests-\(UUID().uuidString)")
+        credentialManager.copyMatching = { _, _ in errSecInteractionNotAllowed }
+
+        XCTAssertThrowsError(try DPoPKeyStorage.keychain(credentialManager).load())
+    }
+
+    func test_keychainStorage_otherReadFailureThrows() {
+        let credentialManager = CredentialManager(serviceKey: "dpop-tests-\(UUID().uuidString)")
+        credentialManager.copyMatching = { _, _ in errSecDecode }
+
+        XCTAssertThrowsError(try DPoPKeyStorage.keychain(credentialManager).load())
+    }
+
     func test_thumbprint_isRfc7638OfPublicJwk() throws {
         let dpop = makeDPoP()
-        let jwk = dpop.publicJWK()
+        let jwk = try dpop.publicJWK()
         let canonical = "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"\(jwk["x"]!)\",\"y\":\"\(jwk["y"]!)\"}"
         let expected = Data(SHA256.hash(data: Data(canonical.utf8))).toEncodedBase64()
 
-        XCTAssertEqual(dpop.thumbprint(), expected)
+        XCTAssertEqual(try dpop.thumbprint(), expected)
     }
 
     func test_authorizationHeaders_useDPoPSchemeAndBindAccessToken() throws {
