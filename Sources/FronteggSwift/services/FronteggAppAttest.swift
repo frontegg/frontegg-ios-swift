@@ -12,8 +12,11 @@ public enum FronteggAppAttestError: Error, Equatable {
     case disabled
     /// App Attest is not available (simulator, unsupported device, or missing entitlement).
     case unsupported
-    /// No App Attest key exists yet; call ``FronteggAppAttest/attestKey(challenge:)`` first.
+    /// No attested App Attest key exists yet; call ``FronteggAppAttest/attestKey(challenge:)`` first.
     case keyNotAttested
+    /// The stored key is already attested and can sign assertions. Apple allows a key to be
+    /// attested only once; call ``FronteggAppAttest/resetKey()`` first to attest a new key.
+    case keyAlreadyAttested
     /// The stored key was rejected by the system; attest a new key with ``FronteggAppAttest/attestKey(challenge:)``.
     case keyInvalidated
     /// The system rejected the key again after a fresh key was generated.
@@ -45,10 +48,15 @@ protocol AppAttestServiceProtocol: Sendable {
     func generateAssertion(_ keyId: String, clientDataHash: Data) async throws -> Data
 }
 
+struct AppAttestKeyRecord: Codable, Equatable {
+    let keyId: String
+    var attested: Bool
+}
+
 protocol AppAttestKeyStore: Sendable {
-    func loadKeyId() throws -> String?
-    func saveKeyId(_ keyId: String) throws
-    func deleteKeyId()
+    func loadKey() throws -> AppAttestKeyRecord?
+    func saveKey(_ record: AppAttestKeyRecord) throws
+    func deleteKey()
 }
 
 struct DeviceCheckAppAttestService: AppAttestServiceProtocol {
@@ -70,28 +78,34 @@ struct DeviceCheckAppAttestService: AppAttestServiceProtocol {
 }
 
 final class KeychainAppAttestKeyStore: AppAttestKeyStore, @unchecked Sendable {
-    static let keyIdAccount = "fe_appAttestKeyId"
+    static let keyAccount = "fe_appAttestKey"
 
     private let credentialManager: CredentialManager
 
-    init(keychainService: String) {
-        self.credentialManager = CredentialManager(serviceKey: "\(keychainService).appattest")
+    init(credentialManager: CredentialManager) {
+        self.credentialManager = credentialManager
     }
 
-    func loadKeyId() throws -> String? {
+    convenience init(keychainService: String) {
+        self.init(credentialManager: CredentialManager(serviceKey: "\(keychainService).appattest"))
+    }
+
+    func loadKey() throws -> AppAttestKeyRecord? {
         do {
-            return try credentialManager.get(key: Self.keyIdAccount)
+            guard let value = try credentialManager.get(key: Self.keyAccount) else { return nil }
+            return try JSONDecoder().decode(AppAttestKeyRecord.self, from: Data(value.utf8))
         } catch CredentialManager.KeychainError.unknown(let status) where status == errSecItemNotFound {
             return nil
         }
     }
 
-    func saveKeyId(_ keyId: String) throws {
-        try credentialManager.save(key: Self.keyIdAccount, value: keyId)
+    func saveKey(_ record: AppAttestKeyRecord) throws {
+        let data = try JSONEncoder().encode(record)
+        try credentialManager.save(key: Self.keyAccount, value: String(decoding: data, as: UTF8.self))
     }
 
-    func deleteKeyId() {
-        credentialManager.delete(key: Self.keyIdAccount)
+    func deleteKey() {
+        credentialManager.delete(key: Self.keyAccount)
     }
 }
 
@@ -114,8 +128,8 @@ public actor FronteggAppAttest {
     private let service: AppAttestServiceProtocol
     private let keyStore: AppAttestKeyStore
     private let logger = getLogger("FronteggAppAttest")
-    private var cachedKeyId: String?
-    private var pendingKeyGeneration: Task<String, Error>?
+    private var cachedRecord: AppAttestKeyRecord?
+    private var lastOperation: Task<Void, Never>?
 
     init(isEnabled: Bool, service: AppAttestServiceProtocol, keyStore: AppAttestKeyStore) {
         self.isEnabled = isEnabled
@@ -139,61 +153,37 @@ public actor FronteggAppAttest {
     /// Returns the persisted App Attest key identifier, generating and storing a new key if none exists.
     public func generateKey() async throws -> String {
         try ensureAvailable()
-        return try await currentOrNewKeyId()
+        return try await serialized { try await self.currentOrNewRecord().keyId }
+    }
+
+    /// Whether the stored key has been attested and can sign assertions.
+    public func isKeyAttested() async throws -> Bool {
+        try ensureAvailable()
+        return try await serialized { try self.storedRecord()?.attested ?? false }
     }
 
     /// Attests the current key using `SHA256(challenge)` as the client data hash.
     ///
-    /// `challenge` must be a one-time value issued by your server. If the system rejects the
-    /// stored key, a new key is generated and attestation is retried once.
+    /// `challenge` must be a one-time value issued by your server. A key can be attested only
+    /// once: if the stored key is already attested this throws
+    /// ``FronteggAppAttestError/keyAlreadyAttested`` without contacting Apple; call
+    /// ``resetKey()`` first to attest a new key. If the system rejects a key that has not been
+    /// attested yet, a new key is generated and attestation is retried once.
     public func attestKey(challenge: Data) async throws -> FronteggAppAttestation {
         try ensureAvailable()
         let clientDataHash = Self.sha256(challenge)
-        let keyId = try await currentOrNewKeyId()
-
-        do {
-            let object = try await service.attestKey(keyId, clientDataHash: clientDataHash)
-            return FronteggAppAttestation(keyId: keyId, attestationObject: object)
-        } catch let error where Self.isRejectedKey(error) {
-            logger.warning("App Attest key rejected during attestation, generating a new key")
-            discardKey(keyId)
-        } catch {
-            throw Self.map(error)
-        }
-
-        let freshKeyId = try await currentOrNewKeyId()
-        do {
-            let object = try await service.attestKey(freshKeyId, clientDataHash: clientDataHash)
-            return FronteggAppAttestation(keyId: freshKeyId, attestationObject: object)
-        } catch let error where Self.isRejectedKey(error) {
-            discardKey(freshKeyId)
-            throw FronteggAppAttestError.invalidKey
-        } catch {
-            throw Self.map(error)
-        }
+        return try await serialized { try await self.performAttestation(clientDataHash: clientDataHash) }
     }
 
     /// Signs `SHA256(requestData)` with the attested key.
     ///
-    /// Throws ``FronteggAppAttestError/keyNotAttested`` when no key exists and
+    /// Throws ``FronteggAppAttestError/keyNotAttested`` when no attested key exists and
     /// ``FronteggAppAttestError/keyInvalidated`` when the key is no longer valid; in both
     /// cases call ``attestKey(challenge:)`` before retrying.
     public func generateAssertion(for requestData: Data) async throws -> FronteggAppAttestAssertion {
         try ensureAvailable()
-        guard let keyId = try await existingKeyId() else {
-            throw FronteggAppAttestError.keyNotAttested
-        }
-
-        do {
-            let assertion = try await service.generateAssertion(keyId, clientDataHash: Self.sha256(requestData))
-            return FronteggAppAttestAssertion(keyId: keyId, assertion: assertion)
-        } catch let error where Self.isRejectedKey(error) {
-            logger.warning("App Attest key rejected during assertion, re-attestation required")
-            discardKey(keyId)
-            throw FronteggAppAttestError.keyInvalidated
-        } catch {
-            throw Self.map(error)
-        }
+        let clientDataHash = Self.sha256(requestData)
+        return try await serialized { try await self.performAssertion(clientDataHash: clientDataHash) }
     }
 
     /// Returns ``keyIdHeader`` and ``assertionHeader`` values for a request whose
@@ -206,10 +196,68 @@ public actor FronteggAppAttest {
         ]
     }
 
-    /// Removes the stored key identifier so the next call generates a new key.
-    public func resetKey() {
-        cachedKeyId = nil
-        keyStore.deleteKeyId()
+    /// Removes the stored key so the next ``attestKey(challenge:)`` generates and attests a new key.
+    public func resetKey() async {
+        _ = try? await serialized { self.clearKey() }
+    }
+
+    private func serialized<T>(_ operation: @escaping () async throws -> T) async throws -> T {
+        let previous = lastOperation
+        let task = Task { () async throws -> T in
+            await previous?.value
+            return try await operation()
+        }
+        lastOperation = Task { _ = try? await task.value }
+        return try await task.value
+    }
+
+    private func performAttestation(clientDataHash: Data) async throws -> FronteggAppAttestation {
+        let record = try await currentOrNewRecord()
+        guard !record.attested else {
+            throw FronteggAppAttestError.keyAlreadyAttested
+        }
+
+        do {
+            return try await attest(record.keyId, clientDataHash: clientDataHash)
+        } catch let error where Self.isRejectedKey(error) {
+            logger.warning("Unattested App Attest key rejected during attestation, generating a new key")
+            clearKey()
+        } catch {
+            throw Self.map(error)
+        }
+
+        let fresh = try await currentOrNewRecord()
+        do {
+            return try await attest(fresh.keyId, clientDataHash: clientDataHash)
+        } catch let error where Self.isRejectedKey(error) {
+            clearKey()
+            throw FronteggAppAttestError.invalidKey
+        } catch {
+            throw Self.map(error)
+        }
+    }
+
+    private func attest(_ keyId: String, clientDataHash: Data) async throws -> FronteggAppAttestation {
+        let object = try await service.attestKey(keyId, clientDataHash: clientDataHash)
+        store(AppAttestKeyRecord(keyId: keyId, attested: true))
+        return FronteggAppAttestation(keyId: keyId, attestationObject: object)
+    }
+
+    private func performAssertion(clientDataHash: Data) async throws -> FronteggAppAttestAssertion {
+        guard let record = try storedRecord(), record.attested else {
+            throw FronteggAppAttestError.keyNotAttested
+        }
+
+        do {
+            let assertion = try await service.generateAssertion(record.keyId, clientDataHash: clientDataHash)
+            return FronteggAppAttestAssertion(keyId: record.keyId, assertion: assertion)
+        } catch let error where Self.isRejectedKey(error) {
+            logger.warning("Attested App Attest key rejected during assertion, re-attestation required")
+            clearKey()
+            throw FronteggAppAttestError.keyInvalidated
+        } catch {
+            throw Self.map(error)
+        }
     }
 
     private func ensureAvailable() throws {
@@ -217,53 +265,46 @@ public actor FronteggAppAttest {
         guard service.isSupported else { throw FronteggAppAttestError.unsupported }
     }
 
-    private func existingKeyId() async throws -> String? {
-        if let pendingKeyGeneration {
-            return try await pendingKeyGeneration.value
-        }
-        if let cachedKeyId {
-            return cachedKeyId
+    private func storedRecord() throws -> AppAttestKeyRecord? {
+        if let cachedRecord {
+            return cachedRecord
         }
         do {
-            cachedKeyId = try keyStore.loadKeyId()
+            cachedRecord = try keyStore.loadKey()
         } catch {
-            logger.warning("Failed to read App Attest key id from keychain: \(error)")
+            logger.warning("Failed to read App Attest key from keychain: \(error)")
             throw FronteggAppAttestError.failed("\(error)")
         }
-        return cachedKeyId
+        return cachedRecord
     }
 
-    private func currentOrNewKeyId() async throws -> String {
-        if let keyId = try await existingKeyId() {
-            return keyId
+    private func currentOrNewRecord() async throws -> AppAttestKeyRecord {
+        if let record = try storedRecord() {
+            return record
         }
-
-        let task = Task { try await self.createKey() }
-        pendingKeyGeneration = task
-        return try await task.value
-    }
-
-    private func createKey() async throws -> String {
-        defer { pendingKeyGeneration = nil }
         let keyId: String
         do {
             keyId = try await service.generateKey()
         } catch {
             throw Self.map(error)
         }
-        do {
-            try keyStore.saveKeyId(keyId)
-        } catch {
-            logger.warning("Failed to persist App Attest key id, it will be regenerated on next launch: \(error)")
-        }
-        cachedKeyId = keyId
-        return keyId
+        let record = AppAttestKeyRecord(keyId: keyId, attested: false)
+        store(record)
+        return record
     }
 
-    private func discardKey(_ keyId: String) {
-        guard cachedKeyId == nil || cachedKeyId == keyId else { return }
-        cachedKeyId = nil
-        keyStore.deleteKeyId()
+    private func store(_ record: AppAttestKeyRecord) {
+        cachedRecord = record
+        do {
+            try keyStore.saveKey(record)
+        } catch {
+            logger.warning("Failed to persist App Attest key state: \(error)")
+        }
+    }
+
+    private func clearKey() {
+        cachedRecord = nil
+        keyStore.deleteKey()
     }
 
     static func sha256(_ data: Data) -> Data {

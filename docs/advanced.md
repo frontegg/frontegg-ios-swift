@@ -788,7 +788,7 @@ Fetch a one-time challenge from your server, attest, and send the result back fo
 ```swift
 let appAttest = FronteggApp.shared.appAttest
 
-guard appAttest.isSupported else { return }
+guard appAttest.isSupported, try await !appAttest.isKeyAttested() else { return }
 
 let challenge = try await myBackend.fetchAttestationChallenge()
 let attestation = try await appAttest.attestKey(challenge: challenge)
@@ -799,7 +799,16 @@ try await myBackend.verifyAttestation(
 )
 ```
 
-The client data hash is `SHA256(challenge)`. The key identifier is stored in the keychain under `<keychainService>.appattest`, so it is reused across launches and survives logout. If the system rejects the stored key, the SDK generates a new key and retries attestation once.
+The client data hash is `SHA256(challenge)`. The key identifier and whether it has been attested are stored in the keychain under `<keychainService>.appattest`, so they are reused across launches and survive logout.
+
+Apple lets each key be attested only once. Once the stored key is attested, `attestKey(challenge:)` throws `keyAlreadyAttested` without contacting Apple, so an attested key is never replaced implicitly. To attest a new key, for example when your server lost the previous one, call `resetKey()` first:
+
+```swift
+await appAttest.resetKey()
+let attestation = try await appAttest.attestKey(challenge: challenge)
+```
+
+If the system rejects a key that has not been attested yet, the SDK generates a new key and retries attestation once. Calls to `attestKey`, `generateAssertion` and `resetKey` run one at a time, so an assertion never races a key change.
 
 ### Sign requests
 
@@ -821,11 +830,12 @@ Use `generateAssertion(for:)` to get the raw assertion instead.
 |------|---------|
 | `disabled` | `enableAppAttest` is not set |
 | `unsupported` | Simulator, unsupported device, or missing entitlement |
-| `keyNotAttested` | No key yet; call `attestKey(challenge:)` |
-| `keyInvalidated` | The key is no longer valid (for example after a restore to a new device); call `attestKey(challenge:)` again |
+| `keyNotAttested` | No attested key yet; call `attestKey(challenge:)` |
+| `keyAlreadyAttested` | The stored key is already attested; keep using it, or call `resetKey()` before `attestKey(challenge:)` to attest a new key |
+| `keyInvalidated` | The attested key is no longer valid (for example after a restore to a new device) and was removed; call `attestKey(challenge:)` again |
 | `invalidKey` | A fresh key was also rejected |
 | `serverUnavailable` | Apple's service is unreachable; retry later |
-| `failed(String)` | Any other failure |
+| `failed(String)` | Any other failure, including a locked keychain; the stored key is kept |
 
 Call `resetKey()` to discard the stored key.
 
