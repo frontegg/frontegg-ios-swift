@@ -84,6 +84,17 @@ public struct FronteggWebView: UIViewRepresentable {
             )
         }
 
+        if let footerScript = LoginBoxFooter.script(fronteggApp.loginBoxFooter) {
+            logger.debug("Injecting login box footer")
+            userContentController.addUserScript(
+                WKUserScript(source: footerScript, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+            )
+        } else if fronteggApp.loginBoxFooter != nil {
+            // Rejected wholesale — no usable rows — so the box renders with no
+            // footer at all rather than a partial one.
+            logger.error("loginBoxFooter was set but contains no usable rows; the login box will render without a footer")
+        }
+
         // FR-24939: a native step-up authorize URL bootstraps the hosted-login box on its
         // prelogin path, which never navigates to the step-up route on its own, so the box
         // renders blank instead of the MFA challenge. While presenting a step-up flow, inject
