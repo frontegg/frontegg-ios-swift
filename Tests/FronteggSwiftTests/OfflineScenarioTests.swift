@@ -17,6 +17,7 @@ class MockOfflineApi: Api {
     var responseQueues: [String: [(statusCode: Int, data: Data, error: Error?)]] = [:]
     var callLog: [(path: String, attempt: Int)] = []
     private var callCounts: [String: Int] = [:]
+    private let stateLock = NSLock()
 
     init() {
         super.init(baseUrl: "https://test.frontegg.com", clientId: "test-client-id", applicationId: nil)
@@ -49,16 +50,23 @@ class MockOfflineApi: Api {
         retries: Int = 0
     ) async throws -> (Data, URLResponse) {
         let normalizedPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        callCounts[normalizedPath, default: 0] += 1
-        callLog.append((path: normalizedPath, attempt: callCounts[normalizedPath]!))
 
-        if var queue = responseQueues[normalizedPath], !queue.isEmpty {
+        // /me and /me/tenants are requested concurrently, so the bookkeeping is
+        // serialized; the lock is released before any await.
+        let popped: (statusCode: Int, data: Data, error: Error?)? = stateLock.withLock {
+            callCounts[normalizedPath, default: 0] += 1
+            callLog.append((path: normalizedPath, attempt: callCounts[normalizedPath]!))
+            guard var queue = responseQueues[normalizedPath], !queue.isEmpty else { return nil }
             let entry = queue.removeFirst()
             responseQueues[normalizedPath] = queue
+            return entry
+        }
+
+        if let entry = popped {
 
             // If there's an error to throw
             if let error = entry.error {
-                if retries > 0, let nextQueue = responseQueues[normalizedPath], !nextQueue.isEmpty {
+                if retries > 0, hasQueuedResponse(normalizedPath) {
                     return try await getRequest(
                         path: path, accessToken: accessToken, refreshToken: refreshToken,
                         additionalHeaders: additionalHeaders, followRedirect: followRedirect,
@@ -78,7 +86,7 @@ class MockOfflineApi: Api {
 
             // Transient errors: retry if possible
             if Api.isTransientRefreshHTTPStatus(entry.statusCode) {
-                if retries > 0, let nextQueue = responseQueues[normalizedPath], !nextQueue.isEmpty {
+                if retries > 0, hasQueuedResponse(normalizedPath) {
                     return try await getRequest(
                         path: path, accessToken: accessToken, refreshToken: refreshToken,
                         additionalHeaders: additionalHeaders, followRedirect: followRedirect,
@@ -94,8 +102,12 @@ class MockOfflineApi: Api {
         throw ApiError.invalidUrl("No mock response for path: \(normalizedPath)")
     }
 
+    private func hasQueuedResponse(_ path: String) -> Bool {
+        stateLock.withLock { responseQueues[path]?.isEmpty == false }
+    }
+
     func callCount(for path: String) -> Int {
-        return callCounts[path] ?? 0
+        stateLock.withLock { callCounts[path] ?? 0 }
     }
 }
 
