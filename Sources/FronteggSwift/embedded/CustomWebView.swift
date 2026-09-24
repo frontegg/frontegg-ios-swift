@@ -552,6 +552,27 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 return .allow
             }
             
+            // An `http(s)` link the host put in the login box footer — typically
+            // the Privacy Policy / Terms attribution Google's terms require when
+            // the reCAPTCHA badge is hidden. This WebView has no navigation
+            // chrome, so loading it in place would strand the user with no way
+            // back to the login box.
+            //
+            // Matched against the exact configured URLs rather than a general
+            // "host differs from the auth origin" rule: the box legitimately
+            // navigates off-origin to social identity providers, and a broad
+            // rule would break those. Unlike the custom-scheme branch below,
+            // this does NOT dismiss the box — the user is expected to read the
+            // policy and come straight back to a login screen still in place.
+            if LoginBoxFooter.footerExternalUrls(FronteggApp.shared.loginBoxFooter)
+                .contains(url.absoluteString) {
+                logger.info("[Navigation] Opening login box footer link externally: \(url.absoluteString)")
+                DispatchQueue.main.async {
+                    UIApplication.shared.open(url, options: [:], completionHandler: nil)
+                }
+                return .cancel
+            }
+
             if let scheme = url.scheme, getAppURLSchemes().contains(scheme) {
                 let appSchemes = getAppURLSchemes()
                 logger.debug("🔵 [Social Login Debug] Custom scheme detected: \(scheme)")
