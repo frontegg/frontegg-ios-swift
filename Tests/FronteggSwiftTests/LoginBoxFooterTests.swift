@@ -195,6 +195,13 @@ final class LoginBoxFooterTests: XCTestCase {
         XCTAssertTrue(LoginBoxFooter.isExternalFooterLink(navigatedUrl, footer: footer))
     }
 
+    func testExternalFooterLinkResolvesDotSegments() throws {
+        let footer = footerPayload(url: "https://policies.google.com/legal/../privacy")
+        let navigatedUrl = try XCTUnwrap(URL(string: "https://policies.google.com/privacy"))
+
+        XCTAssertTrue(LoginBoxFooter.isExternalFooterLink(navigatedUrl, footer: footer))
+    }
+
     func testExternalFooterLinkDoesNotMatchOtherUrls() throws {
         let footer = footerPayload(url: "https://policies.google.com/privacy")
         let otherUrl = try XCTUnwrap(URL(string: "https://policies.google.com/terms"))
@@ -225,6 +232,15 @@ final class LoginBoxFooterTests: XCTestCase {
             ["javascript:alert(1)", "definitelynotregistered://sign-up"]
         )
         XCTAssertTrue(LoginBoxFooter.rejectedLinkUrls(nil).isEmpty)
+    }
+
+    func testRejectedLinkUrlsReportsNonStringUrls() throws {
+        let urlObject = try XCTUnwrap(URL(string: "https://policies.google.com/privacy"))
+        let footer: [String: Any] = ["rows": [["variant": "body", "segments": [
+            ["label": "Privacy", "url": urlObject]
+        ]]]]
+
+        XCTAssertEqual(LoginBoxFooter.rejectedLinkUrls(footer), ["https://policies.google.com/privacy"])
     }
 
     func testExternalUrlsAreEmptyWithoutAFooter() {

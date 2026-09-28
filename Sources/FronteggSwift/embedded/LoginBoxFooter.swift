@@ -145,8 +145,10 @@ enum LoginBoxFooter {
             .compactMap { $0["segments"] as? [[String: Any]] }
             .flatMap { $0 }
             .filter { ($0["text"] as? String)?.isEmpty ?? true }
-            .compactMap { $0["url"] as? String }
-            .filter { sanitizedLinkUrl($0) == nil }
+            .filter { ($0["label"] as? String)?.isEmpty == false }
+            .compactMap { $0["url"] }
+            .filter { sanitizedLinkUrl($0 as? String) == nil }
+            .map { String(describing: $0) }
     }
 
     private static let oauthCallbackParameterNames: Set<String> = ["code", "error", "error_description"]
@@ -185,9 +187,10 @@ enum LoginBoxFooter {
     }
 
     /// Normalizes a URL the way WebKit does before navigating, so a configured link
-    /// still matches: lowercased scheme and host, `/` for an empty path, no default port.
+    /// still matches: dot segments resolved, lowercased scheme and host, `/` for an empty path, no default port.
     static func canonicalLinkKey(_ url: String) -> String? {
-        guard var components = URLComponents(string: url) else { return nil }
+        guard let standardizedUrl = URL(string: url)?.standardized,
+              var components = URLComponents(url: standardizedUrl, resolvingAgainstBaseURL: false) else { return nil }
         let scheme = components.scheme?.lowercased()
         components.scheme = scheme
         components.host = components.host?.lowercased()

@@ -501,7 +501,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             // Checked ahead of the localhost and OIDC heuristics, which would otherwise swallow it.
             if navigationAction.navigationType == .linkActivated,
                LoginBoxFooter.isExternalFooterLink(url, footer: FronteggApp.shared.loginBoxFooter) {
-                logger.info("[Navigation] Opening login box footer link externally: \(url.absoluteString)")
+                logger.info("[Navigation] Opening login box footer link externally: host=\(url.host ?? "nil") path=\(url.path)")
                 DispatchQueue.main.async {
                     UIApplication.shared.open(url, options: [:], completionHandler: nil)
                 }
