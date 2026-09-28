@@ -60,7 +60,7 @@ class StepUpAuthenticator {
                 stepUp: true,
                 maxAge: maxAge
             )
-            let stepUpCompletion = self.completionForStepUp(self.beginStepUp(), completion: completion)
+            let stepUpCompletion = self.makeStepUpCompletion(completion)
             FronteggAuth.shared.setIsStepUpAuthorization(true)
             FronteggAuth.shared.setIsLoading(false)
 
@@ -76,17 +76,10 @@ class StepUpAuthenticator {
         }
     }
 
-    func beginStepUp() -> UUID {
+    /// Makes this the current step-up; only the current step-up clears shared step-up state, so a stale completion cannot close a newer window.
+    func makeStepUpCompletion(_ completion: FronteggAuth.CompletionHandler?) -> FronteggAuth.CompletionHandler {
         let stepUpId = UUID()
         activeStepUpId = stepUpId
-        return stepUpId
-    }
-
-    /// Only the current step-up clears shared step-up state, so a stale completion cannot close a newer window.
-    func completionForStepUp(
-        _ stepUpId: UUID,
-        completion: FronteggAuth.CompletionHandler?
-    ) -> FronteggAuth.CompletionHandler {
         return { result in
             DispatchQueue.main.async {
                 if self.activeStepUpId == stepUpId {

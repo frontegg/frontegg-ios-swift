@@ -73,8 +73,8 @@ extension FronteggAuth {
         return false
     }
 
-    func isEmbeddedLoginPresented(on rootVC: UIViewController) -> Bool {
-        rootVC.presentedViewController is UIHostingController<EmbeddedLoginModal>
+    func isEmbeddedLoginPresented(on controller: UIViewController) -> Bool {
+        controller.presentedViewController is UIHostingController<EmbeddedLoginModal>
     }
 
     public func handleOpenUrl(_ url: URL, _ useAppRootVC: Bool = false, internalHandleUrl:Bool = false) -> Bool {

@@ -256,10 +256,7 @@ final class StepUpAuthenticatorTests: XCTestCase {
     func test_currentStepUpCompletion_clearsStepUpStateAndCompletes() {
         let auth = FronteggAuth.shared
         let completed = expectation(description: "step-up completion called")
-        let stepUpCompletion = stepUpAuthenticator.completionForStepUp(
-            stepUpAuthenticator.beginStepUp(),
-            completion: { _ in completed.fulfill() }
-        )
+        let stepUpCompletion = stepUpAuthenticator.makeStepUpCompletion { _ in completed.fulfill() }
         auth.setIsStepUpAuthorization(true)
 
         stepUpCompletion(.failure(.authError(.operationCanceled)))
@@ -272,11 +269,8 @@ final class StepUpAuthenticatorTests: XCTestCase {
     func test_staleStepUpCompletion_doesNotClearNewerStepUp() {
         let auth = FronteggAuth.shared
         let completed = expectation(description: "stale completion still reported to its caller")
-        let staleCompletion = stepUpAuthenticator.completionForStepUp(
-            stepUpAuthenticator.beginStepUp(),
-            completion: { _ in completed.fulfill() }
-        )
-        _ = stepUpAuthenticator.beginStepUp()
+        let staleCompletion = stepUpAuthenticator.makeStepUpCompletion { _ in completed.fulfill() }
+        _ = stepUpAuthenticator.makeStepUpCompletion(nil)
         auth.setIsStepUpAuthorization(true)
 
         staleCompletion(.failure(.authError(.operationCanceled)))
