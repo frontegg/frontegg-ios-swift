@@ -59,11 +59,16 @@ extension FronteggAuth {
 
     /// Whether an embedded login modal is on screen with a completion still pending.
     var isEmbeddedLoginInProgress: Bool {
-        guard loginCompletion != nil, let rootVC = getRootVC() else { return false }
-        return isEmbeddedLoginPresented(on: rootVC)
+        guard loginCompletion != nil else { return false }
+        var presentingController = getRootVC(true)
+        while let controller = presentingController {
+            if isEmbeddedLoginPresented(on: controller) { return true }
+            presentingController = controller.presentedViewController
+        }
+        return false
     }
 
-    private func isEmbeddedLoginPresented(on rootVC: UIViewController) -> Bool {
+    func isEmbeddedLoginPresented(on rootVC: UIViewController) -> Bool {
         rootVC.presentedViewController is UIHostingController<EmbeddedLoginModal>
     }
 
@@ -372,8 +377,7 @@ extension FronteggAuth {
         let hostingController = UIHostingController(rootView: loginModal)
         hostingController.modalPresentationStyle = .fullScreen
 
-        let presented = rootVC.presentedViewController
-        if presented is UIHostingController<EmbeddedLoginModal> {
+        if isEmbeddedLoginPresented(on: rootVC) {
             rootVC.presentedViewController?.dismiss(animated: false)
         }
         rootVC.present(hostingController, animated: false, completion: nil)

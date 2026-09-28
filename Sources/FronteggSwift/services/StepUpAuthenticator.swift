@@ -49,11 +49,6 @@ class StepUpAuthenticator {
         maxAge: TimeInterval? = nil,
         completion: FronteggAuth.CompletionHandler? = nil
     ) {
-        let (authorizeUrl, _) = AuthorizeUrlGenerator.shared.generate(
-            stepUp: true,
-            maxAge: maxAge
-        )
-
         DispatchQueue.main.async {
             // embeddedLogin would ignore this request and drop its completion, leaving step-up state set.
             if FronteggAuth.shared.isEmbeddedLoginInProgress {
@@ -61,6 +56,10 @@ class StepUpAuthenticator {
                 return
             }
 
+            let (authorizeUrl, _) = AuthorizeUrlGenerator.shared.generate(
+                stepUp: true,
+                maxAge: maxAge
+            )
             let stepUpCompletion = self.completionForStepUp(self.beginStepUp(), completion: completion)
             FronteggAuth.shared.setIsStepUpAuthorization(true)
             FronteggAuth.shared.setIsLoading(false)
