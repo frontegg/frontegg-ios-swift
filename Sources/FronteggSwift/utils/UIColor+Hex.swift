@@ -32,6 +32,6 @@ extension UIColor {
     /// Resolves the plist `backgroundColor`: a hex string, or an asset-catalog color name.
     static func fronteggBackgroundColor(from configuredValue: String?) -> UIColor? {
         guard let configuredValue else { return nil }
-        return UIColor(hexString: configuredValue) ?? UIColor(named: configuredValue)
+        return UIColor(named: configuredValue) ?? UIColor(hexString: configuredValue)
     }
 }

@@ -120,19 +120,11 @@ public struct FronteggWebView: UIViewRepresentable {
         webView.navigationDelegate = webView;
         webView.uiDelegate = webView
         controller.webView = webView
-        // A background the host configured wins. With none, the web view is
-        // left transparent rather than opaque: during the OAuth redirect the
-        // outgoing document is torn down before the incoming one paints, and an
-        // opaque web view painted its own background over whatever the host had
-        // on screen. Measured on an iOS login handoff as a 1.25s full-screen
-        // white flash sitting between two frames of the host app's own loader.
-        if let backgroundColor = FronteggApp.shared.backgroundColor {
-            webView.backgroundColor = backgroundColor
-        } else {
-            webView.isOpaque = false
-            webView.backgroundColor = .clear
-            webView.scrollView.backgroundColor = .clear
-        }
+        // Non-opaque so WKWebView shows this color between pages instead of painting its own white.
+        let webViewBackgroundColor = FronteggApp.shared.backgroundColor ?? .clear
+        webView.isOpaque = false
+        webView.backgroundColor = webViewBackgroundColor
+        webView.scrollView.backgroundColor = webViewBackgroundColor
 
         #if compiler(>=5.8) && os(iOS) && DEBUG
         if #available(iOS 16.4, *) {

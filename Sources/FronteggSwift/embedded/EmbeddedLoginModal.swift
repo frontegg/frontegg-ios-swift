@@ -32,13 +32,7 @@ public struct EmbeddedLoginModal: View {
                 && !fronteggAuth.isStepUpAuthorization
             {
 
-                // Unanimated on purpose. This branch runs after authentication
-                // succeeds, when the host app is already showing its own loader
-                // underneath. An animated dismissal slides this loader — and the
-                // spinner in it — down and off the screen over the host's
-                // stationary spinner, which reads as the spinner jumping away and
-                // back. Every other dismissal in the auth flow is already
-                // unanimated for the same reason.
+                // Unanimated so this loader does not slide away over the host's own post-auth loader.
                 DefaultLoader().onAppear() {
                     VCHolder.shared.vc?.presentedViewController?.dismiss(animated: false)
                     VCHolder.shared.vc = nil

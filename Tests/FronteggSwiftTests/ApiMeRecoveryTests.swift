@@ -13,6 +13,7 @@ private final class MockMeRecoveryApi: Api {
     var refreshResults: [Result<AuthResponse, Error>] = []
     var responseQueues: [String: [(statusCode: Int, data: Data, error: Error?)]] = [:]
     var callCounts: [String: Int] = [:]
+    private let stateLock = NSLock()
 
     init() {
         super.init(baseUrl: "https://test.example.com", clientId: "test-client", applicationId: nil)
@@ -50,17 +51,21 @@ private final class MockMeRecoveryApi: Api {
         retries: Int = 0
     ) async throws -> (Data, URLResponse) {
         let normalizedPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        callCounts[normalizedPath, default: 0] += 1
+        // /me and /me/tenants are requested concurrently, so the bookkeeping is serialized.
+        let popped: (statusCode: Int, data: Data, error: Error?)? = stateLock.withLock {
+            callCounts[normalizedPath, default: 0] += 1
+            guard var queue = responseQueues[normalizedPath], !queue.isEmpty else { return nil }
+            let entry = queue.removeFirst()
+            responseQueues[normalizedPath] = queue
+            return entry
+        }
 
-        guard var queue = responseQueues[normalizedPath], !queue.isEmpty else {
+        guard let entry = popped else {
             throw ApiError.invalidUrl("No mock response for path: \(normalizedPath)")
         }
 
-        let entry = queue.removeFirst()
-        responseQueues[normalizedPath] = queue
-
         if let error = entry.error {
-            if retries > 0, let nextQueue = responseQueues[normalizedPath], !nextQueue.isEmpty {
+            if retries > 0, hasQueuedResponse(normalizedPath) {
                 return try await getRequest(
                     path: path,
                     accessToken: accessToken,
@@ -82,7 +87,7 @@ private final class MockMeRecoveryApi: Api {
         }
 
         if Api.isTransientRefreshHTTPStatus(entry.statusCode) {
-            if retries > 0, let nextQueue = responseQueues[normalizedPath], !nextQueue.isEmpty {
+            if retries > 0, hasQueuedResponse(normalizedPath) {
                 return try await getRequest(
                     path: path,
                     accessToken: accessToken,
@@ -97,6 +102,10 @@ private final class MockMeRecoveryApi: Api {
         }
 
         return (entry.data, httpResponse)
+    }
+
+    private func hasQueuedResponse(_ path: String) -> Bool {
+        stateLock.withLock { responseQueues[path]?.isEmpty == false }
     }
 
     func enqueueJSON(path: String, statusCode: Int, json: [String: Any]) {

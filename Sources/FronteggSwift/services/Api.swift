@@ -44,21 +44,7 @@ public class Api {
         return (500...599).contains(statusCode)
     }
 
-    /// One `URLSession` per (timeout, redirect-policy) pair, shared process-wide.
-    ///
-    /// Every request used to build its own session, and a session owns its own
-    /// connection pool — so three sequential calls to the same host opened three
-    /// connections and paid three TLS handshakes. Measured on an iOS login
-    /// handoff: 107ms + 495ms + 752ms of connect time for `oauth/token`, `/me`
-    /// and `/me/tenants`, all to the same origin. Sharing the session lets
-    /// HTTP/2 multiplex them over one connection instead.
-    ///
-    /// It also stops leaking a session per request: `URLSession` strongly
-    /// retains its delegate until invalidated, and these were never invalidated.
-    ///
-    /// Keyed rather than a single instance because the timeouts are session-level
-    /// and callers pass their own, and the redirect policy is a delegate — which
-    /// is likewise fixed per session.
+    /// One shared `URLSession` per (timeout, redirect-policy) pair so requests reuse connections.
     private static let sessionCacheLock = NSLock()
     private static var sessionCache: [String: URLSession] = [:]
 
@@ -406,6 +392,9 @@ public class Api {
                     followRedirect: followRedirect,
                     error: error
                 )
+                if Task.isCancelled {
+                    throw error
+                }
                 logHttpError(
                     error,
                     method: "GET",
@@ -838,13 +827,7 @@ public class Api {
         let mePath = "identity/resources/users/v2/me"
         let tenantsPath = "identity/resources/users/v3/me/tenants"
 
-        // Issued together rather than in sequence. Neither feeds the other —
-        // both carry only `accessToken` — so awaiting them one after the other
-        // spent a whole extra round trip on every login (measured 1.3-1.9s
-        // against staging, on top of the token exchange before them).
-        //
-        // Awaited in order, so a failing `/me` still surfaces its own error; the
-        // in-flight tenants request is then cancelled, and getRequest does not retry it.
+        // Fetched concurrently; awaited in order so a failing /me surfaces its own error and cancels tenants.
         async let mePending = getRequest(path: mePath, accessToken: accessToken, retries: 3)
         async let tenantsPending = getRequest(path: tenantsPath, accessToken: accessToken, retries: 3)
 
