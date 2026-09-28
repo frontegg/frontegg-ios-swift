@@ -23,7 +23,7 @@ extension FronteggAuth {
                 self.activeEmbeddedOAuthFlow = .login
             }
             if let staleCompletion = self.loginCompletion {
-                if rootVC.presentedViewController is UIHostingController<EmbeddedLoginModal> {
+                if isEmbeddedLoginPresented(on: rootVC) {
                     logger.info("Login request ignored, Embedded login already in progress.")
                     return
                 }
@@ -55,6 +55,16 @@ extension FronteggAuth {
             logger.critical(error.localizedDescription)
             _completion?(.failure(error))
         }
+    }
+
+    /// Whether an embedded login modal is on screen with a completion still pending.
+    var isEmbeddedLoginInProgress: Bool {
+        guard loginCompletion != nil, let rootVC = getRootVC() else { return false }
+        return isEmbeddedLoginPresented(on: rootVC)
+    }
+
+    private func isEmbeddedLoginPresented(on rootVC: UIViewController) -> Bool {
+        rootVC.presentedViewController is UIHostingController<EmbeddedLoginModal>
     }
 
     public func handleOpenUrl(_ url: URL, _ useAppRootVC: Bool = false, internalHandleUrl:Bool = false) -> Bool {

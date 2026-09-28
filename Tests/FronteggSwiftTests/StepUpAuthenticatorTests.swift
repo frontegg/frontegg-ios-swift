@@ -251,6 +251,41 @@ final class StepUpAuthenticatorTests: XCTestCase {
         )
     }
 
+    // MARK: - Step-up completion ownership
+
+    func test_currentStepUpCompletion_clearsStepUpStateAndCompletes() {
+        let auth = FronteggAuth.shared
+        let completed = expectation(description: "step-up completion called")
+        let stepUpCompletion = stepUpAuthenticator.completionForStepUp(
+            stepUpAuthenticator.beginStepUp(),
+            completion: { _ in completed.fulfill() }
+        )
+        auth.setIsStepUpAuthorization(true)
+
+        stepUpCompletion(.failure(.authError(.operationCanceled)))
+
+        wait(for: [completed], timeout: 2.0)
+        XCTAssertFalse(auth.isStepUpAuthorization, "The finishing step-up must clear the flag so EmbeddedLoginModal can dismiss")
+    }
+
+    /// FR-27252: a stale completion cancelled by a newer stepUp() must not clear the
+    /// newer step-up's flag, or the new window closes itself before MFA.
+    func test_staleStepUpCompletion_doesNotClearNewerStepUp() {
+        let auth = FronteggAuth.shared
+        let completed = expectation(description: "stale completion still reported to its caller")
+        let staleCompletion = stepUpAuthenticator.completionForStepUp(
+            stepUpAuthenticator.beginStepUp(),
+            completion: { _ in completed.fulfill() }
+        )
+        _ = stepUpAuthenticator.beginStepUp()
+        auth.setIsStepUpAuthorization(true)
+
+        staleCompletion(.failure(.authError(.operationCanceled)))
+
+        wait(for: [completed], timeout: 2.0)
+        XCTAssertTrue(auth.isStepUpAuthorization, "Only the current step-up may clear the flag")
+    }
+
     // MARK: - Helpers
 
     /// Drains queued `DispatchQueue.main.async` blocks scheduled by

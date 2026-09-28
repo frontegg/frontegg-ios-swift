@@ -48,7 +48,8 @@ public struct EmbeddedLoginModal: View {
         }
         .onDisappear {
             self.fronteggAuth.setWebLoading(false)
-            guard !self.fronteggAuth.isAuthenticated || self.fronteggAuth.isStepUpAuthorization else { return }
+            let isAuthenticationUnfinished = !self.fronteggAuth.isAuthenticated || self.fronteggAuth.isStepUpAuthorization
+            guard isAuthenticationUnfinished else { return }
             guard let rootVC = VCHolder.shared.vc else { return }
             // Avoid canceling a newer embedded login if this onDisappear is delayed
             // after a replacement modal was already presented.

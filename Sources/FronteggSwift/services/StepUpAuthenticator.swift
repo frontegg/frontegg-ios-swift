@@ -10,6 +10,7 @@ import Foundation
 
 class StepUpAuthenticator {
     private let credentialManager: CredentialManager
+    private var activeStepUpId: UUID?
 
     init(
         credentialManager: CredentialManager
@@ -48,20 +49,19 @@ class StepUpAuthenticator {
         maxAge: TimeInterval? = nil,
         completion: FronteggAuth.CompletionHandler? = nil
     ) {
-        let updatedCompletion: FronteggAuth.CompletionHandler = { (result) in
-            DispatchQueue.main.async {
-                FronteggAuth.shared.setIsStepUpAuthorization(false)
-                FronteggAuth.shared.setIsLoading(false)
-                completion?(result)
-            }
-        }
-
         let (authorizeUrl, _) = AuthorizeUrlGenerator.shared.generate(
             stepUp: true,
             maxAge: maxAge
         )
 
         DispatchQueue.main.async {
+            // embeddedLogin would ignore this request and drop its completion, leaving step-up state set.
+            if FronteggAuth.shared.isEmbeddedLoginInProgress {
+                completion?(.failure(.authError(.operationCanceled)))
+                return
+            }
+
+            let stepUpCompletion = self.completionForStepUp(self.beginStepUp(), completion: completion)
             FronteggAuth.shared.setIsStepUpAuthorization(true)
             FronteggAuth.shared.setIsLoading(false)
 
@@ -73,7 +73,31 @@ class StepUpAuthenticator {
             FronteggAuth.shared.activeEmbeddedOAuthFlow = .stepUp
             FronteggAuth.shared.pendingAppLink = authorizeUrl
             FronteggAuth.shared.setWebLoading(true)
-            FronteggAuth.shared.embeddedLogin(updatedCompletion, loginHint: nil)
+            FronteggAuth.shared.embeddedLogin(stepUpCompletion, loginHint: nil)
+        }
+    }
+
+    func beginStepUp() -> UUID {
+        let stepUpId = UUID()
+        activeStepUpId = stepUpId
+        return stepUpId
+    }
+
+    /// Only the current step-up clears the shared step-up state, so a stale completion
+    /// cancelled by a newer stepUp() cannot close the newer step-up's window.
+    func completionForStepUp(
+        _ stepUpId: UUID,
+        completion: FronteggAuth.CompletionHandler?
+    ) -> FronteggAuth.CompletionHandler {
+        return { result in
+            DispatchQueue.main.async {
+                if self.activeStepUpId == stepUpId {
+                    self.activeStepUpId = nil
+                    FronteggAuth.shared.setIsStepUpAuthorization(false)
+                    FronteggAuth.shared.setIsLoading(false)
+                }
+                completion?(result)
+            }
         }
     }
 }
