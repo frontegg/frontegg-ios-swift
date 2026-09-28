@@ -51,24 +51,23 @@ public class Api {
     internal static func session(timeout: Int, followRedirect: Bool) -> URLSession {
         let key = "\(timeout)|\(followRedirect)"
 
-        sessionCacheLock.lock()
-        defer { sessionCacheLock.unlock() }
+        return sessionCacheLock.withLock { () -> URLSession in
+            if let cached = sessionCache[key] {
+                return cached
+            }
 
-        if let cached = sessionCache[key] {
-            return cached
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = TimeInterval(timeout)
+            config.timeoutIntervalForResource = TimeInterval(timeout)
+            config.waitsForConnectivity = false
+
+            let session = followRedirect
+                ? URLSession(configuration: config)
+                : URLSession(configuration: config, delegate: RedirectHandler(), delegateQueue: nil)
+
+            sessionCache[key] = session
+            return session
         }
-
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = TimeInterval(timeout)
-        config.timeoutIntervalForResource = TimeInterval(timeout)
-        config.waitsForConnectivity = false
-
-        let session = followRedirect
-            ? URLSession(configuration: config)
-            : URLSession(configuration: config, delegate: RedirectHandler(), delegateQueue: nil)
-
-        sessionCache[key] = session
-        return session
     }
 
     private let logger = getLogger("Api")
@@ -430,6 +429,9 @@ public class Api {
             if retries > 0, let http = response as? HTTPURLResponse {
                 if http.statusCode == 401 {
                     let error = ApiError.meEndpointFailed(statusCode: 401, path: path)
+                    if Task.isCancelled {
+                        throw error
+                    }
                     logHttpError(
                         error,
                         method: "GET",
@@ -445,6 +447,9 @@ public class Api {
                     if attempt < retries {
                         await sleepBeforeRetry(attempt: attempt)
                         continue
+                    }
+                    if Task.isCancelled {
+                        throw error
                     }
                     logHttpError(
                         error,
