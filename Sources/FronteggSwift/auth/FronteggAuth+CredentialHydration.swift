@@ -242,7 +242,6 @@ extension FronteggAuth {
                 setIsOfflineMode(shouldEnterOfflineMode)
                 setAppLink(false)
                 setInitializing(false)
-                setIsStepUpAuthorization(false)
 
                 // isLoading must be at the bottom
                 setIsLoading(false)
