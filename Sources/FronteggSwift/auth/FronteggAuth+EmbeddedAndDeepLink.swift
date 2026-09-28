@@ -32,7 +32,7 @@ extension FronteggAuth {
                 self.loginCompletion = nil
                 staleCompletion(.failure(.authError(.operationCanceled)))
             }
-            if isRegularLogin {
+            if isRegularLogin && !isEmbeddedLoginInProgress {
                 // A regular login is never a step-up, so a flag left by an abandoned step-up must not block its dismissal.
                 setIsStepUpAuthorization(false)
             }
