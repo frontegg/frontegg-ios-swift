@@ -243,6 +243,23 @@ final class LoginBoxFooterTests: XCTestCase {
         XCTAssertEqual(LoginBoxFooter.rejectedLinkUrls(footer), ["https://policies.google.com/privacy"])
     }
 
+    func testRejectedLinkUrlsOmitQueryAndFragment() {
+        let footer: [String: Any] = ["rows": [["variant": "body", "segments": [
+            ["label": "Invite", "url": "definitelynotregistered://sign-up?code=INVITE#ref=abc"]
+        ]]]]
+
+        XCTAssertEqual(LoginBoxFooter.rejectedLinkUrls(footer), ["definitelynotregistered://sign-up"])
+    }
+
+    /// The custom-scheme branch parses query items after percent-encoding `#`, so a
+    /// hash-routed URL's fragment is read as a query there.
+    func testOAuthCallbackParameterInFragmentIsDetected() {
+        XCTAssertTrue(LoginBoxFooter.carriesOAuthCallbackParameter("myapp://app/#/sign-up?code=INVITE"))
+        XCTAssertTrue(LoginBoxFooter.carriesOAuthCallbackParameter("myapp://sign-up?plan=pro#&error=x"))
+        XCTAssertTrue(LoginBoxFooter.carriesOAuthCallbackParameter("myapp://sign-up?code=INVITE"))
+        XCTAssertFalse(LoginBoxFooter.carriesOAuthCallbackParameter("myapp://sign-up?plan=pro#section"))
+    }
+
     func testExternalUrlsAreEmptyWithoutAFooter() {
         XCTAssertTrue(LoginBoxFooter.footerExternalUrls(nil).isEmpty)
         XCTAssertTrue(LoginBoxFooter.footerExternalUrls(["rows": []]).isEmpty)

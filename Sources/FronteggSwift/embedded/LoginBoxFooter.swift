@@ -131,14 +131,18 @@ enum LoginBoxFooter {
 
         guard appUrlSchemes().contains(scheme) else { return nil }
 
-        // The custom-scheme branch treats these as an OAuth callback, not a hand-off.
-        let carriesOAuthCallbackParameter = components.queryItems?.contains {
-            oauthCallbackParameterNames.contains($0.name)
-        } ?? false
-        return carriesOAuthCallbackParameter ? nil : url
+        return carriesOAuthCallbackParameter(url) ? nil : url
     }
 
-    /// The configured link URLs that fail `sanitizedLinkUrl` and so render as plain text.
+    /// Whether the custom-scheme branch would treat this URL as an OAuth callback rather than a hand-off.
+    static func carriesOAuthCallbackParameter(_ url: String) -> Bool {
+        let standardQueryNames = URLComponents(string: url)?.queryItems?.map(\.name) ?? []
+        let delegateQueryNames = getQueryItems(url).map { Array($0.keys) } ?? []
+        return !oauthCallbackParameterNames.isDisjoint(with: standardQueryNames + delegateQueryNames)
+    }
+
+    /// The configured link URLs that fail `sanitizedLinkUrl` and so render as plain text,
+    /// cut before any query or fragment, since those can carry an invite code.
     static func rejectedLinkUrls(_ footer: [String: Any]?) -> [String] {
         guard let rows = footer?["rows"] as? [[String: Any]] else { return [] }
         return rows
@@ -148,7 +152,9 @@ enum LoginBoxFooter {
             .filter { ($0["label"] as? String)?.isEmpty == false }
             .compactMap { $0["url"] }
             .filter { sanitizedLinkUrl($0 as? String) == nil }
-            .map { String(describing: $0) }
+            .map { rejectedUrl in
+                String(String(describing: rejectedUrl).prefix { character in character != "?" && character != "#" })
+            }
     }
 
     private static let oauthCallbackParameterNames: Set<String> = ["code", "error", "error_description"]
