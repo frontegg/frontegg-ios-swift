@@ -125,6 +125,9 @@ public struct FronteggWebView: UIViewRepresentable {
         webView.isOpaque = false
         webView.backgroundColor = webViewBackgroundColor
         webView.scrollView.backgroundColor = webViewBackgroundColor
+        if #available(iOS 15.0, *) {
+            webView.underPageBackgroundColor = webViewBackgroundColor
+        }
 
         #if compiler(>=5.8) && os(iOS) && DEBUG
         if #available(iOS 16.4, *) {
