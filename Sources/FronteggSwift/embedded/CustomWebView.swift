@@ -574,7 +574,10 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 return .allow
             }
             
-            if let scheme = url.scheme, CustomWebView.isAppUrlScheme(scheme, appSchemes: getAppURLSchemes()) {
+            // A generated callback on a scheme registered in another case keeps its HostedLoginCallback routing below.
+            if let scheme = url.scheme,
+               CustomWebView.isAppUrlScheme(scheme, appSchemes: getAppURLSchemes()),
+               matchedGeneratedCallbackUri == nil || getAppURLSchemes().contains(scheme) {
                 let appSchemes = getAppURLSchemes()
                 logger.debug("🔵 [Social Login Debug] Custom scheme detected: \(scheme)")
                 logger.debug("🔵 [Social Login Debug] All app URL schemes: \(appSchemes)")
