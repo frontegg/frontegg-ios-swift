@@ -364,6 +364,9 @@ public class Api {
         }
 
         for attempt in 0...retries {
+            if attempt > 0 {
+                try Task.checkCancellation()
+            }
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
             request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -840,9 +843,8 @@ public class Api {
         // spent a whole extra round trip on every login (measured 1.3-1.9s
         // against staging, on top of the token exchange before them).
         //
-        // Failure behaviour is unchanged: the tuple below is awaited in order,
-        // so a failing `/me` still produces the error the caller used to see,
-        // and the in-flight tenants request is cancelled when this scope exits.
+        // Awaited in order, so a failing `/me` still surfaces its own error; the
+        // in-flight tenants request is then cancelled, and getRequest does not retry it.
         async let mePending = getRequest(path: mePath, accessToken: accessToken, retries: 3)
         async let tenantsPending = getRequest(path: tenantsPath, accessToken: accessToken, retries: 3)
 
