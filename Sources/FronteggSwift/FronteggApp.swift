@@ -223,14 +223,8 @@ public class FronteggApp {
         self.shouldSuggestSavePassword = config.shouldSuggestSavePassword
         self.handleLoginWithSocialProvider = config.handleLoginWithSocialProvider
         self.handleLoginWithCustomSocialLoginProvider = config.handleLoginWithCustomSocialLoginProvider
-        // Only resolved when the host actually asked for one. The previous
-        // expression defaulted the name to "#FFFFFF" and ran it through
-        // `UIColor(named:)`, which is an asset-catalog lookup and cannot parse a
-        // hex string — so it always fell through to `.white`, and every host got
-        // an opaque white web view whether it had configured a background or
-        // not. Left nil, `FronteggWebView` keeps the web view transparent so the
-        // host's own surface shows through the gaps between documents.
-        self.backgroundColor = config.backgroundColor.flatMap { UIColor(named: $0) }
+        // Left nil when unset, so FronteggWebView keeps the web view transparent.
+        self.backgroundColor = UIColor.fronteggBackgroundColor(from: config.backgroundColor)
         self.loginOrganizationAlias = config.loginOrganizationAlias
         self.entitlementsEnabled = config.entitlementsEnabled
         self.useAssetLinks = config.useAssetLinks
