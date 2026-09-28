@@ -1,28 +1,21 @@
 //
 //  LoginBoxFooter.swift
 //
-//  Lets a host app append content below the embedded login box's card.
+//  Hands a host-supplied footer to the embedded login box.
 //
 
 import Foundation
 
-/// Builds the document-start script that renders a host-supplied footer below the
-/// embedded login box's card, on its login screen only.
+/// Builds the document-start script that hands a host-supplied footer to the
+/// hosted login box, which renders it below the login screen's inputs.
 ///
-/// The box's configuration has no slot for content below the card — the React SDK
-/// exposes a `boxFooter` render prop for exactly this, but that has no equivalent
-/// when the box is served into a WebView. Host apps that must show something there
-/// (a sign-up entry point, or the reCAPTCHA attribution Google's terms require when
-/// the badge is hidden) have nowhere else to put it.
-///
-/// Unlike ``LoginBoxCustomization``, which hands values to the box's own
-/// configuration, the footer is built in the DOM — but from a *structured* payload
-/// (text and label/URL pairs) rather than host-supplied HTML, and anchored on
-/// `[data-test-id="root-element"]`. A test id is part of the box's test contract
-/// rather than its generated styling, which is what makes this narrow exception
-/// tolerable where CSS/class-name styling would not be. No host string is ever
-/// interpreted as markup.
+/// The box reads `window.__fronteggLoginBoxFooter` and renders it through its own
+/// `boxFooter` slot, the same slot the React SDK exposes. See `hostFooter.ts` in
+/// oauth-service. The payload is structured (text and label/URL pairs), never markup,
+/// and is sanitized here as well as in the box.
 enum LoginBoxFooter {
+
+    static let globalName = "__fronteggLoginBoxFooter"
 
     /// Schemes that can execute script or read local data; never admissible.
     private static let deniedSchemes: Set<String> = [
@@ -36,7 +29,7 @@ enum LoginBoxFooter {
               let json = LoginBoxCustomization.encodeOverrides(sanitized) else {
             return nil
         }
-        return template.replacingOccurrences(of: "__FRONTEGG_FOOTER__", with: json)
+        return "window.\(globalName) = \(json);"
     }
 
     /// Normalizes a host-supplied footer payload, dropping anything unsafe.
@@ -228,171 +221,4 @@ enum LoginBoxFooter {
             .flatMap { $0 }
             .map { $0.lowercased() }
     }
-
-    private static let template = """
-    (function () {
-      if (window.__fronteggLoginBoxFooterInstalled) { return; }
-      window.__fronteggLoginBoxFooterInstalled = true;
-
-      var FOOTER = __FRONTEGG_FOOTER__;
-      var FOOTER_ID = 'frontegg-login-box-footer';
-      var ROOT_SELECTOR = '[data-test-id="root-element"]';
-      // The footer follows the login screen only, mirroring the React SDK where
-      // `boxFooter` is configured under `login` and the other screens
-      // (forgot-password, MFA, signup) carry their own. Keyed on the login
-      // title's test id, which is present on that screen and no other.
-      var LOGIN_MARKER = '[data-test-id="login-page-title"]';
-
-      // ---- footer ----------------------------------------------------------
-      // Google's badge is rendered into the light DOM at body level, so a
-      // document-level stylesheet reaches it even though the box itself lives
-      // in a shadow root. Hiding it is only permitted alongside the visible
-      // attribution the host supplies in `rows`, so the badge is restored
-      // whenever the footer is not on screen.
-      function setCaptchaBadgeHidden(hidden) {
-        var badgeStyle = document.getElementById(FOOTER_ID + '-badge-style');
-        if (!hidden || !FOOTER.hideCaptchaBadge) {
-          if (badgeStyle) { badgeStyle.remove(); }
-          return;
-        }
-        if (badgeStyle) { return; }
-        var head = document.head || document.documentElement;
-        if (!head) { return; }
-        var style = document.createElement('style');
-        style.id = FOOTER_ID + '-badge-style';
-        style.textContent = '.grecaptcha-badge{visibility:hidden!important;}';
-        head.appendChild(style);
-      }
-
-      function boxShadowRoot() {
-        var found = null;
-        var all = document.querySelectorAll('*');
-        for (var i = 0; i < all.length; i++) {
-          var host = all[i];
-          if (host.shadowRoot && host.shadowRoot.querySelector(ROOT_SELECTOR)) {
-            found = host.shadowRoot;
-            break;
-          }
-        }
-        return found;
-      }
-
-      // The box nests several full-height centring wrappers inside
-      // [root-element] before the card. Descend while a wrapper has exactly one
-      // child that still fills it; the first child that does NOT fill its
-      // parent is the card, so we stop on the card's parent and append there.
-      // The footer then flows directly under the card, and that column's
-      // justify-content:center re-centres the pair.
-      //
-      // Deliberately geometric rather than structural: it reads the layout the
-      // box actually produced instead of hard-coding a depth, so an added or
-      // removed wrapper does not silently move the footer inside the card.
-      function insertionPoint(shadowRoot) {
-        var node = shadowRoot.querySelector(ROOT_SELECTOR);
-        if (!node) { return null; }
-        var guard = 0;
-        while (node.childElementCount === 1 && guard++ < 10) {
-          var child = node.firstElementChild;
-          var parentHeight = node.getBoundingClientRect().height;
-          var childHeight = child.getBoundingClientRect().height;
-          if (!(parentHeight > 0 && childHeight >= 0.9 * parentHeight)) { break; }
-          node = child;
-        }
-        return node;
-      }
-
-      function buildRow(row) {
-        var line = document.createElement('div');
-        var fine = row.variant === 'fine';
-        line.style.cssText = [
-          'text-align:center',
-          'margin-top:' + (fine ? '24px' : '16px'),
-          'font-size:' + (fine ? '9px' : '14px'),
-          'line-height:1.3',
-          'color:' + (fine ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0.87)'),
-          'font-family:inherit'
-        ].join(';');
-
-        (row.segments || []).forEach(function (segment) {
-          if (segment.url) {
-            var anchor = document.createElement('a');
-            // textContent, never innerHTML: host copy is never markup.
-            anchor.textContent = segment.label;
-            anchor.setAttribute('href', segment.url);
-            anchor.style.cssText =
-              'font-size:inherit;line-height:inherit;color:#2e74c7;text-decoration:none';
-            line.appendChild(anchor);
-          } else if (segment.text) {
-            line.appendChild(document.createTextNode(segment.text));
-          }
-        });
-
-        return line;
-      }
-
-      function renderFooter(shadowRoot) {
-        if (!shadowRoot) {
-          setCaptchaBadgeHidden(false);
-          return;
-        }
-
-        var existing = shadowRoot.querySelector('#' + FOOTER_ID);
-        var onLoginScreen = !!shadowRoot.querySelector(LOGIN_MARKER);
-
-        if (!onLoginScreen) {
-          if (existing) { existing.remove(); }
-          setCaptchaBadgeHidden(false);
-          return;
-        }
-        if (existing) {
-          // React mounts new children after foreign nodes, so keep the footer below them.
-          if (existing.nextElementSibling) { existing.parentNode.appendChild(existing); }
-          return;
-        }
-
-        var target = insertionPoint(shadowRoot);
-        if (!target) {
-          setCaptchaBadgeHidden(false);
-          return;
-        }
-
-        var wrapper = document.createElement('div');
-        wrapper.id = FOOTER_ID;
-        wrapper.style.cssText = 'width:100%;display:block;flex:0 0 auto';
-        (FOOTER.rows || []).forEach(function (row) {
-          wrapper.appendChild(buildRow(row));
-        });
-        target.appendChild(wrapper);
-
-        setCaptchaBadgeHidden(true);
-      }
-
-      // This script runs at document start, so the box does not exist yet, and
-      // its screen changes happen inside a shadow root — which a
-      // MutationObserver on `document` does not see. So: poll until the shadow
-      // root appears, then observe it directly, keeping a slow poll as a
-      // backstop in case the box is re-created wholesale.
-      var observedRoot = null;
-      var rootObserver = null;
-      function attach() {
-        if (!observedRoot || !observedRoot.host.isConnected) {
-          if (rootObserver) { rootObserver.disconnect(); rootObserver = null; }
-          observedRoot = boxShadowRoot();
-          if (observedRoot) {
-            var root = observedRoot;
-            rootObserver = new MutationObserver(function () { renderFooter(root); });
-            rootObserver.observe(root, { childList: true, subtree: true });
-          }
-        }
-        renderFooter(observedRoot);
-      }
-
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', attach);
-      } else {
-        attach();
-      }
-      setInterval(attach, 500);
-    })();
-    """
 }

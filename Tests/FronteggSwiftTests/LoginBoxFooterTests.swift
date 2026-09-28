@@ -27,7 +27,15 @@ final class LoginBoxFooterTests: XCTestCase {
         let script = try XCTUnwrap(LoginBoxFooter.script(footerPayload()))
 
         XCTAssertTrue(script.contains("https://policies.google.com/privacy"))
-        XCTAssertTrue(script.contains("[data-test-id=\"root-element\"]"))
+    }
+
+    /// The box renders the footer itself, so the script only hands it the payload.
+    func testScriptAssignsTheGlobalTheLoginBoxReads() throws {
+        let script = try XCTUnwrap(LoginBoxFooter.script(footerPayload()))
+
+        XCTAssertTrue(script.hasPrefix("window.__fronteggLoginBoxFooter = {"))
+        XCTAssertTrue(script.hasSuffix("};"))
+        XCTAssertFalse(script.contains("document."))
     }
 
     func testBadgeIsOnlyHiddenWhenAsked() throws {
@@ -36,38 +44,6 @@ final class LoginBoxFooterTests: XCTestCase {
 
         let notHiding = try XCTUnwrap(LoginBoxFooter.script(footerPayload(hideBadge: false)))
         XCTAssertTrue(notHiding.contains("\"hideCaptchaBadge\":false"))
-    }
-
-    /// Host copy must never be interpreted as markup.
-    func testFooterCopyIsRenderedAsTextNotHtml() throws {
-        let script = try XCTUnwrap(LoginBoxFooter.script(footerPayload()))
-
-        XCTAssertTrue(script.contains("anchor.textContent = segment.label;"))
-        XCTAssertTrue(script.contains("createTextNode(segment.text)"))
-        // Asserted as an assignment rather than a bare substring, so the
-        // comment in the script explaining why we avoid it doesn't trip this.
-        XCTAssertFalse(script.contains(".innerHTML ="))
-        XCTAssertFalse(script.contains("insertAdjacentHTML"))
-    }
-
-    /// The footer follows the login screen only, matching the React SDK where
-    /// `boxFooter` is configured under `login`.
-    func testFooterIsScopedToTheLoginScreen() throws {
-        let script = try XCTUnwrap(LoginBoxFooter.script(footerPayload()))
-
-        XCTAssertTrue(script.contains("[data-test-id=\"login-page-title\"]"))
-    }
-
-    /// The badge may only be hidden while the attribution is visible, so leaving
-    /// the login screen must restore it.
-    func testBadgeIsRestoredWhenTheFooterIsNotShown() throws {
-        let script = try XCTUnwrap(LoginBoxFooter.script(footerPayload()))
-        let branchStart = try XCTUnwrap(script.range(of: "if (!onLoginScreen) {"))
-        let branchEnd = try XCTUnwrap(script.range(of: "return;", range: branchStart.upperBound..<script.endIndex))
-        let branchBody = script[branchStart.upperBound..<branchEnd.lowerBound]
-
-        XCTAssertTrue(branchBody.contains("setCaptchaBadgeHidden(false)"))
-        XCTAssertTrue(script.contains("if (badgeStyle) { badgeStyle.remove(); }"))
     }
 
     func testQuotesInFooterCopyDoNotBreakTheScript() throws {

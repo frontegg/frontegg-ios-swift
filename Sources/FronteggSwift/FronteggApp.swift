@@ -191,12 +191,12 @@ public class FronteggApp {
         logger.error("\(name) contains a value at \(keyPath) that is not a JSON type (String, NSNumber, Array, Dictionary, NSNull); the login box overrides will be ignored")
     }
 
-    /// Content appended below the embedded login box's card, on its login
-    /// screen only.
+    /// A footer the embedded login box renders on its login screen only, in the
+    /// same `boxFooter` slot the React SDK exposes as a render prop.
     ///
-    /// The React SDK exposes a `boxFooter` render prop for this; a box served
-    /// into a WebView has no equivalent, and the box's own configuration has no
-    /// slot for content below the card. Two things commonly need to live there:
+    /// A box served into a WebView cannot take a render prop, so the SDK hands the
+    /// box this structured payload and the box renders it. Two things commonly
+    /// need to live there:
     /// a sign-up entry point the box's form cannot model (choosing an account
     /// type, carrying an invite code), and the reCAPTCHA attribution Google's
     /// terms require whenever the badge is hidden.
@@ -227,7 +227,8 @@ public class FronteggApp {
     /// claim as an OAuth callback. `http(s)` links are handed to the OS rather
     /// than loaded in the box, which has no navigation chrome — an app-scheme link instead
     /// dismisses the box and hands off to the app. Set this before calling
-    /// `login()`. Embedded mode only.
+    /// `login()`. Embedded mode only. Requires a hosted login box that renders
+    /// host-supplied footers; against an older login box it is ignored.
     public var loginBoxFooter: [String: Any]? = nil
 
 
