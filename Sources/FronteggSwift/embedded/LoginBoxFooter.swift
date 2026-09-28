@@ -136,25 +136,34 @@ enum LoginBoxFooter {
 
     /// Whether the custom-scheme branch would treat this URL as an OAuth callback rather than a hand-off.
     static func carriesOAuthCallbackParameter(_ url: String) -> Bool {
-        let standardQueryNames = URLComponents(string: url)?.queryItems?.map(\.name) ?? []
-        let delegateQueryNames = getQueryItems(url).map { Array($0.keys) } ?? []
-        return !oauthCallbackParameterNames.isDisjoint(with: standardQueryNames + delegateQueryNames)
+        let standardQueryNames: [String] = URLComponents(string: url)?.queryItems?.map { $0.name } ?? []
+        let delegateQueryNames: [String] = getQueryItems(url).map { Array($0.keys) } ?? []
+        let queryNames: [String] = standardQueryNames + delegateQueryNames
+        return queryNames.contains { (queryName: String) -> Bool in oauthCallbackParameterNames.contains(queryName) }
     }
 
     /// The configured link URLs that fail `sanitizedLinkUrl` and so render as plain text,
     /// cut before any query or fragment, since those can carry an invite code.
     static func rejectedLinkUrls(_ footer: [String: Any]?) -> [String] {
         guard let rows = footer?["rows"] as? [[String: Any]] else { return [] }
-        return rows
-            .compactMap { $0["segments"] as? [[String: Any]] }
-            .flatMap { $0 }
-            .filter { ($0["text"] as? String)?.isEmpty ?? true }
-            .filter { ($0["label"] as? String)?.isEmpty == false }
-            .compactMap { $0["url"] }
-            .filter { sanitizedLinkUrl($0 as? String) == nil }
-            .map { rejectedUrl in
-                String(String(describing: rejectedUrl).prefix { character in character != "?" && character != "#" })
+
+        var rejectedUrls: [String] = []
+        for row in rows {
+            guard let segments = row["segments"] as? [[String: Any]] else { continue }
+            for segment in segments {
+                let text: String = (segment["text"] as? String) ?? ""
+                let label: String = (segment["label"] as? String) ?? ""
+                guard text.isEmpty, !label.isEmpty, let configuredUrl = segment["url"] else { continue }
+                guard sanitizedLinkUrl(configuredUrl as? String) == nil else { continue }
+
+                let describedUrl: String = String(describing: configuredUrl)
+                let redactedUrl: Substring = describedUrl.prefix(while: { (character: Character) -> Bool in
+                    character != "?" && character != "#"
+                })
+                rejectedUrls.append(String(redactedUrl))
             }
+        }
+        return rejectedUrls
     }
 
     private static let oauthCallbackParameterNames: Set<String> = ["code", "error", "error_description"]
