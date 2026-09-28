@@ -58,6 +58,18 @@ final class LoginBoxFooterTests: XCTestCase {
         XCTAssertTrue(script.contains("[data-test-id=\"login-page-title\"]"))
     }
 
+    /// The badge may only be hidden while the attribution is visible, so leaving
+    /// the login screen must restore it.
+    func testBadgeIsRestoredWhenTheFooterIsNotShown() throws {
+        let script = try XCTUnwrap(LoginBoxFooter.script(footerPayload()))
+        let branchStart = try XCTUnwrap(script.range(of: "if (!onLoginScreen) {"))
+        let branchEnd = try XCTUnwrap(script.range(of: "return;", range: branchStart.upperBound..<script.endIndex))
+        let branchBody = script[branchStart.upperBound..<branchEnd.lowerBound]
+
+        XCTAssertTrue(branchBody.contains("setCaptchaBadgeHidden(false)"))
+        XCTAssertTrue(script.contains("if (badgeStyle) { badgeStyle.remove(); }"))
+    }
+
     func testQuotesInFooterCopyDoNotBreakTheScript() throws {
         let script = try XCTUnwrap(LoginBoxFooter.script([
             "rows": [["variant": "body", "segments": [["text": "Don't \"stop\""]]]]

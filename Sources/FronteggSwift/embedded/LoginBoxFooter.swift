@@ -207,10 +207,15 @@ enum LoginBoxFooter {
       // Google's badge is rendered into the light DOM at body level, so a
       // document-level stylesheet reaches it even though the box itself lives
       // in a shadow root. Hiding it is only permitted alongside the visible
-      // attribution the host supplies in `rows`.
-      function hideCaptchaBadge() {
-        if (!FOOTER.hideCaptchaBadge) { return; }
-        if (document.getElementById(FOOTER_ID + '-badge-style')) { return; }
+      // attribution the host supplies in `rows`, so the badge is restored
+      // whenever the footer is not on screen.
+      function setCaptchaBadgeHidden(hidden) {
+        var badgeStyle = document.getElementById(FOOTER_ID + '-badge-style');
+        if (!hidden || !FOOTER.hideCaptchaBadge) {
+          if (badgeStyle) { badgeStyle.remove(); }
+          return;
+        }
+        if (badgeStyle) { return; }
         var head = document.head || document.documentElement;
         if (!head) { return; }
         var style = document.createElement('style');
@@ -287,13 +292,17 @@ enum LoginBoxFooter {
 
       function renderFooter() {
         var shadowRoot = boxShadowRoot();
-        if (!shadowRoot) { return; }
+        if (!shadowRoot) {
+          setCaptchaBadgeHidden(false);
+          return;
+        }
 
         var existing = shadowRoot.querySelector('#' + FOOTER_ID);
         var onLoginScreen = !!shadowRoot.querySelector(LOGIN_MARKER);
 
         if (!onLoginScreen) {
           if (existing) { existing.remove(); }
+          setCaptchaBadgeHidden(false);
           return;
         }
         // Still mounted where we put it: nothing to do. React re-rendering the
@@ -301,7 +310,10 @@ enum LoginBoxFooter {
         if (existing && existing.isConnected) { return; }
 
         var target = insertionPoint(shadowRoot);
-        if (!target) { return; }
+        if (!target) {
+          setCaptchaBadgeHidden(false);
+          return;
+        }
 
         var wrapper = document.createElement('div');
         wrapper.id = FOOTER_ID;
@@ -311,7 +323,7 @@ enum LoginBoxFooter {
         });
         target.appendChild(wrapper);
 
-        hideCaptchaBadge();
+        setCaptchaBadgeHidden(true);
       }
 
       // This script runs at document start, so the box does not exist yet, and
