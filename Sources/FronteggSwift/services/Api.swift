@@ -429,16 +429,15 @@ public class Api {
             if retries > 0, let http = response as? HTTPURLResponse {
                 if http.statusCode == 401 {
                     let error = ApiError.meEndpointFailed(statusCode: 401, path: path)
-                    if Task.isCancelled {
-                        throw error
+                    if !Task.isCancelled {
+                        logHttpError(
+                            error,
+                            method: "GET",
+                            path: path,
+                            followRedirect: followRedirect,
+                            statusCode: http.statusCode
+                        )
                     }
-                    logHttpError(
-                        error,
-                        method: "GET",
-                        path: path,
-                        followRedirect: followRedirect,
-                        statusCode: http.statusCode
-                    )
                     throw error
                 }
                 if Api.isTransientRefreshHTTPStatus(http.statusCode) {
@@ -448,16 +447,15 @@ public class Api {
                         await sleepBeforeRetry(attempt: attempt)
                         continue
                     }
-                    if Task.isCancelled {
-                        throw error
+                    if !Task.isCancelled {
+                        logHttpError(
+                            error,
+                            method: "GET",
+                            path: path,
+                            followRedirect: followRedirect,
+                            statusCode: http.statusCode
+                        )
                     }
-                    logHttpError(
-                        error,
-                        method: "GET",
-                        path: path,
-                        followRedirect: followRedirect,
-                        statusCode: http.statusCode
-                    )
                     throw error
                 }
             }

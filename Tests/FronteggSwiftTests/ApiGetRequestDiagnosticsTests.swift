@@ -240,6 +240,7 @@ final class ApiGetRequestDiagnosticsTests: XCTestCase {
 
         XCTAssertThrowsError(try result.get())
         XCTAssertEqual(api.requests.count, 1, "a cancelled request must not be retried")
+        XCTAssertTrue(api.loggedErrors.isEmpty, "a cancelled request must not be reported as an error")
     }
 
     func test_getRequest_doesNotRetryTransientHttpFailureAfterCancellation() async {
@@ -254,6 +255,7 @@ final class ApiGetRequestDiagnosticsTests: XCTestCase {
 
         XCTAssertThrowsError(try result.get())
         XCTAssertEqual(api.requests.count, 1, "a cancelled request must not be retried")
+        XCTAssertTrue(api.loggedErrors.isEmpty, "a cancelled request must not be reported as an error")
     }
 
     func test_getRequest_nonTransientHttpResponseStillReturnsWithoutTerminalErrorLogging() async throws {
