@@ -84,6 +84,9 @@ public struct FronteggWebView: UIViewRepresentable {
             )
         }
 
+        for rejectedUrl in LoginBoxFooter.rejectedLinkUrls(fronteggApp.loginBoxFooter) {
+            logger.warning("loginBoxFooter link \"\(rejectedUrl)\" is not an absolute http(s) URL or an allowed app-scheme URL; it renders as plain text")
+        }
         if let footerScript = LoginBoxFooter.script(fronteggApp.loginBoxFooter) {
             logger.debug("Injecting login box footer")
             userContentController.addUserScript(

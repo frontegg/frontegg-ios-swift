@@ -212,6 +212,21 @@ final class LoginBoxFooterTests: XCTestCase {
         XCTAssertFalse(CustomWebView.isAppUrlScheme("myapp", appSchemes: []))
     }
 
+    func testRejectedLinkUrlsListsOnlyUrlsThatRenderAsText() {
+        let footer: [String: Any] = ["rows": [["variant": "body", "segments": [
+            ["label": "Privacy", "url": "https://policies.google.com/privacy"],
+            ["label": "Script", "url": "javascript:alert(1)"],
+            ["label": "Unregistered", "url": "definitelynotregistered://sign-up"],
+            ["text": "plain text"]
+        ]]]]
+
+        XCTAssertEqual(
+            LoginBoxFooter.rejectedLinkUrls(footer),
+            ["javascript:alert(1)", "definitelynotregistered://sign-up"]
+        )
+        XCTAssertTrue(LoginBoxFooter.rejectedLinkUrls(nil).isEmpty)
+    }
+
     func testExternalUrlsAreEmptyWithoutAFooter() {
         XCTAssertTrue(LoginBoxFooter.footerExternalUrls(nil).isEmpty)
         XCTAssertTrue(LoginBoxFooter.footerExternalUrls(["rows": []]).isEmpty)

@@ -138,6 +138,17 @@ enum LoginBoxFooter {
         return carriesOAuthCallbackParameter ? nil : url
     }
 
+    /// The configured link URLs that fail `sanitizedLinkUrl` and so render as plain text.
+    static func rejectedLinkUrls(_ footer: [String: Any]?) -> [String] {
+        guard let rows = footer?["rows"] as? [[String: Any]] else { return [] }
+        return rows
+            .compactMap { $0["segments"] as? [[String: Any]] }
+            .flatMap { $0 }
+            .filter { ($0["text"] as? String)?.isEmpty ?? true }
+            .compactMap { $0["url"] as? String }
+            .filter { sanitizedLinkUrl($0) == nil }
+    }
+
     private static let oauthCallbackParameterNames: Set<String> = ["code", "error", "error_description"]
 
     /// The `http(s)` footer URLs, which must be opened outside the login box.
