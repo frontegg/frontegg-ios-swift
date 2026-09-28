@@ -151,12 +151,34 @@ enum LoginBoxFooter {
             for segment in segments {
                 guard let url = segment["url"] as? String,
                       let scheme = URLComponents(string: url)?.scheme?.lowercased() else { continue }
-                if scheme == "http" || scheme == "https" {
-                    urls.insert(url)
+                if scheme == "http" || scheme == "https", let linkKey = canonicalLinkKey(url) {
+                    urls.insert(linkKey)
                 }
             }
         }
         return urls
+    }
+
+    /// Whether a navigation is to one of the footer's `http(s)` links.
+    static func isExternalFooterLink(_ url: URL, footer: [String: Any]?) -> Bool {
+        guard let linkKey = canonicalLinkKey(url.absoluteString) else { return false }
+        return footerExternalUrls(footer).contains(linkKey)
+    }
+
+    /// Normalizes a URL the way WebKit does before navigating, so a configured link
+    /// still matches: lowercased scheme and host, `/` for an empty path, no default port.
+    static func canonicalLinkKey(_ url: String) -> String? {
+        guard var components = URLComponents(string: url) else { return nil }
+        let scheme = components.scheme?.lowercased()
+        components.scheme = scheme
+        components.host = components.host?.lowercased()
+        if components.path.isEmpty {
+            components.path = "/"
+        }
+        if (scheme == "https" && components.port == 443) || (scheme == "http" && components.port == 80) {
+            components.port = nil
+        }
+        return components.string
     }
 
     /// The host app's registered URL schemes, lowercased.

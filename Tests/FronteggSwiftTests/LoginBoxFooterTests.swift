@@ -186,6 +186,23 @@ final class LoginBoxFooterTests: XCTestCase {
         ])
     }
 
+    /// WebKit navigates to the canonical form of a link, so a configured URL with a
+    /// mixed-case host, no path or a default port must still be intercepted.
+    func testExternalFooterLinkMatchesWebKitCanonicalForm() throws {
+        let footer = footerPayload(url: "HTTPS://Policies.Google.com:443")
+        let navigatedUrl = try XCTUnwrap(URL(string: "https://policies.google.com/"))
+
+        XCTAssertTrue(LoginBoxFooter.isExternalFooterLink(navigatedUrl, footer: footer))
+    }
+
+    func testExternalFooterLinkDoesNotMatchOtherUrls() throws {
+        let footer = footerPayload(url: "https://policies.google.com/privacy")
+        let otherUrl = try XCTUnwrap(URL(string: "https://policies.google.com/terms"))
+
+        XCTAssertFalse(LoginBoxFooter.isExternalFooterLink(otherUrl, footer: footer))
+        XCTAssertFalse(LoginBoxFooter.isExternalFooterLink(otherUrl, footer: nil))
+    }
+
     func testExternalUrlsAreEmptyWithoutAFooter() {
         XCTAssertTrue(LoginBoxFooter.footerExternalUrls(nil).isEmpty)
         XCTAssertTrue(LoginBoxFooter.footerExternalUrls(["rows": []]).isEmpty)

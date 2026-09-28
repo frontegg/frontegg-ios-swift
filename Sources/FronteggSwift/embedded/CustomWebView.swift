@@ -558,14 +558,13 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             // chrome, so loading it in place would strand the user with no way
             // back to the login box.
             //
-            // Matched against the exact configured URLs rather than a general
+            // Matched against the configured URLs (normalized) rather than a general
             // "host differs from the auth origin" rule: the box legitimately
             // navigates off-origin to social identity providers, and a broad
             // rule would break those. Unlike the custom-scheme branch below,
             // this does NOT dismiss the box — the user is expected to read the
             // policy and come straight back to a login screen still in place.
-            if LoginBoxFooter.footerExternalUrls(FronteggApp.shared.loginBoxFooter)
-                .contains(url.absoluteString) {
+            if LoginBoxFooter.isExternalFooterLink(url, footer: FronteggApp.shared.loginBoxFooter) {
                 logger.info("[Navigation] Opening login box footer link externally: \(url.absoluteString)")
                 DispatchQueue.main.async {
                     UIApplication.shared.open(url, options: [:], completionHandler: nil)
