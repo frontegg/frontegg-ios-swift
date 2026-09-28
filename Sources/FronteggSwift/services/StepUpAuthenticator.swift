@@ -11,6 +11,7 @@ import Foundation
 class StepUpAuthenticator {
     private let credentialManager: CredentialManager
     private var activeStepUpId: UUID?
+    private let logger = getLogger("StepUpAuthenticator")
 
     init(
         credentialManager: CredentialManager
@@ -52,6 +53,7 @@ class StepUpAuthenticator {
         DispatchQueue.main.async {
             // Refuse while any embedded login is open so step-up state is never set without an owner to clear it.
             if FronteggAuth.shared.isEmbeddedLoginInProgress {
+                self.logger.warning("stepUp refused: an embedded login window is already on screen; completing with operationCanceled")
                 completion?(.failure(.authError(.operationCanceled)))
                 return
             }

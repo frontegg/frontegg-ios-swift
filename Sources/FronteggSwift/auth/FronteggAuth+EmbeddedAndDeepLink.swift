@@ -62,9 +62,8 @@ extension FronteggAuth {
         }
     }
 
-    /// Whether an embedded login modal is on screen with a completion still pending.
+    /// Whether an embedded login modal is on screen, including one that is still being torn down.
     var isEmbeddedLoginInProgress: Bool {
-        guard loginCompletion != nil else { return false }
         var presentingController = getRootVC(true)
         while let controller = presentingController {
             if isEmbeddedLoginPresented(on: controller) { return true }
