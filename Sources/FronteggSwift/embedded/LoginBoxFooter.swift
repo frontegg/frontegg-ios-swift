@@ -33,7 +33,7 @@ enum LoginBoxFooter {
     /// can skip injecting a script entirely.
     static func script(_ footer: [String: Any]?) -> String? {
         guard let sanitized = sanitizedFooter(footer),
-              let json = encodeJson(sanitized) else {
+              let json = LoginBoxCustomization.encodeOverrides(sanitized) else {
             return nil
         }
         return template.replacingOccurrences(of: "__FRONTEGG_FOOTER__", with: json)
@@ -192,25 +192,6 @@ enum LoginBoxFooter {
             .map { $0.lowercased() }
     }
 
-    /// JSON-encodes the footer for embedding in a JavaScript source string.
-    static func encodeJson(_ value: [String: Any]) -> String? {
-        guard JSONSerialization.isValidJSONObject(value),
-              let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
-              let json = String(data: data, encoding: .utf8) else {
-            return nil
-        }
-
-        return json
-            // JSONSerialization writes `/` as `\/`. Harmless — JSON and
-            // JavaScript both read `\/` as `/` — but it makes every link in a
-            // script dump hard to read and hard to assert on.
-            .replacingOccurrences(of: "\\/", with: "/")
-            // U+2028 and U+2029 are valid inside JSON but terminate a line in
-            // JavaScript source, which would break the script we embed them in.
-            .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
-            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
-    }
-
     private static let template = """
     (function () {
       if (window.__fronteggLoginBoxFooterInstalled) { return; }
@@ -312,8 +293,7 @@ enum LoginBoxFooter {
         return line;
       }
 
-      function renderFooter() {
-        var shadowRoot = boxShadowRoot();
+      function renderFooter(shadowRoot) {
         if (!shadowRoot) {
           setCaptchaBadgeHidden(false);
           return;
@@ -327,9 +307,11 @@ enum LoginBoxFooter {
           setCaptchaBadgeHidden(false);
           return;
         }
-        // Still mounted where we put it: nothing to do. React re-rendering the
-        // card can detach it, which is what the observer below is for.
-        if (existing && existing.isConnected) { return; }
+        if (existing) {
+          // React mounts new children after foreign nodes, so keep the footer below them.
+          if (existing.nextElementSibling) { existing.parentNode.appendChild(existing); }
+          return;
+        }
 
         var target = insertionPoint(shadowRoot);
         if (!target) {
@@ -353,16 +335,18 @@ enum LoginBoxFooter {
       // MutationObserver on `document` does not see. So: poll until the shadow
       // root appears, then observe it directly, keeping a slow poll as a
       // backstop in case the box is re-created wholesale.
-      var observed = null;
+      var observedRoot = null;
       function attach() {
-        renderFooter();
-        var shadowRoot = boxShadowRoot();
-        if (!shadowRoot || observed === shadowRoot) { return; }
-        if (typeof MutationObserver !== 'function') { return; }
-        observed = shadowRoot;
-        new MutationObserver(function () {
-          renderFooter();
-        }).observe(shadowRoot, { childList: true, subtree: true });
+        if (!observedRoot || !observedRoot.host.isConnected) {
+          observedRoot = boxShadowRoot();
+          if (observedRoot) {
+            var root = observedRoot;
+            new MutationObserver(function () {
+              if (root === observedRoot) { renderFooter(root); }
+            }).observe(root, { childList: true, subtree: true });
+          }
+        }
+        renderFooter(observedRoot);
       }
 
       if (document.readyState === 'loading') {
