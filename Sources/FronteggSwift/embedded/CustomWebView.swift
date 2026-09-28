@@ -572,7 +572,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 return .cancel
             }
 
-            if let scheme = url.scheme, getAppURLSchemes().contains(scheme) {
+            if let scheme = url.scheme, CustomWebView.isAppUrlScheme(scheme, appSchemes: getAppURLSchemes()) {
                 let appSchemes = getAppURLSchemes()
                 logger.debug("🔵 [Social Login Debug] Custom scheme detected: \(scheme)")
                 logger.debug("🔵 [Social Login Debug] All app URL schemes: \(appSchemes)")
@@ -1016,6 +1016,12 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         return cachedUrlSchemes ?? []
     }
 
+    /// URL schemes are case-insensitive, and WebKit lowercases them on navigation.
+    static func isAppUrlScheme(_ scheme: String, appSchemes: [String]) -> Bool {
+        let normalizedScheme = scheme.lowercased()
+        return appSchemes.contains { $0.lowercased() == normalizedScheme }
+    }
+
     /// Extracts authentication cookies (fe_refresh and fe_device) from WebView's cookie store
     /// Returns tuple of (refreshTokenCookie, deviceTokenCookie) where cookies are in format "name=value"
     private func extractAuthCookiesFromWebView() async -> (String?, String?) {
@@ -1347,7 +1353,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         guard hasCode || hasOAuthError else { return false }
 
         let scheme = failingURL.scheme ?? ""
-        let isKnownAppScheme = getAppURLSchemes().contains(scheme)
+        let isKnownAppScheme = CustomWebView.isAppUrlScheme(scheme, appSchemes: getAppURLSchemes())
         let isHostedCallback = getOverrideUrlType(url: failingURL) == .HostedLoginCallback
         guard isKnownAppScheme || isHostedCallback else { return false }
 
@@ -1430,7 +1436,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         logger.debug("🔵 [Social Login Debug] Previous URL: \(previousUrl?.absoluteString ?? "nil")")
         logger.debug("🔵 [Social Login Debug] Magic link redirect URI: \(magicLinkRedirectUri ?? "nil")")
         logger.debug("🔵 [Social Login Debug] App URL schemes: \(getAppURLSchemes())")
-        logger.debug("🔵 [Social Login Debug] Is custom scheme match: \(getAppURLSchemes().contains(url.scheme ?? ""))")
+        logger.debug("🔵 [Social Login Debug] Is custom scheme match: \(CustomWebView.isAppUrlScheme(url.scheme ?? "", appSchemes: getAppURLSchemes()))")
         logger.debug("🔵 [Social Login Debug] URL matches expected redirect URI: \(matchedCallbackRedirectUri != nil)")
         if let matchedCallbackRedirectUri {
             logger.debug("🔵 [Social Login Debug] Matched callback redirect URI: \(matchedCallbackRedirectUri)")

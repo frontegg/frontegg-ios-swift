@@ -203,6 +203,15 @@ final class LoginBoxFooterTests: XCTestCase {
         XCTAssertFalse(LoginBoxFooter.isExternalFooterLink(otherUrl, footer: nil))
     }
 
+    /// A footer link on a mixed-case registered scheme must still reach the
+    /// custom-scheme hand-off, which sees the scheme lowercased by WebKit.
+    func testAppSchemeMatchingIgnoresCase() {
+        XCTAssertTrue(CustomWebView.isAppUrlScheme("myapp", appSchemes: ["MyApp"]))
+        XCTAssertTrue(CustomWebView.isAppUrlScheme("MyApp", appSchemes: ["myapp"]))
+        XCTAssertFalse(CustomWebView.isAppUrlScheme("otherapp", appSchemes: ["MyApp"]))
+        XCTAssertFalse(CustomWebView.isAppUrlScheme("myapp", appSchemes: []))
+    }
+
     func testExternalUrlsAreEmptyWithoutAFooter() {
         XCTAssertTrue(LoginBoxFooter.footerExternalUrls(nil).isEmpty)
         XCTAssertTrue(LoginBoxFooter.footerExternalUrls(["rows": []]).isEmpty)
