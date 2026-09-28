@@ -19,7 +19,8 @@ extension FronteggAuth {
                 "E2E embeddedLogin rootVC=\(type(of: rootVC)) presented=\(String(describing: rootVC.presentedViewController)) embeddedMode=\(self.embeddedMode)"
             )
             self.loginHint = loginHint
-            if self.pendingAppLink == nil {
+            let isRegularLogin = self.pendingAppLink == nil
+            if isRegularLogin {
                 self.activeEmbeddedOAuthFlow = .login
             }
             if let staleCompletion = self.loginCompletion {
@@ -31,6 +32,10 @@ extension FronteggAuth {
                 self.loginCompletion = nil
                 staleCompletion(.failure(.authError(.operationCanceled)))
             }
+            if isRegularLogin {
+                // A regular login is never a step-up, so a flag left by an abandoned step-up must not block its dismissal.
+                setIsStepUpAuthorization(false)
+            }
             self.loginCompletion = { result in
                 _completion?(result)
                 self.loginCompletion = nil
@@ -39,7 +44,7 @@ extension FronteggAuth {
             let hostingController = UIHostingController(rootView: loginModal)
             hostingController.modalPresentationStyle = .fullScreen
 
-            if(rootVC.presentedViewController?.classForCoder == hostingController.classForCoder){
+            if isEmbeddedLoginPresented(on: rootVC) {
                 rootVC.presentedViewController?.dismiss(animated: false)
             }
 

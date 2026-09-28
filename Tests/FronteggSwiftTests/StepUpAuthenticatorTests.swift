@@ -268,8 +268,7 @@ final class StepUpAuthenticatorTests: XCTestCase {
         XCTAssertFalse(auth.isStepUpAuthorization, "The finishing step-up must clear the flag so EmbeddedLoginModal can dismiss")
     }
 
-    /// FR-27252: a stale completion cancelled by a newer stepUp() must not clear the
-    /// newer step-up's flag, or the new window closes itself before MFA.
+    /// FR-27252: a stale completion must not clear a newer step-up's flag, or its window closes before MFA.
     func test_staleStepUpCompletion_doesNotClearNewerStepUp() {
         let auth = FronteggAuth.shared
         let completed = expectation(description: "stale completion still reported to its caller")

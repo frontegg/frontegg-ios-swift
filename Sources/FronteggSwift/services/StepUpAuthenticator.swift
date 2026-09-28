@@ -50,7 +50,7 @@ class StepUpAuthenticator {
         completion: FronteggAuth.CompletionHandler? = nil
     ) {
         DispatchQueue.main.async {
-            // embeddedLogin would ignore this request and drop its completion, leaving step-up state set.
+            // Refuse while any embedded login is open so step-up state is never set without an owner to clear it.
             if FronteggAuth.shared.isEmbeddedLoginInProgress {
                 completion?(.failure(.authError(.operationCanceled)))
                 return
@@ -82,8 +82,7 @@ class StepUpAuthenticator {
         return stepUpId
     }
 
-    /// Only the current step-up clears the shared step-up state, so a stale completion
-    /// cancelled by a newer stepUp() cannot close the newer step-up's window.
+    /// Only the current step-up clears shared step-up state, so a stale completion cannot close a newer window.
     func completionForStepUp(
         _ stepUpId: UUID,
         completion: FronteggAuth.CompletionHandler?
