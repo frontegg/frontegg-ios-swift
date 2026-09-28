@@ -222,8 +222,10 @@ public class FronteggApp {
     /// `variant` is `"body"` or `"fine"` (small, de-emphasised legal text).
     /// Link URLs must be absolute `http(s)` or use one of the app's own
     /// registered `CFBundleURLTypes` schemes; anything else renders as plain
-    /// text. `http(s)` links are handed to the OS rather than loaded in the
-    /// box, which has no navigation chrome — an app-scheme link instead
+    /// text, as does an app-scheme link carrying a `code`, `error` or
+    /// `error_description` query parameter, which the SDK would otherwise
+    /// claim as an OAuth callback. `http(s)` links are handed to the OS rather
+    /// than loaded in the box, which has no navigation chrome — an app-scheme link instead
     /// dismisses the box and hands off to the app. Set this before calling
     /// `login()`. Embedded mode only.
     public var loginBoxFooter: [String: Any]? = nil

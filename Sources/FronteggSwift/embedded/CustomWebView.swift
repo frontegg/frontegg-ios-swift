@@ -499,7 +499,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             // this does NOT dismiss the box — the user is expected to read the
             // policy and come straight back to a login screen still in place.
             // Checked ahead of the localhost and OIDC heuristics, which would otherwise swallow it.
-            if LoginBoxFooter.isExternalFooterLink(url, footer: FronteggApp.shared.loginBoxFooter) {
+            if navigationAction.navigationType == .linkActivated,
+               LoginBoxFooter.isExternalFooterLink(url, footer: FronteggApp.shared.loginBoxFooter) {
                 logger.info("[Navigation] Opening login box footer link externally: \(url.absoluteString)")
                 DispatchQueue.main.async {
                     UIApplication.shared.open(url, options: [:], completionHandler: nil)

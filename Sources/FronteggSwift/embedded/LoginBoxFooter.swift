@@ -129,8 +129,16 @@ enum LoginBoxFooter {
         // `data` as one of its own schemes.
         if deniedSchemes.contains(scheme) { return nil }
 
-        return appUrlSchemes().contains(scheme) ? url : nil
+        guard appUrlSchemes().contains(scheme) else { return nil }
+
+        // The custom-scheme branch treats these as an OAuth callback, not a hand-off.
+        let carriesOAuthCallbackParameter = components.queryItems?.contains {
+            oauthCallbackParameterNames.contains($0.name)
+        } ?? false
+        return carriesOAuthCallbackParameter ? nil : url
     }
+
+    private static let oauthCallbackParameterNames: Set<String> = ["code", "error", "error_description"]
 
     /// The `http(s)` footer URLs, which must be opened outside the login box.
     ///
@@ -336,14 +344,15 @@ enum LoginBoxFooter {
       // root appears, then observe it directly, keeping a slow poll as a
       // backstop in case the box is re-created wholesale.
       var observedRoot = null;
+      var rootObserver = null;
       function attach() {
         if (!observedRoot || !observedRoot.host.isConnected) {
+          if (rootObserver) { rootObserver.disconnect(); rootObserver = null; }
           observedRoot = boxShadowRoot();
           if (observedRoot) {
             var root = observedRoot;
-            new MutationObserver(function () {
-              if (root === observedRoot) { renderFooter(root); }
-            }).observe(root, { childList: true, subtree: true });
+            rootObserver = new MutationObserver(function () { renderFooter(root); });
+            rootObserver.observe(root, { childList: true, subtree: true });
           }
         }
         renderFooter(observedRoot);
