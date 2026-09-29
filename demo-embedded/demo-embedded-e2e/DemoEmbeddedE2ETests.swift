@@ -142,7 +142,6 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         loginWithPassword()
 
         tapButton("E2EStepUpButton")
-        app.getWebLabel("Step-Up MFA Mock").waitUntilExists(timeout: 20)
         waitForWebViewsToClose(timeout: 20)
         waitForScreen("UserPageRoot", timeout: 20)
         assertStepUpScenarioLog(equals: ["1:operationCanceled"])
@@ -169,6 +168,38 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         waitForWebViewsToClose(timeout: 20)
         waitForScreen("UserPageRoot", timeout: 20)
         assertStepUpScenarioLog(equals: ["1:success", "2:success"])
+    }
+
+    func testStepUpWindowClosedByAnAppLinkReportsTheStepUpAsCanceled() throws {
+        launchApp(stepUpScenario: "plain")
+        loginWithPassword()
+
+        tapButton("E2EStepUpButton")
+        app.getWebLabel("Step-Up MFA Mock").waitUntilExists(timeout: 20)
+        app.getWebButton("Open App Link").waitUntilExists(timeout: 20).safeTap()
+        waitForWebViewsToClose(timeout: 20)
+        waitForScreen("UserPageRoot", timeout: 20)
+        assertStepUpScenarioLog(equals: ["1:operationCanceled"])
+
+        Self.server.clearRequestLog()
+        tapButton("E2EStepUpButton")
+        completeStepUpChallenge()
+        waitForWebViewsToClose(timeout: 20)
+        waitForScreen("UserPageRoot", timeout: 20)
+        assertStepUpScenarioLog(equals: ["1:operationCanceled", "2:success"])
+    }
+
+    func testLoginRequestedOverAnOpenStepUpWindowIsRefusedAndKeepsTheWindow() throws {
+        launchApp(stepUpScenario: "loginOverStepUp")
+        loginWithPassword()
+
+        tapButton("E2EStepUpButton")
+        app.getWebLabel("Step-Up MFA Mock").waitUntilExists(timeout: 20)
+        assertWebViewStaysOpen(for: 4)
+        completeStepUpChallenge()
+        waitForWebViewsToClose(timeout: 20)
+        waitForScreen("UserPageRoot", timeout: 20)
+        assertStepUpScenarioLog(equals: ["login:operationCanceled", "1:success"])
     }
 
     private func launchApp(stepUpScenario: String) {

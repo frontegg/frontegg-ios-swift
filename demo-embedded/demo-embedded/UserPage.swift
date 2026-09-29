@@ -296,6 +296,13 @@ struct UserPage: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
                 dismissPresentedWindow()
             }
+        case ("loginOverStepUp", 1):
+            startScenarioStepUp(label: "1")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                fronteggAuth.login { res in
+                    stepUpScenarioLog.append("login:\(scenarioOutcome(res))")
+                }
+            }
         case ("chain", 1):
             startScenarioStepUp(label: "1") { succeeded in
                 if succeeded {
@@ -310,18 +317,21 @@ struct UserPage: View {
     private func startScenarioStepUp(label: String, then next: ((Bool) -> Void)? = nil) {
         Task {
             await fronteggAuth.stepUp(maxAge: 60) { res in
-                let outcome: String
-                switch res {
-                case .success:
-                    outcome = "success"
-                case .failure(.authError(.operationCanceled)):
-                    outcome = "operationCanceled"
-                case .failure:
-                    outcome = "failure"
-                }
+                let outcome = scenarioOutcome(res)
                 stepUpScenarioLog.append("\(label):\(outcome)")
                 next?(outcome == "success")
             }
+        }
+    }
+
+    private func scenarioOutcome(_ res: Result<User, FronteggError>) -> String {
+        switch res {
+        case .success:
+            return "success"
+        case .failure(.authError(.operationCanceled)):
+            return "operationCanceled"
+        case .failure:
+            return "failure"
         }
     }
 
@@ -329,7 +339,7 @@ struct UserPage: View {
         let keyWindow = UIApplication.shared.connectedScenes
             .compactMap { ($0 as? UIWindowScene)?.keyWindow }
             .first
-        keyWindow?.rootViewController?.presentedViewController?.dismiss(animated: false)
+        keyWindow?.rootViewController?.presentedViewController?.dismiss(animated: true)
     }
 
     private func showMessage(_ text: String, isSuccess: Bool) {

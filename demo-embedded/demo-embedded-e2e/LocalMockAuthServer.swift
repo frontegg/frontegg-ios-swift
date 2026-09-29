@@ -780,8 +780,12 @@ final class LocalMockAuthServer {
               var root = document.getElementById('step-up-root');
               root.innerHTML =
                 '<h1 id="step-up-mfa-title">Step-Up MFA Mock</h1>' +
-                '<button id="complete-step-up" type="button">Complete Step-Up</button>';
+                '<button id="complete-step-up" type="button">Complete Step-Up</button>' +
+                '<button id="open-app-link" type="button">Open App Link</button>';
               if (fallback) { fallback.remove(); }
+              document.getElementById('open-app-link').addEventListener('click', function () {
+                window.location.assign('com.frontegg.demo://e2e/open-app');
+              });
               document.getElementById('complete-step-up').addEventListener('click', function () {
                 var after = window.localStorage.getItem('FRONTEGG_AFTER_AUTH_REDIRECT_URL');
                 if (!after) { return; }
