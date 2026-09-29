@@ -1,3 +1,20 @@
+## v1.3.22
+
+<!-- CURSOR_SUMMARY -->
+---
+
+> [!NOTE]
+> **Low Risk**
+> Documentation and version constant only; no runtime or API code changes.
+> 
+> **Overview**
+> **Release v1.3.22** — version and changelog housekeeping only; no SDK behavior changes in this diff.
+> 
+> Bumps the reported SDK version from **1.3.21** to **1.3.22** in `SDKVersion.swift`. Adds an empty **`## v1.3.22`** section at the top of `CHANGELOG.md` and copies the **v1.3.21** release notes (runtime embedded login-box theme/localization overrides) into `CHANGELOG.old.md` as part of the usual changelog rotation.
+> 
+> <sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit 0321b0f4aed59bff8034231e82e0ba122c8baac8. Bugbot is set up for automated code reviews on this repo. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>
+<!-- /CURSOR_SUMMARY -->
+
 ## v1.3.21
 
 - Added: runtime theme and copy overrides for the embedded login box. `FronteggApp.shared.loginBoxThemeOptions` and `FronteggApp.shared.loginBoxLocalizations` take the same shapes as `themeV2` and `localizations` in the environment's login-box configuration, and are deep-merged over it — keys the override does not mention keep whatever the environment defines. This covers appearance that is only known at runtime, such as a white-labeled app resolving each brand's logo and colours from its own backend, which per-environment configuration cannot express. Set them before calling `login()`; both default to `nil`, so apps that do not set them are unaffected. Embedded mode only — hosted mode runs outside the app's WebView. Requires a hosted login box that applies host-supplied overrides; against an older login box the properties are ignored and the environment's own branding is rendered. ([#320](https://github.com/frontegg/frontegg-ios-swift/pull/320))
