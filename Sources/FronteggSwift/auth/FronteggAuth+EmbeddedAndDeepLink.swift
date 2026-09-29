@@ -24,7 +24,6 @@ extension FronteggAuth {
                 self.activeEmbeddedOAuthFlow = .login
             }
             if let staleCompletion = self.loginCompletion {
-                // The root may itself be the login window, so check the whole presentation chain.
                 if isEmbeddedLoginInProgress {
                     logger.info("Login request ignored, Embedded login already in progress.")
                     return

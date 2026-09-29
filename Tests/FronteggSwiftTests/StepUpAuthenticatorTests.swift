@@ -287,12 +287,12 @@ final class StepUpAuthenticatorTests: XCTestCase {
         stepUpAuthenticator.endActiveStepUp()
         XCTAssertFalse(auth.isStepUpAuthorization, "Ending the active step-up must clear the flag")
 
-        auth.setIsLoading(true)
+        auth.setIsStepUpAuthorization(true)
         abandonedCompletion(.failure(.authError(.operationCanceled)))
 
         wait(for: [completed], timeout: 2.0)
         waitForMainQueue()
-        XCTAssertTrue(auth.isLoading, "An ended step-up's late completion must not reset shared loading state")
+        XCTAssertTrue(auth.isStepUpAuthorization, "An ended step-up's late completion must not touch shared step-up state")
     }
 
     func test_leftoverStepUp_isEndedByEveryNonStepUpFlowWhenNoLoginIsOnScreen() {
