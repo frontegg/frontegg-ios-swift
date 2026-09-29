@@ -26,6 +26,11 @@
       "description": "Logs in and runs step-up twice. Each time the hosted step-up page bootstraps from the native session over the getTokens bridge, which refreshes the token, and the test verifies the step-up window stays open until the MFA challenge is completed, then dismisses after the elevated token exchange (FR-27252)."
     },
     {
+      "method": "testLoginWebViewShowsConfiguredBackgroundColorBehindTransparentPage",
+      "title": "Login web view shows the configured background color",
+      "description": "Serves a transparent authorize page and samples the screen behind it, verifying the login web view is non-opaque and paints the #RRGGBB backgroundColor from FronteggTest.plist instead of white (FR-27246)."
+    },
+    {
       "method": "testRequestAuthorizeFlow",
       "title": "Request authorize flow signs in seeded user",
       "description": "Seeds the request-authorize token, starts the authorize flow, and verifies the seeded signup user is authenticated."

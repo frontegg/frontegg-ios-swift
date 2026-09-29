@@ -32,8 +32,9 @@ public struct EmbeddedLoginModal: View {
                 && !fronteggAuth.isStepUpAuthorization
             {
 
+                // Unanimated so this loader does not slide away over the host's own post-auth loader.
                 DefaultLoader().onAppear() {
-                    VCHolder.shared.vc?.presentedViewController?.dismiss(animated: true)
+                    VCHolder.shared.vc?.presentedViewController?.dismiss(animated: false)
                     VCHolder.shared.vc = nil
                 }
             } else {
