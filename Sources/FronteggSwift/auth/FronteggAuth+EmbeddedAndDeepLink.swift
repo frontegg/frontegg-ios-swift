@@ -65,14 +65,18 @@ extension FronteggAuth {
         }
     }
 
-    /// Whether an embedded login modal is on screen, including one that is still being torn down.
-    var isEmbeddedLoginInProgress: Bool {
+    /// The embedded login window on screen, including one that is still being torn down.
+    var presentedEmbeddedLogin: UIViewController? {
         var presentingController = getRootVC(true)
         while let controller = presentingController {
-            if isEmbeddedLoginPresented(on: controller) { return true }
+            if isEmbeddedLoginPresented(on: controller) { return controller.presentedViewController }
             presentingController = controller.presentedViewController
         }
-        return false
+        return nil
+    }
+
+    var isEmbeddedLoginInProgress: Bool {
+        presentedEmbeddedLogin != nil
     }
 
     func isEmbeddedLoginPresented(on controller: UIViewController) -> Bool {
@@ -83,17 +87,13 @@ extension FronteggAuth {
         flow != .stepUp && !isEmbeddedLoginInProgress
     }
 
-    func dismissEmbeddedLogin(then completion: @escaping () -> Void) {
-        var presentingController = getRootVC(true)
-        while let controller = presentingController {
-            if isEmbeddedLoginPresented(on: controller) {
-                VCHolder.shared.vc = nil
-                controller.dismiss(animated: false, completion: completion)
-                return
-            }
-            presentingController = controller.presentedViewController
+    func dismissEmbeddedLogin(_ loginWindow: UIViewController?, then completion: @escaping () -> Void) {
+        guard let loginWindow, loginWindow.presentingViewController != nil, !loginWindow.isBeingDismissed else {
+            completion()
+            return
         }
-        completion()
+        VCHolder.shared.vc = nil
+        loginWindow.dismiss(animated: false, completion: completion)
     }
 
     public func handleOpenUrl(_ url: URL, _ useAppRootVC: Bool = false, internalHandleUrl:Bool = false) -> Bool {

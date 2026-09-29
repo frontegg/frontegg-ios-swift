@@ -7,6 +7,7 @@
 
 
 import Foundation
+import UIKit
 
 class StepUpAuthenticator {
     private let credentialManager: CredentialManager
@@ -16,6 +17,7 @@ class StepUpAuthenticator {
         get { activeStepUpLock.withLock { lockedActiveStepUpId } }
         set { activeStepUpLock.withLock { lockedActiveStepUpId = newValue } }
     }
+    private weak var stepUpWindow: UIViewController?
     private let logger = getLogger("StepUpAuthenticator")
 
     init(
@@ -79,6 +81,7 @@ class StepUpAuthenticator {
             FronteggAuth.shared.pendingAppLink = authorizeUrl
             FronteggAuth.shared.setWebLoading(true)
             FronteggAuth.shared.embeddedLogin(stepUpCompletion, loginHint: nil)
+            self.stepUpWindow = FronteggAuth.shared.presentedEmbeddedLogin
         }
     }
 
@@ -93,7 +96,9 @@ class StepUpAuthenticator {
                 }
                 self.endActiveStepUp()
                 FronteggAuth.shared.setIsLoading(false)
-                FronteggAuth.shared.dismissEmbeddedLogin {
+                let ownWindow = self.stepUpWindow
+                self.stepUpWindow = nil
+                FronteggAuth.shared.dismissEmbeddedLogin(ownWindow) {
                     completion?(result)
                 }
             }
