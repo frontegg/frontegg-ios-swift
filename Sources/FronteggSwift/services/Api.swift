@@ -815,6 +815,20 @@ public class Api {
         return result.user
     }
 
+    private func fetchMeAndTenants(
+        accessToken: String,
+        mePath: String,
+        tenantsPath: String,
+        parseMe: (Data) throws -> [String: Any]
+    ) async throws -> ([String: Any], Data) {
+        async let mePending = getRequest(path: mePath, accessToken: accessToken, retries: 3)
+        async let tenantsPending = getRequest(path: tenantsPath, accessToken: accessToken, retries: 3)
+        let (meData, _) = try await mePending
+        let meObject = try parseMe(meData)
+        let (tenantsData, _) = try await tenantsPending
+        return (meObject, tenantsData)
+    }
+
     private func loadMeResult(accessToken: String, refreshToken: String?) async throws -> MeResult {
         func parseObject(_ data: Data, path: String) throws -> [String: Any] {
             guard let object = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
@@ -830,17 +844,16 @@ public class Api {
         let mePath = "identity/resources/users/v2/me"
         let tenantsPath = "identity/resources/users/v3/me/tenants"
 
-        // Fetched concurrently; awaited in order so a failing /me surfaces its own error and cancels tenants.
-        async let mePending = getRequest(path: mePath, accessToken: accessToken, retries: 3)
-        async let tenantsPending = getRequest(path: tenantsPath, accessToken: accessToken, retries: 3)
-
-        let (meData, _) = try await mePending
-
-        var meObj = try parseObject(meData, path: mePath)
+        let (fetchedMeObj, tenantsData) = try await fetchMeAndTenants(
+            accessToken: accessToken,
+            mePath: mePath,
+            tenantsPath: tenantsPath,
+            parseMe: { try parseObject($0, path: mePath) }
+        )
+        var meObj = fetchedMeObj
 
         var tenantsObj: [String: Any]? = nil
 
-        let (tenantsData, _) = try await tenantsPending
         let initialTenantsObj = try parseObject(tenantsData, path: tenantsPath)
 
         if isValidTenantsPayload(initialTenantsObj) {
