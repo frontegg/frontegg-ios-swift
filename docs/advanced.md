@@ -518,7 +518,7 @@ When the app is reopened without network, the SDK restores the session from keyc
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `backgroundColor` | String | `nil` | Background color for login UI (hex format, e.g., `"#FFFFFF"`) |
+| `backgroundColor` | String | `nil` | Background color of the embedded login web view, as `#RRGGBB` or `#RRGGBBAA` (or an asset-catalog color name). It is painted between pages during the OAuth redirect, so set it to match your app's loader to avoid a white frame. Unset leaves the web view transparent over the login screen's system background. |
 | `shouldSuggestSavePassword` | Boolean | `false` | Enable iOS password autofill suggestions |
 
 ### Cookie Management Keys
