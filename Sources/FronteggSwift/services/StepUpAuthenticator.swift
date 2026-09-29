@@ -51,7 +51,6 @@ class StepUpAuthenticator {
         completion: FronteggAuth.CompletionHandler? = nil
     ) {
         DispatchQueue.main.async {
-            // Refuse while any embedded login is open so step-up state is never set without an owner to clear it.
             if FronteggAuth.shared.isEmbeddedLoginInProgress {
                 self.logger.warning("stepUp refused: an embedded login window is already on screen; completing with operationCanceled")
                 completion?(.failure(.authError(.operationCanceled)))
@@ -78,19 +77,26 @@ class StepUpAuthenticator {
         }
     }
 
-    /// Makes this the current step-up; only the current step-up clears shared step-up state, so a stale completion cannot close a newer window.
     func makeStepUpCompletion(_ completion: FronteggAuth.CompletionHandler?) -> FronteggAuth.CompletionHandler {
         let stepUpId = UUID()
         activeStepUpId = stepUpId
         return { result in
             DispatchQueue.main.async {
-                if self.activeStepUpId == stepUpId {
-                    self.activeStepUpId = nil
-                    FronteggAuth.shared.setIsStepUpAuthorization(false)
-                    FronteggAuth.shared.setIsLoading(false)
+                guard self.activeStepUpId == stepUpId else {
+                    completion?(result)
+                    return
                 }
-                completion?(result)
+                self.endActiveStepUp()
+                FronteggAuth.shared.setIsLoading(false)
+                FronteggAuth.shared.dismissEmbeddedLogin {
+                    completion?(result)
+                }
             }
         }
+    }
+
+    func endActiveStepUp() {
+        activeStepUpId = nil
+        FronteggAuth.shared.setIsStepUpAuthorization(false)
     }
 }

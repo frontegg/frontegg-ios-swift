@@ -66,7 +66,7 @@ extension FronteggAuth {
         setIsLoading(false)
         setIsOfflineMode(false)
         setRefreshingToken(false)
-        setIsStepUpAuthorization(false)
+        stepUpAuthenticator.endActiveStepUp()
         entitlements.clear()
         resetEntitlementsLoadState()
 

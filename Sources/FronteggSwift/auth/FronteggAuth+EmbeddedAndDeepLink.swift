@@ -30,11 +30,13 @@ extension FronteggAuth {
                 }
                 logger.warning("Clearing stale embedded login completion — modal not presented")
                 self.loginCompletion = nil
+                if activeEmbeddedOAuthFlow != .stepUp {
+                    stepUpAuthenticator.endActiveStepUp()
+                }
                 staleCompletion(.failure(.authError(.operationCanceled)))
             }
-            if isRegularLogin && !isEmbeddedLoginInProgress {
-                // A regular login is never a step-up, so a flag left by an abandoned step-up must not block its dismissal.
-                setIsStepUpAuthorization(false)
+            if Self.shouldEndLeftoverStepUp(flow: activeEmbeddedOAuthFlow, isEmbeddedLoginInProgress: isEmbeddedLoginInProgress) {
+                stepUpAuthenticator.endActiveStepUp()
             }
             self.loginCompletion = { result in
                 _completion?(result)
@@ -74,6 +76,23 @@ extension FronteggAuth {
 
     func isEmbeddedLoginPresented(on controller: UIViewController) -> Bool {
         controller.presentedViewController is UIHostingController<EmbeddedLoginModal>
+    }
+
+    static func shouldEndLeftoverStepUp(flow: FronteggOAuthFlow, isEmbeddedLoginInProgress: Bool) -> Bool {
+        flow != .stepUp && !isEmbeddedLoginInProgress
+    }
+
+    func dismissEmbeddedLogin(then completion: @escaping () -> Void) {
+        var presentingController = getRootVC(true)
+        while let controller = presentingController {
+            if isEmbeddedLoginPresented(on: controller) {
+                VCHolder.shared.vc = nil
+                controller.dismiss(animated: false, completion: completion)
+                return
+            }
+            presentingController = controller.presentedViewController
+        }
+        completion()
     }
 
     public func handleOpenUrl(_ url: URL, _ useAppRootVC: Bool = false, internalHandleUrl:Bool = false) -> Bool {
@@ -375,6 +394,10 @@ extension FronteggAuth {
         // canceledLogin so the WebView-side completion isn't masked.
         if let activeSession = WebAuthenticator.shared.session {
             WebAuthenticator.shared.cancelSuppressingCanceledLogin(activeSession)
+        }
+
+        if Self.shouldEndLeftoverStepUp(flow: activeEmbeddedOAuthFlow, isEmbeddedLoginInProgress: isEmbeddedLoginInProgress) {
+            stepUpAuthenticator.endActiveStepUp()
         }
 
         let loginModal = EmbeddedLoginModal(parentVC: rootVC)

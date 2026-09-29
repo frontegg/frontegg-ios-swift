@@ -265,7 +265,6 @@ final class StepUpAuthenticatorTests: XCTestCase {
         XCTAssertFalse(auth.isStepUpAuthorization, "The finishing step-up must clear the flag so EmbeddedLoginModal can dismiss")
     }
 
-    /// FR-27252: a stale completion must not clear a newer step-up's flag, or its window closes before MFA.
     func test_staleStepUpCompletion_doesNotClearNewerStepUp() {
         let auth = FronteggAuth.shared
         let completed = expectation(description: "stale completion still reported to its caller")
@@ -277,6 +276,38 @@ final class StepUpAuthenticatorTests: XCTestCase {
 
         wait(for: [completed], timeout: 2.0)
         XCTAssertTrue(auth.isStepUpAuthorization, "Only the current step-up may clear the flag")
+    }
+
+    func test_endActiveStepUp_releasesOwnershipSoALateCompletionLeavesSharedStateAlone() {
+        let auth = FronteggAuth.shared
+        let completed = expectation(description: "abandoned step-up completion still reported to its caller")
+        let abandonedCompletion = stepUpAuthenticator.makeStepUpCompletion { _ in completed.fulfill() }
+        auth.setIsStepUpAuthorization(true)
+
+        stepUpAuthenticator.endActiveStepUp()
+        XCTAssertFalse(auth.isStepUpAuthorization, "Ending the active step-up must clear the flag")
+
+        auth.setIsLoading(true)
+        abandonedCompletion(.failure(.authError(.operationCanceled)))
+
+        wait(for: [completed], timeout: 2.0)
+        waitForMainQueue()
+        XCTAssertTrue(auth.isLoading, "An ended step-up's late completion must not reset shared loading state")
+    }
+
+    func test_leftoverStepUp_isEndedByEveryNonStepUpFlowWhenNoLoginIsOnScreen() {
+        let nonStepUpFlows: [FronteggOAuthFlow] = [.login, .socialLogin, .sso, .customSSO, .apple, .mfa, .verification]
+        for flow in nonStepUpFlows {
+            XCTAssertTrue(
+                FronteggAuth.shouldEndLeftoverStepUp(flow: flow, isEmbeddedLoginInProgress: false),
+                "\(flow) must end a leftover step-up"
+            )
+            XCTAssertFalse(
+                FronteggAuth.shouldEndLeftoverStepUp(flow: flow, isEmbeddedLoginInProgress: true),
+                "\(flow) must not end a step-up whose window is still on screen"
+            )
+        }
+        XCTAssertFalse(FronteggAuth.shouldEndLeftoverStepUp(flow: .stepUp, isEmbeddedLoginInProgress: false))
     }
 
     // MARK: - Helpers
