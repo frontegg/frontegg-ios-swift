@@ -31,6 +31,20 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
     }
     
     // MARK: - WebAuthn Registration
+
+    func handleRegistrationCallback(data: Any?, error: Error?) {
+        if let registration = data as? WebauthnRegistration {
+            Task { await self.verifyNewDeviceSession(publicKey: registration) }
+        } else if error == nil {
+            completeRegistration(nil)
+        } else if let fronteggError = error as? FronteggError {
+            completeRegistration(fronteggError)
+        } else if let error, FronteggAuth.isUserCancelledOAuthFlow(error) {
+            completeRegistration(FronteggError.authError(.operationCanceled))
+        } else {
+            completeRegistration(FronteggError.authError(.unknown))
+        }
+    }
     
     func startWebAuthn(_ completion: FronteggAuth.ConditionCompletionHandler? = nil) {
         let baseUrl = FronteggAuth.shared.baseUrl
@@ -40,19 +54,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
             // is cleared by the delegate before `verifyNewDeviceSession` resolves.
             self.registrationCompletion = completion
             self.callbackAction = { (data, error) in
-                if let regsitration = data as? WebauthnRegistration {
-                    Task { await self.verifyNewDeviceSession(publicKey: regsitration) }
-                } else {
-                    // Errors raised before ASAuthorization runs (e.g. failing to
-                    // fetch registration options) still surface here.
-                    if error == nil {
-                        self.completeRegistration(nil)
-                    }else if let frotneggError = error as? FronteggError {
-                        self.completeRegistration(frotneggError)
-                    } else {
-                        self.completeRegistration(FronteggError.authError(.unknown))
-                    }
-                }
+                self.handleRegistrationCallback(data: data, error: error)
             }
         }
         guard let url = URL(string: "\(baseUrl)/frontegg/identity/resources/users/webauthn/v1/devices"),
