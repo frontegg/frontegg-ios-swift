@@ -127,7 +127,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
 
         launchApp(resetState: true)
         openEmbeddedLogin()
-        getWebLabel("Transparent Page").waitUntilExists(timeout: 20)
+        app.getWebLabel("Transparent Page").waitUntilExists(timeout: 20)
 
         let configuredBackground = (red: 0x1F, green: 0x6F, blue: 0xEB)
         let deadline = Date().addingTimeInterval(5)
