@@ -26,6 +26,21 @@
       "description": "Logs in and runs step-up twice. Each time the hosted step-up page bootstraps from the native session over the getTokens bridge, which refreshes the token, and the test verifies the step-up window stays open until the MFA challenge is completed, then dismisses after the elevated token exchange (FR-27252)."
     },
     {
+      "method": "testStepUpRequestedWhileItsWindowIsOpenIsRefusedAndLeavesTheWindowOpen",
+      "title": "A second step-up while one is open is refused",
+      "description": "Starts a step-up and, while its window is open, requests another. Verifies the second request completes with operationCanceled, the open window stays up until its MFA challenge is completed, and the first step-up then succeeds (FR-27252)."
+    },
+    {
+      "method": "testClosingTheStepUpWindowCancelsItAndStepUpStillWorksAfterwards",
+      "title": "Closing the step-up window cancels it and step-up still works",
+      "description": "Closes the step-up window before the MFA challenge is completed and verifies that step-up completes with operationCanceled, then verifies a new step-up opens its own window and succeeds (FR-27252)."
+    },
+    {
+      "method": "testStepUpStartedFromTheCompletionOfAnotherStepUpOpensItsOwnWindow",
+      "title": "A step-up started from another step-up's completion opens its own window",
+      "description": "Starts a second step-up from the first one's success completion and verifies each gets its own window and both succeed, since a completion runs only after its window has closed (FR-27252)."
+    },
+    {
       "method": "testLoginWebViewShowsConfiguredBackgroundColorBehindTransparentPage",
       "title": "Login web view shows the configured background color",
       "description": "Serves a transparent authorize page and samples the screen behind it, verifying the login web view is non-opaque and paints the #RRGGBB backgroundColor from FronteggTest.plist instead of white (FR-27246)."
