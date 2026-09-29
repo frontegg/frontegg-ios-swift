@@ -18,16 +18,17 @@ extension FronteggAuth {
             FronteggRuntime.testingLog(
                 "E2E embeddedLogin rootVC=\(type(of: rootVC)) presented=\(String(describing: rootVC.presentedViewController)) embeddedMode=\(self.embeddedMode)"
             )
+            if self.loginCompletion != nil && isEmbeddedLoginInProgress {
+                logger.warning("Login request refused: an embedded login window is already on screen; completing with operationCanceled")
+                _completion?(.failure(.authError(.operationCanceled)))
+                return
+            }
             self.loginHint = loginHint
             let isRegularLogin = self.pendingAppLink == nil
             if isRegularLogin {
                 self.activeEmbeddedOAuthFlow = .login
             }
             if let staleCompletion = self.loginCompletion {
-                if isEmbeddedLoginInProgress {
-                    logger.info("Login request ignored, Embedded login already in progress.")
-                    return
-                }
                 logger.warning("Clearing stale embedded login completion — modal not presented")
                 self.loginCompletion = nil
                 if activeEmbeddedOAuthFlow != .stepUp {
