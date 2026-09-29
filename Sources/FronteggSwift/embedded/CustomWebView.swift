@@ -507,11 +507,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                                     case .success(let user):
                                         self.logger.info("✅ Social login completed successfully after blocking localhost redirect")
                                         self.fronteggAuth.loginCompletion?(.success(user))
-                                        // Dismiss the webview
-                                        if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
-                                            presentingVC.dismiss(animated: false)
-                                            VCHolder.shared.vc = nil
-                                        }
+                                        self.fronteggAuth.dismissEmbeddedLogin(self.fronteggAuth.presentedEmbeddedLogin)
                                     case .failure(let error):
                                         self.logger.error("❌ Social login failed after blocking localhost redirect: \(error.localizedDescription)")
                                         self.fronteggAuth.loginCompletion?(.failure(error))
@@ -629,9 +625,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 DispatchQueue.main.async {
                     UIApplication.shared.open(url, options: [:]) { success in
                         if success {
-                            if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
-                                presentingVC.dismiss(animated: true)
-                                VCHolder.shared.vc = nil
+                            if FronteggAuth.shared.dismissEmbeddedLogin(FronteggAuth.shared.presentedEmbeddedLogin, animated: true) {
                                 FronteggAuth.shared.loginCompletion?(.failure(.authError(.operationCanceled)))
                             }
                         }
@@ -873,11 +867,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                                         self.logger.info("User is authenticated after social login redirect using WebView cookies, completing login flow")
                                         _ = await MainActor.run {
                                             self.fronteggAuth.loginCompletion?(.success(user))
-                                            // Dismiss the webview
-                                            if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
-                                                presentingVC.dismiss(animated: false)
-                                                VCHolder.shared.vc = nil
-                                            }
+                                            self.fronteggAuth.dismissEmbeddedLogin(self.fronteggAuth.presentedEmbeddedLogin)
                                         }
                                         return
                                     } catch {
@@ -926,11 +916,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                                     self.logger.info("User is authenticated after social login redirect using keychain token, completing login flow")
                                     _ = await MainActor.run {
                                         self.fronteggAuth.loginCompletion?(.success(user))
-                                        // Dismiss the webview
-                                        if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
-                                            presentingVC.dismiss(animated: false)
-                                            VCHolder.shared.vc = nil
-                                        }
+                                        self.fronteggAuth.dismissEmbeddedLogin(self.fronteggAuth.presentedEmbeddedLogin)
                                     }
                                 } catch {
                                     // Refresh failed, reload login page
@@ -1093,10 +1079,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 self.logger.info("SSO login completed from WebView cookies")
                 _ = await MainActor.run {
                     self.fronteggAuth.loginCompletion?(.success(user))
-                    if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
-                        presentingVC.dismiss(animated: false)
-                        VCHolder.shared.vc = nil
-                    }
+                    self.fronteggAuth.dismissEmbeddedLogin(self.fronteggAuth.presentedEmbeddedLogin)
                 }
             } catch {
                 self.logger.error("Failed to complete SSO login from WebView cookies: \(error)")

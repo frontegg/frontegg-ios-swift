@@ -24,8 +24,7 @@ extension FronteggAuth {
                 return
             }
             self.loginHint = loginHint
-            let isRegularLogin = self.pendingAppLink == nil
-            if isRegularLogin {
+            if self.pendingAppLink == nil {
                 self.activeEmbeddedOAuthFlow = .login
             }
             if let staleCompletion = self.loginCompletion {
@@ -87,13 +86,19 @@ extension FronteggAuth {
         flow != .stepUp && !isEmbeddedLoginInProgress
     }
 
-    func dismissEmbeddedLogin(_ loginWindow: UIViewController?, then completion: @escaping () -> Void) {
+    @discardableResult
+    func dismissEmbeddedLogin(
+        _ loginWindow: UIViewController?,
+        animated: Bool = false,
+        then completion: @escaping () -> Void = {}
+    ) -> Bool {
         guard let loginWindow, loginWindow.presentingViewController != nil, !loginWindow.isBeingDismissed else {
             completion()
-            return
+            return false
         }
         VCHolder.shared.vc = nil
-        loginWindow.dismiss(animated: false, completion: completion)
+        loginWindow.dismiss(animated: animated, completion: completion)
+        return true
     }
 
     public func handleOpenUrl(_ url: URL, _ useAppRootVC: Bool = false, internalHandleUrl:Bool = false) -> Bool {
@@ -397,7 +402,7 @@ extension FronteggAuth {
             WebAuthenticator.shared.cancelSuppressingCanceledLogin(activeSession)
         }
 
-        if Self.shouldEndLeftoverStepUp(flow: activeEmbeddedOAuthFlow, isEmbeddedLoginInProgress: isEmbeddedLoginInProgress) {
+        if !isEmbeddedLoginInProgress {
             stepUpAuthenticator.endActiveStepUp()
         }
 

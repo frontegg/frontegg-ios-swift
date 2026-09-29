@@ -11,12 +11,8 @@ import UIKit
 
 class StepUpAuthenticator {
     private let credentialManager: CredentialManager
-    private let activeStepUpLock = NSLock()
-    private var lockedActiveStepUpId: UUID?
-    private var activeStepUpId: UUID? {
-        get { activeStepUpLock.withLock { lockedActiveStepUpId } }
-        set { activeStepUpLock.withLock { lockedActiveStepUpId = newValue } }
-    }
+    private let activeStepUpLock = NSRecursiveLock()
+    private var activeStepUpId: UUID?
     private weak var stepUpWindow: UIViewController?
     private let logger = getLogger("StepUpAuthenticator")
 
@@ -69,7 +65,6 @@ class StepUpAuthenticator {
                 maxAge: maxAge
             )
             let stepUpCompletion = self.makeStepUpCompletion(completion)
-            FronteggAuth.shared.setIsStepUpAuthorization(true)
             FronteggAuth.shared.setIsLoading(false)
 
             // Always present step-up in the embedded bridge webview (like the Admin
@@ -87,14 +82,16 @@ class StepUpAuthenticator {
 
     func makeStepUpCompletion(_ completion: FronteggAuth.CompletionHandler?) -> FronteggAuth.CompletionHandler {
         let stepUpId = UUID()
-        activeStepUpId = stepUpId
+        activeStepUpLock.withLock {
+            activeStepUpId = stepUpId
+            FronteggAuth.shared.setIsStepUpAuthorization(true)
+        }
         return { result in
             DispatchQueue.main.async {
-                guard self.activeStepUpId == stepUpId else {
+                guard self.endActiveStepUp(ifCurrent: stepUpId) else {
                     completion?(result)
                     return
                 }
-                self.endActiveStepUp()
                 FronteggAuth.shared.setIsLoading(false)
                 let ownWindow = self.stepUpWindow
                 self.stepUpWindow = nil
@@ -106,7 +103,18 @@ class StepUpAuthenticator {
     }
 
     func endActiveStepUp() {
-        activeStepUpId = nil
-        FronteggAuth.shared.setIsStepUpAuthorization(false)
+        activeStepUpLock.withLock {
+            activeStepUpId = nil
+            FronteggAuth.shared.setIsStepUpAuthorization(false)
+        }
+    }
+
+    private func endActiveStepUp(ifCurrent stepUpId: UUID) -> Bool {
+        activeStepUpLock.withLock {
+            guard activeStepUpId == stepUpId else { return false }
+            activeStepUpId = nil
+            FronteggAuth.shared.setIsStepUpAuthorization(false)
+            return true
+        }
     }
 }
