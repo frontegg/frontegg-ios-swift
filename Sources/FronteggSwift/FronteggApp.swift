@@ -263,7 +263,11 @@ public class FronteggApp {
         self.shouldSuggestSavePassword = config.shouldSuggestSavePassword
         self.handleLoginWithSocialProvider = config.handleLoginWithSocialProvider
         self.handleLoginWithCustomSocialLoginProvider = config.handleLoginWithCustomSocialLoginProvider
-        self.backgroundColor = UIColor(named: config.backgroundColor ?? "#FFFFFF") ?? .white
+        // Left nil when unset, so FronteggWebView keeps the web view transparent.
+        self.backgroundColor = UIColor.fronteggBackgroundColor(from: config.backgroundColor)
+        if let configuredBackgroundColor = config.backgroundColor, self.backgroundColor == nil {
+            logger.warning("backgroundColor \"\(configuredBackgroundColor)\" is neither #RRGGBB/#RRGGBBAA nor an asset-catalog color name; the login web view stays transparent")
+        }
         self.loginOrganizationAlias = config.loginOrganizationAlias
         self.entitlementsEnabled = config.entitlementsEnabled
         self.useAssetLinks = config.useAssetLinks

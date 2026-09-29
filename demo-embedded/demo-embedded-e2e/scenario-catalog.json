@@ -26,6 +26,11 @@
       "description": "Sets a host footer, verifies the login screen renders it with the javascript: link degraded to text, that the http(s) link opens in Safari while the login box stays open, and that the app-scheme link hands off and closes the box (FR-27245)."
     },
     {
+      "method": "testLoginWebViewShowsConfiguredBackgroundColorBehindTransparentPage",
+      "title": "Login web view shows the configured background color",
+      "description": "Serves a transparent authorize page and samples the screen behind it, verifying the login web view is non-opaque and paints the #RRGGBB backgroundColor from FronteggTest.plist instead of white (FR-27246)."
+    },
+    {
       "method": "testRequestAuthorizeFlow",
       "title": "Request authorize flow signs in seeded user",
       "description": "Seeds the request-authorize token, starts the authorize flow, and verifies the seeded signup user is authenticated."

@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
@@ -140,6 +141,75 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         }
         XCTAssertEqual(app.webViews.count, 0, "Expected the app-scheme footer link to hand off and close the login box. \(screenDebugSummary())")
+    }
+
+    /// FR-27246: an opaque login web view painted white over the host instead of the configured backgroundColor.
+    func testLoginWebViewShowsConfiguredBackgroundColorBehindTransparentPage() throws {
+        let transparentPage: [String: Any] = [
+            "status": 200,
+            "headers": ["Content-Type": "text/html; charset=utf-8"],
+            "body": """
+            <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+            <body style="background: transparent; margin: 0;"><p>Transparent Page</p></body></html>
+            """
+        ]
+        // The SDK reloads an authorize URL that renders a page, so every reload must stay transparent.
+        try Self.server.enqueue(method: "GET", path: "/oauth/authorize", responses: Array(repeating: transparentPage, count: 3))
+
+        launchApp(resetState: true)
+        openEmbeddedLogin()
+        app.getWebLabel("Transparent Page").waitUntilExists(timeout: 20)
+
+        let configuredBackground = (red: 0x1F, green: 0x6F, blue: 0xEB)
+        let deadline = Date().addingTimeInterval(5)
+        var sampledColor = screenPixelColor(atNormalizedPoint: CGPoint(x: 0.5, y: 0.8))
+        while !isColor(sampledColor, closeTo: configuredBackground), Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+            sampledColor = screenPixelColor(atNormalizedPoint: CGPoint(x: 0.5, y: 0.8))
+        }
+        XCTAssertTrue(
+            isColor(sampledColor, closeTo: configuredBackground),
+            "Expected the configured backgroundColor #1F6FEB behind the transparent page, sampled \(String(describing: sampledColor)). \(screenDebugSummary())"
+        )
+    }
+
+    private func screenPixelColor(atNormalizedPoint point: CGPoint) -> (red: Int, green: Int, blue: Int)? {
+        guard let screenshot = XCUIScreen.main.screenshot().image.cgImage else { return nil }
+        let pixelRect = CGRect(
+            x: Int(CGFloat(screenshot.width) * point.x),
+            y: Int(CGFloat(screenshot.height) * point.y),
+            width: 1,
+            height: 1
+        )
+        guard let pixel = screenshot.cropping(to: pixelRect) else { return nil }
+
+        var rgba = [UInt8](repeating: 0, count: 4)
+        let didDraw = rgba.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(
+                data: buffer.baseAddress,
+                width: 1,
+                height: 1,
+                bitsPerComponent: 8,
+                bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.draw(pixel, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return true
+        }
+        guard didDraw else { return nil }
+        return (red: Int(rgba[0]), green: Int(rgba[1]), blue: Int(rgba[2]))
+    }
+
+    private func isColor(
+        _ color: (red: Int, green: Int, blue: Int)?,
+        closeTo expected: (red: Int, green: Int, blue: Int),
+        tolerance: Int = 16
+    ) -> Bool {
+        guard let color else { return false }
+        return abs(color.red - expected.red) <= tolerance
+            && abs(color.green - expected.green) <= tolerance
+            && abs(color.blue - expected.blue) <= tolerance
     }
 
     func testUnlockAccountDeepLinkKeepsTheLoginViewOpen() throws {

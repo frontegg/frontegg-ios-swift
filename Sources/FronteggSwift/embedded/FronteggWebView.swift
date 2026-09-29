@@ -134,7 +134,14 @@ public struct FronteggWebView: UIViewRepresentable {
         webView.navigationDelegate = webView;
         webView.uiDelegate = webView
         controller.webView = webView
-        webView.backgroundColor = FronteggApp.shared.backgroundColor
+        // Non-opaque so WKWebView shows this color between pages instead of painting its own white.
+        let webViewBackgroundColor = FronteggApp.shared.backgroundColor ?? .clear
+        webView.isOpaque = false
+        webView.backgroundColor = webViewBackgroundColor
+        webView.scrollView.backgroundColor = webViewBackgroundColor
+        if #available(iOS 15.0, *) {
+            webView.underPageBackgroundColor = webViewBackgroundColor
+        }
 
         #if compiler(>=5.8) && os(iOS) && DEBUG
         if #available(iOS 16.4, *) {

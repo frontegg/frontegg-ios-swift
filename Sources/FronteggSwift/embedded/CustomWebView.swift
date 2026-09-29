@@ -531,7 +531,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                                         self.fronteggAuth.loginCompletion?(.success(user))
                                         // Dismiss the webview
                                         if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
-                                            presentingVC.dismiss(animated: true)
+                                            presentingVC.dismiss(animated: false)
                                             VCHolder.shared.vc = nil
                                         }
                                     case .failure(let error):
@@ -900,7 +900,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                                             self.fronteggAuth.loginCompletion?(.success(user))
                                             // Dismiss the webview
                                             if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
-                                                presentingVC.dismiss(animated: true)
+                                                presentingVC.dismiss(animated: false)
                                                 VCHolder.shared.vc = nil
                                             }
                                         }
@@ -953,7 +953,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                                         self.fronteggAuth.loginCompletion?(.success(user))
                                         // Dismiss the webview
                                         if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
-                                            presentingVC.dismiss(animated: true)
+                                            presentingVC.dismiss(animated: false)
                                             VCHolder.shared.vc = nil
                                         }
                                     }
@@ -1125,7 +1125,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 _ = await MainActor.run {
                     self.fronteggAuth.loginCompletion?(.success(user))
                     if let presentingVC = VCHolder.shared.vc?.presentedViewController ?? VCHolder.shared.vc {
-                        presentingVC.dismiss(animated: true)
+                        presentingVC.dismiss(animated: false)
                         VCHolder.shared.vc = nil
                     }
                 }
