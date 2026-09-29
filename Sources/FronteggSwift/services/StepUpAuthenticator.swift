@@ -10,7 +10,12 @@ import Foundation
 
 class StepUpAuthenticator {
     private let credentialManager: CredentialManager
-    private var activeStepUpId: UUID?
+    private let activeStepUpLock = NSLock()
+    private var lockedActiveStepUpId: UUID?
+    private var activeStepUpId: UUID? {
+        get { activeStepUpLock.withLock { lockedActiveStepUpId } }
+        set { activeStepUpLock.withLock { lockedActiveStepUpId = newValue } }
+    }
     private let logger = getLogger("StepUpAuthenticator")
 
     init(
