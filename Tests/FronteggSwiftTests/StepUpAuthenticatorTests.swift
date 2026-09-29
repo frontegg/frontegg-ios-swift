@@ -251,6 +251,65 @@ final class StepUpAuthenticatorTests: XCTestCase {
         )
     }
 
+    // MARK: - Step-up completion ownership
+
+    func test_currentStepUpCompletion_clearsStepUpStateAndCompletes() {
+        let auth = FronteggAuth.shared
+        let completed = expectation(description: "step-up completion called")
+        let stepUpCompletion = stepUpAuthenticator.makeStepUpCompletion { _ in completed.fulfill() }
+        auth.setIsStepUpAuthorization(true)
+
+        stepUpCompletion(.failure(.authError(.operationCanceled)))
+
+        wait(for: [completed], timeout: 2.0)
+        XCTAssertFalse(auth.isStepUpAuthorization, "The finishing step-up must clear the flag so EmbeddedLoginModal can dismiss")
+    }
+
+    func test_staleStepUpCompletion_doesNotClearNewerStepUp() {
+        let auth = FronteggAuth.shared
+        let completed = expectation(description: "stale completion still reported to its caller")
+        let staleCompletion = stepUpAuthenticator.makeStepUpCompletion { _ in completed.fulfill() }
+        _ = stepUpAuthenticator.makeStepUpCompletion(nil)
+        auth.setIsStepUpAuthorization(true)
+
+        staleCompletion(.failure(.authError(.operationCanceled)))
+
+        wait(for: [completed], timeout: 2.0)
+        XCTAssertTrue(auth.isStepUpAuthorization, "Only the current step-up may clear the flag")
+    }
+
+    func test_endActiveStepUp_releasesOwnershipSoALateCompletionLeavesSharedStateAlone() {
+        let auth = FronteggAuth.shared
+        let completed = expectation(description: "abandoned step-up completion still reported to its caller")
+        let abandonedCompletion = stepUpAuthenticator.makeStepUpCompletion { _ in completed.fulfill() }
+        auth.setIsStepUpAuthorization(true)
+
+        stepUpAuthenticator.endActiveStepUp()
+        XCTAssertFalse(auth.isStepUpAuthorization, "Ending the active step-up must clear the flag")
+
+        auth.setIsStepUpAuthorization(true)
+        abandonedCompletion(.failure(.authError(.operationCanceled)))
+
+        wait(for: [completed], timeout: 2.0)
+        waitForMainQueue()
+        XCTAssertTrue(auth.isStepUpAuthorization, "An ended step-up's late completion must not touch shared step-up state")
+    }
+
+    func test_leftoverStepUp_isEndedByEveryNonStepUpFlowWhenNoLoginIsOnScreen() {
+        let nonStepUpFlows: [FronteggOAuthFlow] = [.login, .socialLogin, .sso, .customSSO, .apple, .mfa, .verification]
+        for flow in nonStepUpFlows {
+            XCTAssertTrue(
+                FronteggAuth.shouldEndLeftoverStepUp(flow: flow, isEmbeddedLoginInProgress: false),
+                "\(flow) must end a leftover step-up"
+            )
+            XCTAssertFalse(
+                FronteggAuth.shouldEndLeftoverStepUp(flow: flow, isEmbeddedLoginInProgress: true),
+                "\(flow) must not end a step-up whose window is still on screen"
+            )
+        }
+        XCTAssertFalse(FronteggAuth.shouldEndLeftoverStepUp(flow: .stepUp, isEmbeddedLoginInProgress: false))
+    }
+
     // MARK: - Helpers
 
     /// Drains queued `DispatchQueue.main.async` blocks scheduled by

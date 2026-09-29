@@ -21,6 +21,36 @@
       "description": "Logs in, starts a native step-up (acr_values + max_age), and verifies the StepUpWebDriver seeds the box's step-up localStorage contract and rewrites the URL to the /account/step-up route so the hosted box renders its MFA challenge instead of a blank page, then completes the challenge and verifies the elevated code is exchanged for a stepped-up token."
     },
     {
+      "method": "testEmbeddedStepUpWindowStaysOpenUntilMfaCompletesTwiceInARow",
+      "title": "Embedded step-up window stays open until MFA completes",
+      "description": "Logs in and runs step-up twice. Each time the hosted step-up page bootstraps from the native session over the getTokens bridge, which refreshes the token, and the test verifies the step-up window stays open until the MFA challenge is completed, then dismisses after the elevated token exchange (FR-27252)."
+    },
+    {
+      "method": "testStepUpRequestedWhileItsWindowIsOpenIsRefusedAndLeavesTheWindowOpen",
+      "title": "A second step-up while one is open is refused",
+      "description": "Starts a step-up and, while its window is open, requests another. Verifies the second request completes with operationCanceled, the open window stays up until its MFA challenge is completed, and the first step-up then succeeds (FR-27252)."
+    },
+    {
+      "method": "testClosingTheStepUpWindowCancelsItAndStepUpStillWorksAfterwards",
+      "title": "Closing the step-up window cancels it and step-up still works",
+      "description": "Closes the step-up window before the MFA challenge is completed and verifies that step-up completes with operationCanceled, then verifies a new step-up opens its own window and succeeds (FR-27252)."
+    },
+    {
+      "method": "testStepUpStartedFromTheCompletionOfAnotherStepUpOpensItsOwnWindow",
+      "title": "A step-up started from another step-up's completion opens its own window",
+      "description": "Starts a second step-up from the first one's success completion and verifies each gets its own window and both succeed, since a completion runs only after its window has closed (FR-27252)."
+    },
+    {
+      "method": "testStepUpWindowClosedByAnAppLinkReportsTheStepUpAsCanceled",
+      "title": "A step-up window closed by an app link reports the step-up as canceled",
+      "description": "Starts a step-up and taps a link on the step-up page that opens the app's own URL scheme, which closes the window with an animated dismissal. Verifies the step-up completes with operationCanceled even though the window is still animating away, and that a new step-up afterwards succeeds."
+    },
+    {
+      "method": "testLoginRequestedOverAnOpenStepUpWindowIsRefusedAndKeepsTheWindow",
+      "title": "A login requested over an open step-up window is refused",
+      "description": "Starts a step-up and, while its window is open, calls login(). Verifies login() completes with operationCanceled, the step-up window stays open until its MFA challenge is completed, and the step-up then succeeds."
+    },
+    {
       "method": "testLoginWebViewShowsConfiguredBackgroundColorBehindTransparentPage",
       "title": "Login web view shows the configured background color",
       "description": "Serves a transparent authorize page and samples the screen behind it, verifying the login web view is non-opaque and paints the #RRGGBB backgroundColor from FronteggTest.plist instead of white (FR-27246)."

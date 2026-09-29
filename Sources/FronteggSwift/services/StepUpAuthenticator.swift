@@ -7,9 +7,14 @@
 
 
 import Foundation
+import UIKit
 
 class StepUpAuthenticator {
     private let credentialManager: CredentialManager
+    private let activeStepUpLock = NSRecursiveLock()
+    private var activeStepUpId: UUID?
+    private weak var stepUpWindow: UIViewController?
+    private let logger = getLogger("StepUpAuthenticator")
 
     init(
         credentialManager: CredentialManager
@@ -48,21 +53,18 @@ class StepUpAuthenticator {
         maxAge: TimeInterval? = nil,
         completion: FronteggAuth.CompletionHandler? = nil
     ) {
-        let updatedCompletion: FronteggAuth.CompletionHandler = { (result) in
-            DispatchQueue.main.async {
-                FronteggAuth.shared.setIsStepUpAuthorization(false)
-                FronteggAuth.shared.setIsLoading(false)
-                completion?(result)
-            }
-        }
-
-        let (authorizeUrl, _) = AuthorizeUrlGenerator.shared.generate(
-            stepUp: true,
-            maxAge: maxAge
-        )
-
         DispatchQueue.main.async {
-            FronteggAuth.shared.setIsStepUpAuthorization(true)
+            if FronteggAuth.shared.isEmbeddedLoginInProgress {
+                self.logger.warning("stepUp refused: an embedded login window is already on screen; completing with operationCanceled")
+                completion?(.failure(.authError(.operationCanceled)))
+                return
+            }
+
+            let (authorizeUrl, _) = AuthorizeUrlGenerator.shared.generate(
+                stepUp: true,
+                maxAge: maxAge
+            )
+            let stepUpCompletion = self.makeStepUpCompletion(completion)
             FronteggAuth.shared.setIsLoading(false)
 
             // Always present step-up in the embedded bridge webview (like the Admin
@@ -73,7 +75,46 @@ class StepUpAuthenticator {
             FronteggAuth.shared.activeEmbeddedOAuthFlow = .stepUp
             FronteggAuth.shared.pendingAppLink = authorizeUrl
             FronteggAuth.shared.setWebLoading(true)
-            FronteggAuth.shared.embeddedLogin(updatedCompletion, loginHint: nil)
+            FronteggAuth.shared.embeddedLogin(stepUpCompletion, loginHint: nil)
+            self.stepUpWindow = FronteggAuth.shared.presentedEmbeddedLogin
+        }
+    }
+
+    func makeStepUpCompletion(_ completion: FronteggAuth.CompletionHandler?) -> FronteggAuth.CompletionHandler {
+        let stepUpId = UUID()
+        activeStepUpLock.withLock {
+            activeStepUpId = stepUpId
+            FronteggAuth.shared.setIsStepUpAuthorization(true)
+        }
+        return { result in
+            DispatchQueue.main.async {
+                guard self.endActiveStepUp(ifCurrent: stepUpId) else {
+                    completion?(result)
+                    return
+                }
+                FronteggAuth.shared.setIsLoading(false)
+                let ownWindow = self.stepUpWindow
+                self.stepUpWindow = nil
+                FronteggAuth.shared.dismissEmbeddedLogin(ownWindow) {
+                    completion?(result)
+                }
+            }
+        }
+    }
+
+    func endActiveStepUp() {
+        activeStepUpLock.withLock {
+            activeStepUpId = nil
+            FronteggAuth.shared.setIsStepUpAuthorization(false)
+        }
+    }
+
+    private func endActiveStepUp(ifCurrent stepUpId: UUID) -> Bool {
+        activeStepUpLock.withLock {
+            guard activeStepUpId == stepUpId else { return false }
+            activeStepUpId = nil
+            FronteggAuth.shared.setIsStepUpAuthorization(false)
+            return true
         }
     }
 }
