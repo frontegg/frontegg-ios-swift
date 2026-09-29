@@ -16,6 +16,7 @@ enum DemoEmbeddedTestMode {
     static let misroutedCallbackCodeEnv = "FRONTEGG_E2E_MISROUTED_CALLBACK_CODE"
     static let misroutedCallbackStateEnv = "FRONTEGG_E2E_MISROUTED_CALLBACK_STATE"
     static let misroutedCallbackVerifierEnv = "FRONTEGG_E2E_MISROUTED_CALLBACK_VERIFIER"
+    static let loginBoxFooterEnv = "FRONTEGG_E2E_LOGIN_BOX_FOOTER"
     static let requestAuthorizeRefreshToken = "signup-refresh-token"
     static let embeddedPasswordEmail = "test@frontegg.com"
     static let embeddedSAMLEmail = "test@saml-domain.com"
@@ -66,6 +67,26 @@ enum DemoEmbeddedTestMode {
 
     static var misroutedCallbackVerifier: String? {
         ProcessInfo.processInfo.environment[misroutedCallbackVerifierEnv]
+    }
+
+    /// FR-27245 footer with one link of each kind: app scheme, http(s), and one the SDK rejects.
+    static var loginBoxFooter: [String: Any]? {
+        guard ProcessInfo.processInfo.environment[loginBoxFooterEnv] == "1", let baseUrl else { return nil }
+        let signUpSegments: [[String: String]] = [
+            ["text": "New here? "],
+            ["label": "Create an account", "url": "com.frontegg.demo://sign-up"],
+        ]
+        let attributionSegments: [[String: String]] = [
+            ["text": "Protected by reCAPTCHA. "],
+            ["label": "Privacy Policy", "url": "\(baseUrl)/legal/privacy"],
+            ["text": " "],
+            ["label": "Blocked Link", "url": "javascript:alert(1)"],
+        ]
+        let rows: [[String: Any]] = [
+            ["variant": "body", "segments": signUpSegments],
+            ["variant": "fine", "segments": attributionSegments],
+        ]
+        return ["hideCaptchaBadge": true, "rows": rows]
     }
 
     static var directSocialLoginUrl: String? {
@@ -140,6 +161,7 @@ final class DemoEmbeddedBootstrapper: ObservableObject {
 #endif
 
         FronteggApp.shared.shouldPromptSocialLoginConsent = false
+        FronteggApp.shared.loginBoxFooter = DemoEmbeddedTestMode.loginBoxFooter
         FronteggApp.shared.manualInit(
             baseUrl: baseUrl,
             cliendId: clientId,
