@@ -21,6 +21,11 @@
       "description": "Logs in, starts a native step-up (acr_values + max_age), and verifies the StepUpWebDriver seeds the box's step-up localStorage contract and rewrites the URL to the /account/step-up route so the hosted box renders its MFA challenge instead of a blank page, then completes the challenge and verifies the elevated code is exchanged for a stepped-up token."
     },
     {
+      "method": "testLoginBoxFooterLinksOpenOutsideTheLoginBox",
+      "title": "Login box footer links open outside the box",
+      "description": "Sets a host footer, verifies the login screen renders it with the javascript: link degraded to text, that the http(s) link opens in Safari while the login box stays open, and that the app-scheme link hands off and closes the box (FR-27245)."
+    },
+    {
       "method": "testLoginWebViewShowsConfiguredBackgroundColorBehindTransparentPage",
       "title": "Login web view shows the configured background color",
       "description": "Serves a transparent authorize page and samples the screen behind it, verifying the login web view is non-opaque and paints the #RRGGBB backgroundColor from FronteggTest.plist instead of white (FR-27246)."

@@ -49,7 +49,8 @@ class DemoEmbeddedUITestCase: XCTestCase {
         useRootGeneratedCallbackAlias: Bool = false,
         misroutedCallbackCode: String? = nil,
         misroutedCallbackState: String? = nil,
-        misroutedCallbackVerifier: String? = nil
+        misroutedCallbackVerifier: String? = nil,
+        showsLoginBoxFooter: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment = Self.server.launchEnvironment(
@@ -61,7 +62,8 @@ class DemoEmbeddedUITestCase: XCTestCase {
             useRootGeneratedCallbackAlias: useRootGeneratedCallbackAlias,
             misroutedCallbackCode: misroutedCallbackCode,
             misroutedCallbackState: misroutedCallbackState,
-            misroutedCallbackVerifier: misroutedCallbackVerifier
+            misroutedCallbackVerifier: misroutedCallbackVerifier,
+            showsLoginBoxFooter: showsLoginBoxFooter
         )
         app.launch()
         self.app = app
