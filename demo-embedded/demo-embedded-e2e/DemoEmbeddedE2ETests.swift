@@ -87,28 +87,73 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
             Self.server.waitForRequest(method: "GET", path: "/oauth/prelogin", timeout: 20),
             "Expected the step-up flow to bootstrap the hosted prelogin page. \(screenDebugSummary())"
         )
-        app.getWebLabel("Step-Up MFA Mock").waitUntilExists(timeout: 20)
-        app.getWebButton("Complete Step-Up").waitUntilExists(timeout: 20).safeTap()
-
-        // Completing the challenge navigates to the driver-seeded after-auth authorize URL,
-        // which issues an elevated code that the native OAuth callback exchanges for a token.
-        XCTAssertTrue(
-            Self.server.waitForRequest(method: "POST", path: "/oauth/token", timeout: 20),
-            "Expected the elevated authorization code to be exchanged for a token. \(screenDebugSummary())"
-        )
+        completeStepUpChallenge()
 
         // The elevated token exchange above is the definitive step-up success signal — it is only
         // reachable because the native driver seeded the after-auth redirect and drove the stub's
         // challenge (which itself only renders when the driver's localStorage + /account/step-up
         // contract is honored). Assert a clean teardown: the step-up webview is dismissed and we
         // are back on the authenticated profile with no connection error.
-        let webviewGone = Date().addingTimeInterval(20)
-        while app.webViews.count > 0, Date() < webviewGone {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-        }
+        waitForWebViewsToClose(timeout: 20)
         XCTAssertEqual(app.webViews.count, 0, "Step-up webview should dismiss after success. \(screenDebugSummary())")
         waitForScreen("UserPageRoot", timeout: 20)
         assertNoConnectionScreenDoesNotAppear(duration: 1)
+    }
+
+    /// FR-27252: the token refresh behind the box's getTokens bootstrap used to end step-up and close the window.
+    func testEmbeddedStepUpWindowStaysOpenUntilMfaCompletesTwiceInARow() throws {
+        launchApp(resetState: true)
+        loginWithPassword()
+
+        for round in 1...2 {
+            Self.server.clearRequestLog()
+            tapButton("E2EStepUpButton")
+            XCTAssertTrue(
+                Self.server.waitForRequest(method: "GET", path: "/oauth/prelogin", timeout: 20),
+                "Expected step-up round \(round) to open the hosted step-up page. \(screenDebugSummary())"
+            )
+            completeStepUpChallenge()
+            waitForWebViewsToClose(timeout: 20)
+            XCTAssertEqual(app.webViews.count, 0, "Step-up round \(round) should dismiss after success. \(screenDebugSummary())")
+            waitForScreen("UserPageRoot", timeout: 20)
+        }
+    }
+
+    private func completeStepUpChallenge() {
+        app.getWebLabel("Step-Up MFA Mock").waitUntilExists(timeout: 20)
+        assertWebViewStaysOpen(for: 3)
+        let tokenRequestsBeforeCompletion = Self.server.requestCount(method: "POST", path: "/oauth/token")
+        app.getWebButton("Complete Step-Up").waitUntilExists(timeout: 20).safeTap()
+
+        // Completing the challenge navigates to the driver-seeded after-auth authorize URL,
+        // which issues an elevated code that the native OAuth callback exchanges for a token.
+        XCTAssertTrue(
+            Self.server.waitForRequestCount(
+                method: "POST",
+                path: "/oauth/token",
+                count: tokenRequestsBeforeCompletion + 1,
+                timeout: 20
+            ),
+            "Expected the elevated authorization code to be exchanged for a token. \(screenDebugSummary())"
+        )
+    }
+
+    private func assertWebViewStaysOpen(for duration: TimeInterval) {
+        let deadline = Date().addingTimeInterval(duration)
+        while Date() < deadline {
+            if app.webViews.count == 0 {
+                XCTFail("Step-up window closed before the MFA challenge was completed. \(screenDebugSummary())")
+                return
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+    }
+
+    private func waitForWebViewsToClose(timeout: TimeInterval) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while app.webViews.count > 0, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
     }
 
     func testUnlockAccountDeepLinkKeepsTheLoginViewOpen() throws {
