@@ -6,6 +6,8 @@ struct UserPage: View {
     @EnvironmentObject private var fronteggAuth: FronteggAuth
     @State private var message: Message?
     @State private var messageTimer: Timer?
+    @State private var stepUpScenarioLog: [String] = []
+    @State private var stepUpScenarioRuns = 0
     @State private var loadSuccess: Bool?
     @State private var entitlementFeature: Entitlement?
     @State private var entitlementPermission: Entitlement?
@@ -258,6 +260,10 @@ struct UserPage: View {
     }
     
     private func handleSensitiveAction() {
+        if let scenario = DemoEmbeddedTestMode.stepUpScenario {
+            runStepUpScenario(scenario)
+            return
+        }
         let isSteppedUp = fronteggAuth.isSteppedUp(maxAge: 60)
         if isSteppedUp {
             showMessage("You are already stepped up", isSuccess: true)
@@ -276,6 +282,56 @@ struct UserPage: View {
         }
     }
     
+    private func runStepUpScenario(_ scenario: String) {
+        stepUpScenarioRuns += 1
+        let run = stepUpScenarioRuns
+        switch (scenario, run) {
+        case ("double", 1):
+            startScenarioStepUp(label: "1")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                startScenarioStepUp(label: "2")
+            }
+        case ("dismissFirst", 1):
+            startScenarioStepUp(label: "1")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                dismissPresentedWindow()
+            }
+        case ("chain", 1):
+            startScenarioStepUp(label: "1") { succeeded in
+                if succeeded {
+                    startScenarioStepUp(label: "2")
+                }
+            }
+        default:
+            startScenarioStepUp(label: "\(run)")
+        }
+    }
+
+    private func startScenarioStepUp(label: String, then next: ((Bool) -> Void)? = nil) {
+        Task {
+            await fronteggAuth.stepUp(maxAge: 60) { res in
+                let outcome: String
+                switch res {
+                case .success:
+                    outcome = "success"
+                case .failure(.authError(.operationCanceled)):
+                    outcome = "operationCanceled"
+                case .failure:
+                    outcome = "failure"
+                }
+                stepUpScenarioLog.append("\(label):\(outcome)")
+                next?(outcome == "success")
+            }
+        }
+    }
+
+    private func dismissPresentedWindow() {
+        let keyWindow = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+            .first
+        keyWindow?.rootViewController?.presentedViewController?.dismiss(animated: false)
+    }
+
     private func showMessage(_ text: String, isSuccess: Bool) {
         message = Message(text: text, isSuccess: isSuccess)
         messageTimer?.invalidate()
@@ -295,6 +351,10 @@ struct UserPage: View {
                 handleSensitiveAction()
             }
             .accessibilityIdentifier("E2EStepUpButton")
+            Text(stepUpScenarioLog.joined(separator: ","))
+                .font(.system(size: 1))
+                .foregroundColor(.clear)
+                .accessibilityIdentifier("E2EStepUpScenarioLog")
             Text(diagnostics.version)
                 .font(.system(size: 1))
                 .foregroundColor(.clear)

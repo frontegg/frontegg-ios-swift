@@ -101,7 +101,6 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         assertNoConnectionScreenDoesNotAppear(duration: 1)
     }
 
-    /// FR-27252: the token refresh behind the box's getTokens bootstrap used to end step-up and close the window.
     func testEmbeddedStepUpWindowStaysOpenUntilMfaCompletesTwiceInARow() throws {
         launchApp(resetState: true)
         loginWithPassword()
@@ -118,6 +117,77 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
             XCTAssertEqual(app.webViews.count, 0, "Step-up round \(round) should dismiss after success. \(screenDebugSummary())")
             waitForScreen("UserPageRoot", timeout: 20)
         }
+    }
+
+    func testStepUpRequestedWhileItsWindowIsOpenIsRefusedAndLeavesTheWindowOpen() throws {
+        launchApp(stepUpScenario: "double")
+        loginWithPassword()
+
+        tapButton("E2EStepUpButton")
+        XCTAssertTrue(
+            Self.server.waitForRequest(method: "GET", path: "/oauth/prelogin", timeout: 20),
+            "Expected the first step-up to open the hosted step-up page. \(screenDebugSummary())"
+        )
+        app.getWebLabel("Step-Up MFA Mock").waitUntilExists(timeout: 20)
+        assertWebViewStaysOpen(for: 4)
+        completeStepUpChallenge()
+        waitForWebViewsToClose(timeout: 20)
+        waitForScreen("UserPageRoot", timeout: 20)
+
+        assertStepUpScenarioLog(equals: ["2:operationCanceled", "1:success"])
+    }
+
+    func testClosingTheStepUpWindowCancelsItAndStepUpStillWorksAfterwards() throws {
+        launchApp(stepUpScenario: "dismissFirst")
+        loginWithPassword()
+
+        tapButton("E2EStepUpButton")
+        app.getWebLabel("Step-Up MFA Mock").waitUntilExists(timeout: 20)
+        waitForWebViewsToClose(timeout: 20)
+        waitForScreen("UserPageRoot", timeout: 20)
+        assertStepUpScenarioLog(equals: ["1:operationCanceled"])
+
+        Self.server.clearRequestLog()
+        tapButton("E2EStepUpButton")
+        XCTAssertTrue(
+            Self.server.waitForRequest(method: "GET", path: "/oauth/prelogin", timeout: 20),
+            "Expected a new step-up after the closed one to open the hosted step-up page. \(screenDebugSummary())"
+        )
+        completeStepUpChallenge()
+        waitForWebViewsToClose(timeout: 20)
+        waitForScreen("UserPageRoot", timeout: 20)
+        assertStepUpScenarioLog(equals: ["1:operationCanceled", "2:success"])
+    }
+
+    func testStepUpStartedFromTheCompletionOfAnotherStepUpOpensItsOwnWindow() throws {
+        launchApp(stepUpScenario: "chain")
+        loginWithPassword()
+
+        tapButton("E2EStepUpButton")
+        completeStepUpChallenge()
+        completeStepUpChallenge()
+        waitForWebViewsToClose(timeout: 20)
+        waitForScreen("UserPageRoot", timeout: 20)
+        assertStepUpScenarioLog(equals: ["1:success", "2:success"])
+    }
+
+    private func launchApp(stepUpScenario: String) {
+        let app = XCUIApplication()
+        var environment = Self.server.launchEnvironment(resetState: true)
+        environment["FRONTEGG_E2E_STEP_UP_SCENARIO"] = stepUpScenario
+        app.launchEnvironment = environment
+        app.launch()
+        self.app = app
+    }
+
+    private func assertStepUpScenarioLog(equals expected: [String], timeout: TimeInterval = 10) {
+        let log = app.staticTexts["E2EStepUpScenarioLog"]
+        let expectedText = expected.joined(separator: ",")
+        let deadline = Date().addingTimeInterval(timeout)
+        while log.label != expectedText, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+        XCTAssertEqual(log.label, expectedText, "Unexpected step-up results. \(screenDebugSummary())")
     }
 
     private func completeStepUpChallenge() {
@@ -140,13 +210,8 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
     }
 
     private func assertWebViewStaysOpen(for duration: TimeInterval) {
-        let deadline = Date().addingTimeInterval(duration)
-        while Date() < deadline {
-            if app.webViews.count == 0 {
-                XCTFail("Step-up window closed before the MFA challenge was completed. \(screenDebugSummary())")
-                return
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        if app.getWebLabel("Step-Up MFA Mock").waitForNonExistence(timeout: duration) {
+            XCTFail("Step-up window closed before the MFA challenge was completed. \(screenDebugSummary())")
         }
     }
 

@@ -764,7 +764,7 @@ final class LocalMockAuthServer {
     /// challenge never appears — the very blank-page bug the driver fixes, which fails the test.
     /// The Complete button navigates to the driver-seeded after-auth authorize URL (proving the
     /// FRONTEGG_AFTER_AUTH_REDIRECT_URL contract) with stepUpCompleted=1 to elevate the session.
-    /// Like the real box, it bootstraps from the native session over the getTokens bridge first (FR-27252).
+    /// Like the real box, it bootstraps from the native session over the getTokens bridge first.
     private func renderHostedStepUpStep() -> HTTPResponse {
         let body = """
         <div id="step-up-root"></div>
