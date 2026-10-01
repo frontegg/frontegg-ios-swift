@@ -167,6 +167,10 @@ final class LocalMockAuthServer {
         state.enqueue(method: method, path: path, responses: responses)
     }
 
+    func rotateRefreshTokens(delayingNextRefreshResponsesMs delays: [Int] = [], droppingNextRefreshResponses drops: Int = 0) {
+        state.rotateRefreshTokens(delayingNextRefreshResponsesMs: delays, droppingNextRefreshResponses: drops)
+    }
+
     func queueProbeFailures(statusCodes: [Int]) throws {
         try enqueue(
             method: "HEAD",
@@ -994,12 +998,21 @@ final class LocalMockAuthServer {
             guard let refreshToken = body["refresh_token"] as? String, !refreshToken.isEmpty else {
                 return jsonResponse(status: 400, payload: ["error": "missing_refresh_token"])
             }
-            guard let session = state.refreshSession(for: refreshToken) else {
+            guard let refreshed = state.refreshSession(for: refreshToken) else {
                 return jsonResponse(status: 401, payload: ["error": "invalid_refresh_token"])
             }
-            return jsonResponse(
+            if state.consumeRefreshResponseDrop() {
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(), closeConnection: true)
+            }
+            let response = jsonResponse(
                 status: 200,
-                payload: authResponse(session: session, refreshToken: refreshToken)
+                payload: authResponse(session: refreshed.record, refreshToken: refreshed.token)
+            )
+            return HTTPResponse(
+                statusCode: response.statusCode,
+                headers: response.headers,
+                body: response.body,
+                delayMs: state.nextRefreshResponseDelayMs()
             )
 
         default:
@@ -1008,8 +1021,22 @@ final class LocalMockAuthServer {
     }
 
     private func handleSilentAuthorize(_ request: HTTPRequest) -> HTTPResponse {
-        guard let refreshToken = refreshTokenFromCookies(request.headers["cookie"]),
-              let session = state.validRefreshTokenRecord(for: refreshToken) else {
+        guard let refreshToken = refreshTokenFromCookies(request.headers["cookie"]) else {
+            return jsonResponse(status: 401, payload: ["error": "invalid_refresh_cookie"])
+        }
+        if let recovered = state.recoverSession(forWebSessionToken: refreshToken) {
+            let cookieValue = "fe_refresh_demo_embedded_e2e=\(recovered.web.token); Path=/; HttpOnly; SameSite=Lax"
+            let response = jsonResponse(
+                status: 200,
+                payload: authResponse(session: recovered.native.record, refreshToken: recovered.native.token)
+            )
+            return HTTPResponse(
+                statusCode: response.statusCode,
+                headers: response.headers.merging(["Set-Cookie": cookieValue]) { _, new in new },
+                body: response.body
+            )
+        }
+        guard let session = state.validRefreshTokenRecord(for: refreshToken) else {
             return jsonResponse(status: 401, payload: ["error": "invalid_refresh_cookie"])
         }
 
@@ -1101,7 +1128,7 @@ final class LocalMockAuthServer {
 
     private func handleHostedRefresh(_ request: HTTPRequest) -> HTTPResponse {
         guard let refreshToken = refreshTokenFromCookies(request.headers["cookie"]),
-              let session = state.refreshSession(for: refreshToken) else {
+              let session = state.refreshSession(for: refreshToken, rotating: false)?.record else {
             return jsonResponse(status: 401, payload: [
                 "errors": ["Session not found"],
             ])
@@ -2085,6 +2112,9 @@ private final class MockAuthState {
     private var pendingEmbeddedSocialSuccessStallCount: Int = 0
     private var pendingEmbeddedSocialSuccessDashboardRedirectCount: Int = 0
     private var pendingEmbeddedSocialSuccessRootRedirectCount: Int = 0
+    private var rotatesRefreshTokens = false
+    private var refreshResponseDelaysMs: [Int] = []
+    private var refreshResponseDropsRemaining = 0
 
     init() {
         reset()
@@ -2109,6 +2139,46 @@ private final class MockAuthState {
             pendingEmbeddedSocialSuccessStallCount = 0
             pendingEmbeddedSocialSuccessDashboardRedirectCount = 0
             pendingEmbeddedSocialSuccessRootRedirectCount = 0
+            rotatesRefreshTokens = false
+            refreshResponseDelaysMs = []
+            refreshResponseDropsRemaining = 0
+        }
+    }
+
+    func rotateRefreshTokens(delayingNextRefreshResponsesMs delays: [Int], droppingNextRefreshResponses drops: Int) {
+        queue.sync {
+            rotatesRefreshTokens = true
+            refreshResponseDelaysMs = delays
+            refreshResponseDropsRemaining = drops
+        }
+    }
+
+    func consumeRefreshResponseDrop() -> Bool {
+        queue.sync {
+            guard refreshResponseDropsRemaining > 0 else { return false }
+            refreshResponseDropsRemaining -= 1
+            return true
+        }
+    }
+
+    func recoverSession(forWebSessionToken token: String) -> (native: IssuedRefreshToken, web: IssuedRefreshToken)? {
+        queue.sync {
+            guard rotatesRefreshTokens, var record = validatedRefreshTokenRecordLocked(for: token) else {
+                return nil
+            }
+            refreshTokens.removeValue(forKey: token)
+            record.tokenVersion += 1
+            let nativeToken = "refresh-\(UUID().uuidString.lowercased())"
+            let webToken = "refresh-\(UUID().uuidString.lowercased())"
+            refreshTokens[nativeToken] = record
+            refreshTokens[webToken] = record
+            return (IssuedRefreshToken(token: nativeToken, record: record), IssuedRefreshToken(token: webToken, record: record))
+        }
+    }
+
+    func nextRefreshResponseDelayMs() -> Int {
+        queue.sync {
+            refreshResponseDelaysMs.isEmpty ? 0 : refreshResponseDelaysMs.removeFirst()
         }
     }
 
@@ -2224,16 +2294,20 @@ private final class MockAuthState {
 
     func issueRefreshToken(email: String) -> IssuedRefreshToken {
         queue.sync {
-            let refreshToken = "refresh-\(UUID().uuidString.lowercased())"
-            let policy = tokenPolicyLocked(for: email)
-            let record = RefreshTokenRecord(
-                email: email,
-                expiresAt: Date().timeIntervalSince1970 + TimeInterval(policy.refreshTokenTTL),
-                tokenVersion: policy.startingTokenVersion
-            )
-            refreshTokens[refreshToken] = record
-            return IssuedRefreshToken(token: refreshToken, record: record)
+            issueRefreshTokenLocked(email: email)
         }
+    }
+
+    private func issueRefreshTokenLocked(email: String) -> IssuedRefreshToken {
+        let refreshToken = "refresh-\(UUID().uuidString.lowercased())"
+        let policy = tokenPolicyLocked(for: email)
+        let record = RefreshTokenRecord(
+            email: email,
+            expiresAt: Date().timeIntervalSince1970 + TimeInterval(policy.refreshTokenTTL),
+            tokenVersion: policy.startingTokenVersion
+        )
+        refreshTokens[refreshToken] = record
+        return IssuedRefreshToken(token: refreshToken, record: record)
     }
 
     func validRefreshTokenRecord(for refreshToken: String) -> RefreshTokenRecord? {
@@ -2242,14 +2316,20 @@ private final class MockAuthState {
         }
     }
 
-    func refreshSession(for refreshToken: String) -> RefreshTokenRecord? {
+    func refreshSession(for refreshToken: String, rotating: Bool = true) -> IssuedRefreshToken? {
         queue.sync {
             guard var record = validatedRefreshTokenRecordLocked(for: refreshToken) else {
                 return nil
             }
             record.tokenVersion += 1
-            refreshTokens[refreshToken] = record
-            return record
+            guard rotating && rotatesRefreshTokens else {
+                refreshTokens[refreshToken] = record
+                return IssuedRefreshToken(token: refreshToken, record: record)
+            }
+            let rotatedToken = "refresh-\(UUID().uuidString.lowercased())"
+            refreshTokens.removeValue(forKey: refreshToken)
+            refreshTokens[rotatedToken] = record
+            return IssuedRefreshToken(token: rotatedToken, record: record)
         }
     }
 
