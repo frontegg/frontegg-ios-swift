@@ -46,10 +46,6 @@ jobs:
           # Extract the description (body field)
           DESCRIPTION=$(echo "$pr_metadata" | jq -r '.body // ""')
           
-          # Check if DESCRIPTION is valid. Use printf + the $DESCRIPTION env
-          # variable instead of inlining ${{ ... }} into a shell-quoted
-          # string — apostrophes in the PR body (e.g. "host's", "page's")
-          # would close the single-quote early and break parsing.
           if [[ -n "$DESCRIPTION" && "$DESCRIPTION" != "null" ]]; then
             if [[ -f "$CHANGELOG_OLD_FILE" ]]; then
               {
