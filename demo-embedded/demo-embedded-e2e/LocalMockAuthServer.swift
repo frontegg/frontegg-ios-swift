@@ -764,6 +764,7 @@ final class LocalMockAuthServer {
     /// challenge never appears — the very blank-page bug the driver fixes, which fails the test.
     /// The Complete button navigates to the driver-seeded after-auth authorize URL (proving the
     /// FRONTEGG_AFTER_AUTH_REDIRECT_URL contract) with stepUpCompleted=1 to elevate the session.
+    /// Like the real box, it bootstraps from the native session over the getTokens bridge first.
     private func renderHostedStepUpStep() -> HTTPResponse {
         let body = """
         <div id="step-up-root"></div>
@@ -773,17 +774,40 @@ final class LocalMockAuthServer {
             var onStepUp = window.localStorage.getItem('SHOULD_STEP_UP') === 'true'
               && window.location.pathname.indexOf('/account/step-up') !== -1;
             if (!onStepUp) { return; }
-            var root = document.getElementById('step-up-root');
-            root.innerHTML =
-              '<h1 id="step-up-mfa-title">Step-Up MFA Mock</h1>' +
-              '<button id="complete-step-up" type="button">Complete Step-Up</button>';
             var fallback = document.getElementById('step-up-fallback');
-            if (fallback) { fallback.remove(); }
-            document.getElementById('complete-step-up').addEventListener('click', function () {
-              var after = window.localStorage.getItem('FRONTEGG_AFTER_AUTH_REDIRECT_URL');
-              if (!after) { return; }
-              window.location.assign(after + (after.indexOf('?') >= 0 ? '&' : '?') + 'stepUpCompleted=1');
-            });
+
+            function renderChallenge() {
+              var root = document.getElementById('step-up-root');
+              root.innerHTML =
+                '<h1 id="step-up-mfa-title">Step-Up MFA Mock</h1>' +
+                '<button id="complete-step-up" type="button">Complete Step-Up</button>' +
+                '<button id="open-app-link" type="button">Open App Link</button>';
+              if (fallback) { fallback.remove(); }
+              document.getElementById('open-app-link').addEventListener('click', function () {
+                window.location.assign('com.frontegg.demo://e2e/open-app');
+              });
+              document.getElementById('complete-step-up').addEventListener('click', function () {
+                var after = window.localStorage.getItem('FRONTEGG_AFTER_AUTH_REDIRECT_URL');
+                if (!after) { return; }
+                window.location.assign(after + (after.indexOf('?') >= 0 ? '&' : '?') + 'stepUpCompleted=1');
+              });
+            }
+
+            function showBootstrapError(reason) {
+              if (fallback) { fallback.textContent = 'Step-up bootstrap failed: ' + reason; }
+            }
+
+            var callbacks = window.FronteggNativeBridgeCallbacks = window.FronteggNativeBridgeCallbacks || {};
+            callbacks.stepUpBootstrap = { resolve: renderChallenge, reject: showBootstrapError };
+            try {
+              window.webkit.messageHandlers.FronteggNativeBridge.postMessage(JSON.stringify({
+                action: 'getTokens',
+                callbackId: 'stepUpBootstrap',
+                payload: ''
+              }));
+            } catch (error) {
+              showBootstrapError('no native bridge');
+            }
           })();
         </script>
         """
