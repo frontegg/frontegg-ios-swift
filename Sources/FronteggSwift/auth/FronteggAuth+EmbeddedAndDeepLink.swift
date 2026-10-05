@@ -18,18 +18,25 @@ extension FronteggAuth {
             FronteggRuntime.testingLog(
                 "E2E embeddedLogin rootVC=\(type(of: rootVC)) presented=\(String(describing: rootVC.presentedViewController)) embeddedMode=\(self.embeddedMode)"
             )
+            if self.loginCompletion != nil && isEmbeddedLoginInProgress {
+                logger.warning("Login request refused: an embedded login window is already on screen; completing with operationCanceled")
+                _completion?(.failure(.authError(.operationCanceled)))
+                return
+            }
             self.loginHint = loginHint
             if self.pendingAppLink == nil {
                 self.activeEmbeddedOAuthFlow = .login
             }
             if let staleCompletion = self.loginCompletion {
-                if rootVC.presentedViewController is UIHostingController<EmbeddedLoginModal> {
-                    logger.info("Login request ignored, Embedded login already in progress.")
-                    return
-                }
                 logger.warning("Clearing stale embedded login completion — modal not presented")
                 self.loginCompletion = nil
+                if activeEmbeddedOAuthFlow != .stepUp {
+                    stepUpAuthenticator.endActiveStepUp()
+                }
                 staleCompletion(.failure(.authError(.operationCanceled)))
+            }
+            if Self.shouldEndLeftoverStepUp(flow: activeEmbeddedOAuthFlow, isEmbeddedLoginInProgress: isEmbeddedLoginInProgress) {
+                stepUpAuthenticator.endActiveStepUp()
             }
             self.loginCompletion = { result in
                 _completion?(result)
@@ -39,7 +46,7 @@ extension FronteggAuth {
             let hostingController = UIHostingController(rootView: loginModal)
             hostingController.modalPresentationStyle = .fullScreen
 
-            if(rootVC.presentedViewController?.classForCoder == hostingController.classForCoder){
+            if isEmbeddedLoginPresented(on: rootVC) {
                 rootVC.presentedViewController?.dismiss(animated: false)
             }
 
@@ -55,6 +62,43 @@ extension FronteggAuth {
             logger.critical(error.localizedDescription)
             _completion?(.failure(error))
         }
+    }
+
+    /// The embedded login window on screen, including one that is still being torn down.
+    var presentedEmbeddedLogin: UIViewController? {
+        var presentingController = getRootVC(true)
+        while let controller = presentingController {
+            if isEmbeddedLoginPresented(on: controller) { return controller.presentedViewController }
+            presentingController = controller.presentedViewController
+        }
+        return nil
+    }
+
+    var isEmbeddedLoginInProgress: Bool {
+        presentedEmbeddedLogin != nil
+    }
+
+    func isEmbeddedLoginPresented(on controller: UIViewController) -> Bool {
+        controller.presentedViewController is UIHostingController<EmbeddedLoginModal>
+    }
+
+    static func shouldEndLeftoverStepUp(flow: FronteggOAuthFlow, isEmbeddedLoginInProgress: Bool) -> Bool {
+        flow != .stepUp && !isEmbeddedLoginInProgress
+    }
+
+    @discardableResult
+    func dismissEmbeddedLogin(
+        _ loginWindow: UIViewController?,
+        animated: Bool = false,
+        then completion: @escaping () -> Void = {}
+    ) -> Bool {
+        guard let loginWindow, loginWindow.presentingViewController != nil, !loginWindow.isBeingDismissed else {
+            completion()
+            return false
+        }
+        VCHolder.shared.vc = nil
+        loginWindow.dismiss(animated: animated, completion: completion)
+        return true
     }
 
     public func handleOpenUrl(_ url: URL, _ useAppRootVC: Bool = false, internalHandleUrl:Bool = false) -> Bool {
@@ -358,12 +402,15 @@ extension FronteggAuth {
             WebAuthenticator.shared.cancelSuppressingCanceledLogin(activeSession)
         }
 
+        if !isEmbeddedLoginInProgress {
+            stepUpAuthenticator.endActiveStepUp()
+        }
+
         let loginModal = EmbeddedLoginModal(parentVC: rootVC)
         let hostingController = UIHostingController(rootView: loginModal)
         hostingController.modalPresentationStyle = .fullScreen
 
-        let presented = rootVC.presentedViewController
-        if presented is UIHostingController<EmbeddedLoginModal> {
+        if isEmbeddedLoginPresented(on: rootVC) {
             rootVC.presentedViewController?.dismiss(animated: false)
         }
         rootVC.present(hostingController, animated: false, completion: nil)

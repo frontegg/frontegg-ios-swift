@@ -544,6 +544,22 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertNil(auth.refreshToken)
     }
 
+    func test_refreshTokenIfNeeded_duringStepUp_keepsStepUpAuthorization() async throws {
+        api.refreshResult = .success(try makeAuthResponse(email: "step-up-refresh@example.com", refreshToken: "refresh-token-new"))
+        api.enqueueJSON(path: mePath, statusCode: 200, json: TestDataFactory.makeUser(email: "step-up-refresh@example.com"))
+        api.enqueueJSON(path: tenantsPath, statusCode: 200, json: makeTenantsResponse())
+        auth.setIsStepUpAuthorization(true)
+
+        let refreshed = await auth.refreshTokenIfNeeded()
+
+        XCTAssertTrue(refreshed)
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertTrue(
+            auth.isStepUpAuthorization,
+            "A refresh during step-up (e.g. from the getTokens bridge) must not end step-up, or EmbeddedLoginModal dismisses itself before MFA"
+        )
+    }
+
     func test_setCredentials_missingExpClaim_authenticatesWithoutCrashing() async throws {
         let accessToken = try makeAccessToken(email: "missing-exp@example.com", includeExp: false)
         let user = try makeUser(email: "missing-exp@example.com")

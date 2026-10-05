@@ -9,6 +9,7 @@ enum DemoEmbeddedTestMode {
     static let resetStateEnv = "FRONTEGG_E2E_RESET_STATE"
     static let forceNetworkPathOfflineEnv = "FRONTEGG_E2E_FORCE_NETWORK_PATH_OFFLINE"
     static let enableOfflineModeEnv = "FRONTEGG_E2E_ENABLE_OFFLINE_MODE"
+    static let stepUpScenarioEnv = "FRONTEGG_E2E_STEP_UP_SCENARIO"
     /// Mis-routed deep-link regression test. Provided values populate a
     /// synthetic `<bundle>://...?code=&state=` URL that's piped through
     /// `FronteggAuth.handleOpenUrl` to simulate the multi-app AASA
@@ -50,6 +51,11 @@ enum DemoEmbeddedTestMode {
         case "0": return false
         default:  return nil
         }
+    }
+
+    static var stepUpScenario: String? {
+        guard isEnabled else { return nil }
+        return ProcessInfo.processInfo.environment[stepUpScenarioEnv]
     }
 
     static var customSSOUrl: String? {
