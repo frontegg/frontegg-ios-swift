@@ -8,6 +8,7 @@ extension FronteggAuth {
 
     /// Async variant of `login(_:loginHint:)`.
     /// - Throws: `FronteggError`; inspect `category` to branch on the cause.
+    @MainActor
     public func loginAsync(loginHint: String? = nil) async throws -> User {
         try await awaitCompletion { completion in
             self.login(completion, loginHint: loginHint)
@@ -16,6 +17,7 @@ extension FronteggAuth {
 
     /// Async variant of `switchTenant(tenantId:_:)`.
     /// - Throws: `FronteggError`; inspect `category` to branch on the cause.
+    @MainActor
     public func switchTenantAsync(tenantId: String) async throws -> User {
         try await awaitCompletion { completion in
             self.switchTenant(tenantId: tenantId, completion)
@@ -24,12 +26,14 @@ extension FronteggAuth {
 
     /// Async variant of `logout(clearCookie:_:)`.
     /// - Throws: `FronteggError`; inspect `category` to branch on the cause.
+    @MainActor
     public func logoutAsync(clearCookie: Bool = true) async throws {
         _ = try await awaitCompletion { completion in
             self.logout(clearCookie: clearCookie, completion)
         }
     }
 
+    @MainActor
     private func awaitCompletion<T>(
         _ start: (@escaping (Result<T, FronteggError>) -> Void) -> Void
     ) async throws -> T {

@@ -16,6 +16,13 @@ private final class PresentingRootViewController: UIViewController {
     override var presentedViewController: UIViewController? { stubPresented }
 }
 
+private final class RecordingRootViewController: UIViewController {
+    var onPresent: ((Bool) -> Void)?
+    override func present(_ viewControllerToPresent: UIViewController, animated flag: Bool, completion: (() -> Void)? = nil) {
+        onPresent?(Thread.isMainThread)
+    }
+}
+
 final class EmbeddedLoginRootViewControllerTests: XCTestCase {
 
     private var auth: FronteggAuth!
@@ -133,5 +140,39 @@ final class EmbeddedLoginRootViewControllerTests: XCTestCase {
             return XCTFail("Expected .operationCanceled, got \(String(describing: thrown))")
         }
         XCTAssertEqual(firstCallerCompletions(), 0)
+    }
+
+    func testLoginAsyncFromBackgroundTaskPresentsEmbeddedLoginOnMainThread() {
+        PlistHelper.testConfigOverride = FronteggPlist(
+            lateInit: true,
+            payload: .singleRegion(.init(baseUrl: "https://test.example.com", clientId: "test-client-id")),
+            keepUserLoggedInAfterReinstall: false
+        )
+        defer { PlistHelper.testConfigOverride = nil }
+        FronteggApp.shared.manualInit(baseUrl: "https://test.example.com", cliendId: "test-client-id")
+
+        let root = RecordingRootViewController()
+        auth.testRootViewControllerOverride = root
+        let presented = expectation(description: "embedded login presented")
+        var presentedOnMainThread = false
+        root.onPresent = { onMain in
+            presentedOnMainThread = onMain
+            presented.fulfill()
+        }
+
+        let finished = expectation(description: "loginAsync returns")
+        let auth = self.auth!
+        Task.detached {
+            _ = try? await auth.loginAsync()
+            finished.fulfill()
+        }
+
+        wait(for: [presented], timeout: 2.0)
+        DispatchQueue.main.async {
+            auth.loginCompletion?(.failure(.authError(.operationCanceled)))
+        }
+        wait(for: [finished], timeout: 2.0)
+
+        XCTAssertTrue(presentedOnMainThread, "loginAsync must drive the login UI on the main thread")
     }
 }
