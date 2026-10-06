@@ -2,8 +2,6 @@
 //  WebSessionCookies.swift
 //  FronteggSwift
 //
-//  The login box's web session cookies, kept in the embedded web view's cookie store.
-//
 
 import Foundation
 import WebKit
@@ -41,6 +39,6 @@ final class WKWebSessionCookies: WebSessionCookieStoring {
 
     static func cookie(_ cookie: HTTPCookie, matches host: String) -> Bool {
         let domain = cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain
-        return domain == host || host.hasSuffix(".\(domain)") || domain.hasSuffix(".\(host)")
+        return domain == host || host.hasSuffix(".\(domain)")
     }
 }

@@ -476,7 +476,10 @@ public class Api {
     }
 
     func authorizeWithWebSession(cookie: HTTPCookie) async throws -> (AuthResponse, [HTTPCookie]) {
-        let (data, response) = try await silentAuthorize(cookieHeader: "\(cookie.name)=\(cookie.value)")
+        let (data, response) = try await silentAuthorize(
+            cookieHeader: "\(cookie.name)=\(cookie.value)",
+            timeout: Api.REFRESH_TIMEOUT
+        )
         guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
             throw FronteggError.authError(.failedToAuthenticate)
         }
