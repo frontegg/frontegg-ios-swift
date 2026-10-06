@@ -43,8 +43,18 @@ jobs:
            -H "Accept: application/vnd.github+json" \
            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}")
           
-          # Extract the description (body field)
-          DESCRIPTION=$(echo "$pr_metadata" | jq -r '.body // ""')
+          strip_bot_summaries() {
+            awk '
+              /<!-- CURSOR_SUMMARY -->/ { skip = 1 }
+              !skip { lines[++n] = $0 }
+              /<!-- \/CURSOR_SUMMARY -->/ { skip = 0 }
+              END {
+                while (n > 0 && lines[n] ~ /^[[:space:]]*$/) n--
+                for (i = 1; i <= n; i++) print lines[i]
+              }'
+          }
+
+          DESCRIPTION=$(echo "$pr_metadata" | jq -r '.body // ""' | strip_bot_summaries)
           
           if [[ -n "$DESCRIPTION" && "$DESCRIPTION" != "null" ]]; then
             if [[ -f "$CHANGELOG_OLD_FILE" ]]; then
