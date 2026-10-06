@@ -201,6 +201,16 @@
       "description": "Logs in with a short access token TTL and verifies the SDK's scheduled refresh fires automatically, incrementing the token version while the app stays in the foreground."
     },
     {
+      "method": "testRefreshResponseSlowerThanTheRequestTimeoutKeepsTheRotatedSession",
+      "title": "A slow refresh response on a rotating refresh token keeps the session",
+      "description": "Logs in, then makes the mock rotate refresh tokens and answer the next refresh after 15 s, like a slow in-flight connection. Verifies the scheduled refresh still gets the rotated token and the user stays signed in (FR-27189)."
+    },
+    {
+      "method": "testLostRefreshResponseRecoversTheSessionFromTheWebSession",
+      "title": "A lost refresh response on a rotating refresh token recovers the session from the web session",
+      "description": "Logs in, then makes the mock rotate refresh tokens and drop the connection on the next refresh after rotating, so the app never sees its new token. Verifies the next refresh's 401 is recovered from the login box's web session instead of signing the user out, and that the recovered token keeps refreshing (FR-27189)."
+    },
+    {
       "method": "testMisroutedOpenURLRecoversIntoAuthenticatedState",
       "title": "Mis-routed OAuth callback recovers into authenticated state",
       "description": "Simulates a multi-app AASA scenario where an OAuth callback is delivered to the wrong app via openURL, and verifies the SDK exchanges the seeded code and lands the user on the authenticated screen instead of getting stuck on login."

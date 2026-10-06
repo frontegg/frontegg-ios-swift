@@ -1046,6 +1046,74 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         XCTAssertTrue(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
     }
 
+    func testRefreshResponseSlowerThanTheRequestTimeoutKeepsTheRotatedSession() throws {
+        Self.server.configureTokenPolicy(
+            email: "test@frontegg.com",
+            accessTokenTTL: expiringAccessTokenTTL,
+            refreshTokenTTL: longLivedRefreshTokenTTL
+        )
+
+        launchApp(resetState: true)
+        loginWithPassword()
+        waitForUserEmail("test@frontegg.com")
+        let initialVersion = accessTokenVersion()
+        let refreshesBefore = Self.server.requestCount(method: "POST", path: "/oauth/token")
+        Self.server.rotateRefreshTokens(delayingNextRefreshResponsesMs: [15_000])
+
+        XCTAssertTrue(
+            Self.server.waitForRequestCount(method: "POST", path: "/oauth/token", count: refreshesBefore + 1, timeout: 30),
+            "Expected the scheduled refresh. \(screenDebugSummary())"
+        )
+        Thread.sleep(forTimeInterval: 17)
+        XCUIDevice.shared.press(.home)
+        Thread.sleep(forTimeInterval: 2)
+        app.activate()
+
+        let signedOut = app.descendants(matching: .any)["LoginPageRoot"].waitForExistence(timeout: 15)
+        XCTAssertFalse(signedOut, "The user was signed out after returning to the app. \(screenDebugSummary())")
+        let refreshedVersion = waitForAccessTokenVersionChange(from: initialVersion, timeout: 30)
+        XCTAssertGreaterThan(refreshedVersion, initialVersion, screenDebugSummary())
+        XCTAssertTrue(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
+    }
+
+    func testLostRefreshResponseRecoversTheSessionFromTheWebSession() throws {
+        Self.server.configureTokenPolicy(
+            email: "test@frontegg.com",
+            accessTokenTTL: expiringAccessTokenTTL,
+            refreshTokenTTL: longLivedRefreshTokenTTL
+        )
+
+        launchApp(resetState: true)
+        loginWithPassword()
+        waitForUserEmail("test@frontegg.com")
+        let initialVersion = accessTokenVersion()
+        let refreshesBefore = Self.server.requestCount(method: "POST", path: "/oauth/token")
+        Self.server.rotateRefreshTokens(droppingNextRefreshResponses: 1)
+
+        XCTAssertTrue(
+            Self.server.waitForRequestCount(method: "POST", path: "/oauth/token", count: refreshesBefore + 1, timeout: 30),
+            "Expected the scheduled refresh. \(screenDebugSummary())"
+        )
+        Thread.sleep(forTimeInterval: 3)
+        XCUIDevice.shared.press(.home)
+        Thread.sleep(forTimeInterval: 2)
+        app.activate()
+
+        XCTAssertTrue(
+            Self.server.waitForRequestCount(method: "POST", path: "/oauth/token", count: refreshesBefore + 2, timeout: 30),
+            "Expected a refresh with the spent token after returning to the app. \(screenDebugSummary())"
+        )
+        let signedOut = app.descendants(matching: .any)["LoginPageRoot"].waitForExistence(timeout: 10)
+        XCTAssertFalse(signedOut, "The user was signed out after the lost refresh response. \(screenDebugSummary())")
+        XCTAssertGreaterThanOrEqual(
+            Self.server.requestCount(method: "POST", path: "/frontegg/oauth/authorize/silent"), 1,
+            "Expected the session to be recovered from the web session. \(screenDebugSummary())"
+        )
+        let refreshedVersion = waitForAccessTokenVersionChange(from: initialVersion, timeout: 30)
+        XCTAssertGreaterThan(refreshedVersion, initialVersion, screenDebugSummary())
+        XCTAssertTrue(app.staticTexts["UserEmailValue"].exists, screenDebugSummary())
+    }
+
     // MARK: - FR-24808 Deep-link recovery regression (multi-app AASA wrong-app routing)
 
     /// Regression for the SkyPath "stuck on loading after login" incident
