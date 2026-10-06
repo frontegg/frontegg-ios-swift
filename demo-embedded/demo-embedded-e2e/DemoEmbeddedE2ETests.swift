@@ -101,6 +101,36 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         assertNoConnectionScreenDoesNotAppear(duration: 1)
     }
 
+    func testLoginBoxFooterLinksOpenOutsideTheLoginBox() throws {
+        launchApp(resetState: true, showsLoginBoxFooter: true)
+        openEmbeddedLogin()
+
+        let privacyLink = app.webViews.links["Privacy Policy"]
+        XCTAssertTrue(privacyLink.waitForExistence(timeout: 20), "Expected the host footer on the login screen. \(screenDebugSummary())")
+        XCTAssertTrue(app.webViews.links["Create an account"].exists, "Expected the app-scheme footer link. \(screenDebugSummary())")
+        XCTAssertFalse(app.webViews.links["Blocked Link"].exists, "A javascript: footer link must not render as a link. \(screenDebugSummary())")
+        XCTAssertTrue(app.webViews.staticTexts["Blocked Link"].exists, "A rejected footer link should keep its label as text. \(screenDebugSummary())")
+
+        privacyLink.safeTap()
+        let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
+        XCTAssertTrue(safari.wait(for: .runningForeground, timeout: 20), "Expected the http(s) footer link to open in Safari. \(screenDebugSummary())")
+
+        app.activate()
+        XCTAssertTrue(
+            app.webViews.links["Create an account"].waitForExistence(timeout: 20),
+            "Expected the login box to stay open after an http(s) footer link. \(screenDebugSummary())"
+        )
+
+        app.webViews.links["Create an account"].safeTap()
+        acceptSystemDialogIfNeeded(timeout: 3)
+        waitForScreen("LoginPageRoot", timeout: 20)
+        let webViewsGone = Date().addingTimeInterval(20)
+        while app.webViews.count > 0, Date() < webViewsGone {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+        XCTAssertEqual(app.webViews.count, 0, "Expected the app-scheme footer link to hand off and close the login box. \(screenDebugSummary())")
+    }
+
     func testEmbeddedStepUpWindowStaysOpenUntilMfaCompletesTwiceInARow() throws {
         launchApp(resetState: true)
         loginWithPassword()

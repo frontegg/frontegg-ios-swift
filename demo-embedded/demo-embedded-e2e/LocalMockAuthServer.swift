@@ -96,7 +96,8 @@ final class LocalMockAuthServer {
         useRootGeneratedCallbackAlias: Bool = false,
         misroutedCallbackCode: String? = nil,
         misroutedCallbackState: String? = nil,
-        misroutedCallbackVerifier: String? = nil
+        misroutedCallbackVerifier: String? = nil,
+        showsLoginBoxFooter: Bool = false
     ) -> [String: String] {
         let normalizedBasePathPrefix = normalizeBasePathPrefix(basePathPrefix)
         let appBaseURL = configuredAppBaseURL(basePathPrefix: normalizedBasePathPrefix)
@@ -126,6 +127,9 @@ final class LocalMockAuthServer {
         }
         if let misroutedCallbackVerifier {
             env["FRONTEGG_E2E_MISROUTED_CALLBACK_VERIFIER"] = misroutedCallbackVerifier
+        }
+        if showsLoginBoxFooter {
+            env["FRONTEGG_E2E_LOGIN_BOX_FOOTER"] = "1"
         }
         return env
     }
@@ -668,9 +672,41 @@ final class LocalMockAuthServer {
           <button type="submit">Continue with Mock Google</button>
         </form>
         \(hostedBootstrapScript(includeRefreshAttempt: true))
+        \(hostedLoginBoxFooterScript())
         """
 
         return htmlResponse(status: 200, title: "Mock Embedded Login", body: body)
+    }
+
+    /// Renders `window.__fronteggLoginBoxFooter` the way the login box's boxFooter slot does.
+    private func hostedLoginBoxFooterScript() -> String {
+        """
+        <script>
+          (function () {
+            var footer = window.__fronteggLoginBoxFooter;
+            if (!footer || !Array.isArray(footer.rows)) { return; }
+            var container = document.createElement('div');
+            container.id = 'host-login-box-footer';
+            footer.rows.forEach(function (row) {
+              var line = document.createElement('p');
+              (row.segments || []).forEach(function (segment) {
+                if (segment.url) {
+                  var link = document.createElement('a');
+                  link.href = segment.url;
+                  link.textContent = segment.label;
+                  line.appendChild(link);
+                } else {
+                  var span = document.createElement('span');
+                  span.textContent = segment.text || segment.label || '';
+                  line.appendChild(span);
+                }
+              });
+              container.appendChild(line);
+            });
+            document.body.appendChild(container);
+          })();
+        </script>
+        """
     }
 
     private func renderHostedPasswordStep(
