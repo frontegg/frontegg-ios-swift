@@ -71,6 +71,12 @@ final class FronteggErrorCategoryTests: XCTestCase {
         XCTAssertEqual(FronteggErrorCategory(NSError(domain: "x", code: 1)), .unknown)
     }
 
+    func test_misconfiguredUrlErrors_areConfiguration() {
+        XCTAssertEqual(FronteggErrorCategory(URLError(.badURL)), .configuration)
+        XCTAssertEqual(FronteggErrorCategory(URLError(.unsupportedURL)), .configuration)
+        XCTAssertEqual(FronteggErrorCategory(URLError(.appTransportSecurityRequiresSecureConnection)), .configuration)
+    }
+
     func test_httpStatusErrors() {
         XCTAssertEqual(
             FronteggErrorCategory(ApiError.refreshEndpointTransient(statusCode: 503, message: "")),

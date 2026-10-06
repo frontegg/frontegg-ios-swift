@@ -48,6 +48,24 @@ private final class FailingApi: Api {
     }
 }
 
+private final class OAuthRejectingApi: Api {
+    init() {
+        super.init(baseUrl: "https://test.example.com", clientId: "test-client-id", applicationId: nil)
+    }
+
+    override func postRequest(
+        path: String,
+        body: [String: Any?],
+        additionalHeaders: [String: String] = [:],
+        followRedirect: Bool = true,
+        timeout: Int = Api.DEFAULT_TIMEOUT
+    ) async throws -> (Data, URLResponse) {
+        let url = URL(string: "https://test.example.com/oauth/token")!
+        let response = HTTPURLResponse(url: url, statusCode: 400, httpVersion: nil, headerFields: nil)!
+        return (Data(#"{"error":"invalid_grant","error_description":"Invalid authorization code"}"#.utf8), response)
+    }
+}
+
 final class FronteggErrorPropagationTests: XCTestCase {
 
     private var auth: FronteggAuth!
@@ -186,6 +204,13 @@ final class FronteggErrorPropagationTests: XCTestCase {
         XCTAssertNil(response)
         XCTAssertEqual(error?.category, .network)
         XCTAssertEqual(error?.errorDescription, URLError(.networkConnectionLost).localizedDescription)
+    }
+
+    func test_exchangeToken_oauthErrorResponse_isAuthenticationFailed() async {
+        let (response, error) = await OAuthRejectingApi().exchangeToken(code: "code", redirectUrl: "app://cb", codeVerifier: "verifier")
+
+        XCTAssertNil(response)
+        XCTAssertEqual(error?.category, .authenticationFailed)
     }
 
     @available(iOS 15.0, *)

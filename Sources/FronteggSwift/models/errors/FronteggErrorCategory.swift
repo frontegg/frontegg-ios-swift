@@ -81,10 +81,14 @@ public enum FronteggErrorCategory: Equatable {
             return error.code == ASWebAuthenticationSessionError.canceledLogin.rawValue ? .cancelled : .configuration
         case ASAuthorizationError.errorDomain:
             return error.code == ASAuthorizationError.canceled.rawValue ? .cancelled : .authenticationFailed
+        case Api.oauthErrorDomain:
+            return .authenticationFailed
         case NSURLErrorDomain:
             switch URLError.Code(rawValue: error.code) {
             case .cancelled:
                 return .cancelled
+            case .badURL, .unsupportedURL, .appTransportSecurityRequiresSecureConnection:
+                return .configuration
             case .badServerResponse, .cannotParseResponse, .cannotDecodeRawData, .cannotDecodeContentData, .zeroByteResource:
                 return .invalidResponse
             default:
