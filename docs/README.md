@@ -120,6 +120,7 @@ That is a working login. Building with UIKit instead? The
 | [Usage Examples](https://ios-swift-guide.frontegg.com/#/usage) | Common implementation patterns |
 | [Advanced Topics](https://ios-swift-guide.frontegg.com/#/advanced) | Multi-region, multi-app, passkeys, step-up, entitlements, logging |
 | [Offline Mode](https://ios-swift-guide.frontegg.com/#/offline-mode) | Custom offline UI, reconnect behaviour, logout expectations |
+| [Prebuilt Components](https://ios-swift-guide.frontegg.com/#/prebuilt-components) | SwiftUI tenant switcher and security center (passkeys, MFA, step-up, sessions) |
 
 Full platform documentation lives at [developers.frontegg.com](https://developers.frontegg.com).
 
