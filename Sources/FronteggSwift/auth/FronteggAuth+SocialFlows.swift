@@ -267,13 +267,8 @@ extension FronteggAuth {
                         throw FronteggError.configError(.socialLoginMissing("Apple"))
                     }
                 } catch {
-                    if error is FronteggError {
-                        completion(.failure(error as! FronteggError))
-                    }else {
-                        self.logger.error(error.localizedDescription)
-                        completion(.failure(FronteggError.from(error)))
-                    }
-
+                    self.logger.error(error.localizedDescription)
+                    completion(.failure(FronteggError.from(error)))
                 }
             }
 

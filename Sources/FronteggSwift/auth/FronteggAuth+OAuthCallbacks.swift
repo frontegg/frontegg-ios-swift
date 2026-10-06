@@ -347,8 +347,9 @@ extension FronteggAuth {
     /// - Returns: The access token, or `nil` when there is no stored session or the server rejected
     ///   the refresh token (the user has to sign in again). With `enableOfflineMode`, a connectivity
     ///   failure returns the cached token instead of throwing.
-    /// - Throws: `FronteggError` whose `category` is `.network` or `.server(statusCode:)` once refresh
-    ///   retries are exhausted, or `.authenticationFailed` when in-flight work did not settle in time.
+    /// - Throws: `FronteggError` carrying the last refresh failure once retries are exhausted (its
+    ///   `category` is usually `.network` or `.server(statusCode:)`), or one whose `category` is
+    ///   `.authenticationFailed` when in-flight work did not settle in time.
     ///   Rethrows `CancellationError` when the calling task is cancelled.
     public func getOrRefreshAccessTokenAsync() async throws -> String? {
         self.logger.info("Waiting for isLoading | initializing | refreshingToken indicators")
