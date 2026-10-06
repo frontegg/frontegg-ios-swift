@@ -75,7 +75,6 @@ enum DemoEmbeddedTestMode {
         ProcessInfo.processInfo.environment[misroutedCallbackVerifierEnv]
     }
 
-    /// FR-27245 footer with one link of each kind: app scheme, http(s), and one the SDK rejects.
     static var loginBoxFooter: [String: Any]? {
         guard ProcessInfo.processInfo.environment[loginBoxFooterEnv] == "1", let baseUrl else { return nil }
         let signUpSegments: [[String: String]] = [

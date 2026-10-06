@@ -1,29 +1,22 @@
 //
 //  LoginBoxFooter.swift
 //
-//  Hands a host-supplied footer to the embedded login box.
-//
 
 import Foundation
 
-/// Builds the document-start script that hands a host-supplied footer to the
-/// hosted login box, which renders it below the login screen's inputs.
-///
-/// The box reads `window.__fronteggLoginBoxFooter` and renders it through its own
-/// `boxFooter` slot, the same slot the React SDK exposes. See `hostFooter.ts` in
-/// oauth-service. The payload is structured (text and label/URL pairs), never markup,
-/// and is sanitized here as well as in the box.
+/// Builds the document-start script that assigns `window.__fronteggLoginBoxFooter`,
+/// which the hosted login box renders in its `boxFooter` slot.
 enum LoginBoxFooter {
 
     static let globalName = "__fronteggLoginBoxFooter"
 
-    /// Schemes that can execute script or read local data; never admissible.
     private static let deniedSchemes: Set<String> = [
         "javascript", "data", "file", "blob", "about", "vbscript", "intent", "content"
     ]
 
-    /// Returns `nil` when the footer is absent or has no usable rows, so callers
-    /// can skip injecting a script entirely.
+    private static let oauthCallbackParameterNames: Set<String> = ["code", "error", "error_description"]
+
+    /// Returns `nil` when the footer is absent or has no usable rows.
     static func script(_ footer: [String: Any]?) -> String? {
         guard let sanitized = sanitizedFooter(footer),
               let json = LoginBoxCustomization.encodeOverrides(sanitized) else {
@@ -32,27 +25,8 @@ enum LoginBoxFooter {
         return "window.\(globalName) = \(json);"
     }
 
-    /// Normalizes a host-supplied footer payload, dropping anything unsafe.
-    ///
-    /// Shape:
-    /// ```
-    /// [
-    ///   "hideCaptchaBadge": true,
-    ///   "rows": [
-    ///     ["variant": "body",            // "body" | "fine"
-    ///      "segments": [
-    ///        ["text": "Don't have an account? "],
-    ///        ["label": "Sign up now", "url": "myapp://sign-up"]
-    ///      ]]
-    ///   ]
-    /// ]
-    /// ```
-    ///
-    /// A segment whose URL fails the scheme check degrades to plain text rather
-    /// than being dropped: the footer's usual job is a legal attribution, and a
-    /// sentence missing a fragment reads as a bug, whereas an unlinked label
-    /// still says what it needs to say.
-    static func sanitizedFooter(_ footer: [String: Any]?) -> [String: Any]? {
+    /// Keeps text and label/URL segments only; a link whose URL fails `sanitizedLinkUrl` becomes text.
+    static func sanitizedFooter(_ footer: [String: Any]?, appSchemes: [String] = appUrlSchemes()) -> [String: Any]? {
         guard let footer,
               let rows = footer["rows"] as? [[String: Any]],
               !rows.isEmpty else {
@@ -72,7 +46,7 @@ enum LoginBoxFooter {
                 }
                 guard let label = segment["label"] as? String, !label.isEmpty else { continue }
 
-                if let url = segment["url"] as? String, let safe = sanitizedLinkUrl(url) {
+                if let url = segment["url"] as? String, let safe = sanitizedLinkUrl(url, appSchemes: appSchemes) {
                     sanitizedSegments.append(["label": label, "url": safe])
                 } else {
                     sanitizedSegments.append(["text": label])
@@ -93,19 +67,9 @@ enum LoginBoxFooter {
         ]
     }
 
-    /// Accepts an absolute `http(s)` URL, or a URL on one of the host app's own
-    /// registered `CFBundleURLTypes` schemes.
-    ///
-    /// The value becomes an `href`, so anything else — `javascript:` above all —
-    /// is dropped rather than injected. A host app is trusted, but this value
-    /// can originate in remote configuration on its side, and the cost of the
-    /// check is nothing.
-    ///
-    /// The app-scheme case is what makes a hand-off possible: a host that wants
-    /// its sign-up flow presented in its own browser/session rather than inside
-    /// this WebView points a footer link at its own scheme, and the navigation
-    /// delegate's existing custom-scheme branch opens it and dismisses the box.
-    static func sanitizedLinkUrl(_ url: String?) -> String? {
+    /// Accepts an absolute `http(s)` URL, or a URL on one of `appSchemes` that the
+    /// custom-scheme branch would not treat as an OAuth callback.
+    static func sanitizedLinkUrl(_ url: String?, appSchemes: [String] = appUrlSchemes()) -> String? {
         guard let url, !url.isEmpty,
               let components = URLComponents(string: url),
               let scheme = components.scheme?.lowercased() else {
@@ -117,17 +81,14 @@ enum LoginBoxFooter {
             return url
         }
 
-        // Denied ahead of the app-scheme check so the guard that actually
-        // matters cannot be reached through a bundle that registers, say,
-        // `data` as one of its own schemes.
         if deniedSchemes.contains(scheme) { return nil }
 
-        guard appUrlSchemes().contains(scheme) else { return nil }
+        guard CustomWebView.isAppUrlScheme(scheme, appSchemes: appSchemes) else { return nil }
 
         return carriesOAuthCallbackParameter(url) ? nil : url
     }
 
-    /// Whether the custom-scheme branch would treat this URL as an OAuth callback rather than a hand-off.
+    /// Checks both the standard query and the delegate's parse, which reads a `#` fragment as query.
     static func carriesOAuthCallbackParameter(_ url: String) -> Bool {
         let standardQueryNames: [String] = URLComponents(string: url)?.queryItems?.map { $0.name } ?? []
         let delegateQueryNames: [String] = getQueryItems(url).map { Array($0.keys) } ?? []
@@ -135,8 +96,7 @@ enum LoginBoxFooter {
         return queryNames.contains { (queryName: String) -> Bool in oauthCallbackParameterNames.contains(queryName) }
     }
 
-    /// The configured link URLs that fail `sanitizedLinkUrl` and so render as plain text,
-    /// cut before any query or fragment, since those can carry an invite code.
+    /// The configured link URLs that render as plain text, cut before any query or fragment.
     static func rejectedLinkUrls(_ footer: [String: Any]?) -> [String] {
         guard let rows = footer?["rows"] as? [[String: Any]] else { return [] }
 
@@ -159,17 +119,9 @@ enum LoginBoxFooter {
         return rejectedUrls
     }
 
-    private static let oauthCallbackParameterNames: Set<String> = ["code", "error", "error_description"]
-
-    /// The `http(s)` footer URLs, which must be opened outside the login box.
-    ///
-    /// The box's WebView has no navigation chrome, so letting an attribution
-    /// link load in place strands the user with no way back. The navigation
-    /// delegate consults this exact-match set and hands those URLs to the OS
-    /// instead — an allowlist rather than a general "off-origin" rule, because
-    /// the box legitimately navigates to social identity providers.
-    static func footerExternalUrls(_ footer: [String: Any]?) -> Set<String> {
-        guard let sanitized = sanitizedFooter(footer),
+    /// The footer's `http(s)` links in `canonicalLinkKey` form; the navigation delegate opens these outside the box.
+    static func footerExternalUrls(_ footer: [String: Any]?, appSchemes: [String] = appUrlSchemes()) -> Set<String> {
+        guard let sanitized = sanitizedFooter(footer, appSchemes: appSchemes),
               let rows = sanitized["rows"] as? [[String: Any]] else {
             return []
         }
@@ -188,14 +140,13 @@ enum LoginBoxFooter {
         return urls
     }
 
-    /// Whether a navigation is to one of the footer's `http(s)` links.
-    static func isExternalFooterLink(_ url: URL, footer: [String: Any]?) -> Bool {
-        guard let linkKey = canonicalLinkKey(url.absoluteString) else { return false }
-        return footerExternalUrls(footer).contains(linkKey)
+    static func isExternalFooterLink(_ url: URL, externalUrls: Set<String>) -> Bool {
+        guard !externalUrls.isEmpty, let linkKey = canonicalLinkKey(url.absoluteString) else { return false }
+        return externalUrls.contains(linkKey)
     }
 
-    /// Normalizes a URL the way WebKit does before navigating, so a configured link
-    /// still matches: dot segments resolved, lowercased scheme and host, `/` for an empty path, no default port.
+    /// Normalizes a URL the way WebKit does before navigating: dot segments resolved,
+    /// lowercased scheme and host, `/` for an empty path, no default port.
     static func canonicalLinkKey(_ url: String) -> String? {
         guard let standardizedUrl = URL(string: url)?.standardized,
               var components = URLComponents(url: standardizedUrl, resolvingAgainstBaseURL: false) else { return nil }
@@ -211,7 +162,7 @@ enum LoginBoxFooter {
         return components.string
     }
 
-    /// The host app's registered URL schemes, lowercased.
+    /// The host app's registered `CFBundleURLTypes` schemes, lowercased.
     static func appUrlSchemes() -> [String] {
         guard let urlTypes = Bundle.main.infoDictionary?["CFBundleURLTypes"] as? [[String: Any]] else {
             return []

@@ -18,6 +18,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     }
 
     var accessoryView: UIView?
+    var loginBoxFooterExternalUrls: Set<String> = []
     private let fronteggAuth: FronteggAuth = FronteggAuth.shared
     private let logger = getLogger("CustomWebView")
     private var lastResponseStatusCode: Int? = nil
@@ -486,21 +487,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 return .cancel
             }
             
-            // An `http(s)` link the host put in the login box footer — typically
-            // the Privacy Policy / Terms attribution Google's terms require when
-            // the reCAPTCHA badge is hidden. This WebView has no navigation
-            // chrome, so loading it in place would strand the user with no way
-            // back to the login box.
-            //
-            // Matched against the configured URLs (normalized) rather than a general
-            // "host differs from the auth origin" rule: the box legitimately
-            // navigates off-origin to social identity providers, and a broad
-            // rule would break those. Unlike the custom-scheme branch below,
-            // this does NOT dismiss the box — the user is expected to read the
-            // policy and come straight back to a login screen still in place.
-            // Checked ahead of the localhost and OIDC heuristics, which would otherwise swallow it.
             if navigationAction.navigationType == .linkActivated,
-               LoginBoxFooter.isExternalFooterLink(url, footer: FronteggApp.shared.loginBoxFooter) {
+               LoginBoxFooter.isExternalFooterLink(url, externalUrls: loginBoxFooterExternalUrls) {
                 logger.info("[Navigation] Opening login box footer link externally: host=\(url.host ?? "nil") path=\(url.path)")
                 DispatchQueue.main.async {
                     UIApplication.shared.open(url, options: [:], completionHandler: nil)

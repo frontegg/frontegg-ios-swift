@@ -678,7 +678,7 @@ final class LocalMockAuthServer {
         return htmlResponse(status: 200, title: "Mock Embedded Login", body: body)
     }
 
-    /// Stands in for the login box rendering `window.__fronteggLoginBoxFooter` in its boxFooter slot (FR-27245).
+    /// Renders `window.__fronteggLoginBoxFooter` the way the login box's boxFooter slot does.
     private func hostedLoginBoxFooterScript() -> String {
         """
         <script>

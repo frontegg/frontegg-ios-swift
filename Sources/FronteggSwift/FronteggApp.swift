@@ -191,18 +191,9 @@ public class FronteggApp {
         logger.error("\(name) contains a value at \(keyPath) that is not a JSON type (String, NSNumber, Array, Dictionary, NSNull); the login box overrides will be ignored")
     }
 
-    /// A footer the embedded login box renders on its login screen only, in the
-    /// same `boxFooter` slot the React SDK exposes as a render prop.
+    /// A footer the embedded login box renders on its login screen, in its `boxFooter` slot.
     ///
-    /// A box served into a WebView cannot take a render prop, so the SDK hands the
-    /// box this structured payload and the box renders it. Two things commonly
-    /// need to live there:
-    /// a sign-up entry point the box's form cannot model (choosing an account
-    /// type, carrying an invite code), and the reCAPTCHA attribution Google's
-    /// terms require whenever the badge is hidden.
-    ///
-    /// Structured rather than HTML — host strings are always rendered as text,
-    /// never parsed as markup:
+    /// Host strings are always rendered as text, never parsed as markup:
     /// ```swift
     /// FronteggApp.shared.loginBoxFooter = [
     ///     "hideCaptchaBadge": true,
@@ -219,16 +210,12 @@ public class FronteggApp {
     /// ]
     /// ```
     ///
-    /// `variant` is `"body"` or `"fine"` (small, de-emphasised legal text).
-    /// Link URLs must be absolute `http(s)` or use one of the app's own
-    /// registered `CFBundleURLTypes` schemes; anything else renders as plain
-    /// text, as does an app-scheme link carrying a `code`, `error` or
-    /// `error_description` query parameter, which the SDK would otherwise
-    /// claim as an OAuth callback. `http(s)` links are handed to the OS rather
-    /// than loaded in the box, which has no navigation chrome — an app-scheme link instead
-    /// dismisses the box and hands off to the app. Set this before calling
-    /// `login()`. Embedded mode only. Requires a hosted login box that renders
-    /// host-supplied footers; against an older login box it is ignored.
+    /// `variant` is `"body"` or `"fine"`. Link URLs must be absolute `http(s)` or use
+    /// one of the app's registered `CFBundleURLTypes` schemes without a `code`, `error`
+    /// or `error_description` parameter; any other link renders as plain text.
+    /// `http(s)` links open in the system browser and keep the box open; app-scheme
+    /// links dismiss the box and open the URL. Read when the login box is presented.
+    /// Embedded mode only; ignored by a login box that does not support host footers.
     public var loginBoxFooter: [String: Any]? = nil
 
 

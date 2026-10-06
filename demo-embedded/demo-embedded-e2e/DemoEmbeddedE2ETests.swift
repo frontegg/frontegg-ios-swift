@@ -101,7 +101,6 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         assertNoConnectionScreenDoesNotAppear(duration: 1)
     }
 
-    /// FR-27245: http(s) footer links leave for Safari and keep the box, app-scheme links hand off and close it.
     func testLoginBoxFooterLinksOpenOutsideTheLoginBox() throws {
         launchApp(resetState: true, showsLoginBoxFooter: true)
         openEmbeddedLogin()

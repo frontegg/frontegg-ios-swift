@@ -1,11 +1,8 @@
 import XCTest
 @testable import FronteggSwift
 
-/// Covers the script builder and validation for the host-supplied footer below
-/// the embedded login box's card.
 final class LoginBoxFooterTests: XCTestCase {
 
-    /// A footer with one usable row, for tests that only care that it is valid.
     private func footerPayload(
         url: String = "https://policies.google.com/privacy",
         hideBadge: Bool = true
@@ -22,14 +19,11 @@ final class LoginBoxFooterTests: XCTestCase {
     }
 
     func testFooterAloneIsEnoughToInjectAScript() throws {
-        // The footer stands on its own: an app can add an attribution without
-        // overriding any theme or copy.
         let script = try XCTUnwrap(LoginBoxFooter.script(footerPayload()))
 
         XCTAssertTrue(script.contains("https://policies.google.com/privacy"))
     }
 
-    /// The box renders the footer itself, so the script only hands it the payload.
     func testScriptAssignsTheGlobalTheLoginBoxReads() throws {
         let script = try XCTUnwrap(LoginBoxFooter.script(footerPayload()))
 
@@ -56,9 +50,6 @@ final class LoginBoxFooterTests: XCTestCase {
 
     // MARK: - Footer validation
 
-    /// A bad URL degrades the segment to plain text rather than dropping it: a
-    /// legal attribution missing a fragment reads as a bug, whereas an unlinked
-    /// label still says what it needs to say.
     func testUnsafeSchemesDegradeToPlainText() throws {
         for url in [
             "javascript:alert(1)",
@@ -84,7 +75,6 @@ final class LoginBoxFooterTests: XCTestCase {
             LoginBoxFooter.sanitizedLinkUrl("https://app.example.com/x"),
             "https://app.example.com/x"
         )
-        // http is allowed for local development against a plain-HTTP host.
         XCTAssertEqual(
             LoginBoxFooter.sanitizedLinkUrl("http://localhost:3000/x"),
             "http://localhost:3000/x"
@@ -102,31 +92,59 @@ final class LoginBoxFooterTests: XCTestCase {
         XCTAssertNil(LoginBoxFooter.sanitizedLinkUrl("https://"))
     }
 
-    /// A host that presents its own sign-up flow outside this WebView points a
-    /// footer link at its own scheme; the delegate's custom-scheme branch then
-    /// opens it and dismisses the box.
-    func testAppRegisteredSchemesAreAccepted() {
-        // The test bundle registers none, so this asserts the mechanism rather
-        // than a specific scheme: whatever the bundle declares is accepted, and
-        // anything else is not.
-        let schemes = LoginBoxFooter.appUrlSchemes()
+    func testRegisteredAppSchemesAreAccepted() {
+        XCTAssertEqual(
+            LoginBoxFooter.sanitizedLinkUrl("myapp://sign-up", appSchemes: ["myapp"]),
+            "myapp://sign-up"
+        )
+        XCTAssertEqual(
+            LoginBoxFooter.sanitizedLinkUrl("MyApp://sign-up", appSchemes: ["myapp"]),
+            "MyApp://sign-up"
+        )
+        XCTAssertEqual(
+            LoginBoxFooter.sanitizedLinkUrl("myapp://sign-up", appSchemes: ["MyApp"]),
+            "myapp://sign-up"
+        )
+        XCTAssertNil(LoginBoxFooter.sanitizedLinkUrl("otherapp://sign-up", appSchemes: ["myapp"]))
+    }
 
-        if let scheme = schemes.first {
-            XCTAssertEqual(
-                LoginBoxFooter.sanitizedLinkUrl("\(scheme)://sign-up"),
-                "\(scheme)://sign-up"
-            )
+    func testOAuthShapedAppSchemeLinksAreRejected() {
+        for url in [
+            "myapp://sign-up?code=INVITE",
+            "myapp://sign-up?error=x",
+            "myapp://sign-up?error_description=x",
+            "myapp://app/#/sign-up?code=INVITE"
+        ] {
+            XCTAssertNil(LoginBoxFooter.sanitizedLinkUrl(url, appSchemes: ["myapp"]), url)
         }
-        XCTAssertFalse(schemes.contains("definitelynotregistered"))
-        XCTAssertNil(LoginBoxFooter.sanitizedLinkUrl("definitelynotregistered://sign-up"))
+        XCTAssertEqual(
+            LoginBoxFooter.sanitizedLinkUrl("myapp://sign-up?plan=pro", appSchemes: ["myapp"]),
+            "myapp://sign-up?plan=pro"
+        )
+    }
+
+    func testDeniedSchemesStayRejectedWhenTheAppRegistersThem() {
+        XCTAssertNil(LoginBoxFooter.sanitizedLinkUrl("data:text/html,x", appSchemes: ["data"]))
+        XCTAssertNil(LoginBoxFooter.sanitizedLinkUrl("javascript:alert(1)", appSchemes: ["javascript"]))
+    }
+
+    func testAppSchemeLinkSurvivesSanitizingButIsNotOpenedExternally() throws {
+        let footer: [String: Any] = ["rows": [["variant": "body", "segments": [
+            ["label": "Sign up", "url": "myapp://sign-up"]
+        ]]]]
+
+        let sanitized = try XCTUnwrap(LoginBoxFooter.sanitizedFooter(footer, appSchemes: ["myapp"]))
+        let rows = try XCTUnwrap(sanitized["rows"] as? [[String: Any]])
+        let segments = try XCTUnwrap(rows[0]["segments"] as? [[String: Any]])
+        XCTAssertEqual(segments[0]["url"] as? String, "myapp://sign-up")
+
+        XCTAssertTrue(LoginBoxFooter.footerExternalUrls(footer, appSchemes: ["myapp"]).isEmpty)
     }
 
     func testEmptyFooterProducesNothing() {
         XCTAssertNil(LoginBoxFooter.sanitizedFooter(nil))
         XCTAssertNil(LoginBoxFooter.sanitizedFooter([:]))
         XCTAssertNil(LoginBoxFooter.sanitizedFooter(["rows": []]))
-        // Rows with no usable segments are dropped, and a footer with no
-        // surviving rows is no footer at all.
         XCTAssertNil(LoginBoxFooter.sanitizedFooter([
             "rows": [["variant": "body", "segments": [["label": ""], ["text": ""]]]]
         ]))
@@ -143,9 +161,6 @@ final class LoginBoxFooterTests: XCTestCase {
 
     // MARK: - External link allowlist
 
-    /// Only `http(s)` links leave for the OS. An app-scheme link is a hand-off
-    /// the custom-scheme branch already owns, and must not be short-circuited
-    /// into "open externally, keep the box mounted".
     func testExternalUrlsCoverOnlyHttpLinks() {
         let urls = LoginBoxFooter.footerExternalUrls([
             "rows": [["variant": "body", "segments": [
@@ -162,32 +177,28 @@ final class LoginBoxFooterTests: XCTestCase {
         ])
     }
 
-    /// WebKit navigates to the canonical form of a link, so a configured URL with a
-    /// mixed-case host, no path or a default port must still be intercepted.
     func testExternalFooterLinkMatchesWebKitCanonicalForm() throws {
         let footer = footerPayload(url: "HTTPS://Policies.Google.com:443")
         let navigatedUrl = try XCTUnwrap(URL(string: "https://policies.google.com/"))
 
-        XCTAssertTrue(LoginBoxFooter.isExternalFooterLink(navigatedUrl, footer: footer))
+        XCTAssertTrue(LoginBoxFooter.isExternalFooterLink(navigatedUrl, externalUrls: LoginBoxFooter.footerExternalUrls(footer)))
     }
 
     func testExternalFooterLinkResolvesDotSegments() throws {
         let footer = footerPayload(url: "https://policies.google.com/legal/../privacy")
         let navigatedUrl = try XCTUnwrap(URL(string: "https://policies.google.com/privacy"))
 
-        XCTAssertTrue(LoginBoxFooter.isExternalFooterLink(navigatedUrl, footer: footer))
+        XCTAssertTrue(LoginBoxFooter.isExternalFooterLink(navigatedUrl, externalUrls: LoginBoxFooter.footerExternalUrls(footer)))
     }
 
     func testExternalFooterLinkDoesNotMatchOtherUrls() throws {
         let footer = footerPayload(url: "https://policies.google.com/privacy")
         let otherUrl = try XCTUnwrap(URL(string: "https://policies.google.com/terms"))
 
-        XCTAssertFalse(LoginBoxFooter.isExternalFooterLink(otherUrl, footer: footer))
-        XCTAssertFalse(LoginBoxFooter.isExternalFooterLink(otherUrl, footer: nil))
+        XCTAssertFalse(LoginBoxFooter.isExternalFooterLink(otherUrl, externalUrls: LoginBoxFooter.footerExternalUrls(footer)))
+        XCTAssertFalse(LoginBoxFooter.isExternalFooterLink(otherUrl, externalUrls: []))
     }
 
-    /// A footer link on a mixed-case registered scheme must still reach the
-    /// custom-scheme hand-off, which sees the scheme lowercased by WebKit.
     func testAppSchemeMatchingIgnoresCase() {
         XCTAssertTrue(CustomWebView.isAppUrlScheme("myapp", appSchemes: ["MyApp"]))
         XCTAssertTrue(CustomWebView.isAppUrlScheme("MyApp", appSchemes: ["myapp"]))
@@ -227,8 +238,6 @@ final class LoginBoxFooterTests: XCTestCase {
         XCTAssertEqual(LoginBoxFooter.rejectedLinkUrls(footer), ["definitelynotregistered://sign-up"])
     }
 
-    /// The custom-scheme branch parses query items after percent-encoding `#`, so a
-    /// hash-routed URL's fragment is read as a query there.
     func testOAuthCallbackParameterInFragmentIsDetected() {
         XCTAssertTrue(LoginBoxFooter.carriesOAuthCallbackParameter("myapp://app/#/sign-up?code=INVITE"))
         XCTAssertTrue(LoginBoxFooter.carriesOAuthCallbackParameter("myapp://sign-up?plan=pro#&error=x"))
@@ -241,8 +250,6 @@ final class LoginBoxFooterTests: XCTestCase {
         XCTAssertTrue(LoginBoxFooter.footerExternalUrls(["rows": []]).isEmpty)
     }
 
-    /// A rejected URL must not linger in the allowlist, or the delegate would
-    /// hand the OS a value the footer never rendered.
     func testExternalUrlsExcludeRejectedLinks() {
         XCTAssertTrue(
             LoginBoxFooter.footerExternalUrls(
