@@ -58,7 +58,9 @@ public struct FronteggSecurityCenter: View {
             viewModel: FronteggSecurityCenterViewModel(
                 service: FronteggAuthSecurityCenterService(auth: FronteggAuth.shared),
                 userPublisher: FronteggAuth.shared.mainThreadUserPublisher,
-                stepUpMaxAge: stepUpMaxAge
+                stepUpMaxAge: stepUpMaxAge,
+                loadsSessions: sections.contains(.sessions),
+                loadsPasskeys: sections.contains(.passkeys)
             ),
             sections: sections,
             strings: strings,
@@ -95,8 +97,8 @@ public struct FronteggSecurityCenter: View {
             }
         }
         .navigationTitle(strings.title)
-        .task { await reload() }
-        .refreshable { await reload() }
+        .task { await viewModel.load() }
+        .refreshable { await viewModel.load() }
         .alert(
             strings.errorTitle,
             isPresented: Binding(
@@ -142,25 +144,16 @@ public struct FronteggSecurityCenter: View {
         }
     }
 
-    private func reload() async {
-        if sections.contains(.passkeys) && sections.contains(.sessions) {
-            await viewModel.load()
-        } else if sections.contains(.passkeys) {
-            await viewModel.loadPasskeys()
-        } else if sections.contains(.sessions) {
-            await viewModel.loadSessions()
-        }
-    }
-
     // MARK: Step-up
 
     private var stepUpSection: some View {
-        Section {
+        let isSteppedUp = viewModel.isSteppedUp
+        return Section {
             statusRow(
                 title: strings.stepUpStatus,
-                value: viewModel.isSteppedUp ? strings.steppedUp : strings.notSteppedUp,
-                systemImage: viewModel.isSteppedUp ? "checkmark.shield.fill" : "shield",
-                tint: viewModel.isSteppedUp ? .green : .secondary
+                value: isSteppedUp ? strings.steppedUp : strings.notSteppedUp,
+                systemImage: isSteppedUp ? "checkmark.shield.fill" : "shield",
+                tint: isSteppedUp ? .green : .secondary
             )
             Button {
                 Task { await viewModel.stepUp() }

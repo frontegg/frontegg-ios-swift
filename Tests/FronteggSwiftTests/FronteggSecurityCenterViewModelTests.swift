@@ -14,6 +14,8 @@ final class FronteggSecurityCenterViewModelTests: XCTestCase {
 
         var listSessionsCalls = 0
         var listPasskeysCalls = 0
+        var suspendNextListSessions = false
+        private var listSessionsGate: CheckedContinuation<Void, Never>?
         var revokedSessionIds: [String] = []
         var revokeOtherSessionsCalls = 0
         var deletedPasskeyIds: [String] = []
@@ -22,7 +24,19 @@ final class FronteggSecurityCenterViewModelTests: XCTestCase {
 
         func listSessions() async throws -> [FronteggSession] {
             listSessionsCalls += 1
-            return try sessionsResult.get()
+            let result = sessionsResult
+            if suspendNextListSessions {
+                suspendNextListSessions = false
+                await withCheckedContinuation { listSessionsGate = $0 }
+            }
+            return try result.get()
+        }
+
+        var isListSessionsSuspended: Bool { listSessionsGate != nil }
+
+        func resumeListSessions() {
+            listSessionsGate?.resume()
+            listSessionsGate = nil
         }
 
         func revokeSession(id: String) async throws {
@@ -70,20 +84,26 @@ final class FronteggSecurityCenterViewModelTests: XCTestCase {
         userSubject = CurrentValueSubject(nil)
     }
 
-    private func makeViewModel(stepUpMaxAge: TimeInterval? = nil) -> FronteggSecurityCenterViewModel {
+    private func makeViewModel(
+        stepUpMaxAge: TimeInterval? = nil,
+        loadsSessions: Bool = true,
+        loadsPasskeys: Bool = true
+    ) -> FronteggSecurityCenterViewModel {
         FronteggSecurityCenterViewModel(
             service: service,
             userPublisher: userSubject.eraseToAnyPublisher(),
-            stepUpMaxAge: stepUpMaxAge
+            stepUpMaxAge: stepUpMaxAge,
+            loadsSessions: loadsSessions,
+            loadsPasskeys: loadsPasskeys
         )
     }
 
-    private func makeUser(mfaEnrolled: Bool, tenantName: String = "Acme") throws -> User {
-        let tenant = TestDataFactory.makeTenant(id: "t1", name: tenantName, tenantId: "t1")
+    private func makeUser(mfaEnrolled: Bool, tenantName: String = "Acme", tenantId: String = "t1") throws -> User {
+        let tenant = TestDataFactory.makeTenant(id: tenantId, name: tenantName, tenantId: tenantId)
         let data = try TestDataFactory.jsonData(from: TestDataFactory.makeUser(
             mfaEnrolled: mfaEnrolled,
-            tenantId: "t1",
-            tenantIds: ["t1"],
+            tenantId: tenantId,
+            tenantIds: [tenantId],
             tenants: [tenant],
             activeTenant: tenant
         ))
@@ -301,13 +321,87 @@ final class FronteggSecurityCenterViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.activeTenantName, "Globex")
     }
 
-    func testActiveTenantChangeRefreshesStepUpStatus() throws {
+    func testUserChangeNotifiesObserversSoStepUpStatusIsReread() throws {
         let viewModel = makeViewModel()
-        XCTAssertFalse(viewModel.isSteppedUp)
+        var changes = 0
+        let cancellable = viewModel.objectWillChange.sink { changes += 1 }
+        defer { cancellable.cancel() }
 
         service.steppedUp = true
         userSubject.send(try makeUser(mfaEnrolled: false))
 
+        XCTAssertGreaterThan(changes, 0)
         XCTAssertTrue(viewModel.isSteppedUp)
+    }
+
+    func testLoadOnlyFetchesEnabledSections() async {
+        let viewModel = makeViewModel(loadsSessions: true, loadsPasskeys: false)
+
+        await viewModel.load()
+
+        XCTAssertEqual(service.listSessionsCalls, 1)
+        XCTAssertEqual(service.listPasskeysCalls, 0)
+    }
+
+    func testCancelledLoadKeepsPreviousDataAndSurfacesNoError() async {
+        service.sessionsResult = .success([FronteggSession(id: "s1", isCurrent: true)])
+        service.passkeysResult = .success([FronteggPasskey(id: "pk1", deviceType: .platform)])
+        let viewModel = makeViewModel()
+        await viewModel.load()
+
+        service.sessionsResult = .failure(URLError(.cancelled))
+        service.passkeysResult = .failure(CancellationError())
+        await viewModel.load()
+
+        XCTAssertNil(viewModel.sessionsError)
+        XCTAssertNil(viewModel.passkeysError)
+        XCTAssertEqual(viewModel.sessions.map(\.id), ["s1"])
+        XCTAssertEqual(viewModel.passkeys.map(\.id), ["pk1"])
+        XCTAssertFalse(viewModel.isLoadingSessions)
+        XCTAssertFalse(viewModel.isLoadingPasskeys)
+    }
+
+    func testSupersededSessionLoadDoesNotOverwriteNewerResult() async {
+        service.sessionsResult = .success([FronteggSession(id: "stale", isCurrent: true)])
+        service.suspendNextListSessions = true
+        let viewModel = makeViewModel()
+
+        let first = Task { await viewModel.loadSessions() }
+        while !service.isListSessionsSuspended { await Task.yield() }
+
+        service.sessionsResult = .success([FronteggSession(id: "fresh", isCurrent: true)])
+        await viewModel.loadSessions()
+        XCTAssertEqual(viewModel.sessions.map(\.id), ["fresh"])
+
+        service.resumeListSessions()
+        await first.value
+
+        XCTAssertEqual(viewModel.sessions.map(\.id), ["fresh"])
+        XCTAssertFalse(viewModel.isLoadingSessions)
+    }
+
+    func testActiveTenantChangeReloadsSessionsAndPasskeys() async throws {
+        userSubject.send(try makeUser(mfaEnrolled: false, tenantId: "t1"))
+        let viewModel = makeViewModel()
+        XCTAssertNil(viewModel.tenantChangeReload)
+
+        service.sessionsResult = .success([FronteggSession(id: "t2-session", isCurrent: true)])
+        userSubject.send(try makeUser(mfaEnrolled: false, tenantId: "t2"))
+        await viewModel.tenantChangeReload?.value
+
+        XCTAssertEqual(service.listSessionsCalls, 1)
+        XCTAssertEqual(service.listPasskeysCalls, 1)
+        XCTAssertEqual(viewModel.sessions.map(\.id), ["t2-session"])
+    }
+
+    func testSameTenantUserUpdateAndSignOutDoNotReload() async throws {
+        userSubject.send(try makeUser(mfaEnrolled: false, tenantId: "t1"))
+        let viewModel = makeViewModel()
+
+        userSubject.send(try makeUser(mfaEnrolled: true, tenantId: "t1"))
+        userSubject.send(nil)
+
+        XCTAssertNil(viewModel.tenantChangeReload)
+        XCTAssertEqual(service.listSessionsCalls, 0)
     }
 }

@@ -15,6 +15,7 @@ final class FronteggTenantSwitcherViewModel: ObservableObject {
     @Published var searchText = ""
 
     private let switcher: FronteggTenantSwitching
+    private let logger = getLogger("FronteggTenantSwitcherViewModel")
 
     init(switcher: FronteggTenantSwitching, userPublisher: AnyPublisher<User?, Never>) {
         self.switcher = switcher
@@ -54,6 +55,7 @@ final class FronteggTenantSwitcherViewModel: ObservableObject {
             errorMessage = nil
             return .success(updated)
         } catch {
+            logger.error("Failed to switch tenant: \(error.localizedDescription)")
             errorMessage = error.localizedDescription
             return .failure(error as? FronteggError ?? .authError(.other(error)))
         }

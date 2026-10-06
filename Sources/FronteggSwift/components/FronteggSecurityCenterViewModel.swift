@@ -22,17 +22,36 @@ final class FronteggSecurityCenterViewModel: ObservableObject {
     @Published private(set) var user: User?
     @Published var errorMessage: String?
 
+    private(set) var tenantChangeReload: Task<Void, Never>?
+
     private let service: FronteggSecurityCenterService
     private let stepUpMaxAge: TimeInterval?
+    private let loadsSessions: Bool
+    private let loadsPasskeys: Bool
+    private let logger = getLogger("FronteggSecurityCenterViewModel")
+    private var sessionsGeneration = 0
+    private var passkeysGeneration = 0
+    private var cancellables = Set<AnyCancellable>()
 
     init(
         service: FronteggSecurityCenterService,
         userPublisher: AnyPublisher<User?, Never>,
-        stepUpMaxAge: TimeInterval? = nil
+        stepUpMaxAge: TimeInterval? = nil,
+        loadsSessions: Bool = true,
+        loadsPasskeys: Bool = true
     ) {
         self.service = service
         self.stepUpMaxAge = stepUpMaxAge
+        self.loadsSessions = loadsSessions
+        self.loadsPasskeys = loadsPasskeys
         userPublisher.assign(to: &$user)
+        $user
+            .map { $0?.activeTenant.tenantId }
+            .removeDuplicates()
+            .scan((String?.none, String?.none)) { ($0.1, $1) }
+            .filter { $0.0 != nil && $0.1 != nil }
+            .sink { [weak self] _ in self?.reloadAfterTenantChange() }
+            .store(in: &cancellables)
     }
 
     var mfaEnrolled: Bool {
@@ -52,31 +71,48 @@ final class FronteggSecurityCenterViewModel: ObservableObject {
     }
 
     func load() async {
-        async let sessionsLoad: Void = loadSessions()
-        async let passkeysLoad: Void = loadPasskeys()
+        async let sessionsLoad: Void = loadsSessions ? loadSessions() : ()
+        async let passkeysLoad: Void = loadsPasskeys ? loadPasskeys() : ()
         _ = await (sessionsLoad, passkeysLoad)
     }
 
     func loadSessions() async {
+        sessionsGeneration += 1
+        let generation = sessionsGeneration
         isLoadingSessions = true
-        defer { isLoadingSessions = false }
+        defer { if generation == sessionsGeneration { isLoadingSessions = false } }
         do {
             let loaded = try await service.listSessions()
+            guard generation == sessionsGeneration else { return }
             sessions = loaded.filter(\.isCurrent) + loaded.filter { !$0.isCurrent }
             sessionsError = nil
         } catch {
+            guard generation == sessionsGeneration, !Self.isTaskCancellation(error) else { return }
+            logger.error("Failed to load sessions: \(error.localizedDescription)")
             sessionsError = Self.message(for: error)
         }
     }
 
     func loadPasskeys() async {
+        passkeysGeneration += 1
+        let generation = passkeysGeneration
         isLoadingPasskeys = true
-        defer { isLoadingPasskeys = false }
+        defer { if generation == passkeysGeneration { isLoadingPasskeys = false } }
         do {
-            passkeys = try await service.listPasskeys()
+            let loaded = try await service.listPasskeys()
+            guard generation == passkeysGeneration else { return }
+            passkeys = loaded
             passkeysError = nil
         } catch {
+            guard generation == passkeysGeneration, !Self.isTaskCancellation(error) else { return }
+            logger.error("Failed to load passkeys: \(error.localizedDescription)")
             passkeysError = Self.message(for: error)
+        }
+    }
+
+    private func reloadAfterTenantChange() {
+        tenantChangeReload = Task { [weak self] in
+            await self?.load()
         }
     }
 
@@ -88,6 +124,7 @@ final class FronteggSecurityCenterViewModel: ObservableObject {
             try await service.revokeSession(id: session.id)
             await loadSessions()
         } catch {
+            logger.error("Failed to revoke session: \(error.localizedDescription)")
             errorMessage = Self.message(for: error)
         }
     }
@@ -100,6 +137,7 @@ final class FronteggSecurityCenterViewModel: ObservableObject {
             try await service.revokeOtherSessions()
             await loadSessions()
         } catch {
+            logger.error("Failed to revoke other sessions: \(error.localizedDescription)")
             errorMessage = Self.message(for: error)
         }
     }
@@ -112,6 +150,7 @@ final class FronteggSecurityCenterViewModel: ObservableObject {
             try await service.deletePasskey(id: passkey.id)
             await loadPasskeys()
         } catch {
+            logger.error("Failed to delete passkey: \(error.localizedDescription)")
             errorMessage = Self.message(for: error)
         }
     }
@@ -125,6 +164,7 @@ final class FronteggSecurityCenterViewModel: ObservableObject {
             await loadPasskeys()
         } catch {
             if !Self.isCancellation(error) {
+                logger.error("Failed to register passkey: \(error.localizedDescription)")
                 errorMessage = Self.message(for: error)
             }
         }
@@ -138,6 +178,7 @@ final class FronteggSecurityCenterViewModel: ObservableObject {
             try await service.stepUp(maxAge: stepUpMaxAge)
         } catch {
             if !Self.isCancellation(error) {
+                logger.error("Step-up failed: \(error.localizedDescription)")
                 errorMessage = Self.message(for: error)
             }
         }
@@ -146,6 +187,10 @@ final class FronteggSecurityCenterViewModel: ObservableObject {
 
     static func message(for error: Error) -> String {
         error.localizedDescription
+    }
+
+    static func isTaskCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
     }
 
     static func isCancellation(_ error: Error) -> Bool {

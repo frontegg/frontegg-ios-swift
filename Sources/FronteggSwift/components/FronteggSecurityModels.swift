@@ -158,13 +158,15 @@ struct WebAuthnDevicesDTO: Decodable {
 }
 
 enum FronteggDateParser {
+    private static let fractionalFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    private static let formatter = ISO8601DateFormatter()
+
     static func parse(_ value: String?) -> Date? {
         guard let value, !value.isEmpty else { return nil }
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = fractional.date(from: value) {
-            return date
-        }
-        return ISO8601DateFormatter().date(from: value)
+        return fractionalFormatter.date(from: value) ?? formatter.date(from: value)
     }
 }
