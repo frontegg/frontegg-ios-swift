@@ -1,22 +1,5 @@
 ## v1.3.23
 
-<!-- CURSOR_SUMMARY -->
----
-
-> [!NOTE]
-> **Low Risk**
-> Version and changelog-only changes; no auth, networking, or runtime logic modified in this PR.
-> 
-> **Overview**
-> This PR **cuts release v1.3.23** by bumping `SDKVersion.value` from `1.3.22` to **`1.3.23`** and updating the changelog layout for the next ship.
-> 
-> **CHANGELOG.md** gains an empty **`## v1.3.23`** section at the top; the existing **v1.3.22** bullets stay in place underneath. **CHANGELOG.old.md** now opens with the full **v1.3.22** release notes (step-up/MFA window fix, concurrent `login()`/`stepUp()` behavior, embedded WebView `backgroundColor`/transparency, privacy manifest), archiving that release in the historical log.
-> 
-> There are **no functional SDK changes** in this diff beyond the reported version string.
-> 
-> <sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit 4d51e8cd24d5c64a3d8bf30e2c2c3cdec09d66e5. Bugbot is set up for automated code reviews on this repo. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>
-<!-- /CURSOR_SUMMARY -->
-
 ## v1.3.22
 
 - Fixed: the embedded step-up window closed by itself before the MFA challenge appeared, so step-up could never be completed and its completion was never called. The next `stepUp()` then failed with `operationCanceled`. The window now stays open until MFA completes, and the completion runs once the window has closed. (FR-27252 — [#331](https://github.com/frontegg/frontegg-ios-swift/pull/331))
