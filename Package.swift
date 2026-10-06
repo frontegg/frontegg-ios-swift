@@ -26,6 +26,9 @@ let package = Package(
             name: "FronteggSwift",
             dependencies: [
                 .product(name: "Sentry", package: "sentry-cocoa"),
+            ],
+            resources: [
+                .copy("PrivacyInfo.xcprivacy")
             ]
         ),
         .testTarget(

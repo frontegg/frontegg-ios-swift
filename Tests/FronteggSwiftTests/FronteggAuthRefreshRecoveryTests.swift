@@ -326,7 +326,9 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertTrue(refreshed)
         XCTAssertEqual(api.refreshCallCount, 1)
         XCTAssertEqual(api.callCounts[mePath], 4)
-        XCTAssertNil(api.callCounts[tenantsPath])
+        // /me/tenants is requested alongside /me, so it may already be in flight
+        // when /me fails; it is cancelled, never retried.
+        XCTAssertLessThanOrEqual(api.callCounts[tenantsPath] ?? 0, 1)
         XCTAssertTrue(auth.isAuthenticated)
         XCTAssertTrue(auth.isOfflineMode)
         await assertOfflineModePersistsBriefly()
@@ -495,7 +497,9 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertFalse(refreshed)
         XCTAssertEqual(api.refreshCallCount, 1)
         XCTAssertEqual(api.callCounts[mePath], 1)
-        XCTAssertNil(api.callCounts[tenantsPath])
+        // /me/tenants is requested alongside /me, so it may already be in flight
+        // when /me fails; it is cancelled, never retried.
+        XCTAssertLessThanOrEqual(api.callCounts[tenantsPath] ?? 0, 1)
         XCTAssertFalse(auth.isAuthenticated)
         XCTAssertFalse(auth.isOfflineMode)
         XCTAssertNil(auth.user)
@@ -512,7 +516,9 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertFalse(refreshed)
         XCTAssertEqual(api.refreshCallCount, 1)
         XCTAssertEqual(api.callCounts[mePath], 1)
-        XCTAssertNil(api.callCounts[tenantsPath])
+        // /me/tenants is requested alongside /me, so it may already be in flight
+        // when /me fails; it is cancelled, never retried.
+        XCTAssertLessThanOrEqual(api.callCounts[tenantsPath] ?? 0, 1)
         XCTAssertFalse(auth.isAuthenticated)
         XCTAssertFalse(auth.isOfflineMode)
         XCTAssertNil(auth.user)
@@ -536,6 +542,22 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertNil(auth.user)
         XCTAssertNil(auth.accessToken)
         XCTAssertNil(auth.refreshToken)
+    }
+
+    func test_refreshTokenIfNeeded_duringStepUp_keepsStepUpAuthorization() async throws {
+        api.refreshResult = .success(try makeAuthResponse(email: "step-up-refresh@example.com", refreshToken: "refresh-token-new"))
+        api.enqueueJSON(path: mePath, statusCode: 200, json: TestDataFactory.makeUser(email: "step-up-refresh@example.com"))
+        api.enqueueJSON(path: tenantsPath, statusCode: 200, json: makeTenantsResponse())
+        auth.setIsStepUpAuthorization(true)
+
+        let refreshed = await auth.refreshTokenIfNeeded()
+
+        XCTAssertTrue(refreshed)
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertTrue(
+            auth.isStepUpAuthorization,
+            "A refresh during step-up (e.g. from the getTokens bridge) must not end step-up, or EmbeddedLoginModal dismisses itself before MFA"
+        )
     }
 
     func test_setCredentials_missingExpClaim_authenticatesWithoutCrashing() async throws {

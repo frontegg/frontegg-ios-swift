@@ -44,6 +44,32 @@ public class Api {
         return (500...599).contains(statusCode)
     }
 
+    /// One shared `URLSession` per (timeout, redirect-policy) pair so requests reuse connections.
+    private static let sessionCacheLock = NSLock()
+    private static var sessionCache: [String: URLSession] = [:]
+
+    internal static func session(timeout: Int, followRedirect: Bool) -> URLSession {
+        let key = "\(timeout)|\(followRedirect)"
+
+        return sessionCacheLock.withLock { () -> URLSession in
+            if let cached = sessionCache[key] {
+                return cached
+            }
+
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = TimeInterval(timeout)
+            config.timeoutIntervalForResource = TimeInterval(timeout)
+            config.waitsForConnectivity = false
+
+            let session = followRedirect
+                ? URLSession(configuration: config)
+                : URLSession(configuration: config, delegate: RedirectHandler(), delegateQueue: nil)
+
+            sessionCache[key] = session
+            return session
+        }
+    }
+
     private let logger = getLogger("Api")
     private let baseUrl: String
     private let clientId: String
@@ -196,18 +222,7 @@ public class Api {
         timeout: Int,
         followRedirect: Bool
     ) async throws -> (Data, URLResponse) {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = TimeInterval(timeout)
-        config.timeoutIntervalForResource = TimeInterval(timeout)
-        config.waitsForConnectivity = false
-
-        let session: URLSession
-        if followRedirect {
-            session = URLSession(configuration: config)
-        } else {
-            let redirectHandler = RedirectHandler()
-            session = URLSession(configuration: config, delegate: redirectHandler, delegateQueue: nil)
-        }
+        let session = Api.session(timeout: timeout, followRedirect: followRedirect)
 
         return try await session.data(for: request)
     }
@@ -243,13 +258,7 @@ public class Api {
         // per-task timeout
         request.timeoutInterval = TimeInterval(timeout)
         
-        // session-level timeouts
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = TimeInterval(timeout)
-        config.timeoutIntervalForResource = TimeInterval(timeout)
-        config.waitsForConnectivity = false
-        
-        let session = URLSession(configuration: config)
+        let session = Api.session(timeout: timeout, followRedirect: true)
         let start = Date()
         do {
             let (data, response) = try await session.data(for: request)
@@ -399,6 +408,9 @@ public class Api {
         }
 
         for attempt in 0...retries {
+            if attempt > 0 {
+                try Task.checkCancellation()
+            }
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
             request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -438,6 +450,9 @@ public class Api {
                     followRedirect: followRedirect,
                     error: error
                 )
+                if Task.isCancelled {
+                    throw error
+                }
                 logHttpError(
                     error,
                     method: "GET",
@@ -473,13 +488,15 @@ public class Api {
             if retries > 0, let http = response as? HTTPURLResponse {
                 if http.statusCode == 401 {
                     let error = ApiError.meEndpointFailed(statusCode: 401, path: path)
-                    logHttpError(
-                        error,
-                        method: "GET",
-                        path: path,
-                        followRedirect: followRedirect,
-                        statusCode: http.statusCode
-                    )
+                    if !Task.isCancelled {
+                        logHttpError(
+                            error,
+                            method: "GET",
+                            path: path,
+                            followRedirect: followRedirect,
+                            statusCode: http.statusCode
+                        )
+                    }
                     throw error
                 }
                 if Api.isTransientRefreshHTTPStatus(http.statusCode) {
@@ -489,13 +506,15 @@ public class Api {
                         await sleepBeforeRetry(attempt: attempt)
                         continue
                     }
-                    logHttpError(
-                        error,
-                        method: "GET",
-                        path: path,
-                        followRedirect: followRedirect,
-                        statusCode: http.statusCode
-                    )
+                    if !Task.isCancelled {
+                        logHttpError(
+                            error,
+                            method: "GET",
+                            path: path,
+                            followRedirect: followRedirect,
+                            statusCode: http.statusCode
+                        )
+                    }
                     throw error
                 }
             }
@@ -539,13 +558,7 @@ public class Api {
         // per-task timeout
         request.timeoutInterval = TimeInterval(timeout)
         
-        // session-level timeouts
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = TimeInterval(timeout)
-        config.timeoutIntervalForResource = TimeInterval(timeout)
-        config.waitsForConnectivity = false
-        
-        let session = URLSession(configuration: config)
+        let session = Api.session(timeout: timeout, followRedirect: true)
         let start = Date()
         do {
             let (data, response) = try await session.data(for: request)
@@ -861,6 +874,20 @@ public class Api {
         return result.user
     }
 
+    private func fetchMeAndTenants(
+        accessToken: String,
+        mePath: String,
+        tenantsPath: String,
+        parseMe: (Data) throws -> [String: Any]
+    ) async throws -> ([String: Any], Data) {
+        async let mePending = getRequest(path: mePath, accessToken: accessToken, retries: 3)
+        async let tenantsPending = getRequest(path: tenantsPath, accessToken: accessToken, retries: 3)
+        let (meData, _) = try await mePending
+        let meObject = try parseMe(meData)
+        let (tenantsData, _) = try await tenantsPending
+        return (meObject, tenantsData)
+    }
+
     private func loadMeResult(accessToken: String, refreshToken: String?) async throws -> MeResult {
         func parseObject(_ data: Data, path: String) throws -> [String: Any] {
             guard let object = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
@@ -874,14 +901,18 @@ public class Api {
         }
 
         let mePath = "identity/resources/users/v2/me"
-        let (meData, _) = try await getRequest(path: mePath, accessToken: accessToken, retries: 3)
-
-        var meObj = try parseObject(meData, path: mePath)
-
         let tenantsPath = "identity/resources/users/v3/me/tenants"
+
+        let (fetchedMeObj, tenantsData) = try await fetchMeAndTenants(
+            accessToken: accessToken,
+            mePath: mePath,
+            tenantsPath: tenantsPath,
+            parseMe: { try parseObject($0, path: mePath) }
+        )
+        var meObj = fetchedMeObj
+
         var tenantsObj: [String: Any]? = nil
 
-        let (tenantsData, _) = try await getRequest(path: tenantsPath, accessToken: accessToken, retries: 3)
         let initialTenantsObj = try parseObject(tenantsData, path: tenantsPath)
 
         if isValidTenantsPayload(initialTenantsObj) {
@@ -995,12 +1026,7 @@ public class Api {
         
         request.timeoutInterval = TimeInterval(10)
         
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = TimeInterval(10)
-        config.timeoutIntervalForResource = TimeInterval(10)
-        config.waitsForConnectivity = false
-        
-        let session = URLSession(configuration: config)
+        let session = Api.session(timeout: 10, followRedirect: true)
         let (data, response) = try await session.data(for: request)
         TraceIdLogger.shared.extractAndLogTraceId(from: response)
         

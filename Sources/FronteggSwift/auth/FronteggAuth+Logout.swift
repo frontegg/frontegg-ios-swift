@@ -116,7 +116,7 @@ extension FronteggAuth {
             setAppLink(false)
             self.isLoginInProgress = false
             setRefreshingToken(false)
-            setIsStepUpAuthorization(false)
+            stepUpAuthenticator.endActiveStepUp()
             self.lastAttemptReason = nil
             entitlements.clear()
 

@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
@@ -87,28 +88,238 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
             Self.server.waitForRequest(method: "GET", path: "/oauth/prelogin", timeout: 20),
             "Expected the step-up flow to bootstrap the hosted prelogin page. \(screenDebugSummary())"
         )
-        app.getWebLabel("Step-Up MFA Mock").waitUntilExists(timeout: 20)
-        app.getWebButton("Complete Step-Up").waitUntilExists(timeout: 20).safeTap()
-
-        // Completing the challenge navigates to the driver-seeded after-auth authorize URL,
-        // which issues an elevated code that the native OAuth callback exchanges for a token.
-        XCTAssertTrue(
-            Self.server.waitForRequest(method: "POST", path: "/oauth/token", timeout: 20),
-            "Expected the elevated authorization code to be exchanged for a token. \(screenDebugSummary())"
-        )
+        completeStepUpChallenge()
 
         // The elevated token exchange above is the definitive step-up success signal — it is only
         // reachable because the native driver seeded the after-auth redirect and drove the stub's
         // challenge (which itself only renders when the driver's localStorage + /account/step-up
         // contract is honored). Assert a clean teardown: the step-up webview is dismissed and we
         // are back on the authenticated profile with no connection error.
-        let webviewGone = Date().addingTimeInterval(20)
-        while app.webViews.count > 0, Date() < webviewGone {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-        }
+        waitForWebViewsToClose(timeout: 20)
         XCTAssertEqual(app.webViews.count, 0, "Step-up webview should dismiss after success. \(screenDebugSummary())")
         waitForScreen("UserPageRoot", timeout: 20)
         assertNoConnectionScreenDoesNotAppear(duration: 1)
+    }
+
+    func testEmbeddedStepUpWindowStaysOpenUntilMfaCompletesTwiceInARow() throws {
+        launchApp(resetState: true)
+        loginWithPassword()
+
+        for round in 1...2 {
+            Self.server.clearRequestLog()
+            tapButton("E2EStepUpButton")
+            XCTAssertTrue(
+                Self.server.waitForRequest(method: "GET", path: "/oauth/prelogin", timeout: 20),
+                "Expected step-up round \(round) to open the hosted step-up page. \(screenDebugSummary())"
+            )
+            completeStepUpChallenge()
+            waitForWebViewsToClose(timeout: 20)
+            XCTAssertEqual(app.webViews.count, 0, "Step-up round \(round) should dismiss after success. \(screenDebugSummary())")
+            waitForScreen("UserPageRoot", timeout: 20)
+        }
+    }
+
+    func testStepUpRequestedWhileItsWindowIsOpenIsRefusedAndLeavesTheWindowOpen() throws {
+        launchApp(stepUpScenario: "double")
+        loginWithPassword()
+
+        tapButton("E2EStepUpButton")
+        XCTAssertTrue(
+            Self.server.waitForRequest(method: "GET", path: "/oauth/prelogin", timeout: 20),
+            "Expected the first step-up to open the hosted step-up page. \(screenDebugSummary())"
+        )
+        app.getWebLabel("Step-Up MFA Mock").waitUntilExists(timeout: 20)
+        assertWebViewStaysOpen(for: 4)
+        completeStepUpChallenge()
+        waitForWebViewsToClose(timeout: 20)
+        waitForScreen("UserPageRoot", timeout: 20)
+
+        assertStepUpScenarioLog(equals: ["2:operationCanceled", "1:success"])
+    }
+
+    func testClosingTheStepUpWindowCancelsItAndStepUpStillWorksAfterwards() throws {
+        launchApp(stepUpScenario: "dismissFirst")
+        loginWithPassword()
+
+        tapButton("E2EStepUpButton")
+        waitForWebViewsToClose(timeout: 20)
+        waitForScreen("UserPageRoot", timeout: 20)
+        assertStepUpScenarioLog(equals: ["1:operationCanceled"])
+
+        Self.server.clearRequestLog()
+        tapButton("E2EStepUpButton")
+        XCTAssertTrue(
+            Self.server.waitForRequest(method: "GET", path: "/oauth/prelogin", timeout: 20),
+            "Expected a new step-up after the closed one to open the hosted step-up page. \(screenDebugSummary())"
+        )
+        completeStepUpChallenge()
+        waitForWebViewsToClose(timeout: 20)
+        waitForScreen("UserPageRoot", timeout: 20)
+        assertStepUpScenarioLog(equals: ["1:operationCanceled", "2:success"])
+    }
+
+    func testStepUpStartedFromTheCompletionOfAnotherStepUpOpensItsOwnWindow() throws {
+        launchApp(stepUpScenario: "chain")
+        loginWithPassword()
+
+        tapButton("E2EStepUpButton")
+        completeStepUpChallenge()
+        completeStepUpChallenge()
+        waitForWebViewsToClose(timeout: 20)
+        waitForScreen("UserPageRoot", timeout: 20)
+        assertStepUpScenarioLog(equals: ["1:success", "2:success"])
+    }
+
+    func testStepUpWindowClosedByAnAppLinkReportsTheStepUpAsCanceled() throws {
+        launchApp(stepUpScenario: "plain")
+        loginWithPassword()
+
+        tapButton("E2EStepUpButton")
+        app.getWebLabel("Step-Up MFA Mock").waitUntilExists(timeout: 20)
+        app.getWebButton("Open App Link").waitUntilExists(timeout: 20).safeTap()
+        waitForWebViewsToClose(timeout: 20)
+        waitForScreen("UserPageRoot", timeout: 20)
+        assertStepUpScenarioLog(equals: ["1:operationCanceled"])
+
+        Self.server.clearRequestLog()
+        tapButton("E2EStepUpButton")
+        completeStepUpChallenge()
+        waitForWebViewsToClose(timeout: 20)
+        waitForScreen("UserPageRoot", timeout: 20)
+        assertStepUpScenarioLog(equals: ["1:operationCanceled", "2:success"])
+    }
+
+    func testLoginRequestedOverAnOpenStepUpWindowIsRefusedAndKeepsTheWindow() throws {
+        launchApp(stepUpScenario: "loginOverStepUp")
+        loginWithPassword()
+
+        tapButton("E2EStepUpButton")
+        app.getWebLabel("Step-Up MFA Mock").waitUntilExists(timeout: 20)
+        assertWebViewStaysOpen(for: 4)
+        completeStepUpChallenge()
+        waitForWebViewsToClose(timeout: 20)
+        waitForScreen("UserPageRoot", timeout: 20)
+        assertStepUpScenarioLog(equals: ["login:operationCanceled", "1:success"])
+    }
+
+    private func launchApp(stepUpScenario: String) {
+        let app = XCUIApplication()
+        var environment = Self.server.launchEnvironment(resetState: true)
+        environment["FRONTEGG_E2E_STEP_UP_SCENARIO"] = stepUpScenario
+        app.launchEnvironment = environment
+        app.launch()
+        self.app = app
+    }
+
+    private func assertStepUpScenarioLog(equals expected: [String], timeout: TimeInterval = 10) {
+        let log = app.staticTexts["E2EStepUpScenarioLog"]
+        let expectedText = expected.joined(separator: ",")
+        let deadline = Date().addingTimeInterval(timeout)
+        while log.label != expectedText, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+        XCTAssertEqual(log.label, expectedText, "Unexpected step-up results. \(screenDebugSummary())")
+    }
+
+    private func completeStepUpChallenge() {
+        app.getWebLabel("Step-Up MFA Mock").waitUntilExists(timeout: 20)
+        assertWebViewStaysOpen(for: 3)
+        let tokenRequestsBeforeCompletion = Self.server.requestCount(method: "POST", path: "/oauth/token")
+        app.getWebButton("Complete Step-Up").waitUntilExists(timeout: 20).safeTap()
+
+        // Completing the challenge navigates to the driver-seeded after-auth authorize URL,
+        // which issues an elevated code that the native OAuth callback exchanges for a token.
+        XCTAssertTrue(
+            Self.server.waitForRequestCount(
+                method: "POST",
+                path: "/oauth/token",
+                count: tokenRequestsBeforeCompletion + 1,
+                timeout: 20
+            ),
+            "Expected the elevated authorization code to be exchanged for a token. \(screenDebugSummary())"
+        )
+    }
+
+    private func assertWebViewStaysOpen(for duration: TimeInterval) {
+        if app.getWebLabel("Step-Up MFA Mock").waitForNonExistence(timeout: duration) {
+            XCTFail("Step-up window closed before the MFA challenge was completed. \(screenDebugSummary())")
+        }
+    }
+
+    private func waitForWebViewsToClose(timeout: TimeInterval) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while app.webViews.count > 0, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+    }
+
+    /// FR-27246: an opaque login web view painted white over the host instead of the configured backgroundColor.
+    func testLoginWebViewShowsConfiguredBackgroundColorBehindTransparentPage() throws {
+        let transparentPage: [String: Any] = [
+            "status": 200,
+            "headers": ["Content-Type": "text/html; charset=utf-8"],
+            "body": """
+            <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+            <body style="background: transparent; margin: 0;"><p>Transparent Page</p></body></html>
+            """
+        ]
+        // The SDK reloads an authorize URL that renders a page, so every reload must stay transparent.
+        try Self.server.enqueue(method: "GET", path: "/oauth/authorize", responses: Array(repeating: transparentPage, count: 3))
+
+        launchApp(resetState: true)
+        openEmbeddedLogin()
+        app.getWebLabel("Transparent Page").waitUntilExists(timeout: 20)
+
+        let configuredBackground = (red: 0x1F, green: 0x6F, blue: 0xEB)
+        let deadline = Date().addingTimeInterval(5)
+        var sampledColor = screenPixelColor(atNormalizedPoint: CGPoint(x: 0.5, y: 0.8))
+        while !isColor(sampledColor, closeTo: configuredBackground), Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+            sampledColor = screenPixelColor(atNormalizedPoint: CGPoint(x: 0.5, y: 0.8))
+        }
+        XCTAssertTrue(
+            isColor(sampledColor, closeTo: configuredBackground),
+            "Expected the configured backgroundColor #1F6FEB behind the transparent page, sampled \(String(describing: sampledColor)). \(screenDebugSummary())"
+        )
+    }
+
+    private func screenPixelColor(atNormalizedPoint point: CGPoint) -> (red: Int, green: Int, blue: Int)? {
+        guard let screenshot = XCUIScreen.main.screenshot().image.cgImage else { return nil }
+        let pixelRect = CGRect(
+            x: Int(CGFloat(screenshot.width) * point.x),
+            y: Int(CGFloat(screenshot.height) * point.y),
+            width: 1,
+            height: 1
+        )
+        guard let pixel = screenshot.cropping(to: pixelRect) else { return nil }
+
+        var rgba = [UInt8](repeating: 0, count: 4)
+        let didDraw = rgba.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(
+                data: buffer.baseAddress,
+                width: 1,
+                height: 1,
+                bitsPerComponent: 8,
+                bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.draw(pixel, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return true
+        }
+        guard didDraw else { return nil }
+        return (red: Int(rgba[0]), green: Int(rgba[1]), blue: Int(rgba[2]))
+    }
+
+    private func isColor(
+        _ color: (red: Int, green: Int, blue: Int)?,
+        closeTo expected: (red: Int, green: Int, blue: Int),
+        tolerance: Int = 16
+    ) -> Bool {
+        guard let color else { return false }
+        return abs(color.red - expected.red) <= tolerance
+            && abs(color.green - expected.green) <= tolerance
+            && abs(color.blue - expected.blue) <= tolerance
     }
 
     func testUnlockAccountDeepLinkKeepsTheLoginViewOpen() throws {

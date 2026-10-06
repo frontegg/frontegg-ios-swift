@@ -14,6 +14,7 @@ class MockMeApi: Api {
     /// When the queue is empty for a path, throws an error.
     var responseQueues: [String: [(Data, HTTPURLResponse)]] = [:]
     var callCounts: [String: Int] = [:]
+    private let stateLock = NSLock()
 
     init() {
         super.init(baseUrl: "https://test.example.com", clientId: "test-client", applicationId: nil)
@@ -31,11 +32,17 @@ class MockMeApi: Api {
         // Normalize path for lookup (strip leading slash if present)
         let lookupPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
 
-        callCounts[lookupPath, default: 0] += 1
-
-        if var queue = responseQueues[lookupPath], !queue.isEmpty {
-            let (data, httpResponse) = queue.removeFirst()
+        // /me and /me/tenants are requested concurrently, so the bookkeeping is serialized.
+        let popped: (Data, HTTPURLResponse)? = stateLock.withLock {
+            callCounts[lookupPath, default: 0] += 1
+            guard var queue = responseQueues[lookupPath], !queue.isEmpty else { return nil }
+            let entry = queue.removeFirst()
             responseQueues[lookupPath] = queue
+            return entry
+        }
+
+        if let entry = popped {
+            let (data, httpResponse) = entry
 
             // Simulate getRequest retry behavior:
             // 401 always throws immediately
@@ -44,7 +51,7 @@ class MockMeApi: Api {
             }
             // Transient errors: retry if retries remaining AND more entries queued
             if Api.isTransientRefreshHTTPStatus(httpResponse.statusCode) {
-                if retries > 0, let nextQueue = responseQueues[lookupPath], !nextQueue.isEmpty {
+                if retries > 0, hasQueuedResponse(lookupPath) {
                     return try await getRequest(
                         path: path, accessToken: accessToken,
                         refreshToken: refreshToken,
@@ -63,6 +70,10 @@ class MockMeApi: Api {
     }
 
     // MARK: - Helpers
+
+    private func hasQueuedResponse(_ path: String) -> Bool {
+        stateLock.withLock { responseQueues[path]?.isEmpty == false }
+    }
 
     func enqueue(path: String, statusCode: Int, json: [String: Any] = [:]) {
         let data = (try? JSONSerialization.data(withJSONObject: json)) ?? Data()
