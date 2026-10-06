@@ -6,6 +6,7 @@ import AuthenticationServices
 @MainActor
 final class FronteggSecurityCenterViewModelTests: XCTestCase {
 
+    @MainActor
     private final class MockService: FronteggSecurityCenterService {
         var sessionsResult: Result<[FronteggSession], Error> = .success([])
         var passkeysResult: Result<[FronteggPasskey], Error> = .success([])
