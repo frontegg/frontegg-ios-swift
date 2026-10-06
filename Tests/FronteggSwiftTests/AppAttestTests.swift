@@ -54,9 +54,7 @@ final class FakeAppAttestService: AppAttestServiceProtocol, @unchecked Sendable 
     }
 
     func attestKey(_ keyId: String, clientDataHash: Data) async throws -> Data {
-        lock.lock()
-        _attestCalls.append((keyId, clientDataHash))
-        lock.unlock()
+        lock.withLock { _attestCalls.append((keyId, clientDataHash)) }
         if attestDelay > 0 {
             try await Task.sleep(nanoseconds: attestDelay)
         }
@@ -385,7 +383,9 @@ final class AppAttestTests: XCTestCase {
                         if index < 3 {
                             return .attested(try await appAttest.attestKey(challenge: Data("c\(index)".utf8)).keyId)
                         }
-                        try await Task.sleep(nanoseconds: 20_000_000)
+                        while service.attestCalls.isEmpty {
+                            try await Task.sleep(nanoseconds: 1_000_000)
+                        }
                         return .asserted(try await appAttest.generateAssertion(for: Data("r\(index)".utf8)).keyId)
                     } catch let error as FronteggAppAttestError {
                         return .error(error)
