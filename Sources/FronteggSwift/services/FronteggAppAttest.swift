@@ -28,14 +28,14 @@ public enum FronteggAppAttestError: Error, Equatable {
 }
 
 /// The result of attesting an App Attest key. Send both values to your server for verification.
-public struct FronteggAppAttestation: Equatable {
+public struct FronteggAppAttestation: Equatable, Sendable {
     public let keyId: String
     /// CBOR-encoded attestation object returned by `DCAppAttestService`.
     public let attestationObject: Data
 }
 
 /// An assertion signed by the attested key over `SHA256(requestData)`.
-public struct FronteggAppAttestAssertion: Equatable {
+public struct FronteggAppAttestAssertion: Equatable, Sendable {
     public let keyId: String
     /// CBOR-encoded assertion returned by `DCAppAttestService`.
     public let assertion: Data
@@ -198,6 +198,7 @@ public actor FronteggAppAttest {
 
     /// Removes the stored key so the next ``attestKey(challenge:)`` generates and attests a new key.
     public func resetKey() async {
+        guard isEnabled else { return }
         _ = try? await serialized { self.clearKey() }
     }
 

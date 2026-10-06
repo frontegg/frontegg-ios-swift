@@ -134,20 +134,23 @@ final class AppAttestTests: XCTestCase {
 
     // MARK: - Opt-in
 
-    func test_disabled_neverTouchesService() async {
+    func test_disabled_neverTouchesService() async throws {
         let service = FakeAppAttestService()
-        let store = InMemoryAppAttestKeyStore()
+        let store = InMemoryAppAttestKeyStore(keyId: "existing-key", attested: true)
         let appAttest = FronteggAppAttest(isEnabled: false, service: service, keyStore: store)
 
         XCTAssertFalse(appAttest.isEnabled)
         XCTAssertFalse(appAttest.isSupported)
         await assertThrows(.disabled) { try await appAttest.generateKey() }
+        await assertThrows(.disabled) { try await appAttest.isKeyAttested() }
         await assertThrows(.disabled) { try await appAttest.attestKey(challenge: Data("c".utf8)) }
         await assertThrows(.disabled) { try await appAttest.generateAssertion(for: Data("r".utf8)) }
         await assertThrows(.disabled) { try await appAttest.assertionHeaders(for: Data("r".utf8)) }
+        await appAttest.resetKey()
 
         XCTAssertEqual(service.totalCalls, 0)
         XCTAssertEqual(store.saveCount, 0)
+        XCTAssertEqual(try store.loadKey(), AppAttestKeyRecord(keyId: "existing-key", attested: true))
     }
 
     func test_unsupportedDevice_throwsTypedError() async {
