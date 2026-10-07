@@ -21,6 +21,11 @@
       "description": "Logs in, starts a native step-up (acr_values + max_age), and verifies the StepUpWebDriver seeds the box's step-up localStorage contract and rewrites the URL to the /account/step-up route so the hosted box renders its MFA challenge instead of a blank page, then completes the challenge and verifies the elevated code is exchanged for a stepped-up token."
     },
     {
+      "method": "testLoginBoxFooterLinksOpenOutsideTheLoginBox",
+      "title": "Login box footer links open outside the box",
+      "description": "Sets a host footer, verifies the login screen renders it with the javascript: link degraded to text, that the http(s) link opens in Safari while the login box stays open, and that the app-scheme link hands off and closes the box (FR-27245)."
+    },
+    {
       "method": "testEmbeddedStepUpWindowStaysOpenUntilMfaCompletesTwiceInARow",
       "title": "Embedded step-up window stays open until MFA completes",
       "description": "Logs in and runs step-up twice. Each time the hosted step-up page bootstraps from the native session over the getTokens bridge, which refreshes the token, and the test verifies the step-up window stays open until the MFA challenge is completed, then dismisses after the elevated token exchange (FR-27252)."
@@ -194,6 +199,16 @@
       "method": "testScheduledTokenRefreshFiresBeforeExpiry",
       "title": "Scheduled token refresh fires before expiry",
       "description": "Logs in with a short access token TTL and verifies the SDK's scheduled refresh fires automatically, incrementing the token version while the app stays in the foreground."
+    },
+    {
+      "method": "testRefreshResponseSlowerThanTheRequestTimeoutKeepsTheRotatedSession",
+      "title": "A slow refresh response on a rotating refresh token keeps the session",
+      "description": "Logs in, then makes the mock rotate refresh tokens and answer the next refresh after 15 s, like a slow in-flight connection. Verifies the scheduled refresh still gets the rotated token and the user stays signed in (FR-27189)."
+    },
+    {
+      "method": "testLostRefreshResponseRecoversTheSessionFromTheWebSession",
+      "title": "A lost refresh response on a rotating refresh token recovers the session from the web session",
+      "description": "Logs in, then makes the mock rotate refresh tokens and drop the connection on the next refresh after rotating, so the app never sees its new token. Verifies the next refresh's 401 is recovered from the login box's web session instead of signing the user out, and that the recovered token keeps refreshing (FR-27189)."
     },
     {
       "method": "testMisroutedOpenURLRecoversIntoAuthenticatedState",

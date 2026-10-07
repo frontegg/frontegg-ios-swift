@@ -33,7 +33,7 @@ enum LoginBoxCustomization {
 
     static func encodeOverrides(_ overrides: [String: Any]) -> String? {
         guard JSONSerialization.isValidJSONObject(overrides),
-              let data = try? JSONSerialization.data(withJSONObject: overrides, options: [.sortedKeys]),
+              let data = try? JSONSerialization.data(withJSONObject: overrides, options: [.sortedKeys, .withoutEscapingSlashes]),
               let json = String(data: data, encoding: .utf8) else {
             return nil
         }

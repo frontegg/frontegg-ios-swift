@@ -31,6 +31,16 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
     }
     
     // MARK: - WebAuthn Registration
+
+    func handleRegistrationCallback(data: Any?, error: Error?) {
+        if let registration = data as? WebauthnRegistration {
+            Task { await self.verifyNewDeviceSession(publicKey: registration) }
+        } else if let error, FronteggAuth.isUserCancelledOAuthFlow(error) {
+            completeRegistration(FronteggError.authError(.operationCanceled))
+        } else {
+            completeRegistration(error.map(FronteggError.from))
+        }
+    }
     
     func startWebAuthn(_ completion: FronteggAuth.ConditionCompletionHandler? = nil) {
         let baseUrl = FronteggAuth.shared.baseUrl
@@ -40,13 +50,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
             // is cleared by the delegate before `verifyNewDeviceSession` resolves.
             self.registrationCompletion = completion
             self.callbackAction = { (data, error) in
-                if let regsitration = data as? WebauthnRegistration {
-                    Task { await self.verifyNewDeviceSession(publicKey: regsitration) }
-                } else {
-                    // Errors raised before ASAuthorization runs (e.g. failing to
-                    // fetch registration options) still surface here.
-                    self.completeRegistration(error.map(FronteggError.from))
-                }
+                self.handleRegistrationCallback(data: data, error: error)
             }
         }
         guard let url = URL(string: "\(baseUrl)/frontegg/identity/resources/users/webauthn/v1/devices"),

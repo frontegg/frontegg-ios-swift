@@ -35,6 +35,7 @@ class RedirectHandler: NSObject, URLSessionTaskDelegate {
 
 public class Api {
     internal static let DEFAULT_TIMEOUT: Int = 10
+    internal static let REFRESH_TIMEOUT: Int = 30
     internal static let oauthErrorDomain = "FronteggAuth"
 
     /// HTTP statuses where the refresh token may still be valid; callers should retry instead of logging out.
@@ -472,6 +473,29 @@ public class Api {
         refreshToken: String,
         timeout: Int = 10
     ) async throws -> (Data, URLResponse) {
+        try await silentAuthorize(cookieHeader: "\(self.cookieName)=\(refreshToken)", timeout: timeout)
+    }
+
+    func authorizeWithWebSession(cookie: HTTPCookie) async throws -> (AuthResponse, [HTTPCookie]) {
+        let (data, response) = try await silentAuthorize(
+            cookieHeader: "\(cookie.name)=\(cookie.value)",
+            timeout: Api.REFRESH_TIMEOUT
+        )
+        guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
+            throw FronteggError.authError(.failedToAuthenticate)
+        }
+        let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
+        let headers = httpResponse.allHeaderFields.reduce(into: [String: String]()) { result, entry in
+            if let name = entry.key as? String, let value = entry.value as? String { result[name] = value }
+        }
+        let responseUrl = httpResponse.url ?? URL(string: baseUrl) ?? URL(fileURLWithPath: "/")
+        return (authResponse, HTTPCookie.cookies(withResponseHeaderFields: headers, for: responseUrl))
+    }
+
+    func silentAuthorize(
+        cookieHeader: String,
+        timeout: Int = 10
+    ) async throws -> (Data, URLResponse) {
         // Use POST /frontegg/oauth/authorize/silent with cookie fe_refresh_client-id=refresh-token
         let urlStr = "/frontegg/oauth/authorize/silent"
         let fullUrl = urlStr.starts(with: self.baseUrl)
@@ -487,7 +511,7 @@ public class Api {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
-        request.setValue("\(self.cookieName)=\(refreshToken)", forHTTPHeaderField: "Cookie")
+        request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
         
         if let applicationId = self.applicationId {
             request.setValue(applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
@@ -586,7 +610,7 @@ public class Api {
                 path: "identity/resources/auth/v1/user/token/refresh",
                 body: ["tenantId": unwrappedTenantId],
                 additionalHeaders: headers,
-                timeout: 5
+                timeout: Api.REFRESH_TIMEOUT
             )
             
             if let res = response as? HTTPURLResponse {
@@ -676,7 +700,7 @@ public class Api {
             let (data, response) = try await postRequest(path: "oauth/token", body: [
                 "grant_type": "refresh_token",
                 "refresh_token": refreshToken,
-            ], timeout: 5)
+            ], timeout: Api.REFRESH_TIMEOUT)
             
             if let res = response as? HTTPURLResponse {
                 if res.statusCode == 401 {
