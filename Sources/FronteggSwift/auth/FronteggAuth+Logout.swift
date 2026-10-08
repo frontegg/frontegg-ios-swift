@@ -98,6 +98,7 @@ extension FronteggAuth {
                 self.credentialManager.deleteLastActiveTenantId()
                 self.credentialManager.clear()
             }
+            self.api.dpop?.rotateKey()
             CredentialManager.clearPendingOAuthFlows()
             SocialLoginUrlGenerator.shared.clearPendingSocialCodeVerifiers()
 

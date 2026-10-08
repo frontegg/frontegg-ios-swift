@@ -43,7 +43,7 @@ public class CredentialManager {
         self.serviceKey = serviceKey;
     }
     
-    func save(key: String, value: String) throws {
+    func save(key: String, value: String, accessibility: CFString = kSecAttrAccessibleAfterFirstUnlock) throws {
         logger.trace("Saving \(key) in keyhcain")
         
         if let valueData = value.data(using: .utf8) {
@@ -52,7 +52,7 @@ public class CredentialManager {
                 kSecAttrService: serviceKey ?? "frontegg",
                 kSecAttrAccount: key,
                 kSecValueData: valueData,
-                kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlock
+                kSecAttrAccessible: accessibility
             ] as [CFString : Any] as CFDictionary
             
             let status = SecItemAdd(query, nil)
@@ -69,7 +69,7 @@ public class CredentialManager {
                 
                 let newAttributes : CFDictionary = [
                     kSecValueData: valueData,
-                    kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlock
+                    kSecAttrAccessible: accessibility
                 ] as CFDictionary
                 
                 let updateStatus = SecItemUpdate(updateQuery, newAttributes)
