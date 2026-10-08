@@ -36,6 +36,7 @@ class RedirectHandler: NSObject, URLSessionTaskDelegate {
 public class Api {
     internal static let DEFAULT_TIMEOUT: Int = 10
     internal static let REFRESH_TIMEOUT: Int = 30
+    internal static let oauthErrorDomain = "FronteggAuth"
 
     /// HTTP statuses where the refresh token may still be valid; callers should retry instead of logging out.
     /// This is intentionally broad: any 5xx plus 408/429 keeps the session recoverable until
@@ -821,11 +822,14 @@ public class Api {
 
             if let responseString = String(data: data, encoding: .utf8),
                responseString.contains("\"errors\"") || responseString.contains("\"error\"") {
-                return (nil, FronteggError.authError(.other(NSError(domain: "FronteggAuth", code: 400, userInfo: [NSLocalizedDescriptionKey: responseString]))))
+                return (nil, FronteggError.authError(.other(NSError(domain: Api.oauthErrorDomain, code: 400, userInfo: [NSLocalizedDescriptionKey: responseString]))))
             }
 
             return (try JSONDecoder().decode(AuthResponse.self, from: data), nil)
         } catch {
+            if error is URLError || isConnectivityError(error) {
+                return (nil, FronteggError.authError(.other(error)))
+            }
             return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
         }
     }

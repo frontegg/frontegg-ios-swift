@@ -8,7 +8,20 @@
 //
 
 import XCTest
+import SwiftUI
 @testable import FronteggSwift
+
+private final class PresentingRootViewController: UIViewController {
+    var stubPresented: UIViewController?
+    override var presentedViewController: UIViewController? { stubPresented }
+}
+
+private final class RecordingRootViewController: UIViewController {
+    var onPresent: ((Bool) -> Void)?
+    override func present(_ viewControllerToPresent: UIViewController, animated flag: Bool, completion: (() -> Void)? = nil) {
+        onPresent?(Thread.isMainThread)
+    }
+}
 
 final class EmbeddedLoginRootViewControllerTests: XCTestCase {
 
@@ -36,6 +49,8 @@ final class EmbeddedLoginRootViewControllerTests: XCTestCase {
     }
 
     override func tearDown() {
+        auth?.testRootViewControllerOverride = nil
+        auth?.loginCompletion = nil
         auth?.cancelScheduledTokenRefresh()
         auth = nil
         Thread.sleep(forTimeInterval: 0.1)
@@ -67,5 +82,97 @@ final class EmbeddedLoginRootViewControllerTests: XCTestCase {
         guard case .authError(.couldNotFindRootViewController) = receivedError else {
             return XCTFail("Expected .couldNotFindRootViewController, got \(String(describing: receivedError))")
         }
+    }
+
+    private func presentEmbeddedModalWithInFlightLogin() -> () -> Int {
+        let root = PresentingRootViewController()
+        root.stubPresented = UIHostingController(rootView: EmbeddedLoginModal(parentVC: nil))
+        auth.testRootViewControllerOverride = root
+        var firstCallerCompletions = 0
+        auth.loginCompletion = { _ in firstCallerCompletions += 1 }
+        return { firstCallerCompletions }
+    }
+
+    func testEmbeddedLoginWhileModalPresentedCompletesSecondCallerWithOperationCanceled() {
+        let firstCallerCompletions = presentEmbeddedModalWithInFlightLogin()
+
+        let completed = expectation(description: "second embeddedLogin completion is invoked")
+        var receivedError: FronteggError?
+        var completedOnMainThread = false
+
+        auth.embeddedLogin({ result in
+            completedOnMainThread = Thread.isMainThread
+            if case .failure(let error) = result {
+                receivedError = error
+            }
+            completed.fulfill()
+        }, loginHint: nil)
+
+        wait(for: [completed], timeout: 2.0)
+
+        guard case .authError(.operationCanceled) = receivedError else {
+            return XCTFail("Expected .operationCanceled, got \(String(describing: receivedError))")
+        }
+        XCTAssertEqual(receivedError?.category, .cancelled)
+        XCTAssertTrue(completedOnMainThread)
+        XCTAssertNotNil(auth.loginCompletion, "In-flight login completion must be preserved")
+        XCTAssertEqual(firstCallerCompletions(), 0)
+    }
+
+    func testLoginAsyncWhileEmbeddedModalPresentedThrowsInsteadOfHanging() {
+        let firstCallerCompletions = presentEmbeddedModalWithInFlightLogin()
+
+        let finished = expectation(description: "loginAsync returns")
+        var thrown: Error?
+        let auth = self.auth!
+        Task {
+            do {
+                _ = try await auth.loginAsync()
+            } catch {
+                thrown = error
+            }
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2.0)
+
+        guard case .authError(.operationCanceled)? = thrown as? FronteggError else {
+            return XCTFail("Expected .operationCanceled, got \(String(describing: thrown))")
+        }
+        XCTAssertEqual(firstCallerCompletions(), 0)
+    }
+
+    func testLoginAsyncFromBackgroundTaskPresentsEmbeddedLoginOnMainThread() {
+        PlistHelper.testConfigOverride = FronteggPlist(
+            lateInit: true,
+            payload: .singleRegion(.init(baseUrl: "https://test.example.com", clientId: "test-client-id")),
+            keepUserLoggedInAfterReinstall: false
+        )
+        defer { PlistHelper.testConfigOverride = nil }
+        FronteggApp.shared.manualInit(baseUrl: "https://test.example.com", cliendId: "test-client-id")
+
+        let root = RecordingRootViewController()
+        auth.testRootViewControllerOverride = root
+        let presented = expectation(description: "embedded login presented")
+        var presentedOnMainThread = false
+        root.onPresent = { onMain in
+            presentedOnMainThread = onMain
+            presented.fulfill()
+        }
+
+        let finished = expectation(description: "loginAsync returns")
+        let auth = self.auth!
+        Task.detached {
+            _ = try? await auth.loginAsync()
+            finished.fulfill()
+        }
+
+        wait(for: [presented], timeout: 2.0)
+        DispatchQueue.main.async {
+            auth.loginCompletion?(.failure(.authError(.operationCanceled)))
+        }
+        wait(for: [finished], timeout: 2.0)
+
+        XCTAssertTrue(presentedOnMainThread, "loginAsync must drive the login UI on the main thread")
     }
 }
