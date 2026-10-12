@@ -1,7 +1,7 @@
 ## v1.3.24
 
-- Fixed: embedded step-up never completed after MFA. The login box went on to the application's App URL (a blank page when the App URL is `localhost`) instead of returning to the app, so no stepped-up token was issued and the `stepUp()` completion never ran. Step-up now finishes through the hosted login and returns a stepped-up token. (FR-27252 — [#338](https://github.com/frontegg/frontegg-ios-swift/pull/338))
-- Fixed: embedded step-up could sign the user out before the MFA challenge appeared, because the step-up page could start before the login box had loaded the user's session. The step-up page now opens only once the session is loaded. (FR-27252 — [#338](https://github.com/frontegg/frontegg-ios-swift/pull/338))
+- Fixed: embedded step-up never completed after MFA. The login box went on to the application's App URL (a blank page when the App URL is `localhost`) instead of returning to the app, so no stepped-up token was issued and the `stepUp()` completion never ran. Step-up now finishes through the hosted login and returns a stepped-up token.
+- Fixed: embedded step-up could sign the user out before the MFA challenge appeared, because the step-up page could start before the login box had loaded the user's session. The step-up page now opens only once the session is loaded.
 
 ## v1.3.23
 
