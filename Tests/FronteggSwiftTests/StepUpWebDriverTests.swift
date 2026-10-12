@@ -14,6 +14,8 @@ final class StepUpWebDriverTests: XCTestCase {
     private let redirectUri = "com.frontegg.demo://auth.example.com/ios/oauth/callback"
     private let acrValues = "http://schemas.openid.net/pape/policies/2007/06/multi-factor"
     private let storages = ["localStorage", "sessionStorage"]
+    // The first WebContent process launch on a cold CI simulator can take over a minute.
+    private let pageLoadTimeout: TimeInterval = 180
 
     private final class LoadWaiter: NSObject, WKNavigationDelegate {
         let finished: XCTestExpectation
@@ -47,7 +49,7 @@ final class StepUpWebDriverTests: XCTestCase {
         let waiter = LoadWaiter(finished)
         webView.navigationDelegate = waiter
         webView.loadHTMLString("<html><body></body></html>", baseURL: preloginUrl)
-        await fulfillment(of: [finished], timeout: 10)
+        await fulfillment(of: [finished], timeout: pageLoadTimeout)
         withExtendedLifetime(waiter) {}
         return webView
     }
