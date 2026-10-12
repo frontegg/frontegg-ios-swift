@@ -76,25 +76,15 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         loginWithPassword()
         Self.server.clearRequestLog()
 
-        // Start a native step-up (acr_values + max_age) via the E2E step-up trigger. The embedded
-        // box bootstraps on its prelogin path; the native StepUpWebDriver must route it to
-        // /account/step-up so the (fixed) box renders the MFA challenge instead of a blank page.
         tapButton("E2EStepUpButton")
 
-        // The stub step-up page renders "Step-Up MFA Mock" ONLY when the driver seeded
-        // SHOULD_STEP_UP and rewrote the path to /account/step-up — so this assertion fails if
-        // the driver did not inject/route (the production blank-page bug).
         XCTAssertTrue(
             Self.server.waitForRequest(method: "GET", path: "/oauth/prelogin", timeout: 20),
             "Expected the step-up flow to bootstrap the hosted prelogin page. \(screenDebugSummary())"
         )
         completeStepUpChallenge()
 
-        // The elevated token exchange above is the definitive step-up success signal — it is only
-        // reachable because the native driver seeded the after-auth redirect and drove the stub's
-        // challenge (which itself only renders when the driver's localStorage + /account/step-up
-        // contract is honored). Assert a clean teardown: the step-up webview is dismissed and we
-        // are back on the authenticated profile with no connection error.
+        // The token exchange above is only reachable when the driver saved the hosted postlogin params.
         waitForWebViewsToClose(timeout: 20)
         XCTAssertEqual(app.webViews.count, 0, "Step-up webview should dismiss after success. \(screenDebugSummary())")
         waitForScreen("UserPageRoot", timeout: 20)
@@ -257,8 +247,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         let tokenRequestsBeforeCompletion = Self.server.requestCount(method: "POST", path: "/oauth/token")
         app.getWebButton("Complete Step-Up").waitUntilExists(timeout: 20).safeTap()
 
-        // Completing the challenge navigates to the driver-seeded after-auth authorize URL,
-        // which issues an elevated code that the native OAuth callback exchanges for a token.
+        // Completing the challenge posts to the hosted postlogin, whose code the native OAuth callback exchanges.
         XCTAssertTrue(
             Self.server.waitForRequestCount(
                 method: "POST",

@@ -558,18 +558,7 @@ final class LocalMockAuthServer {
         // FR-24939 step-up: a native step-up authorize URL carries acr_values (+ max_age).
         let acrValues = firstValue(query, key: "acr_values")
         if !acrValues.isEmpty {
-            // Second pass — the mock MFA challenge has completed (stub navigated back to this
-            // authorize URL with stepUpCompleted=1). Issue an elevated code and hand it to the
-            // native OAuth callback, exactly like the embedded password flow. The original
-            // `state` is echoed so the SDK matches its registered pending OAuth request.
-            if !firstValue(query, key: "stepUpCompleted").isEmpty {
-                let code = state.issueCode(email: "test@frontegg.com", redirectURI: redirectURI, state: stateValue)
-                return redirectResponse(location: buildCallbackURL(redirectURI: redirectURI, code: code, state: stateValue))
-            }
-
-            // First pass — 302 to prelogin, carrying acr_values (+ max_age) so the native
-            // StepUpWebDriver's document-start guard fires on the prelogin document and routes
-            // the box to its /account/step-up page.
+            // 302 to prelogin with acr_values (+ max_age) so the native StepUpWebDriver acts on that document.
             let maxAge = firstValue(query, key: "max_age")
             let hostedState = state.issueHostedLoginContext(
                 redirectURI: redirectURI,
@@ -614,11 +603,7 @@ final class LocalMockAuthServer {
             return htmlResponse(status: 400, title: "Invalid hosted flow", body: "<h1>Invalid hosted flow</h1>")
         }
 
-        // FR-24939 step-up: the box bootstraps here for a step-up authorize. Serve a step-up
-        // aware stub that stands in for the (fixed) hosted box — it renders its MFA challenge
-        // ONLY when the native StepUpWebDriver has seeded SHOULD_STEP_UP and rewritten the path
-        // to /account/step-up. A driver that failed to inject leaves the page blank, exactly
-        // reproducing the production bug this driver fixes.
+        // A step-up authorize bootstraps here; the stub only shows its challenge when the native driver did its part.
         if !firstValue(query, key: "acr_values").isEmpty {
             return renderHostedStepUpStep()
         }
@@ -797,26 +782,39 @@ final class LocalMockAuthServer {
         return htmlResponse(status: 200, title: "Password Login", body: body)
     }
 
-    /// FR-24939 step-up stub — stands in for the fixed hosted box's step-up (MFA) page.
-    /// It renders the challenge ONLY when the native StepUpWebDriver has honored its contract:
-    /// SHOULD_STEP_UP seeded in localStorage AND the path rewritten (via history.replaceState)
-    /// to `/account/step-up`. When the driver has not run, the page stays on "Loading…" and the
-    /// challenge never appears — the very blank-page bug the driver fixes, which fails the test.
-    /// The Complete button navigates to the driver-seeded after-auth authorize URL (proving the
-    /// FRONTEGG_AFTER_AUTH_REDIRECT_URL contract) with stepUpCompleted=1 to elevate the session.
-    /// Like the real box, it bootstraps from the native session over the getTokens bridge first.
+    /// Step-up stub standing in for the hosted page and the box's step-up (MFA) page.
+    /// It renders nothing unless the native StepUpWebDriver seeded SHOULD_STEP_UP.
+    /// A document that starts on `/account/step-up` fails like the box's token-less step-up request.
+    /// On the hosted root it bootstraps over the getTokens bridge, then, like the hosted page, opens
+    /// `/account/step-up` in-page only when the step-up acr_values were saved.
+    /// The Complete button mirrors the hosted page after MFA: it needs the saved redirect_uri and
+    /// state to post to postlogin, and otherwise falls back to the default redirect.
     private func renderHostedStepUpStep() -> HTTPResponse {
         let body = """
         <div id="step-up-root"></div>
         <p id="step-up-fallback">Loading…</p>
         <script>
           (function () {
-            var onStepUp = window.localStorage.getItem('SHOULD_STEP_UP') === 'true'
-              && window.location.pathname.indexOf('/account/step-up') !== -1;
-            if (!onStepUp) { return; }
+            if (window.localStorage.getItem('SHOULD_STEP_UP') !== 'true') { return; }
             var fallback = document.getElementById('step-up-fallback');
+            var pathname = window.location.pathname;
+            if (pathname.indexOf('/account/step-up') !== -1) {
+              fallback.textContent = 'Step-up request failed: no bearer token';
+              return;
+            }
+            if (!/\\/oauth\\/$/.test(pathname)) { return; }
 
-            function renderChallenge() {
+            function openStepUpRoute(tokens) {
+              if (!window.localStorage.getItem('FRONTEGG_OAUTH_STEP_UP_ACR_VALUES')) {
+                showBootstrapError('step-up not requested');
+                return;
+              }
+              var maxAge = window.localStorage.getItem('FRONTEGG_OAUTH_STEP_UP_MAX_AGE');
+              window.history.replaceState(null, '', '/oauth/account/step-up' + (maxAge ? '?maxAge=' + maxAge : ''));
+              renderChallenge(tokens);
+            }
+
+            function renderChallenge(tokens) {
               var root = document.getElementById('step-up-root');
               root.innerHTML =
                 '<h1 id="step-up-mfa-title">Step-Up MFA Mock</h1>' +
@@ -827,9 +825,22 @@ final class LocalMockAuthServer {
                 window.location.assign('com.frontegg.demo://e2e/open-app');
               });
               document.getElementById('complete-step-up').addEventListener('click', function () {
-                var after = window.localStorage.getItem('FRONTEGG_AFTER_AUTH_REDIRECT_URL');
-                if (!after) { return; }
-                window.location.assign(after + (after.indexOf('?') >= 0 ? '&' : '?') + 'stepUpCompleted=1');
+                var redirectUri = window.localStorage.getItem('FRONTEGG_OAUTH_REDIRECT_AFTER_LOGIN');
+                var hostedState = window.localStorage.getItem('FRONTEGG_OAUTH_STATE_AFTER_LOGIN');
+                if (!redirectUri || !hostedState) {
+                  window.location.assign('/oauth/redirect/default');
+                  return;
+                }
+                fetch('/oauth/postlogin', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ state: hostedState, token: tokens && tokens.accessToken })
+                }).then(function (response) {
+                  if (!response.ok) { throw new Error('postlogin_failed'); }
+                  window.location.assign('/oauth/postlogin/redirect?state=' + encodeURIComponent(hostedState));
+                }).catch(function (error) {
+                  showBootstrapError(error.message);
+                });
               });
             }
 
@@ -838,7 +849,7 @@ final class LocalMockAuthServer {
             }
 
             var callbacks = window.FronteggNativeBridgeCallbacks = window.FronteggNativeBridgeCallbacks || {};
-            callbacks.stepUpBootstrap = { resolve: renderChallenge, reject: showBootstrapError };
+            callbacks.stepUpBootstrap = { resolve: openStepUpRoute, reject: showBootstrapError };
             try {
               window.webkit.messageHandlers.FronteggNativeBridge.postMessage(JSON.stringify({
                 action: 'getTokens',

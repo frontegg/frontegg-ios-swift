@@ -15,16 +15,19 @@ import WebKit
 ///
 /// This driver bridges that gap from the native side. While presenting a step-up flow
 /// it injects a `documentStart` script that, before the box reads the document:
-///   1. seeds the box's step-up `localStorage` contract (`SHOULD_STEP_UP`,
-///      `FRONTEGG_OAUTH_STEP_UP_MAX_AGE`),
-///   2. rewrites the URL to the box's step-up route so it renders the MFA challenge, and
-///   3. points the box's after-auth redirect (`FRONTEGG_AFTER_AUTH_REDIRECT_URL`) back
-///      at the original authorize URL.
+///   1. seeds the box's step-up flag (`SHOULD_STEP_UP`) in `localStorage`,
+///   2. rewrites the URL to the hosted root, whose page opens the box's step-up route in-page
+///      only once the box has authenticated from the native session, so the step-up request
+///      carries a token,
+///   3. points the box's after-auth redirect (`FRONTEGG_AFTER_AUTH_REDIRECT_URL`) at the
+///      original authorize URL, which the box strips to its same-origin path and routes to
+///      in-page (not a full navigation), and
+///   4. saves the OAuth params the skipped hosted prelogin page would have saved
+///      (`redirect_uri`, `state`, `acr_values`, `max_age`) in localStorage and sessionStorage.
 ///
-/// When step-up completes, the box performs a full navigation to that authorize URL —
-/// now with an elevated session — which yields an elevated `code` that the existing
-/// OAuth callback interception in `CustomWebView` exchanges into a stepped-up token.
-/// No new native token-capture path is required.
+/// When step-up completes, the box routes in-page to the hosted page, which reads those
+/// params, posts the stepped-up session to postlogin and redirects to `redirect_uri` with
+/// a stepped-up `code` that the OAuth callback interception in `CustomWebView` exchanges.
 enum StepUpWebDriver {
 
     /// Name of the `WKScriptMessageHandler` the driver posts its native log line to.
@@ -37,6 +40,9 @@ enum StepUpWebDriver {
         (function () {
           function report(m) {
             try { window.webkit.messageHandlers.\(messageHandlerName).postMessage(String(m)); } catch (e) {}
+          }
+          function decodedOrRaw(value) {
+            try { return decodeURIComponent(value); } catch (e) { return value; }
           }
           try {
             var loc = window.location;
@@ -55,24 +61,32 @@ enum StepUpWebDriver {
 
             var ls = window.localStorage;
             ls.setItem('SHOULD_STEP_UP', 'true');
-            if (maxAge) { ls.setItem('FRONTEGG_OAUTH_STEP_UP_MAX_AGE', maxAge); }
-            // Absolute http(s) URL => the box treats the post-MFA redirect as a full
-            // navigation, re-hitting /oauth/authorize with the now-elevated session so a
-            // stepped-up code is issued and captured by the native OAuth callback.
             ls.setItem('FRONTEGG_AFTER_AUTH_REDIRECT_URL', \(afterAuth));
 
-            // Hosted-login basename = current path minus its last segment
-            // (e.g. '/oauth' from '/oauth/prelogin'); step-up route is
-            // '<basename>/account/step-up'. Preserve the existing query params and add
-            // the 'maxAge' param the step-up page reads (note: distinct from OAuth 'max_age').
-            var path = loc.pathname;
-            var basename = path.substring(0, path.lastIndexOf('/'));
-            var search = loc.search || '';
-            if (maxAge) { search += (search ? '&' : '?') + 'maxAge=' + maxAge; }
-            var target = basename + '/account/step-up' + search;
+            var hostedParams = {
+              FRONTEGG_OAUTH_STEP_UP_ACR_VALUES: params.get('acr_values'),
+              FRONTEGG_OAUTH_STEP_UP_MAX_AGE: maxAge
+            };
+            var redirectUri = params.get('redirect_uri');
+            var state = params.get('state');
+            if (redirectUri && state) {
+              hostedParams.FRONTEGG_OAUTH_REDIRECT_AFTER_LOGIN = decodedOrRaw(redirectUri);
+              hostedParams.FRONTEGG_OAUTH_STATE_AFTER_LOGIN = state;
+            }
+            try {
+              [window.localStorage, window.sessionStorage].forEach(function (storage) {
+                Object.keys(hostedParams).forEach(function (key) {
+                  if (hostedParams[key]) { storage.setItem(key, hostedParams[key]); }
+                });
+              });
+            } catch (e) {
+              report('saving hosted params failed: ' + (e && e.message ? e.message : e));
+            }
 
-            window.history.replaceState(null, '', loc.origin + target);
-            report('routed to ' + basename + '/account/step-up (maxAge=' + maxAge + ')');
+            // Hosted-login root, e.g. '/oauth/' from '/oauth/prelogin'.
+            var hostedRoot = loc.pathname.substring(0, loc.pathname.lastIndexOf('/') + 1);
+            window.history.replaceState(null, '', loc.origin + hostedRoot);
+            report('routed to ' + hostedRoot + ' (maxAge=' + maxAge + ')');
           } catch (e) {
             report('error: ' + (e && e.message ? e.message : e));
           }
