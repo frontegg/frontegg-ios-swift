@@ -1,5 +1,8 @@
 ## v1.3.24
 
+- Fixed: embedded step-up never completed after MFA. The login box went on to the application's App URL (a blank page when the App URL is `localhost`) instead of returning to the app, so no stepped-up token was issued and the `stepUp()` completion never ran. Step-up now finishes through the hosted login and returns a stepped-up token. (FR-27252 — [#338](https://github.com/frontegg/frontegg-ios-swift/pull/338))
+- Fixed: embedded step-up could sign the user out before the MFA challenge appeared, because the step-up page could start before the login box had loaded the user's session. The step-up page now opens only once the session is loaded. (FR-27252 — [#338](https://github.com/frontegg/frontegg-ios-swift/pull/338))
+
 ## v1.3.23
 
 - Added: `FronteggApp.shared.loginBoxFooter` sets a host-supplied footer below the embedded login box, for example a sign-up link or the reCAPTCHA attribution Google requires when the badge is hidden. The login box renders it on its sign-in and password screens only. Links must be `http(s)` or one of the app's registered URL schemes; other links are shown as plain text. A tapped `http(s)` link opens in the system browser, and an app-scheme link is handed to the app. It requires the login box update from oauth-service (FR-27245); against an older login box the footer is ignored. (FR-27245 — [#333](https://github.com/frontegg/frontegg-ios-swift/pull/333))
