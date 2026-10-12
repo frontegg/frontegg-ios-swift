@@ -1,3 +1,9 @@
+## v1.3.23
+
+- Added: `FronteggApp.shared.loginBoxFooter` sets a host-supplied footer below the embedded login box, for example a sign-up link or the reCAPTCHA attribution Google requires when the badge is hidden. The login box renders it on its sign-in and password screens only. Links must be `http(s)` or one of the app's registered URL schemes; other links are shown as plain text. A tapped `http(s)` link opens in the system browser, and an app-scheme link is handed to the app. It requires the login box update from oauth-service (FR-27245); against an older login box the footer is ignored. (FR-27245 — [#333](https://github.com/frontegg/frontegg-ios-swift/pull/333))
+- Fixed: users were signed out when a token refresh response arrived late or was lost on a slow network, because the server had already rotated the refresh token. Refresh requests now wait up to 30 seconds instead of 5, and in embedded mode a rejected refresh first recovers the session from the login web session, but only for the same user, before signing out. (FR-27189 — [#334](https://github.com/frontegg/frontegg-ios-swift/pull/334))
+- Added: prebuilt SwiftUI views `FronteggTenantSwitcher` and `FronteggSecurityCenter` (step-up, passkeys, MFA and active sessions), iOS 15+. All copy can be localized through `FronteggTenantSwitcherStrings` and `FronteggSecurityCenterStrings`. (FR-25955 — [#326](https://github.com/frontegg/frontegg-ios-swift/pull/326))
+
 ## v1.3.22
 
 - Fixed: the embedded step-up window closed by itself before the MFA challenge appeared, so step-up could never be completed and its completion was never called. The next `stepUp()` then failed with `operationCanceled`. The window now stays open until MFA completes, and the completion runs once the window has closed. (FR-27252 — [#331](https://github.com/frontegg/frontegg-ios-swift/pull/331))
