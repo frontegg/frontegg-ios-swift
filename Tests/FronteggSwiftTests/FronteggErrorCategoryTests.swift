@@ -171,11 +171,10 @@ final class FronteggErrorCategoryTests: XCTestCase {
         XCTAssertEqual(FronteggErrorCategory(URLError(.cannotConnectToHost)), .network)
     }
 
-    func test_serverUnavailable_isServer() {
-        XCTAssertEqual(
-            FronteggErrorCategory(ApiError.serverUnavailable(statusCode: 503, path: "oauth/token")),
-            .server(statusCode: 503)
-        )
+    func test_serverUnavailable_isServerWithReadableMessage() {
+        let error = ApiError.serverUnavailable(statusCode: 503, path: "oauth/token")
+        XCTAssertEqual(FronteggErrorCategory(error), .server(statusCode: 503))
+        XCTAssertTrue(FronteggError.from(error).errorDescription?.contains("HTTP 503") ?? false)
     }
 
     func test_underlyingError_nilForNonWrappedCases() {

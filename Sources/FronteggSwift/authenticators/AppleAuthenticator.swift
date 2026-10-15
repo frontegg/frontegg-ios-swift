@@ -35,6 +35,7 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
             let fronteggError = FronteggError.authError(.unknown)
             FronteggAuth.shared.reportOAuthFailure(error: fronteggError, flow: .apple)
             completionHandler?(.failure(fronteggError))
+            completionHandler = nil
         }
     }
     
@@ -73,13 +74,13 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
                         FronteggAuth.shared.reportOAuthFailure(error: fronteggError, flow: .apple)
                         self.completionHandler?(.failure(fronteggError))
                     }
-                    self.completionHandler = nil
                 } catch {
                     self.logger.error("Failed to authenticate with apple \(error.localizedDescription)")
                     let fronteggError = FronteggError.from(error)
                     FronteggAuth.shared.reportOAuthFailure(error: fronteggError, flow: .apple)
                     self.completionHandler?(.failure(fronteggError))
                 }
+                self.completionHandler = nil
             }
         }
         

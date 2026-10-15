@@ -85,6 +85,13 @@ final class PasskeysRegistrationCompletionTests: XCTestCase {
         }
     }
 
+    func testVerifyRejectionErrorKeepsTheCauseOfTheStatus() {
+        XCTAssertEqual(PasskeysAuthenticator.verifyRejectionError(statusCode: 503).category, .server(statusCode: 503))
+        XCTAssertEqual(PasskeysAuthenticator.verifyRejectionError(statusCode: 401).category, .notAuthenticated)
+        XCTAssertEqual(PasskeysAuthenticator.verifyRejectionError(statusCode: 400).category, .authenticationFailed)
+        XCTAssertEqual(PasskeysAuthenticator.verifyRejectionError(statusCode: nil).category, .invalidResponse)
+    }
+
     /// A transport error must propagate to the registration completion, not be
     /// silently dropped.
     func testVerifyFailureDeliversRegistrationCompletion() async {

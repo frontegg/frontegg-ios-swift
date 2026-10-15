@@ -18,6 +18,13 @@ enum ApiError: Error {
     case serverUnavailable(statusCode: Int, path: String)
 }
 
+extension ApiError: LocalizedError {
+    var errorDescription: String? {
+        guard case let .serverUnavailable(statusCode, _) = self else { return nil }
+        return "The server is temporarily unavailable (HTTP \(statusCode)). Please try again."
+    }
+}
+
 /// Result of `me()`. When a token re-refresh was performed,
 /// `refreshedTokens` carries the new tokens that the caller must adopt.
 internal struct MeResult {
@@ -834,10 +841,12 @@ public class Api {
 
             return (try JSONDecoder().decode(AuthResponse.self, from: data), nil)
         } catch {
-            if error is URLError || isConnectivityError(error) {
-                return (nil, FronteggError.authError(.other(error)))
+            switch FronteggErrorCategory(error) {
+            case .network, .cancelled, .configuration:
+                return (nil, FronteggError.from(error))
+            default:
+                return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
             }
-            return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
         }
     }
     

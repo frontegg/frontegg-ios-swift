@@ -270,6 +270,19 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
     }
     
     // MARK: - Verify New Device Session
+
+    static func verifyRejectionError(statusCode: Int?) -> FronteggError {
+        guard let statusCode else {
+            return .authError(.invalidResponse)
+        }
+        if statusCode == 401 {
+            return .authError(.notAuthenticated)
+        }
+        if Api.isTransientRefreshHTTPStatus(statusCode) {
+            return .authError(.other(ApiError.serverUnavailable(statusCode: statusCode, path: "webauthn/v1/devices/verify")))
+        }
+        return .authError(.failedToAuthenticateWithPasskeys("HTTP \(statusCode)"))
+    }
     
     func verifyNewDeviceSession(
         publicKey: WebauthnRegistration,
@@ -325,9 +338,10 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
         }
 
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode < 300 else {
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
             let responseBody = String(data: data, encoding: .utf8) ?? ""
-            self.logger.error("Verify endpoint rejected the new device: \(responseBody)")
-            self.completeRegistration(FronteggError.authError(.failedToAuthenticateWithPasskeys(responseBody)))
+            self.logger.error("Verify endpoint rejected the new device (status: \(statusCode.map(String.init) ?? "none")): \(responseBody)")
+            self.completeRegistration(Self.verifyRejectionError(statusCode: statusCode))
             return
         }
 
