@@ -130,7 +130,9 @@ public class Api {
     }
 
     private func attachDPoPProof(to request: inout URLRequest, dpop: FronteggDPoP, nonce: String?) throws {
-        guard let url = request.url, let method = request.httpMethod else { return }
+        guard let url = request.url, let method = request.httpMethod else {
+            throw ApiError.invalidUrl("DPoP-bound request has no URL or method")
+        }
         do {
             let proof = try dpop.proof(method: method, url: url, nonce: nonce ?? dpop.nonce(for: url))
             request.setValue(proof, forHTTPHeaderField: "DPoP")
@@ -878,6 +880,17 @@ public class Api {
         }
     }
     
+    /// A login binds a new session, so an unreadable DPoP key can be replaced here without breaking a bound refresh token.
+    private func postAuthorizationCodeRequest(body: [String: Any]) async throws -> (Data, URLResponse) {
+        do {
+            return try await postRequest(path: "oauth/token", body: body)
+        } catch FronteggDPoPError.keyUnavailable where dpop != nil {
+            logger.warning("DPoP key unavailable at login, binding a new key")
+            dpop?.rotateKey()
+            return try await postRequest(path: "oauth/token", body: body)
+        }
+    }
+
     internal func exchangeToken(code: String,
                                 redirectUrl: String,
                                 codeVerifier: String?) async -> (AuthResponse?, FronteggError?) {
@@ -894,7 +907,7 @@ public class Api {
                 body["code_verifier"] = codeVerifier
             }
                         
-            let (data, response) = try await postRequest(path: "oauth/token", body: body)
+            let (data, response) = try await postAuthorizationCodeRequest(body: body)
 
             if let statusCode = (response as? HTTPURLResponse)?.statusCode,
                Self.isTransientRefreshHTTPStatus(statusCode) {

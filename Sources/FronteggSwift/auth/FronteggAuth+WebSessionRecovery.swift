@@ -10,6 +10,10 @@ extension FronteggAuth {
     /// Returns true when new credentials were issued for the same user from the login web session.
     func recoverSessionFromWebSession() async -> Bool {
         guard embeddedMode else { return false }
+        guard !isDPoPEnabled else {
+            logger.info("Web session recovery skipped: it would replace DPoP-bound tokens with unbound ones")
+            return false
+        }
         guard let previousSubject = currentSubject() else {
             logger.info("Web session recovery skipped: the current user is unknown")
             return false

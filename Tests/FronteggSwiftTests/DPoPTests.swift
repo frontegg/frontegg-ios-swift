@@ -529,6 +529,43 @@ final class DPoPApiTests: XCTestCase {
         XCTAssertTrue(api.requests.isEmpty)
     }
 
+    func test_undecodableSecureEnclaveKey_codeExchangeBindsNewKey() async throws {
+        keyStorage.value = "se:" + Data(repeating: 7, count: 64).base64EncodedString()
+        let api = DPoPTransportApi(dpop: makeDPoP())
+
+        let (response, error) = await api.exchangeToken(code: "code", redirectUrl: "app://cb", codeVerifier: "v")
+
+        XCTAssertNil(error)
+        XCTAssertEqual(response?.token_type, "DPoP")
+        XCTAssertNotNil(try XCTUnwrap(api.requests.first).value(forHTTPHeaderField: "DPoP"))
+        XCTAssertTrue(keyStorage.value?.hasPrefix("sw:") ?? false, "login must bind a freshly generated key")
+    }
+
+    func test_undecodableSecureEnclaveKey_refreshKeepsStoredKey() async {
+        let stored = "se:" + Data(repeating: 7, count: 64).base64EncodedString()
+        keyStorage.value = stored
+        let api = DPoPTransportApi(dpop: makeDPoP())
+
+        do {
+            _ = try await api.refreshToken(refreshToken: "rt")
+            XCTFail("Expected refresh to fail")
+        } catch FronteggDPoPError.keyUnavailable {
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+
+        XCTAssertEqual(keyStorage.value, stored, "refresh must never replace the key the refresh token is bound to")
+        XCTAssertTrue(api.requests.isEmpty)
+    }
+
+    func test_dpopErrors_areReadableAndClassified() {
+        let unavailable = FronteggDPoPError.keyUnavailable(lockedKeychain)
+        XCTAssertFalse(unavailable.localizedDescription.contains("FronteggDPoPError"))
+        XCTAssertEqual(FronteggErrorCategory(FronteggDPoPError.disabled), .configuration)
+        XCTAssertEqual(FronteggErrorCategory(FronteggDPoPError.missingAccessToken), .notAuthenticated)
+        XCTAssertEqual(FronteggErrorCategory(unavailable), .unknown)
+    }
+
     func test_proofFailureOnNonceRetry_retryIsNotSent() async {
         let api = DPoPTransportApi(dpop: makeDPoP())
         api.stubs = [
@@ -632,5 +669,6 @@ final class DPoPRefreshSessionTests: XCTestCase {
         XCTAssertTrue(auth.isAuthenticated)
         XCTAssertEqual(auth.refreshToken, "refresh-token-existing")
         XCTAssertEqual(auth.accessToken, accessToken)
+        XCTAssertNil(auth.lastAttemptReason, "a locked DPoP key must not count as a failed refresh attempt")
     }
 }

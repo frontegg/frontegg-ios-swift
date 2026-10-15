@@ -594,6 +594,15 @@ extension FronteggAuth {
             )
             return false
 
+        } catch FronteggDPoPError.keyUnavailable {
+            self.logger.warning("DPoP signing key is unavailable, keeping the session and retrying in \(dpopKeyUnavailableRetryDelay)s")
+            scheduleTokenRefresh(
+                offset: dpopKeyUnavailableRetryDelay,
+                attempts: attempts,
+                skipNetworkCheck: skipNetworkCheck,
+                source: source
+            )
+            return false
         } catch {
             await handleOfflineLikeFailure(
                 error: error,

@@ -5,10 +5,18 @@
 import CryptoKit
 import Foundation
 
-public enum FronteggDPoPError: Error {
+public enum FronteggDPoPError: LocalizedError {
     case disabled
     case missingAccessToken
     case keyUnavailable(Error)
+
+    public var errorDescription: String? {
+        switch self {
+        case .disabled: "DPoP is not enabled. Set enableDPoP in Frontegg.plist."
+        case .missingAccessToken: "There is no access token to bind the DPoP proof to."
+        case .keyUnavailable: "The DPoP signing key is temporarily unavailable. Please try again."
+        }
+    }
 }
 
 struct DPoPKeyStorage {
