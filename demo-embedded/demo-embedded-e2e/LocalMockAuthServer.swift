@@ -96,7 +96,8 @@ final class LocalMockAuthServer {
         useRootGeneratedCallbackAlias: Bool = false,
         misroutedCallbackCode: String? = nil,
         misroutedCallbackState: String? = nil,
-        misroutedCallbackVerifier: String? = nil
+        misroutedCallbackVerifier: String? = nil,
+        showsLoginBoxFooter: Bool = false
     ) -> [String: String] {
         let normalizedBasePathPrefix = normalizeBasePathPrefix(basePathPrefix)
         let appBaseURL = configuredAppBaseURL(basePathPrefix: normalizedBasePathPrefix)
@@ -126,6 +127,9 @@ final class LocalMockAuthServer {
         }
         if let misroutedCallbackVerifier {
             env["FRONTEGG_E2E_MISROUTED_CALLBACK_VERIFIER"] = misroutedCallbackVerifier
+        }
+        if showsLoginBoxFooter {
+            env["FRONTEGG_E2E_LOGIN_BOX_FOOTER"] = "1"
         }
         return env
     }
@@ -165,6 +169,10 @@ final class LocalMockAuthServer {
         responses: [[String: Any]]
     ) throws {
         state.enqueue(method: method, path: path, responses: responses)
+    }
+
+    func rotateRefreshTokens(delayingNextRefreshResponsesMs delays: [Int] = [], droppingNextRefreshResponses drops: Int = 0) {
+        state.rotateRefreshTokens(delayingNextRefreshResponsesMs: delays, droppingNextRefreshResponses: drops)
     }
 
     func queueProbeFailures(statusCodes: [Int]) throws {
@@ -550,18 +558,7 @@ final class LocalMockAuthServer {
         // FR-24939 step-up: a native step-up authorize URL carries acr_values (+ max_age).
         let acrValues = firstValue(query, key: "acr_values")
         if !acrValues.isEmpty {
-            // Second pass — the mock MFA challenge has completed (stub navigated back to this
-            // authorize URL with stepUpCompleted=1). Issue an elevated code and hand it to the
-            // native OAuth callback, exactly like the embedded password flow. The original
-            // `state` is echoed so the SDK matches its registered pending OAuth request.
-            if !firstValue(query, key: "stepUpCompleted").isEmpty {
-                let code = state.issueCode(email: "test@frontegg.com", redirectURI: redirectURI, state: stateValue)
-                return redirectResponse(location: buildCallbackURL(redirectURI: redirectURI, code: code, state: stateValue))
-            }
-
-            // First pass — 302 to prelogin, carrying acr_values (+ max_age) so the native
-            // StepUpWebDriver's document-start guard fires on the prelogin document and routes
-            // the box to its /account/step-up page.
+            // 302 to prelogin with acr_values (+ max_age) so the native StepUpWebDriver acts on that document.
             let maxAge = firstValue(query, key: "max_age")
             let hostedState = state.issueHostedLoginContext(
                 redirectURI: redirectURI,
@@ -606,11 +603,7 @@ final class LocalMockAuthServer {
             return htmlResponse(status: 400, title: "Invalid hosted flow", body: "<h1>Invalid hosted flow</h1>")
         }
 
-        // FR-24939 step-up: the box bootstraps here for a step-up authorize. Serve a step-up
-        // aware stub that stands in for the (fixed) hosted box — it renders its MFA challenge
-        // ONLY when the native StepUpWebDriver has seeded SHOULD_STEP_UP and rewritten the path
-        // to /account/step-up. A driver that failed to inject leaves the page blank, exactly
-        // reproducing the production bug this driver fixes.
+        // A step-up authorize bootstraps here; the stub only shows its challenge when the native driver did its part.
         if !firstValue(query, key: "acr_values").isEmpty {
             return renderHostedStepUpStep()
         }
@@ -668,9 +661,41 @@ final class LocalMockAuthServer {
           <button type="submit">Continue with Mock Google</button>
         </form>
         \(hostedBootstrapScript(includeRefreshAttempt: true))
+        \(hostedLoginBoxFooterScript())
         """
 
         return htmlResponse(status: 200, title: "Mock Embedded Login", body: body)
+    }
+
+    /// Renders `window.__fronteggLoginBoxFooter` the way the login box's boxFooter slot does.
+    private func hostedLoginBoxFooterScript() -> String {
+        """
+        <script>
+          (function () {
+            var footer = window.__fronteggLoginBoxFooter;
+            if (!footer || !Array.isArray(footer.rows)) { return; }
+            var container = document.createElement('div');
+            container.id = 'host-login-box-footer';
+            footer.rows.forEach(function (row) {
+              var line = document.createElement('p');
+              (row.segments || []).forEach(function (segment) {
+                if (segment.url) {
+                  var link = document.createElement('a');
+                  link.href = segment.url;
+                  link.textContent = segment.label;
+                  line.appendChild(link);
+                } else {
+                  var span = document.createElement('span');
+                  span.textContent = segment.text || segment.label || '';
+                  line.appendChild(span);
+                }
+              });
+              container.appendChild(line);
+            });
+            document.body.appendChild(container);
+          })();
+        </script>
+        """
     }
 
     private func renderHostedPasswordStep(
@@ -757,26 +782,39 @@ final class LocalMockAuthServer {
         return htmlResponse(status: 200, title: "Password Login", body: body)
     }
 
-    /// FR-24939 step-up stub — stands in for the fixed hosted box's step-up (MFA) page.
-    /// It renders the challenge ONLY when the native StepUpWebDriver has honored its contract:
-    /// SHOULD_STEP_UP seeded in localStorage AND the path rewritten (via history.replaceState)
-    /// to `/account/step-up`. When the driver has not run, the page stays on "Loading…" and the
-    /// challenge never appears — the very blank-page bug the driver fixes, which fails the test.
-    /// The Complete button navigates to the driver-seeded after-auth authorize URL (proving the
-    /// FRONTEGG_AFTER_AUTH_REDIRECT_URL contract) with stepUpCompleted=1 to elevate the session.
-    /// Like the real box, it bootstraps from the native session over the getTokens bridge first.
+    /// Step-up stub standing in for the hosted page and the box's step-up (MFA) page.
+    /// It renders nothing unless the native StepUpWebDriver seeded SHOULD_STEP_UP.
+    /// A document that starts on `/account/step-up` fails like the box's token-less step-up request.
+    /// On the hosted root it bootstraps over the getTokens bridge, then, like the hosted page, opens
+    /// `/account/step-up` in-page only when the step-up acr_values were saved.
+    /// The Complete button mirrors the hosted page after MFA: it needs the saved redirect_uri and
+    /// state to post to postlogin, and otherwise falls back to the default redirect.
     private func renderHostedStepUpStep() -> HTTPResponse {
         let body = """
         <div id="step-up-root"></div>
         <p id="step-up-fallback">Loading…</p>
         <script>
           (function () {
-            var onStepUp = window.localStorage.getItem('SHOULD_STEP_UP') === 'true'
-              && window.location.pathname.indexOf('/account/step-up') !== -1;
-            if (!onStepUp) { return; }
+            if (window.localStorage.getItem('SHOULD_STEP_UP') !== 'true') { return; }
             var fallback = document.getElementById('step-up-fallback');
+            var pathname = window.location.pathname;
+            if (pathname.indexOf('/account/step-up') !== -1) {
+              fallback.textContent = 'Step-up request failed: no bearer token';
+              return;
+            }
+            if (!/\\/oauth\\/$/.test(pathname)) { return; }
 
-            function renderChallenge() {
+            function openStepUpRoute(tokens) {
+              if (!window.localStorage.getItem('FRONTEGG_OAUTH_STEP_UP_ACR_VALUES')) {
+                showBootstrapError('step-up not requested');
+                return;
+              }
+              var maxAge = window.localStorage.getItem('FRONTEGG_OAUTH_STEP_UP_MAX_AGE');
+              window.history.replaceState(null, '', '/oauth/account/step-up' + (maxAge ? '?maxAge=' + maxAge : ''));
+              renderChallenge(tokens);
+            }
+
+            function renderChallenge(tokens) {
               var root = document.getElementById('step-up-root');
               root.innerHTML =
                 '<h1 id="step-up-mfa-title">Step-Up MFA Mock</h1>' +
@@ -787,9 +825,22 @@ final class LocalMockAuthServer {
                 window.location.assign('com.frontegg.demo://e2e/open-app');
               });
               document.getElementById('complete-step-up').addEventListener('click', function () {
-                var after = window.localStorage.getItem('FRONTEGG_AFTER_AUTH_REDIRECT_URL');
-                if (!after) { return; }
-                window.location.assign(after + (after.indexOf('?') >= 0 ? '&' : '?') + 'stepUpCompleted=1');
+                var redirectUri = window.localStorage.getItem('FRONTEGG_OAUTH_REDIRECT_AFTER_LOGIN');
+                var hostedState = window.localStorage.getItem('FRONTEGG_OAUTH_STATE_AFTER_LOGIN');
+                if (!redirectUri || !hostedState) {
+                  window.location.assign('/oauth/redirect/default');
+                  return;
+                }
+                fetch('/oauth/postlogin', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ state: hostedState, token: tokens && tokens.accessToken })
+                }).then(function (response) {
+                  if (!response.ok) { throw new Error('postlogin_failed'); }
+                  window.location.assign('/oauth/postlogin/redirect?state=' + encodeURIComponent(hostedState));
+                }).catch(function (error) {
+                  showBootstrapError(error.message);
+                });
               });
             }
 
@@ -798,7 +849,7 @@ final class LocalMockAuthServer {
             }
 
             var callbacks = window.FronteggNativeBridgeCallbacks = window.FronteggNativeBridgeCallbacks || {};
-            callbacks.stepUpBootstrap = { resolve: renderChallenge, reject: showBootstrapError };
+            callbacks.stepUpBootstrap = { resolve: openStepUpRoute, reject: showBootstrapError };
             try {
               window.webkit.messageHandlers.FronteggNativeBridge.postMessage(JSON.stringify({
                 action: 'getTokens',
@@ -1018,12 +1069,21 @@ final class LocalMockAuthServer {
             guard let refreshToken = body["refresh_token"] as? String, !refreshToken.isEmpty else {
                 return jsonResponse(status: 400, payload: ["error": "missing_refresh_token"])
             }
-            guard let session = state.refreshSession(for: refreshToken) else {
+            guard let refreshed = state.refreshSession(for: refreshToken) else {
                 return jsonResponse(status: 401, payload: ["error": "invalid_refresh_token"])
             }
-            return jsonResponse(
+            if state.consumeRefreshResponseDrop() {
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(), closeConnection: true)
+            }
+            let response = jsonResponse(
                 status: 200,
-                payload: authResponse(session: session, refreshToken: refreshToken)
+                payload: authResponse(session: refreshed.record, refreshToken: refreshed.token)
+            )
+            return HTTPResponse(
+                statusCode: response.statusCode,
+                headers: response.headers,
+                body: response.body,
+                delayMs: state.nextRefreshResponseDelayMs()
             )
 
         default:
@@ -1032,8 +1092,22 @@ final class LocalMockAuthServer {
     }
 
     private func handleSilentAuthorize(_ request: HTTPRequest) -> HTTPResponse {
-        guard let refreshToken = refreshTokenFromCookies(request.headers["cookie"]),
-              let session = state.validRefreshTokenRecord(for: refreshToken) else {
+        guard let refreshToken = refreshTokenFromCookies(request.headers["cookie"]) else {
+            return jsonResponse(status: 401, payload: ["error": "invalid_refresh_cookie"])
+        }
+        if let recovered = state.recoverSession(forWebSessionToken: refreshToken) {
+            let cookieValue = "fe_refresh_demo_embedded_e2e=\(recovered.web.token); Path=/; HttpOnly; SameSite=Lax"
+            let response = jsonResponse(
+                status: 200,
+                payload: authResponse(session: recovered.native.record, refreshToken: recovered.native.token)
+            )
+            return HTTPResponse(
+                statusCode: response.statusCode,
+                headers: response.headers.merging(["Set-Cookie": cookieValue]) { _, new in new },
+                body: response.body
+            )
+        }
+        guard let session = state.validRefreshTokenRecord(for: refreshToken) else {
             return jsonResponse(status: 401, payload: ["error": "invalid_refresh_cookie"])
         }
 
@@ -1125,7 +1199,7 @@ final class LocalMockAuthServer {
 
     private func handleHostedRefresh(_ request: HTTPRequest) -> HTTPResponse {
         guard let refreshToken = refreshTokenFromCookies(request.headers["cookie"]),
-              let session = state.refreshSession(for: refreshToken) else {
+              let session = state.refreshSession(for: refreshToken, rotating: false)?.record else {
             return jsonResponse(status: 401, payload: [
                 "errors": ["Session not found"],
             ])
@@ -2109,6 +2183,9 @@ private final class MockAuthState {
     private var pendingEmbeddedSocialSuccessStallCount: Int = 0
     private var pendingEmbeddedSocialSuccessDashboardRedirectCount: Int = 0
     private var pendingEmbeddedSocialSuccessRootRedirectCount: Int = 0
+    private var rotatesRefreshTokens = false
+    private var refreshResponseDelaysMs: [Int] = []
+    private var refreshResponseDropsRemaining = 0
 
     init() {
         reset()
@@ -2133,6 +2210,46 @@ private final class MockAuthState {
             pendingEmbeddedSocialSuccessStallCount = 0
             pendingEmbeddedSocialSuccessDashboardRedirectCount = 0
             pendingEmbeddedSocialSuccessRootRedirectCount = 0
+            rotatesRefreshTokens = false
+            refreshResponseDelaysMs = []
+            refreshResponseDropsRemaining = 0
+        }
+    }
+
+    func rotateRefreshTokens(delayingNextRefreshResponsesMs delays: [Int], droppingNextRefreshResponses drops: Int) {
+        queue.sync {
+            rotatesRefreshTokens = true
+            refreshResponseDelaysMs = delays
+            refreshResponseDropsRemaining = drops
+        }
+    }
+
+    func consumeRefreshResponseDrop() -> Bool {
+        queue.sync {
+            guard refreshResponseDropsRemaining > 0 else { return false }
+            refreshResponseDropsRemaining -= 1
+            return true
+        }
+    }
+
+    func recoverSession(forWebSessionToken token: String) -> (native: IssuedRefreshToken, web: IssuedRefreshToken)? {
+        queue.sync {
+            guard rotatesRefreshTokens, var record = validatedRefreshTokenRecordLocked(for: token) else {
+                return nil
+            }
+            refreshTokens.removeValue(forKey: token)
+            record.tokenVersion += 1
+            let nativeToken = "refresh-\(UUID().uuidString.lowercased())"
+            let webToken = "refresh-\(UUID().uuidString.lowercased())"
+            refreshTokens[nativeToken] = record
+            refreshTokens[webToken] = record
+            return (IssuedRefreshToken(token: nativeToken, record: record), IssuedRefreshToken(token: webToken, record: record))
+        }
+    }
+
+    func nextRefreshResponseDelayMs() -> Int {
+        queue.sync {
+            refreshResponseDelaysMs.isEmpty ? 0 : refreshResponseDelaysMs.removeFirst()
         }
     }
 
@@ -2248,16 +2365,20 @@ private final class MockAuthState {
 
     func issueRefreshToken(email: String) -> IssuedRefreshToken {
         queue.sync {
-            let refreshToken = "refresh-\(UUID().uuidString.lowercased())"
-            let policy = tokenPolicyLocked(for: email)
-            let record = RefreshTokenRecord(
-                email: email,
-                expiresAt: Date().timeIntervalSince1970 + TimeInterval(policy.refreshTokenTTL),
-                tokenVersion: policy.startingTokenVersion
-            )
-            refreshTokens[refreshToken] = record
-            return IssuedRefreshToken(token: refreshToken, record: record)
+            issueRefreshTokenLocked(email: email)
         }
+    }
+
+    private func issueRefreshTokenLocked(email: String) -> IssuedRefreshToken {
+        let refreshToken = "refresh-\(UUID().uuidString.lowercased())"
+        let policy = tokenPolicyLocked(for: email)
+        let record = RefreshTokenRecord(
+            email: email,
+            expiresAt: Date().timeIntervalSince1970 + TimeInterval(policy.refreshTokenTTL),
+            tokenVersion: policy.startingTokenVersion
+        )
+        refreshTokens[refreshToken] = record
+        return IssuedRefreshToken(token: refreshToken, record: record)
     }
 
     func validRefreshTokenRecord(for refreshToken: String) -> RefreshTokenRecord? {
@@ -2266,14 +2387,20 @@ private final class MockAuthState {
         }
     }
 
-    func refreshSession(for refreshToken: String) -> RefreshTokenRecord? {
+    func refreshSession(for refreshToken: String, rotating: Bool = true) -> IssuedRefreshToken? {
         queue.sync {
             guard var record = validatedRefreshTokenRecordLocked(for: refreshToken) else {
                 return nil
             }
             record.tokenVersion += 1
-            refreshTokens[refreshToken] = record
-            return record
+            guard rotating && rotatesRefreshTokens else {
+                refreshTokens[refreshToken] = record
+                return IssuedRefreshToken(token: refreshToken, record: record)
+            }
+            let rotatedToken = "refresh-\(UUID().uuidString.lowercased())"
+            refreshTokens.removeValue(forKey: refreshToken)
+            refreshTokens[rotatedToken] = record
+            return IssuedRefreshToken(token: rotatedToken, record: record)
         }
     }
 

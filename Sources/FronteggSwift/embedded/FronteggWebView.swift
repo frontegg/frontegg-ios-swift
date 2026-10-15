@@ -84,6 +84,19 @@ public struct FronteggWebView: UIViewRepresentable {
             )
         }
 
+        let loginBoxFooter = fronteggApp.loginBoxFooter
+        for rejectedUrl in LoginBoxFooter.rejectedLinkUrls(loginBoxFooter) {
+            logger.warning("loginBoxFooter link \"\(rejectedUrl)\" is not an absolute http(s) URL or an allowed app-scheme URL without code, error or error_description parameters; it renders as plain text")
+        }
+        if let footerScript = LoginBoxFooter.script(loginBoxFooter) {
+            logger.debug("Injecting login box footer")
+            userContentController.addUserScript(
+                WKUserScript(source: footerScript, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+            )
+        } else if loginBoxFooter != nil {
+            logger.error("loginBoxFooter was set but contains no usable rows; the login box will render without a footer")
+        }
+
         // FR-24939: a native step-up authorize URL bootstraps the hosted-login box on its
         // prelogin path, which never navigates to the step-up route on its own, so the box
         // renders blank instead of the MFA challenge. While presenting a step-up flow, inject
@@ -119,6 +132,7 @@ public struct FronteggWebView: UIViewRepresentable {
         let webView = CustomWebView(frame: .zero, configuration: conf)
         webView.navigationDelegate = webView;
         webView.uiDelegate = webView
+        webView.loginBoxFooterExternalUrls = LoginBoxFooter.footerExternalUrls(loginBoxFooter)
         controller.webView = webView
         // Non-opaque so WKWebView shows this color between pages instead of painting its own white.
         let webViewBackgroundColor = FronteggApp.shared.backgroundColor ?? .clear

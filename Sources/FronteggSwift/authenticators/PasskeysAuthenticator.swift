@@ -25,12 +25,20 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
 
     /// Delivers the registration result exactly once and clears the slot.
     private func completeRegistration(_ error: FronteggError?) {
-        let completion = self.registrationCompletion
+        let completion = FronteggAuth.onMainThread(self.registrationCompletion)
         self.registrationCompletion = nil
         completion?(error)
     }
     
     // MARK: - WebAuthn Registration
+
+    func handleRegistrationCallback(data: Any?, error: Error?) {
+        if let registration = data as? WebauthnRegistration {
+            Task { await self.verifyNewDeviceSession(publicKey: registration) }
+        } else {
+            completeRegistration(error.map(FronteggError.from))
+        }
+    }
     
     func startWebAuthn(_ completion: FronteggAuth.ConditionCompletionHandler? = nil) {
         let baseUrl = FronteggAuth.shared.baseUrl
@@ -40,19 +48,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
             // is cleared by the delegate before `verifyNewDeviceSession` resolves.
             self.registrationCompletion = completion
             self.callbackAction = { (data, error) in
-                if let regsitration = data as? WebauthnRegistration {
-                    Task { await self.verifyNewDeviceSession(publicKey: regsitration) }
-                } else {
-                    // Errors raised before ASAuthorization runs (e.g. failing to
-                    // fetch registration options) still surface here.
-                    if error == nil {
-                        self.completeRegistration(nil)
-                    }else if let frotneggError = error as? FronteggError {
-                        self.completeRegistration(frotneggError)
-                    } else {
-                        self.completeRegistration(FronteggError.authError(.unknown))
-                    }
-                }
+                self.handleRegistrationCallback(data: data, error: error)
             }
         }
         guard let url = URL(string: "\(baseUrl)/frontegg/identity/resources/users/webauthn/v1/devices"),
@@ -255,7 +251,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
                     DispatchQueue.main.async {
                         auth.setIsLoading(false)
                     }
-                    completion?(.failure(.authError(.failedToAuthenticate)))
+                    completion?(.failure(FronteggError.from(error)))
                 }
             }
         }
@@ -274,6 +270,19 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
     }
     
     // MARK: - Verify New Device Session
+
+    static func verifyRejectionError(statusCode: Int?) -> FronteggError {
+        guard let statusCode else {
+            return .authError(.invalidResponse)
+        }
+        if statusCode == 401 {
+            return .authError(.notAuthenticated)
+        }
+        if Api.isTransientRefreshHTTPStatus(statusCode) {
+            return .authError(.other(ApiError.serverUnavailable(statusCode: statusCode, path: "webauthn/v1/devices/verify")))
+        }
+        return .authError(.failedToAuthenticateWithPasskeys("HTTP \(statusCode)"))
+    }
     
     func verifyNewDeviceSession(
         publicKey: WebauthnRegistration,
@@ -302,7 +311,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
             request.httpBody = jsonData
         } catch {
             logger.error("Failed to serialize request body: \(error.localizedDescription)")
-            self.completeRegistration(error as? FronteggError ?? FronteggError.authError(.unknown))
+            self.completeRegistration(FronteggError.from(error))
             return
         }
 
@@ -318,7 +327,7 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
 
         if let error = error {
             self.logger.error("Error verifying new device session: \(error.localizedDescription)")
-            self.completeRegistration(error as? FronteggError ?? FronteggError.authError(.failedToAuthenticate))
+            self.completeRegistration(FronteggError.from(error))
             return
         }
 
@@ -328,9 +337,15 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
             return
         }
 
-        if let dataStr = String(data: data, encoding: .utf8),
-           let httpResponse = response as? HTTPURLResponse,
-           dataStr.isEmpty, httpResponse.statusCode < 300 {
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode < 300 else {
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
+            let responseBody = String(data: data, encoding: .utf8) ?? ""
+            self.logger.error("Verify endpoint rejected the new device (status: \(statusCode.map(String.init) ?? "none")): \(responseBody)")
+            self.completeRegistration(Self.verifyRejectionError(statusCode: statusCode))
+            return
+        }
+
+        if let dataStr = String(data: data, encoding: .utf8), dataStr.isEmpty {
             self.logger.debug("Response from verify succeeded with empty body")
             self.completeRegistration(nil)
         } else if let jsonResponse = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {

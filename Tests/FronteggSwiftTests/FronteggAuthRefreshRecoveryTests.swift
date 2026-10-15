@@ -15,6 +15,25 @@ private final class MockRefreshRecoveryApi: Api {
     private var _refreshResult: Result<AuthResponse, Error>?
     private var _meWithRefreshResult: Result<MeResult, Error>?
     private var _responseQueues: [String: [(statusCode: Int, data: Data, error: Error?)]] = [:]
+    private var _webSessionAuthorizeResult: Result<(AuthResponse, [HTTPCookie]), Error>?
+    private var _webSessionAuthorizeCallCount = 0
+
+    var webSessionAuthorizeResult: Result<(AuthResponse, [HTTPCookie]), Error>? {
+        get { stateLock.withLock { _webSessionAuthorizeResult } }
+        set { stateLock.withLock { _webSessionAuthorizeResult = newValue } }
+    }
+    var webSessionAuthorizeCallCount: Int { stateLock.withLock { _webSessionAuthorizeCallCount } }
+
+    override func authorizeWithWebSession(cookie: HTTPCookie) async throws -> (AuthResponse, [HTTPCookie]) {
+        let result: Result<(AuthResponse, [HTTPCookie]), Error>? = stateLock.withLock {
+            _webSessionAuthorizeCallCount += 1
+            return _webSessionAuthorizeResult
+        }
+        guard let result else {
+            throw ApiError.invalidUrl("Missing web session authorize result")
+        }
+        return try result.get()
+    }
 
     var refreshCallCount: Int { stateLock.withLock { _refreshCallCount } }
     var meWithRefreshCallCount: Int { stateLock.withLock { _meWithRefreshCallCount } }
@@ -165,6 +184,51 @@ private final class MockRefreshRecoveryApi: Api {
         stateLock.withLock {
             _responseQueues[path, default: []].append((statusCode: 0, data: Data(), error: error))
         }
+    }
+}
+
+private final class FakeWebSessionCookies: WebSessionCookieStoring {
+    private let lock = NSLock()
+    private var _cookie: HTTPCookie?
+    private var _stored: [HTTPCookie] = []
+
+    var cookie: HTTPCookie? {
+        get { lock.withLock { _cookie } }
+        set { lock.withLock { _cookie = newValue } }
+    }
+    var stored: [HTTPCookie] { lock.withLock { _stored } }
+
+    func refreshCookie(for host: String) async -> HTTPCookie? { cookie }
+    func store(_ cookies: [HTTPCookie]) async { lock.withLock { _stored.append(contentsOf: cookies) } }
+}
+
+private final class SilentAuthorizeCapturingApi: Api {
+    private let lock = NSLock()
+    private var _timeouts: [Int] = []
+    private var _responseData = Data()
+
+    var timeouts: [Int] { lock.withLock { _timeouts } }
+    var responseData: Data {
+        get { lock.withLock { _responseData } }
+        set { lock.withLock { _responseData = newValue } }
+    }
+
+    init() {
+        super.init(baseUrl: "https://test.example.com", clientId: "test-client-id", applicationId: nil)
+    }
+
+    override func silentAuthorize(cookieHeader: String, timeout: Int) async throws -> (Data, URLResponse) {
+        let data: Data = lock.withLock {
+            _timeouts.append(timeout)
+            return _responseData
+        }
+        let response = HTTPURLResponse(
+            url: URL(string: "https://test.example.com/frontegg/oauth/authorize/silent")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+        return (data, response)
     }
 }
 
@@ -488,6 +552,161 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertFalse(snapshot.emitInitialState)
     }
 
+    // MARK: - Web session recovery
+
+    private func makeWebSessionCookie(value: String = "web-session-token") -> HTTPCookie {
+        HTTPCookie(properties: [
+            .name: "fe_refresh_testclient-id",
+            .value: value,
+            .domain: "test.example.com",
+            .path: "/",
+        ])!
+    }
+
+    private func seedRejectedRefresh(subject: String, embeddedMode: Bool = true) throws -> FakeWebSessionCookies {
+        auth.embeddedMode = embeddedMode
+        auth.setAccessToken(try makeAccessToken(email: "pilot@example.com", expirationOffset: -60, subject: subject))
+        api.refreshResult = .failure(FronteggError.authError(.failedToRefreshToken("Refresh token is not valid")))
+        let cookies = FakeWebSessionCookies()
+        cookies.cookie = makeWebSessionCookie()
+        auth.webSessionCookies = cookies
+        return cookies
+    }
+
+    func test_refreshTokenIfNeeded_refreshRejected_recoversSessionFromWebSession() async throws {
+        let cookies = try seedRejectedRefresh(subject: "user-1")
+        let rotatedCookie = makeWebSessionCookie(value: "web-session-token-rotated")
+        api.webSessionAuthorizeResult = .success((
+            try makeAuthResponse(accessToken: try makeAccessToken(email: "pilot@example.com", subject: "user-1"), refreshToken: "refresh-token-recovered"),
+            [rotatedCookie]
+        ))
+        api.enqueueJSON(path: mePath, statusCode: 200, json: TestDataFactory.makeUser(email: "pilot@example.com"))
+        api.enqueueJSON(path: tenantsPath, statusCode: 200, json: makeTenantsResponse())
+
+        let refreshed = await auth.refreshTokenIfNeeded()
+
+        XCTAssertTrue(refreshed)
+        XCTAssertEqual(api.webSessionAuthorizeCallCount, 1)
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertEqual(auth.refreshToken, "refresh-token-recovered")
+        XCTAssertEqual(auth.user?.email, "pilot@example.com")
+        XCTAssertEqual(cookies.stored.map(\.value), ["web-session-token-rotated"])
+    }
+
+    func test_refreshTokenIfNeeded_refreshRejected_noWebSessionCookie_clearsSession() async throws {
+        let cookies = try seedRejectedRefresh(subject: "user-1")
+        cookies.cookie = nil
+
+        let refreshed = await auth.refreshTokenIfNeeded()
+
+        XCTAssertFalse(refreshed)
+        XCTAssertEqual(api.webSessionAuthorizeCallCount, 0)
+        XCTAssertFalse(auth.isAuthenticated)
+        XCTAssertNil(auth.refreshToken)
+        XCTAssertNil(try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue))
+    }
+
+    func test_refreshTokenIfNeeded_refreshRejected_webSessionRejected_clearsSession() async throws {
+        _ = try seedRejectedRefresh(subject: "user-1")
+        api.webSessionAuthorizeResult = .failure(FronteggError.authError(.failedToAuthenticate))
+
+        let refreshed = await auth.refreshTokenIfNeeded()
+
+        XCTAssertFalse(refreshed)
+        XCTAssertEqual(api.webSessionAuthorizeCallCount, 1)
+        XCTAssertFalse(auth.isAuthenticated)
+        XCTAssertNil(auth.refreshToken)
+    }
+
+    func test_refreshTokenIfNeeded_refreshRejected_webSessionOfAnotherUser_clearsSession() async throws {
+        let cookies = try seedRejectedRefresh(subject: "user-1")
+        api.webSessionAuthorizeResult = .success((
+            try makeAuthResponse(accessToken: try makeAccessToken(email: "other@example.com", subject: "user-2"), refreshToken: "refresh-token-other-user"),
+            [makeWebSessionCookie(value: "other-user-web-session")]
+        ))
+
+        let refreshed = await auth.refreshTokenIfNeeded()
+
+        XCTAssertFalse(refreshed)
+        XCTAssertEqual(api.webSessionAuthorizeCallCount, 1)
+        XCTAssertFalse(auth.isAuthenticated)
+        XCTAssertNil(auth.refreshToken)
+        XCTAssertNil(try? credentialManager.get(key: KeychainKeys.refreshToken.rawValue))
+        XCTAssertTrue(cookies.stored.isEmpty)
+    }
+
+    func test_refreshTokenIfNeeded_refreshRejected_hostedMode_doesNotUseWebSession() async throws {
+        _ = try seedRejectedRefresh(subject: "user-1", embeddedMode: false)
+        api.webSessionAuthorizeResult = .success((
+            try makeAuthResponse(accessToken: try makeAccessToken(email: "pilot@example.com", subject: "user-1"), refreshToken: "refresh-token-recovered"),
+            []
+        ))
+
+        let refreshed = await auth.refreshTokenIfNeeded()
+
+        XCTAssertFalse(refreshed)
+        XCTAssertEqual(api.webSessionAuthorizeCallCount, 0)
+        XCTAssertFalse(auth.isAuthenticated)
+        XCTAssertNil(auth.refreshToken)
+    }
+
+    func test_refreshTokenIfNeeded_refreshRejected_unknownCurrentUser_doesNotUseWebSession() async throws {
+        _ = try seedRejectedRefresh(subject: "user-1")
+        auth.setAccessToken(nil)
+        api.webSessionAuthorizeResult = .success((
+            try makeAuthResponse(accessToken: try makeAccessToken(email: "other@example.com", subject: "user-2"), refreshToken: "refresh-token-other-user"),
+            []
+        ))
+
+        let refreshed = await auth.refreshTokenIfNeeded()
+
+        XCTAssertFalse(refreshed)
+        XCTAssertEqual(api.webSessionAuthorizeCallCount, 0)
+        XCTAssertFalse(auth.isAuthenticated)
+        XCTAssertNil(auth.refreshToken)
+    }
+
+    func test_refreshTokenIfNeeded_refreshRejected_recoveredFromWebSession_keepsCachedUserWhenUserLoadFails() async throws {
+        _ = try seedRejectedRefresh(subject: "user-1")
+        auth.setUser(try makeUser(email: "pilot@example.com"))
+        api.webSessionAuthorizeResult = .success((
+            try makeAuthResponse(accessToken: try makeAccessToken(email: "pilot@example.com", subject: "user-1"), refreshToken: "refresh-token-recovered"),
+            []
+        ))
+        api.meWithRefreshResult = .failure(ApiError.invalidUrl("me() should not be needed to recover the same user"))
+
+        let refreshed = await auth.refreshTokenIfNeeded()
+
+        XCTAssertTrue(refreshed)
+        XCTAssertEqual(api.meWithRefreshCallCount, 0)
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertEqual(auth.refreshToken, "refresh-token-recovered")
+        XCTAssertEqual(auth.user?.email, "pilot@example.com")
+    }
+
+    func test_authorizeWithWebSession_usesRefreshTimeout() async throws {
+        let api = SilentAuthorizeCapturingApi()
+        api.responseData = try JSONSerialization.data(withJSONObject: TestDataFactory.makeAuthResponse(
+            refreshToken: "refresh-token-recovered",
+            accessToken: try makeAccessToken(email: "pilot@example.com", subject: "user-1")
+        ))
+
+        _ = try await api.authorizeWithWebSession(cookie: makeWebSessionCookie())
+
+        XCTAssertEqual(api.timeouts, [Api.REFRESH_TIMEOUT])
+    }
+
+    func test_webSessionCookieDomainMatching_onlyMatchesTheHostOrItsParentDomains() {
+        func cookie(domain: String) -> HTTPCookie {
+            HTTPCookie(properties: [.name: "fe_refresh_x", .value: "v", .domain: domain, .path: "/"])!
+        }
+
+        XCTAssertTrue(WKWebSessionCookies.cookie(cookie(domain: "auth.example.com"), matches: "auth.example.com"))
+        XCTAssertTrue(WKWebSessionCookies.cookie(cookie(domain: ".example.com"), matches: "auth.example.com"))
+        XCTAssertFalse(WKWebSessionCookies.cookie(cookie(domain: "other.auth.example.com"), matches: "auth.example.com"))
+        XCTAssertFalse(WKWebSessionCookies.cookie(cookie(domain: "evil-example.com"), matches: "auth.example.com"))
+    }
+
     func test_refreshTokenIfNeeded_refreshSucceeds_me401_clearsSession() async throws {
         api.refreshResult = .success(try makeAuthResponse(email: "offline-401@example.com", refreshToken: "refresh-token-new"))
         api.enqueueJSON(path: mePath, statusCode: 401, json: [:])
@@ -741,10 +960,11 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         email: String,
         includeExp: Bool = true,
         tenantId: String = "tenant-123",
-        expirationOffset: TimeInterval = 3600
+        expirationOffset: TimeInterval = 3600,
+        subject: String = UUID().uuidString
     ) throws -> String {
         var payload: [String: Any] = [
-            "sub": UUID().uuidString,
+            "sub": subject,
             "email": email,
             "name": "Recovered User",
             "tenantId": tenantId,

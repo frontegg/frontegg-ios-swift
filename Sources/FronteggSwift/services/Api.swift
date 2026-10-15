@@ -14,6 +14,23 @@ enum ApiError: Error {
     case refreshEndpointTransient(statusCode: Int, message: String)
     /// /me or /me/tenants returned a non-2xx HTTP status (e.g. proxy blocked the request).
     case meEndpointFailed(statusCode: Int, path: String)
+    /// The server answered with a retryable HTTP status (5xx, 408, 429).
+    case serverUnavailable(statusCode: Int, path: String)
+}
+
+extension ApiError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case let .invalidUrl(message):
+            return message
+        case let .refreshEndpointTransient(statusCode, _), let .serverUnavailable(statusCode, _):
+            return "The server is temporarily unavailable (HTTP \(statusCode)). Please try again."
+        case .meEndpointFailed(0, _):
+            return "The server returned an unexpected response."
+        case let .meEndpointFailed(statusCode, _):
+            return "Failed to load the user profile (HTTP \(statusCode))."
+        }
+    }
 }
 
 /// Result of `me()`. When a token re-refresh was performed,
@@ -35,6 +52,8 @@ class RedirectHandler: NSObject, URLSessionTaskDelegate {
 
 public class Api {
     internal static let DEFAULT_TIMEOUT: Int = 10
+    internal static let REFRESH_TIMEOUT: Int = 30
+    internal static let oauthErrorDomain = "FronteggAuth"
 
     /// HTTP statuses where the refresh token may still be valid; callers should retry instead of logging out.
     /// This is intentionally broad: any 5xx plus 408/429 keeps the session recoverable until
@@ -530,6 +549,29 @@ public class Api {
         refreshToken: String,
         timeout: Int = 10
     ) async throws -> (Data, URLResponse) {
+        try await silentAuthorize(cookieHeader: "\(self.cookieName)=\(refreshToken)", timeout: timeout)
+    }
+
+    func authorizeWithWebSession(cookie: HTTPCookie) async throws -> (AuthResponse, [HTTPCookie]) {
+        let (data, response) = try await silentAuthorize(
+            cookieHeader: "\(cookie.name)=\(cookie.value)",
+            timeout: Api.REFRESH_TIMEOUT
+        )
+        guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
+            throw FronteggError.authError(.failedToAuthenticate)
+        }
+        let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
+        let headers = httpResponse.allHeaderFields.reduce(into: [String: String]()) { result, entry in
+            if let name = entry.key as? String, let value = entry.value as? String { result[name] = value }
+        }
+        let responseUrl = httpResponse.url ?? URL(string: baseUrl) ?? URL(fileURLWithPath: "/")
+        return (authResponse, HTTPCookie.cookies(withResponseHeaderFields: headers, for: responseUrl))
+    }
+
+    func silentAuthorize(
+        cookieHeader: String,
+        timeout: Int = 10
+    ) async throws -> (Data, URLResponse) {
         // Use POST /frontegg/oauth/authorize/silent with cookie fe_refresh_client-id=refresh-token
         let urlStr = "/frontegg/oauth/authorize/silent"
         let fullUrl = urlStr.starts(with: self.baseUrl)
@@ -545,7 +587,7 @@ public class Api {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
-        request.setValue("\(self.cookieName)=\(refreshToken)", forHTTPHeaderField: "Cookie")
+        request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
         
         if let applicationId = self.applicationId {
             request.setValue(applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
@@ -644,7 +686,7 @@ public class Api {
                 path: "identity/resources/auth/v1/user/token/refresh",
                 body: ["tenantId": unwrappedTenantId],
                 additionalHeaders: headers,
-                timeout: 5
+                timeout: Api.REFRESH_TIMEOUT
             )
             
             if let res = response as? HTTPURLResponse {
@@ -734,7 +776,7 @@ public class Api {
             let (data, response) = try await postRequest(path: "oauth/token", body: [
                 "grant_type": "refresh_token",
                 "refresh_token": refreshToken,
-            ], timeout: 5)
+            ], timeout: Api.REFRESH_TIMEOUT)
             
             if let res = response as? HTTPURLResponse {
                 if res.statusCode == 401 {
@@ -852,16 +894,26 @@ public class Api {
                 body["code_verifier"] = codeVerifier
             }
                         
-            let (data, _) = try await postRequest(path: "oauth/token", body: body)
+            let (data, response) = try await postRequest(path: "oauth/token", body: body)
+
+            if let statusCode = (response as? HTTPURLResponse)?.statusCode,
+               Self.isTransientRefreshHTTPStatus(statusCode) {
+                return (nil, FronteggError.authError(.other(ApiError.serverUnavailable(statusCode: statusCode, path: "oauth/token"))))
+            }
 
             if let responseString = String(data: data, encoding: .utf8),
                responseString.contains("\"errors\"") || responseString.contains("\"error\"") {
-                return (nil, FronteggError.authError(.other(NSError(domain: "FronteggAuth", code: 400, userInfo: [NSLocalizedDescriptionKey: responseString]))))
+                return (nil, FronteggError.authError(.other(NSError(domain: Api.oauthErrorDomain, code: 400, userInfo: [NSLocalizedDescriptionKey: responseString]))))
             }
 
             return (try JSONDecoder().decode(AuthResponse.self, from: data), nil)
         } catch {
-            return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
+            switch FronteggErrorCategory(error) {
+            case .network, .cancelled, .configuration, .server:
+                return (nil, FronteggError.from(error))
+            default:
+                return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
+            }
         }
     }
     

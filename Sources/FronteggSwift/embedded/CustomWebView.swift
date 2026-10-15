@@ -18,6 +18,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     }
 
     var accessoryView: UIView?
+    var loginBoxFooterExternalUrls: Set<String> = []
     private let fronteggAuth: FronteggAuth = FronteggAuth.shared
     private let logger = getLogger("CustomWebView")
     private var lastResponseStatusCode: Int? = nil
@@ -486,6 +487,15 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 return .cancel
             }
             
+            if navigationAction.navigationType == .linkActivated,
+               LoginBoxFooter.isExternalFooterLink(url, externalUrls: loginBoxFooterExternalUrls) {
+                logger.info("[Navigation] Opening login box footer link externally: host=\(url.host ?? "nil") path=\(url.path)")
+                DispatchQueue.main.async {
+                    UIApplication.shared.open(url, options: [:], completionHandler: nil)
+                }
+                return .cancel
+            }
+
             if let host = url.host, (host.contains("localhost") || host.contains("127.0.0.1")) {
                 if isAllowedTestingLoopbackURL(url) {
                     logger.info("✅ Allowing test loopback URL to continue through callback inspection: \(url.absoluteString)")
@@ -548,7 +558,10 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 return .allow
             }
             
-            if let scheme = url.scheme, getAppURLSchemes().contains(scheme) {
+            // A generated callback on a scheme registered in another case keeps its HostedLoginCallback routing below.
+            if let scheme = url.scheme,
+               CustomWebView.isAppUrlScheme(scheme, appSchemes: getAppURLSchemes()),
+               matchedGeneratedCallbackUri == nil || getAppURLSchemes().contains(scheme) {
                 let appSchemes = getAppURLSchemes()
                 logger.debug("🔵 [Social Login Debug] Custom scheme detected: \(scheme)")
                 logger.debug("🔵 [Social Login Debug] All app URL schemes: \(appSchemes)")
@@ -982,6 +995,12 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         return cachedUrlSchemes ?? []
     }
 
+    /// URL schemes are case-insensitive, and WebKit lowercases them on navigation.
+    static func isAppUrlScheme(_ scheme: String, appSchemes: [String]) -> Bool {
+        let normalizedScheme = scheme.lowercased()
+        return appSchemes.contains { $0.lowercased() == normalizedScheme }
+    }
+
     /// Extracts authentication cookies (fe_refresh and fe_device) from WebView's cookie store
     /// Returns tuple of (refreshTokenCookie, deviceTokenCookie) where cookies are in format "name=value"
     private func extractAuthCookiesFromWebView() async -> (String?, String?) {
@@ -1310,7 +1329,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         guard hasCode || hasOAuthError else { return false }
 
         let scheme = failingURL.scheme ?? ""
-        let isKnownAppScheme = getAppURLSchemes().contains(scheme)
+        let isKnownAppScheme = CustomWebView.isAppUrlScheme(scheme, appSchemes: getAppURLSchemes())
         let isHostedCallback = getOverrideUrlType(url: failingURL) == .HostedLoginCallback
         guard isKnownAppScheme || isHostedCallback else { return false }
 
@@ -1393,7 +1412,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         logger.debug("🔵 [Social Login Debug] Previous URL: \(previousUrl?.absoluteString ?? "nil")")
         logger.debug("🔵 [Social Login Debug] Magic link redirect URI: \(magicLinkRedirectUri ?? "nil")")
         logger.debug("🔵 [Social Login Debug] App URL schemes: \(getAppURLSchemes())")
-        logger.debug("🔵 [Social Login Debug] Is custom scheme match: \(getAppURLSchemes().contains(url.scheme ?? ""))")
+        logger.debug("🔵 [Social Login Debug] Is custom scheme match: \(CustomWebView.isAppUrlScheme(url.scheme ?? "", appSchemes: getAppURLSchemes()))")
         logger.debug("🔵 [Social Login Debug] URL matches expected redirect URI: \(matchedCallbackRedirectUri != nil)")
         if let matchedCallbackRedirectUri {
             logger.debug("🔵 [Social Login Debug] Matched callback redirect URI: \(matchedCallbackRedirectUri)")

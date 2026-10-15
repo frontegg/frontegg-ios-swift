@@ -78,6 +78,12 @@ public class FronteggAuth: FronteggState {
         get { featureFlagsLock.withLock { _featureFlags } }
         set { featureFlagsLock.withLock { _featureFlags = newValue } }
     }
+    private let webSessionCookiesLock = NSLock()
+    private var _webSessionCookies: WebSessionCookieStoring = WKWebSessionCookies()
+    var webSessionCookies: WebSessionCookieStoring {
+        get { webSessionCookiesLock.withLock { _webSessionCookies } }
+        set { webSessionCookiesLock.withLock { _webSessionCookies = newValue } }
+    }
     public var entitlements: Entitlements
     var subscribers = Set<AnyCancellable>()
     // internal for extension access (Refresh, Testing, Connectivity)
@@ -104,6 +110,9 @@ public class FronteggAuth: FronteggState {
     let unauthenticatedStartupProbeDelay: TimeInterval = 0.5
     let unauthenticatedStartupProbeTimeout: TimeInterval = 1.0
     var loginCompletion: CompletionHandler? = nil
+#if DEBUG
+    var testRootViewControllerOverride: UIViewController?
+#endif
     // internal for extension access (Connectivity, Testing, SessionRestore)
     var networkMonitoringToken: NetworkStatusMonitor.OnChangeToken?
     // internal for extension access (FronteggAuth+OAuthErrors.swift)

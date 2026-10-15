@@ -529,6 +529,9 @@ extension FronteggAuth {
 
         } catch let error as FronteggError {
             if case .authError(FronteggError.Authentication.failedToRefreshToken(let message)) = error {
+                if await recoverSessionFromWebSession() {
+                    return true
+                }
                 let tenantIdToPreserve: String? = enableSessionPerTenant
                     ? (preservedTenantId ?? credentialManager.getLastActiveTenantId())
                     : nil

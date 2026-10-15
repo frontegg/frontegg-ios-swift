@@ -13,6 +13,7 @@ import AuthenticationServices
 extension FronteggAuth {
 
     public func embeddedLogin(_ _completion: FronteggAuth.CompletionHandler? = nil, loginHint: String?) {
+        let _completion = FronteggAuth.onMainThread(_completion)
 
         if let rootVC = self.getRootVC() {
             FronteggRuntime.testingLog(
@@ -39,8 +40,8 @@ extension FronteggAuth {
                 stepUpAuthenticator.endActiveStepUp()
             }
             self.loginCompletion = { result in
-                _completion?(result)
                 self.loginCompletion = nil
+                _completion?(result)
             }
             let loginModal = EmbeddedLoginModal(parentVC: rootVC)
             let hostingController = UIHostingController(rootView: loginModal)
@@ -419,6 +420,7 @@ extension FronteggAuth {
     }
 
     public func  switchTenant(tenantId:String,_ completion: FronteggAuth.CompletionHandler? = nil) {
+        let completion = FronteggAuth.onMainThread(completion)
 
         self.logger.info("Switching tenant to: \(tenantId)")
         if let currentUser = self.user {
