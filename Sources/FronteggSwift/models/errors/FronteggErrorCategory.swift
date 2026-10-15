@@ -72,6 +72,12 @@ public enum FronteggErrorCategory: Equatable {
             case let .serverUnavailable(statusCode, _):
                 self = .server(statusCode: statusCode)
             }
+        case let error as FronteggDPoPError:
+            switch error {
+            case .disabled: self = .configuration
+            case .missingAccessToken: self = .notAuthenticated
+            case .keyUnavailable: self = .unknown
+            }
         case let error as FronteggSecurityCenterError:
             switch error {
             case .notAuthenticated:

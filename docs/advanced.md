@@ -225,6 +225,32 @@ The SDK refreshes tokens automatically. To take full control of when that happen
 - When `true`, all internal refresh flows are blocked, including timers and offline-mode refreshing.
 - Explicit calls such as `getOrRefreshAccessTokenAsync()` still work, so you can refresh on your own schedule.
 
+## DPoP (sender-constrained tokens)
+
+The SDK can bind tokens to a key held on the device, following [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449). Turn DPoP on for your application in the Frontegg portal, then set `enableDPoP` in `Frontegg.plist`:
+
+```xml
+<key>enableDPoP</key>
+<true/>
+```
+
+- Defaults to `false`. When `false`, the SDK sends no DPoP headers.
+- The key is a P-256 key, created in the Secure Enclave when the device has one, or in software on the simulator. It is stored in the Keychain and replaced on logout.
+- The SDK sends a `DPoP` proof on its `POST /oauth/token` calls (authorization-code exchange and refresh-token grants). The server then binds the refresh token to the key and returns `token_type: "DPoP"`.
+- Refreshing through the per-tenant endpoint (`enableSessionPerTenant`) does not send a proof.
+- The key is stored as this-device-only and can be used after the first unlock, so background refreshes work while the device is locked. If the key can't be read (for example, before the first unlock after a restart), the SDK doesn't send the token request, keeps the session, and retries later. The DPoP methods below throw `FronteggDPoPError.keyUnavailable` in that case.
+
+To call your own API with a DPoP-bound access token:
+
+```swift
+var request = URLRequest(url: URL(string: "https://api.example.com/items")!)
+request.httpMethod = "GET"
+try FronteggAuth.shared.applyDPoP(to: &request)
+// Sets "Authorization: DPoP <access token>" and a "DPoP" proof that includes `ath`
+```
+
+You can also use `dpopAuthorizationHeaders(method:url:)` or `dpopProof(method:url:)`. If your server replies with a `DPoP-Nonce` header, pass the response to `FronteggAuth.shared.dpop?.recordNonce(from:)`. Later proofs for that origin will include the nonce.
+
 ## Entitlements
 
 The SDK can load and check user entitlements — features and permissions — from the Frontegg Entitlements API. Set `entitlementsEnabled` to `true` in `Frontegg.plist`, then:
@@ -463,6 +489,7 @@ This section documents all available configuration keys in `Frontegg.plist`.
 | `keepUserLoggedInAfterReinstall` | Boolean | `true` | Keep user logged in after app reinstall |
 | `enableSessionPerTenant` | Boolean | `false` | Enable separate sessions per tenant (multi-tenancy) |
 | `keychainService` | String | `"frontegg"` | Keychain service name for storing credentials |
+| `enableDPoP` | Boolean | `false` | Send DPoP proofs on token requests to get sender-constrained tokens |
 
 ### Offline Mode Keys
 

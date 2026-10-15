@@ -95,19 +95,77 @@ public class Api {
     private let applicationId: String?
     private var cookieName: String
     private let credentialManager: CredentialManager
+    internal let dpop: FronteggDPoP?
     
     init(baseUrl: String, clientId: String, applicationId: String?) {
         self.baseUrl = baseUrl
         self.clientId = clientId
         self.applicationId = applicationId
+        let config = try? PlistHelper.fronteggConfig()
+        self.credentialManager = CredentialManager(serviceKey: config?.keychainService ?? "frontegg")
+        self.dpop = config?.enableDPoP == true ? FronteggDPoP(credentialManager: self.credentialManager) : nil
+        self.cookieName = Api.refreshCookieName(clientId: clientId)
+    }
+
+    init(baseUrl: String, clientId: String, applicationId: String?, dpop: FronteggDPoP?) {
+        self.baseUrl = baseUrl
+        self.clientId = clientId
+        self.applicationId = applicationId
         let configuredServiceKey = (try? PlistHelper.fronteggConfig())?.keychainService ?? "frontegg"
         self.credentialManager = CredentialManager(serviceKey: configuredServiceKey)
-        
+        self.dpop = dpop
+        self.cookieName = Api.refreshCookieName(clientId: clientId)
+    }
+
+    private static func refreshCookieName(clientId: String) -> String {
         var clientIdWithoutFirstDash = clientId
         if let firstDashIndex = clientId.firstIndex(of: "-") {
             clientIdWithoutFirstDash.remove(at: firstDashIndex)
         }
-        self.cookieName = "fe_refresh_\(clientIdWithoutFirstDash)"
+        return "fe_refresh_\(clientIdWithoutFirstDash)"
+    }
+
+    internal static func isDPoPBoundEndpoint(_ url: URL) -> Bool {
+        url.path.hasSuffix("/oauth/token")
+    }
+
+    private func attachDPoPProof(to request: inout URLRequest, dpop: FronteggDPoP, nonce: String?) throws {
+        guard let url = request.url, let method = request.httpMethod else {
+            throw ApiError.invalidUrl("DPoP-bound request has no URL or method")
+        }
+        do {
+            let proof = try dpop.proof(method: method, url: url, nonce: nonce ?? dpop.nonce(for: url))
+            request.setValue(proof, forHTTPHeaderField: "DPoP")
+        } catch {
+            logger.error("Failed to create DPoP proof, not sending request: \(error)")
+            throw error
+        }
+    }
+
+    private func performDPoPBoundRequest(
+        _ request: URLRequest,
+        dpop: FronteggDPoP,
+        timeout: Int,
+        followRedirect: Bool
+    ) async throws -> (Data, URLResponse) {
+        var request = request
+        try attachDPoPProof(to: &request, dpop: dpop, nonce: nil)
+        let (data, response) = try await performData(for: request, timeout: timeout, followRedirect: followRedirect)
+        guard let http = response as? HTTPURLResponse else { return (data, response) }
+        dpop.recordNonce(from: http)
+
+        guard FronteggDPoP.isNonceChallenge(http, data: data),
+              let nonce = http.value(forHTTPHeaderField: "DPoP-Nonce") else {
+            return (data, response)
+        }
+
+        logger.info("DPoP nonce required, retrying once")
+        try attachDPoPProof(to: &request, dpop: dpop, nonce: nonce)
+        let retried = try await performData(for: request, timeout: timeout, followRedirect: followRedirect)
+        if let retriedHttp = retried.1 as? HTTPURLResponse {
+            dpop.recordNonce(from: retriedHttp)
+        }
+        return retried
     }
 
     internal func addHttpBreadcrumb(
@@ -307,11 +365,14 @@ public class Api {
         // Apply per-task timeout (covers the whole transfer for this request)
         request.timeoutInterval = TimeInterval(timeout)
         
-        let session = Api.session(timeout: timeout, followRedirect: followRedirect)
-        
         let start = Date()
         do {
-            let (data, response) = try await session.data(for: request)
+            let (data, response): (Data, URLResponse)
+            if let dpop, Api.isDPoPBoundEndpoint(url) {
+                (data, response) = try await performDPoPBoundRequest(request, dpop: dpop, timeout: timeout, followRedirect: followRedirect)
+            } else {
+                (data, response) = try await performData(for: request, timeout: timeout, followRedirect: followRedirect)
+            }
             let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
             let statusCode = (response as? HTTPURLResponse)?.statusCode
             TraceIdLogger.shared.extractAndLogTraceId(from: response)
@@ -819,6 +880,18 @@ public class Api {
         }
     }
     
+    /// A login binds a new session, so an unusable DPoP key can be replaced here; a merely locked keychain is never rotated.
+    private func postAuthorizationCodeRequest(body: [String: Any]) async throws -> (Data, URLResponse) {
+        do {
+            return try await postRequest(path: "oauth/token", body: body)
+        } catch let error as FronteggDPoPError where error.isUnusableKey {
+            guard let dpop else { throw error }
+            logger.warning("Stored DPoP key is unusable at login, binding a new key")
+            dpop.rotateKey()
+            return try await postRequest(path: "oauth/token", body: body)
+        }
+    }
+
     internal func exchangeToken(code: String,
                                 redirectUrl: String,
                                 codeVerifier: String?) async -> (AuthResponse?, FronteggError?) {
@@ -835,7 +908,7 @@ public class Api {
                 body["code_verifier"] = codeVerifier
             }
                         
-            let (data, response) = try await postRequest(path: "oauth/token", body: body)
+            let (data, response) = try await postAuthorizationCodeRequest(body: body)
 
             if let statusCode = (response as? HTTPURLResponse)?.statusCode,
                Self.isTransientRefreshHTTPStatus(statusCode) {
@@ -848,6 +921,8 @@ public class Api {
             }
 
             return (try JSONDecoder().decode(AuthResponse.self, from: data), nil)
+        } catch let error as FronteggDPoPError {
+            return (nil, FronteggError.from(error))
         } catch {
             switch FronteggErrorCategory(error) {
             case .network, .cancelled, .configuration, .server:

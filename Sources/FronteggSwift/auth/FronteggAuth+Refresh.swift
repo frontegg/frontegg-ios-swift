@@ -594,6 +594,15 @@ extension FronteggAuth {
             )
             return false
 
+        } catch let error as FronteggDPoPError where error.isKeychainLocked {
+            self.logger.warning("DPoP signing key is locked, keeping the session and retrying in \(dpopKeyUnavailableRetryDelay)s")
+            scheduleTokenRefresh(
+                offset: dpopKeyUnavailableRetryDelay,
+                attempts: effectiveAttempts,
+                skipNetworkCheck: skipNetworkCheck,
+                source: source
+            )
+            return false
         } catch {
             await handleOfflineLikeFailure(
                 error: error,
