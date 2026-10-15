@@ -568,6 +568,9 @@ final class DPoPApiTests: XCTestCase {
         XCTAssertEqual(FronteggErrorCategory(unavailable), .unknown)
         XCTAssertTrue(unavailable.isKeychainLocked)
         XCTAssertFalse(unavailable.isUnusableKey)
+        XCTAssertTrue(FronteggDPoPError.keyUnavailable(CredentialManager.KeychainError.unknown(errSecInteractionNotAllowed)).isKeychainLocked,
+                      "a locked keychain on save is reported as unknown(errSecInteractionNotAllowed)")
+        XCTAssertTrue(FronteggDPoPError.keyUnavailable(NSError(domain: NSOSStatusErrorDomain, code: Int(errSecInteractionNotAllowed))).isKeychainLocked)
         let unusable = FronteggDPoPError.keyUnavailable(CredentialManager.KeychainError.unknown(errSecDecode))
         XCTAssertFalse(unusable.isKeychainLocked)
         XCTAssertTrue(unusable.isUnusableKey)

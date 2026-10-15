@@ -20,11 +20,17 @@ public enum FronteggDPoPError: LocalizedError {
 
     /// The keychain is locked, so the stored key can't be read yet but is still valid.
     var isKeychainLocked: Bool {
-        guard case let .keyUnavailable(cause) = self,
-              case .keychainUnavailable? = cause as? CredentialManager.KeychainError else {
-            return false
+        guard case let .keyUnavailable(cause) = self else { return false }
+        let status: OSStatus
+        switch cause as? CredentialManager.KeychainError {
+        case .keychainUnavailable(let keychainStatus)?, .unknown(let keychainStatus)?:
+            status = keychainStatus
+        default:
+            let nsError = cause as NSError
+            guard nsError.domain == NSOSStatusErrorDomain else { return false }
+            status = OSStatus(nsError.code)
         }
-        return true
+        return CredentialManager.unavailableStatuses.contains(status)
     }
 
     /// The stored key can't be restored, stored or used to sign, so it will never work again.
