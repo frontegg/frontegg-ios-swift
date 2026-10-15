@@ -136,18 +136,20 @@ final class FronteggErrorCategoryTests: XCTestCase {
         XCTAssertEqual(wrapped.errorDescription, URLError(.notConnectedToInternet).localizedDescription)
     }
 
-    func test_from_mapsUserCancellationToOperationCanceled() {
-        let userCancellations: [Error] = [
+    func test_from_mapsCancellationToOperationCanceled() {
+        let cancellations: [Error] = [
             ASAuthorizationError(.canceled),
             NSError(
                 domain: ASWebAuthenticationSessionError.errorDomain,
                 code: ASWebAuthenticationSessionError.canceledLogin.rawValue
-            )
+            ),
+            URLError(.cancelled),
+            CancellationError()
         ]
-        for cancellation in userCancellations {
+        for cancellation in cancellations {
             let mapped = FronteggError.from(cancellation)
             guard case .authError(.operationCanceled) = mapped else {
-                return XCTFail("user cancellation \(cancellation) must map to .operationCanceled, got \(mapped)")
+                return XCTFail("cancellation \(cancellation) must map to .operationCanceled, got \(mapped)")
             }
             XCTAssertEqual(mapped.category, .cancelled)
         }
@@ -160,6 +162,20 @@ final class FronteggErrorCategoryTests: XCTestCase {
         }
         XCTAssertEqual((underlying as? ASAuthorizationError)?.code, .failed)
         XCTAssertEqual(wrapped.category, .authenticationFailed)
+    }
+
+    func test_nonConnectivityUrlErrors_areNotNetwork() {
+        XCTAssertEqual(FronteggErrorCategory(URLError(.userCancelledAuthentication)), .unknown)
+        XCTAssertEqual(FronteggErrorCategory(URLError(.userAuthenticationRequired)), .unknown)
+        XCTAssertEqual(FronteggErrorCategory(URLError(.fileDoesNotExist)), .unknown)
+        XCTAssertEqual(FronteggErrorCategory(URLError(.cannotConnectToHost)), .network)
+    }
+
+    func test_serverUnavailable_isServer() {
+        XCTAssertEqual(
+            FronteggErrorCategory(ApiError.serverUnavailable(statusCode: 503, path: "oauth/token")),
+            .server(statusCode: 503)
+        )
     }
 
     func test_underlyingError_nilForNonWrappedCases() {

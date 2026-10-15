@@ -40,8 +40,8 @@ extension FronteggAuth {
                 stepUpAuthenticator.endActiveStepUp()
             }
             self.loginCompletion = { result in
-                _completion?(result)
                 self.loginCompletion = nil
+                _completion?(result)
             }
             let loginModal = EmbeddedLoginModal(parentVC: rootVC)
             let hostingController = UIHostingController(rootView: loginModal)

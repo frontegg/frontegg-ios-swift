@@ -14,6 +14,8 @@ enum ApiError: Error {
     case refreshEndpointTransient(statusCode: Int, message: String)
     /// /me or /me/tenants returned a non-2xx HTTP status (e.g. proxy blocked the request).
     case meEndpointFailed(statusCode: Int, path: String)
+    /// The server answered with a retryable HTTP status (5xx, 408, 429).
+    case serverUnavailable(statusCode: Int, path: String)
 }
 
 /// Result of `me()`. When a token re-refresh was performed,
@@ -818,7 +820,12 @@ public class Api {
                 body["code_verifier"] = codeVerifier
             }
                         
-            let (data, _) = try await postRequest(path: "oauth/token", body: body)
+            let (data, response) = try await postRequest(path: "oauth/token", body: body)
+
+            if let statusCode = (response as? HTTPURLResponse)?.statusCode,
+               Self.isTransientRefreshHTTPStatus(statusCode) {
+                return (nil, FronteggError.authError(.other(ApiError.serverUnavailable(statusCode: statusCode, path: "oauth/token"))))
+            }
 
             if let responseString = String(data: data, encoding: .utf8),
                responseString.contains("\"errors\"") || responseString.contains("\"error\"") {

@@ -142,6 +142,26 @@ final class EmbeddedLoginRootViewControllerTests: XCTestCase {
         XCTAssertEqual(firstCallerCompletions(), 0)
     }
 
+    func testLoginRetriedFromInsideCompletionKeepsTheNewLoginCompletion() {
+        auth.testRootViewControllerOverride = RecordingRootViewController()
+        var firstCallerCompletions = 0
+        var retryCompletions = 0
+
+        auth.embeddedLogin({ _ in
+            firstCallerCompletions += 1
+            self.auth.embeddedLogin({ _ in retryCompletions += 1 }, loginHint: nil)
+        }, loginHint: nil)
+
+        auth.loginCompletion?(.failure(.authError(.operationCanceled)))
+
+        XCTAssertEqual(firstCallerCompletions, 1, "the first caller must be completed exactly once")
+        XCTAssertNotNil(auth.loginCompletion, "a login retried from the completion must keep its own completion")
+
+        auth.loginCompletion?(.failure(.authError(.operationCanceled)))
+        XCTAssertEqual(retryCompletions, 1)
+        XCTAssertEqual(firstCallerCompletions, 1)
+    }
+
     func testLoginAsyncFromBackgroundTaskPresentsEmbeddedLoginOnMainThread() {
         PlistHelper.testConfigOverride = FronteggPlist(
             lateInit: true,

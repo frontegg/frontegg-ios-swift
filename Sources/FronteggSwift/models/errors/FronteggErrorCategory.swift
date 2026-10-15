@@ -65,6 +65,8 @@ public enum FronteggErrorCategory: Equatable {
                 self = .server(statusCode: statusCode)
             case let .meEndpointFailed(statusCode, _):
                 self = statusCode == 401 ? .notAuthenticated : .server(statusCode: statusCode)
+            case let .serverUnavailable(statusCode, _):
+                self = .server(statusCode: statusCode)
             }
         case is CancellationError:
             self = .cancelled
@@ -92,7 +94,7 @@ public enum FronteggErrorCategory: Equatable {
             case .badServerResponse, .cannotParseResponse, .cannotDecodeRawData, .cannotDecodeContentData, .zeroByteResource:
                 return .invalidResponse
             default:
-                return .network
+                return isConnectivityError(error) ? .network : .unknown
             }
         default:
             return isConnectivityError(error) ? .network : .unknown
@@ -119,7 +121,7 @@ extension FronteggError {
         }
     }
 
-    /// Returns `error` as a `FronteggError`. A user cancelling a system sign-in sheet becomes
+    /// Returns `error` as a `FronteggError`. Any cancellation (`category == .cancelled`) becomes
     /// `.authError(.operationCanceled)`; other foreign errors are wrapped in `.authError(.other(_))`
     /// so the original cause stays available through `underlyingError` and `category`.
     public static func from(_ error: Error) -> FronteggError {
@@ -127,7 +129,7 @@ extension FronteggError {
         case let error as FronteggError: error
         case let error as FronteggError.Authentication: .authError(error)
         case let error as FronteggError.Configuration: .configError(error)
-        case _ where FronteggAuth.isUserCancelledOAuthFlow(error): .authError(.operationCanceled)
+        case _ where FronteggErrorCategory(error) == .cancelled: .authError(.operationCanceled)
         default: .authError(.other(error))
         }
     }

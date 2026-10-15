@@ -66,6 +66,24 @@ private final class OAuthRejectingApi: Api {
     }
 }
 
+private final class OAuthUnavailableApi: Api {
+    init() {
+        super.init(baseUrl: "https://test.example.com", clientId: "test-client-id", applicationId: nil)
+    }
+
+    override func postRequest(
+        path: String,
+        body: [String: Any?],
+        additionalHeaders: [String: String] = [:],
+        followRedirect: Bool = true,
+        timeout: Int = Api.DEFAULT_TIMEOUT
+    ) async throws -> (Data, URLResponse) {
+        let url = URL(string: "https://test.example.com/oauth/token")!
+        let response = HTTPURLResponse(url: url, statusCode: 503, httpVersion: nil, headerFields: nil)!
+        return (Data(#"{"error":"Service Unavailable"}"#.utf8), response)
+    }
+}
+
 final class FronteggErrorPropagationTests: XCTestCase {
 
     private var auth: FronteggAuth!
@@ -211,6 +229,13 @@ final class FronteggErrorPropagationTests: XCTestCase {
 
         XCTAssertNil(response)
         XCTAssertEqual(error?.category, .authenticationFailed)
+    }
+
+    func test_exchangeToken_serverOutage_isServerCategory() async {
+        let (response, error) = await OAuthUnavailableApi().exchangeToken(code: "code", redirectUrl: "app://cb", codeVerifier: "verifier")
+
+        XCTAssertNil(response)
+        XCTAssertEqual(error?.category, .server(statusCode: 503))
     }
 
     @available(iOS 15.0, *)
