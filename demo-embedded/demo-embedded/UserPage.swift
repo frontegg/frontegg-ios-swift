@@ -6,6 +6,8 @@ struct UserPage: View {
     @EnvironmentObject private var fronteggAuth: FronteggAuth
     @State private var message: Message?
     @State private var messageTimer: Timer?
+    @State private var stepUpScenarioLog: [String] = []
+    @State private var stepUpScenarioRuns = 0
     @State private var loadSuccess: Bool?
     @State private var entitlementFeature: Entitlement?
     @State private var entitlementPermission: Entitlement?
@@ -13,6 +15,8 @@ struct UserPage: View {
     @State private var entitlementUnifiedPermission: Entitlement?
     @State private var entitlementsLoading = false
     @State private var showAdminPortal = false
+    @State private var showTenantSwitcher = false
+    @State private var showSecurityCenter = false
     // Active tenant on the most recent entitlements render. See FR-24821 —
     // without this, the UI shows stale verdicts after switchTenant until the
     // user manually re-taps "Load entitlements".
@@ -38,6 +42,30 @@ struct UserPage: View {
                 .ignoresSafeArea(edges: .bottom),alignment: .bottom)
             .sheet(isPresented: $showAdminPortal) {
                 AdminPortalView()
+            }
+            .sheet(isPresented: $showTenantSwitcher) {
+                NavigationView {
+                    FronteggTenantSwitcher(showsSearch: true) { result in
+                        if case .success = result {
+                            showTenantSwitcher = false
+                        }
+                    }
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { showTenantSwitcher = false }
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $showSecurityCenter) {
+                NavigationView {
+                    FronteggSecurityCenter(stepUpMaxAge: 300)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { showSecurityCenter = false }
+                            }
+                        }
+                }
             }
             // Auto-refresh entitlements after switchTenant — see FR-24821.
             .onChange(of: fronteggAuth.user?.activeTenant.id) { newTenantId in
@@ -96,6 +124,10 @@ struct UserPage: View {
                     adminPortalButton
                     Spacer().frame(height: 16)
                     entitlementsSection
+                    Spacer().frame(height: 16)
+                    tenantSwitcherButton
+                    Spacer().frame(height: 12)
+                    securityCenterButton
                     Spacer().frame(height: 24)
                 }
             }
@@ -121,6 +153,24 @@ struct UserPage: View {
         .accessibilityIdentifier("OpenAdminPortalButton")
     }
     
+    private var tenantSwitcherButton: some View {
+        Button("Switch Account") {
+            showTenantSwitcher = true
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .padding(.horizontal, 8)
+        .accessibilityIdentifier("OpenTenantSwitcherButton")
+    }
+
+    private var securityCenterButton: some View {
+        Button("Security Center") {
+            showSecurityCenter = true
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .padding(.horizontal, 8)
+        .accessibilityIdentifier("OpenSecurityCenterButton")
+    }
+
     private var getAccessTokenButton: some View {
         Button("Get Current Access Token") {
             Task {
@@ -258,6 +308,10 @@ struct UserPage: View {
     }
     
     private func handleSensitiveAction() {
+        if let scenario = DemoEmbeddedTestMode.stepUpScenario {
+            runStepUpScenario(scenario)
+            return
+        }
         let isSteppedUp = fronteggAuth.isSteppedUp(maxAge: 60)
         if isSteppedUp {
             showMessage("You are already stepped up", isSuccess: true)
@@ -276,6 +330,66 @@ struct UserPage: View {
         }
     }
     
+    private func runStepUpScenario(_ scenario: String) {
+        stepUpScenarioRuns += 1
+        let run = stepUpScenarioRuns
+        switch (scenario, run) {
+        case ("double", 1):
+            startScenarioStepUp(label: "1")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                startScenarioStepUp(label: "2")
+            }
+        case ("dismissFirst", 1):
+            startScenarioStepUp(label: "1")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                dismissPresentedWindow()
+            }
+        case ("loginOverStepUp", 1):
+            startScenarioStepUp(label: "1")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                fronteggAuth.login { res in
+                    stepUpScenarioLog.append("login:\(scenarioOutcome(res))")
+                }
+            }
+        case ("chain", 1):
+            startScenarioStepUp(label: "1") { succeeded in
+                if succeeded {
+                    startScenarioStepUp(label: "2")
+                }
+            }
+        default:
+            startScenarioStepUp(label: "\(run)")
+        }
+    }
+
+    private func startScenarioStepUp(label: String, then next: ((Bool) -> Void)? = nil) {
+        Task {
+            await fronteggAuth.stepUp(maxAge: 60) { res in
+                let outcome = scenarioOutcome(res)
+                stepUpScenarioLog.append("\(label):\(outcome)")
+                next?(outcome == "success")
+            }
+        }
+    }
+
+    private func scenarioOutcome(_ res: Result<User, FronteggError>) -> String {
+        switch res {
+        case .success:
+            return "success"
+        case .failure(.authError(.operationCanceled)):
+            return "operationCanceled"
+        case .failure:
+            return "failure"
+        }
+    }
+
+    private func dismissPresentedWindow() {
+        let keyWindow = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+            .first
+        keyWindow?.rootViewController?.presentedViewController?.dismiss(animated: true)
+    }
+
     private func showMessage(_ text: String, isSuccess: Bool) {
         message = Message(text: text, isSuccess: isSuccess)
         messageTimer?.invalidate()
@@ -295,6 +409,10 @@ struct UserPage: View {
                 handleSensitiveAction()
             }
             .accessibilityIdentifier("E2EStepUpButton")
+            Text(stepUpScenarioLog.joined(separator: ","))
+                .font(.system(size: 1))
+                .foregroundColor(.clear)
+                .accessibilityIdentifier("E2EStepUpScenarioLog")
             Text(diagnostics.version)
                 .font(.system(size: 1))
                 .foregroundColor(.clear)

@@ -14,6 +14,23 @@ enum ApiError: Error {
     case refreshEndpointTransient(statusCode: Int, message: String)
     /// /me or /me/tenants returned a non-2xx HTTP status (e.g. proxy blocked the request).
     case meEndpointFailed(statusCode: Int, path: String)
+    /// The server answered with a retryable HTTP status (5xx, 408, 429).
+    case serverUnavailable(statusCode: Int, path: String)
+}
+
+extension ApiError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case let .invalidUrl(message):
+            return message
+        case let .refreshEndpointTransient(statusCode, _), let .serverUnavailable(statusCode, _):
+            return "The server is temporarily unavailable (HTTP \(statusCode)). Please try again."
+        case .meEndpointFailed(0, _):
+            return "The server returned an unexpected response."
+        case let .meEndpointFailed(statusCode, _):
+            return "Failed to load the user profile (HTTP \(statusCode))."
+        }
+    }
 }
 
 /// Result of `me()`. When a token re-refresh was performed,
@@ -35,6 +52,8 @@ class RedirectHandler: NSObject, URLSessionTaskDelegate {
 
 public class Api {
     internal static let DEFAULT_TIMEOUT: Int = 10
+    internal static let REFRESH_TIMEOUT: Int = 30
+    internal static let oauthErrorDomain = "FronteggAuth"
 
     /// HTTP statuses where the refresh token may still be valid; callers should retry instead of logging out.
     /// This is intentionally broad: any 5xx plus 408/429 keeps the session recoverable until
@@ -44,25 +63,109 @@ public class Api {
         return (500...599).contains(statusCode)
     }
 
+    /// One shared `URLSession` per (timeout, redirect-policy) pair so requests reuse connections.
+    private static let sessionCacheLock = NSLock()
+    private static var sessionCache: [String: URLSession] = [:]
+
+    internal static func session(timeout: Int, followRedirect: Bool) -> URLSession {
+        let key = "\(timeout)|\(followRedirect)"
+
+        return sessionCacheLock.withLock { () -> URLSession in
+            if let cached = sessionCache[key] {
+                return cached
+            }
+
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = TimeInterval(timeout)
+            config.timeoutIntervalForResource = TimeInterval(timeout)
+            config.waitsForConnectivity = false
+
+            let session = followRedirect
+                ? URLSession(configuration: config)
+                : URLSession(configuration: config, delegate: RedirectHandler(), delegateQueue: nil)
+
+            sessionCache[key] = session
+            return session
+        }
+    }
+
     private let logger = getLogger("Api")
     private let baseUrl: String
     private let clientId: String
     private let applicationId: String?
     private var cookieName: String
     private let credentialManager: CredentialManager
+    internal let dpop: FronteggDPoP?
     
     init(baseUrl: String, clientId: String, applicationId: String?) {
         self.baseUrl = baseUrl
         self.clientId = clientId
         self.applicationId = applicationId
+        let config = try? PlistHelper.fronteggConfig()
+        self.credentialManager = CredentialManager(serviceKey: config?.keychainService ?? "frontegg")
+        self.dpop = config?.enableDPoP == true ? FronteggDPoP(credentialManager: self.credentialManager) : nil
+        self.cookieName = Api.refreshCookieName(clientId: clientId)
+    }
+
+    init(baseUrl: String, clientId: String, applicationId: String?, dpop: FronteggDPoP?) {
+        self.baseUrl = baseUrl
+        self.clientId = clientId
+        self.applicationId = applicationId
         let configuredServiceKey = (try? PlistHelper.fronteggConfig())?.keychainService ?? "frontegg"
         self.credentialManager = CredentialManager(serviceKey: configuredServiceKey)
-        
+        self.dpop = dpop
+        self.cookieName = Api.refreshCookieName(clientId: clientId)
+    }
+
+    private static func refreshCookieName(clientId: String) -> String {
         var clientIdWithoutFirstDash = clientId
         if let firstDashIndex = clientId.firstIndex(of: "-") {
             clientIdWithoutFirstDash.remove(at: firstDashIndex)
         }
-        self.cookieName = "fe_refresh_\(clientIdWithoutFirstDash)"
+        return "fe_refresh_\(clientIdWithoutFirstDash)"
+    }
+
+    internal static func isDPoPBoundEndpoint(_ url: URL) -> Bool {
+        url.path.hasSuffix("/oauth/token")
+    }
+
+    private func attachDPoPProof(to request: inout URLRequest, dpop: FronteggDPoP, nonce: String?) throws {
+        guard let url = request.url, let method = request.httpMethod else {
+            throw ApiError.invalidUrl("DPoP-bound request has no URL or method")
+        }
+        do {
+            let proof = try dpop.proof(method: method, url: url, nonce: nonce ?? dpop.nonce(for: url))
+            request.setValue(proof, forHTTPHeaderField: "DPoP")
+        } catch {
+            logger.error("Failed to create DPoP proof, not sending request: \(error)")
+            throw error
+        }
+    }
+
+    private func performDPoPBoundRequest(
+        _ request: URLRequest,
+        dpop: FronteggDPoP,
+        timeout: Int,
+        followRedirect: Bool
+    ) async throws -> (Data, URLResponse) {
+        var request = request
+        try attachDPoPProof(to: &request, dpop: dpop, nonce: nil)
+        let (data, response) = try await performData(for: request, timeout: timeout, followRedirect: followRedirect)
+        guard let http = response as? HTTPURLResponse else { return (data, response) }
+        dpop.recordNonce(from: http)
+
+        guard FronteggDPoP.isNonceChallenge(http, data: data),
+              let nonce = http.value(forHTTPHeaderField: "DPoP-Nonce") else {
+            return (data, response)
+        }
+
+        logger.info("DPoP nonce required, retrying once")
+        try attachDPoPProof(to: &request, dpop: dpop, nonce: nonce)
+        let retried = try await performData(for: request, timeout: timeout, followRedirect: followRedirect)
+        if let retriedHttp = retried.1 as? HTTPURLResponse {
+            dpop.recordNonce(from: retriedHttp)
+        }
+        return retried
     }
 
     internal func addHttpBreadcrumb(
@@ -140,18 +243,7 @@ public class Api {
         timeout: Int,
         followRedirect: Bool
     ) async throws -> (Data, URLResponse) {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = TimeInterval(timeout)
-        config.timeoutIntervalForResource = TimeInterval(timeout)
-        config.waitsForConnectivity = false
-
-        let session: URLSession
-        if followRedirect {
-            session = URLSession(configuration: config)
-        } else {
-            let redirectHandler = RedirectHandler()
-            session = URLSession(configuration: config, delegate: redirectHandler, delegateQueue: nil)
-        }
+        let session = Api.session(timeout: timeout, followRedirect: followRedirect)
 
         return try await session.data(for: request)
     }
@@ -187,13 +279,7 @@ public class Api {
         // per-task timeout
         request.timeoutInterval = TimeInterval(timeout)
         
-        // session-level timeouts
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = TimeInterval(timeout)
-        config.timeoutIntervalForResource = TimeInterval(timeout)
-        config.waitsForConnectivity = false
-        
-        let session = URLSession(configuration: config)
+        let session = Api.session(timeout: timeout, followRedirect: true)
         let start = Date()
         do {
             let (data, response) = try await session.data(for: request)
@@ -279,24 +365,14 @@ public class Api {
         // Apply per-task timeout (covers the whole transfer for this request)
         request.timeoutInterval = TimeInterval(timeout)
         
-        // Session-level timeouts (cover request + resource)
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = TimeInterval(timeout)          // idle time between bytes / request phase
-        config.timeoutIntervalForResource = TimeInterval(timeout)         // total resource load time
-        config.waitsForConnectivity = false                               // fail fast if offline (optional)
-        
-        // Choose session (with or without redirect following)
-        let session: URLSession
-        if followRedirect {
-            session = URLSession(configuration: config)
-        } else {
-            let redirectHandler = RedirectHandler()
-            session = URLSession(configuration: config, delegate: redirectHandler, delegateQueue: nil)
-        }
-        
         let start = Date()
         do {
-            let (data, response) = try await session.data(for: request)
+            let (data, response): (Data, URLResponse)
+            if let dpop, Api.isDPoPBoundEndpoint(url) {
+                (data, response) = try await performDPoPBoundRequest(request, dpop: dpop, timeout: timeout, followRedirect: followRedirect)
+            } else {
+                (data, response) = try await performData(for: request, timeout: timeout, followRedirect: followRedirect)
+            }
             let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
             let statusCode = (response as? HTTPURLResponse)?.statusCode
             TraceIdLogger.shared.extractAndLogTraceId(from: response)
@@ -353,6 +429,9 @@ public class Api {
         }
 
         for attempt in 0...retries {
+            if attempt > 0 {
+                try Task.checkCancellation()
+            }
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
             request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -392,6 +471,9 @@ public class Api {
                     followRedirect: followRedirect,
                     error: error
                 )
+                if Task.isCancelled {
+                    throw error
+                }
                 logHttpError(
                     error,
                     method: "GET",
@@ -427,13 +509,15 @@ public class Api {
             if retries > 0, let http = response as? HTTPURLResponse {
                 if http.statusCode == 401 {
                     let error = ApiError.meEndpointFailed(statusCode: 401, path: path)
-                    logHttpError(
-                        error,
-                        method: "GET",
-                        path: path,
-                        followRedirect: followRedirect,
-                        statusCode: http.statusCode
-                    )
+                    if !Task.isCancelled {
+                        logHttpError(
+                            error,
+                            method: "GET",
+                            path: path,
+                            followRedirect: followRedirect,
+                            statusCode: http.statusCode
+                        )
+                    }
                     throw error
                 }
                 if Api.isTransientRefreshHTTPStatus(http.statusCode) {
@@ -443,13 +527,15 @@ public class Api {
                         await sleepBeforeRetry(attempt: attempt)
                         continue
                     }
-                    logHttpError(
-                        error,
-                        method: "GET",
-                        path: path,
-                        followRedirect: followRedirect,
-                        statusCode: http.statusCode
-                    )
+                    if !Task.isCancelled {
+                        logHttpError(
+                            error,
+                            method: "GET",
+                            path: path,
+                            followRedirect: followRedirect,
+                            statusCode: http.statusCode
+                        )
+                    }
                     throw error
                 }
             }
@@ -463,6 +549,29 @@ public class Api {
     
     public func silentAuthorize(
         refreshToken: String,
+        timeout: Int = 10
+    ) async throws -> (Data, URLResponse) {
+        try await silentAuthorize(cookieHeader: "\(self.cookieName)=\(refreshToken)", timeout: timeout)
+    }
+
+    func authorizeWithWebSession(cookie: HTTPCookie) async throws -> (AuthResponse, [HTTPCookie]) {
+        let (data, response) = try await silentAuthorize(
+            cookieHeader: "\(cookie.name)=\(cookie.value)",
+            timeout: Api.REFRESH_TIMEOUT
+        )
+        guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
+            throw FronteggError.authError(.failedToAuthenticate)
+        }
+        let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
+        let headers = httpResponse.allHeaderFields.reduce(into: [String: String]()) { result, entry in
+            if let name = entry.key as? String, let value = entry.value as? String { result[name] = value }
+        }
+        let responseUrl = httpResponse.url ?? URL(string: baseUrl) ?? URL(fileURLWithPath: "/")
+        return (authResponse, HTTPCookie.cookies(withResponseHeaderFields: headers, for: responseUrl))
+    }
+
+    func silentAuthorize(
+        cookieHeader: String,
         timeout: Int = 10
     ) async throws -> (Data, URLResponse) {
         // Use POST /frontegg/oauth/authorize/silent with cookie fe_refresh_client-id=refresh-token
@@ -480,7 +589,7 @@ public class Api {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(self.baseUrl, forHTTPHeaderField: "Origin")
-        request.setValue("\(self.cookieName)=\(refreshToken)", forHTTPHeaderField: "Cookie")
+        request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
         
         if let applicationId = self.applicationId {
             request.setValue(applicationId, forHTTPHeaderField: "frontegg-requested-application-id")
@@ -493,13 +602,7 @@ public class Api {
         // per-task timeout
         request.timeoutInterval = TimeInterval(timeout)
         
-        // session-level timeouts
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = TimeInterval(timeout)
-        config.timeoutIntervalForResource = TimeInterval(timeout)
-        config.waitsForConnectivity = false
-        
-        let session = URLSession(configuration: config)
+        let session = Api.session(timeout: timeout, followRedirect: true)
         let start = Date()
         do {
             let (data, response) = try await session.data(for: request)
@@ -585,7 +688,7 @@ public class Api {
                 path: "identity/resources/auth/v1/user/token/refresh",
                 body: ["tenantId": unwrappedTenantId],
                 additionalHeaders: headers,
-                timeout: 5
+                timeout: Api.REFRESH_TIMEOUT
             )
             
             if let res = response as? HTTPURLResponse {
@@ -675,7 +778,7 @@ public class Api {
             let (data, response) = try await postRequest(path: "oauth/token", body: [
                 "grant_type": "refresh_token",
                 "refresh_token": refreshToken,
-            ], timeout: 5)
+            ], timeout: Api.REFRESH_TIMEOUT)
             
             if let res = response as? HTTPURLResponse {
                 if res.statusCode == 401 {
@@ -777,6 +880,18 @@ public class Api {
         }
     }
     
+    /// A login binds a new session, so an unusable DPoP key can be replaced here; a merely locked keychain is never rotated.
+    private func postAuthorizationCodeRequest(body: [String: Any]) async throws -> (Data, URLResponse) {
+        do {
+            return try await postRequest(path: "oauth/token", body: body)
+        } catch let error as FronteggDPoPError where error.isUnusableKey {
+            guard let dpop else { throw error }
+            logger.warning("Stored DPoP key is unusable at login, binding a new key")
+            dpop.rotateKey()
+            return try await postRequest(path: "oauth/token", body: body)
+        }
+    }
+
     internal func exchangeToken(code: String,
                                 redirectUrl: String,
                                 codeVerifier: String?) async -> (AuthResponse?, FronteggError?) {
@@ -793,16 +908,28 @@ public class Api {
                 body["code_verifier"] = codeVerifier
             }
                         
-            let (data, _) = try await postRequest(path: "oauth/token", body: body)
+            let (data, response) = try await postAuthorizationCodeRequest(body: body)
+
+            if let statusCode = (response as? HTTPURLResponse)?.statusCode,
+               Self.isTransientRefreshHTTPStatus(statusCode) {
+                return (nil, FronteggError.authError(.other(ApiError.serverUnavailable(statusCode: statusCode, path: "oauth/token"))))
+            }
 
             if let responseString = String(data: data, encoding: .utf8),
                responseString.contains("\"errors\"") || responseString.contains("\"error\"") {
-                return (nil, FronteggError.authError(.other(NSError(domain: "FronteggAuth", code: 400, userInfo: [NSLocalizedDescriptionKey: responseString]))))
+                return (nil, FronteggError.authError(.other(NSError(domain: Api.oauthErrorDomain, code: 400, userInfo: [NSLocalizedDescriptionKey: responseString]))))
             }
 
             return (try JSONDecoder().decode(AuthResponse.self, from: data), nil)
+        } catch let error as FronteggDPoPError {
+            return (nil, FronteggError.from(error))
         } catch {
-            return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
+            switch FronteggErrorCategory(error) {
+            case .network, .cancelled, .configuration, .server:
+                return (nil, FronteggError.from(error))
+            default:
+                return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
+            }
         }
     }
     
@@ -813,6 +940,20 @@ public class Api {
     internal func me(accessToken: String) async throws -> User? {
         let result = try await loadMeResult(accessToken: accessToken, refreshToken: nil)
         return result.user
+    }
+
+    private func fetchMeAndTenants(
+        accessToken: String,
+        mePath: String,
+        tenantsPath: String,
+        parseMe: (Data) throws -> [String: Any]
+    ) async throws -> ([String: Any], Data) {
+        async let mePending = getRequest(path: mePath, accessToken: accessToken, retries: 3)
+        async let tenantsPending = getRequest(path: tenantsPath, accessToken: accessToken, retries: 3)
+        let (meData, _) = try await mePending
+        let meObject = try parseMe(meData)
+        let (tenantsData, _) = try await tenantsPending
+        return (meObject, tenantsData)
     }
 
     private func loadMeResult(accessToken: String, refreshToken: String?) async throws -> MeResult {
@@ -828,14 +969,18 @@ public class Api {
         }
 
         let mePath = "identity/resources/users/v2/me"
-        let (meData, _) = try await getRequest(path: mePath, accessToken: accessToken, retries: 3)
-
-        var meObj = try parseObject(meData, path: mePath)
-
         let tenantsPath = "identity/resources/users/v3/me/tenants"
+
+        let (fetchedMeObj, tenantsData) = try await fetchMeAndTenants(
+            accessToken: accessToken,
+            mePath: mePath,
+            tenantsPath: tenantsPath,
+            parseMe: { try parseObject($0, path: mePath) }
+        )
+        var meObj = fetchedMeObj
+
         var tenantsObj: [String: Any]? = nil
 
-        let (tenantsData, _) = try await getRequest(path: tenantsPath, accessToken: accessToken, retries: 3)
         let initialTenantsObj = try parseObject(tenantsData, path: tenantsPath)
 
         if isValidTenantsPayload(initialTenantsObj) {
@@ -949,12 +1094,7 @@ public class Api {
         
         request.timeoutInterval = TimeInterval(10)
         
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = TimeInterval(10)
-        config.timeoutIntervalForResource = TimeInterval(10)
-        config.waitsForConnectivity = false
-        
-        let session = URLSession(configuration: config)
+        let session = Api.session(timeout: 10, followRedirect: true)
         let (data, response) = try await session.data(for: request)
         TraceIdLogger.shared.extractAndLogTraceId(from: response)
         

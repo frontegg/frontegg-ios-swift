@@ -11,11 +11,11 @@ extension FronteggAuth {
     public func loginWithPasskeys(_ _completion: FronteggAuth.CompletionHandler? = nil) {
         if #available(iOS 15.0, *) {
             Task {
-                let completion = handleMfaRequired(_completion)
+                let completion = handleMfaRequired(FronteggAuth.onMainThread(_completion))
                 await PasskeysAuthenticator.shared.loginWithPasskeys(completion)
             }
         } else {
-            // Fallback on earlier versions
+            FronteggAuth.onMainThread(_completion)?(.failure(.authError(.invalidPasskeysRequest)))
         }
     }
 
@@ -23,7 +23,7 @@ extension FronteggAuth {
         if #available(iOS 15.0, *) {
             PasskeysAuthenticator.shared.startWebAuthn(completion)
         } else {
-            // Fallback on earlier versions
+            FronteggAuth.onMainThread(completion)?(.authError(.invalidPasskeysRequest))
         }
     }
 }

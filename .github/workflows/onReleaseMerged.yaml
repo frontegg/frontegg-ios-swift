@@ -63,6 +63,20 @@ jobs:
           github_repo: ${{ github.repository }}
           git_commit_sha: ${{ github.sha }}
           git_tag_prefix: ""
+      - name: Release notes
+        if: steps.tag_check.outputs.exists_tag == 'false'
+        env:
+          RELEASE_PR_BODY: ${{ github.event.pull_request.body }}
+        shell: bash
+        run: |
+          printf '%s\n' "$RELEASE_PR_BODY" | awk '
+            /<!-- CURSOR_SUMMARY -->/ { skip = 1 }
+            !skip { lines[++n] = $0 }
+            /<!-- \/CURSOR_SUMMARY -->/ { skip = 0 }
+            END {
+              while (n > 0 && lines[n] ~ /^[[:space:]]*$/) n--
+              for (i = 1; i <= n; i++) print lines[i]
+            }' > "$RUNNER_TEMP/release-notes.md"
       - name: Create Release
         id: create_release
         if: steps.tag_check.outputs.exists_tag == 'false'
@@ -70,8 +84,7 @@ jobs:
         with:
           tag_name: ${{ steps.set_current_version.outputs.CURRENT_VERSION }}
           name: ${{ github.event.pull_request.title }}
-          body: |
-            ${{ github.event.pull_request.body }}
+          body_path: ${{ runner.temp }}/release-notes.md
           draft: false
           prerelease: false
         env:

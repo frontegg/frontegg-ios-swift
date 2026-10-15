@@ -195,6 +195,33 @@ public class FronteggApp {
         logger.error("\(name) contains a value at \(keyPath) that is not a JSON type (String, NSNumber, Array, Dictionary, NSNull); the login box overrides will be ignored")
     }
 
+    /// A footer the embedded login box renders on its login screen, in its `boxFooter` slot.
+    ///
+    /// Host strings are always rendered as text, never parsed as markup:
+    /// ```swift
+    /// FronteggApp.shared.loginBoxFooter = [
+    ///     "hideCaptchaBadge": true,
+    ///     "rows": [
+    ///         ["variant": "body", "segments": [
+    ///             ["text": "Don't have an account? "],
+    ///             ["label": "Sign up now", "url": "myapp://sign-up"]
+    ///         ]],
+    ///         ["variant": "fine", "segments": [
+    ///             ["text": "Protected by reCAPTCHA — "],
+    ///             ["label": "Privacy Policy", "url": "https://policies.google.com/privacy"]
+    ///         ]]
+    ///     ]
+    /// ]
+    /// ```
+    ///
+    /// `variant` is `"body"` or `"fine"`. Link URLs must be absolute `http(s)` or use
+    /// one of the app's registered `CFBundleURLTypes` schemes without a `code`, `error`
+    /// or `error_description` parameter; any other link renders as plain text.
+    /// `http(s)` links open in the system browser and keep the box open; app-scheme
+    /// links dismiss the box and open the URL. Read when the login box is presented.
+    /// Embedded mode only; ignored by a login box that does not support host footers.
+    public var loginBoxFooter: [String: Any]? = nil
+
 
     public var regionData: [RegionConfig] = []
     let credentialManager: CredentialManager
@@ -227,7 +254,11 @@ public class FronteggApp {
         self.shouldSuggestSavePassword = config.shouldSuggestSavePassword
         self.handleLoginWithSocialProvider = config.handleLoginWithSocialProvider
         self.handleLoginWithCustomSocialLoginProvider = config.handleLoginWithCustomSocialLoginProvider
-        self.backgroundColor = UIColor(named: config.backgroundColor ?? "#FFFFFF") ?? .white
+        // Left nil when unset, so FronteggWebView keeps the web view transparent.
+        self.backgroundColor = UIColor.fronteggBackgroundColor(from: config.backgroundColor)
+        if let configuredBackgroundColor = config.backgroundColor, self.backgroundColor == nil {
+            logger.warning("backgroundColor \"\(configuredBackgroundColor)\" is neither #RRGGBB/#RRGGBBAA nor an asset-catalog color name; the login web view stays transparent")
+        }
         self.loginOrganizationAlias = config.loginOrganizationAlias
         self.entitlementsEnabled = config.entitlementsEnabled
         self.useAssetLinks = config.useAssetLinks
@@ -357,7 +388,8 @@ public class FronteggApp {
                 sentryMaxQueueSize: config.sentryMaxQueueSize,
                 loginOrganizationAlias: config.loginOrganizationAlias,
                 entitlementsEnabled: config.entitlementsEnabled,
-                useAssetLinks: config.useAssetLinks
+                useAssetLinks: config.useAssetLinks,
+                enableDPoP: config.enableDPoP
             )
             PlistHelper.testConfigOverride = overridden
         } else {

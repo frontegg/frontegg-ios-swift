@@ -32,6 +32,7 @@ private final class DiagnosticsApi: Api {
 
     var outcomes: [Outcome] = []
     var requests: [URLRequest] = []
+    var cancelsCurrentTaskOnRequestNumber: Int?
     var breadcrumbs: [BreadcrumbRecord] = []
     var loggedErrors: [ErrorRecord] = []
 
@@ -45,6 +46,9 @@ private final class DiagnosticsApi: Api {
         followRedirect: Bool
     ) async throws -> (Data, URLResponse) {
         requests.append(request)
+        if requests.count == cancelsCurrentTaskOnRequestNumber {
+            withUnsafeCurrentTask { currentTask in currentTask?.cancel() }
+        }
 
         guard !outcomes.isEmpty else {
             throw ApiError.invalidUrl("No mock outcome configured")
@@ -222,6 +226,36 @@ final class ApiGetRequestDiagnosticsTests: XCTestCase {
         XCTAssertTrue(api.breadcrumbs.allSatisfy { $0.statusCode == nil && $0.hadError })
         XCTAssertEqual(api.loggedErrors.count, 2)
         XCTAssertTrue(api.loggedErrors.allSatisfy { $0.statusCode == nil })
+    }
+
+    func test_getRequest_doesNotRetryTransportErrorAfterCancellation() async {
+        let api = makeApi()
+        api.cancelsCurrentTaskOnRequestNumber = 1
+        api.outcomes = [
+            .error(URLError(.cancelled)),
+            .response(statusCode: 200, data: Data("{}".utf8))
+        ]
+
+        let result = await Task { try await api.getRequest(path: mePath, accessToken: "token", retries: 3) }.result
+
+        XCTAssertThrowsError(try result.get())
+        XCTAssertEqual(api.requests.count, 1, "a cancelled request must not be retried")
+        XCTAssertTrue(api.loggedErrors.isEmpty, "a cancelled request must not be reported as an error")
+    }
+
+    func test_getRequest_doesNotRetryTransientHttpFailureAfterCancellation() async {
+        let api = makeApi()
+        api.cancelsCurrentTaskOnRequestNumber = 1
+        api.outcomes = [
+            .response(statusCode: 502, data: Data("{}".utf8)),
+            .response(statusCode: 200, data: Data("{}".utf8))
+        ]
+
+        let result = await Task { try await api.getRequest(path: mePath, accessToken: "token", retries: 3) }.result
+
+        XCTAssertThrowsError(try result.get())
+        XCTAssertEqual(api.requests.count, 1, "a cancelled request must not be retried")
+        XCTAssertTrue(api.loggedErrors.isEmpty, "a cancelled request must not be reported as an error")
     }
 
     func test_getRequest_nonTransientHttpResponseStillReturnsWithoutTerminalErrorLogging() async throws {

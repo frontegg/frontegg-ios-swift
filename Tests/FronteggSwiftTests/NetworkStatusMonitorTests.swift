@@ -55,6 +55,20 @@ final class NetworkStatusMonitorTests: XCTestCase {
         XCTAssertFalse(isConnectivityError(URLError(.cancelled)))
     }
 
+    func test_isConnectivityError_cancelledRequestOverTransportCauseIsNotConnectivityFailure() {
+        let resetCause = NSError(domain: NSPOSIXErrorDomain, code: Int(POSIXError.Code.ECONNRESET.rawValue))
+        let cancelled = NSError(domain: NSURLErrorDomain, code: URLError.cancelled.rawValue, userInfo: [NSUnderlyingErrorKey: resetCause])
+
+        XCTAssertFalse(isConnectivityError(cancelled))
+    }
+
+    func test_isConnectivityError_detectsOfflineErrorWrappingCFNetworkCause() {
+        let cfNetworkCause = NSError(domain: kCFErrorDomainCFNetwork as String, code: URLError.notConnectedToInternet.rawValue)
+        let offline = NSError(domain: NSURLErrorDomain, code: URLError.notConnectedToInternet.rawValue, userInfo: [NSUnderlyingErrorKey: cfNetworkCause])
+
+        XCTAssertTrue(isConnectivityError(offline))
+    }
+
     @MainActor
     func test_handlerRemovalByIndex_preservesStableIndicesForRemainingHandlers() {
         let emitted = expectation(description: "Remaining handlers should be called")

@@ -98,6 +98,7 @@ extension FronteggAuth {
                 self.credentialManager.deleteLastActiveTenantId()
                 self.credentialManager.clear()
             }
+            self.api.dpop?.rotateKey()
             CredentialManager.clearPendingOAuthFlows()
             SocialLoginUrlGenerator.shared.clearPendingSocialCodeVerifiers()
 
@@ -115,7 +116,7 @@ extension FronteggAuth {
             setAppLink(false)
             self.isLoginInProgress = false
             setRefreshingToken(false)
-            setIsStepUpAuthorization(false)
+            stepUpAuthenticator.endActiveStepUp()
             self.lastAttemptReason = nil
             entitlements.clear()
 

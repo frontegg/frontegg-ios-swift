@@ -21,13 +21,61 @@ extension NSLock {
 
 // MARK: - Error classification
 
-/// Walk the NSUnderlyingErrorKey chain to the deepest NSError.
-private func deepestNSError(_ error: Error) -> NSError {
-    var nsError = error as NSError
-    while let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
-        nsError = underlying
+/// The error followed by every NSError in its NSUnderlyingErrorKey chain.
+private func underlyingErrorChain(_ error: Error) -> [NSError] {
+    var chain = [error as NSError]
+    while let underlying = chain.last?.userInfo[NSUnderlyingErrorKey] as? NSError,
+          !chain.contains(where: { $0 === underlying }) {
+        chain.append(underlying)
     }
-    return nsError
+    return chain
+}
+
+/// Returns true for URL error codes that mean the server could not be reached.
+func isConnectivityURLErrorCode(_ code: URLError.Code) -> Bool {
+    switch code {
+    case .notConnectedToInternet,          // -1009
+         .timedOut,                        // -1001
+         .cannotFindHost,                  // -1003
+         .cannotConnectToHost,             // -1004
+         .networkConnectionLost,           // -1005
+         .dnsLookupFailed,                 // -1006
+         .secureConnectionFailed,          // -1200
+         .serverCertificateHasBadDate,     // -1201
+         .serverCertificateUntrusted,      // -1202
+         .serverCertificateHasUnknownRoot, // -1203
+         .serverCertificateNotYetValid,    // -1204
+         .clientCertificateRejected,       // -1205
+         .clientCertificateRequired,       // -1206
+         .cannotLoadFromNetwork,           // -2000
+         .internationalRoamingOff,         // -1018
+         .dataNotAllowed,                  // -1020
+         .callIsActive,                    // -1019
+         .httpTooManyRedirects:            // -1007 (captive portal loops)
+        return true
+    default:
+        return false
+    }
+}
+
+private func isTransportFailure(_ error: NSError) -> Bool {
+    if error.domain == NSURLErrorDomain {
+        return isConnectivityURLErrorCode(URLError.Code(rawValue: error.code))
+    }
+    if error.domain == (kCFErrorDomainCFNetwork as String) {
+        // Host resolution errors (kCFHostErrorUnknown..kCFHostErrorNoAddress), then SOCKS / proxy failures
+        return (-72000...(-71990)).contains(error.code) || (-12000...(-11800)).contains(error.code)
+    }
+    if error.domain == NSPOSIXErrorDomain {
+        switch POSIXError.Code(rawValue: Int32(error.code)) {
+        case .ECONNRESET, .ECONNABORTED, .ETIMEDOUT, .EHOSTDOWN, .EHOSTUNREACH,
+             .ENETDOWN, .ENETUNREACH, .ENETRESET, .ESHUTDOWN, .EPIPE:
+            return true
+        default:
+            return false
+        }
+    }
+    return false
 }
 
 /// Returns true if the error is very likely due to connectivity / transport problems.
@@ -37,59 +85,16 @@ func isConnectivityError(_ error: Error, response: URLResponse? = nil) -> Bool {
         return true
     }
 
-    let e = deepestNSError(error)
-
-    // 1) Classic URL errors
-    if e.domain == NSURLErrorDomain {
-        let code = URLError.Code(rawValue: e.code) // not optional
-        switch code {
-        case .notConnectedToInternet,          // -1009
-             .timedOut,                        // -1001
-             .cannotFindHost,                  // -1003
-             .cannotConnectToHost,             // -1004
-             .networkConnectionLost,           // -1005
-             .dnsLookupFailed,                 // -1006
-             .secureConnectionFailed,          // -1200
-             .serverCertificateHasBadDate,     // -1201
-             .serverCertificateUntrusted,      // -1202
-             .serverCertificateHasUnknownRoot, // -1203
-             .serverCertificateNotYetValid,    // -1204
-             .clientCertificateRejected,       // -1205
-             .clientCertificateRequired,       // -1206
-             .cannotLoadFromNetwork,           // -2000
-             .internationalRoamingOff,         // -1018
-             .dataNotAllowed,                  // -1020
-             .callIsActive,                    // -1019
-             .httpTooManyRedirects:            // -1007 (captive portal loops)
-            return true
-        case .cancelled:
-            break
-        default:
-            break
-        }
+    let topLevelError = error as NSError
+    if topLevelError.domain == NSURLErrorDomain, topLevelError.code == URLError.cancelled.rawValue {
+        return false
     }
 
-    // 2) CFNetwork lower-level host/proxy/DNS errors
-    if e.domain == (kCFErrorDomainCFNetwork as String) {
-        // Host resolution errors (kCFHostErrorUnknown..kCFHostErrorNoAddress)
-        if (-72000...(-71990)).contains(e.code) { return true }
-        // SOCKS / proxy / HTTP proxy connection failures (broadly treat as connectivity)
-        if (-12000...(-11800)).contains(e.code) { return true }
+    if underlyingErrorChain(error).contains(where: isTransportFailure) {
+        return true
     }
 
-    // 3) POSIX-level transport failures (e.g., ECONNRESET, ETIMEDOUT)
-    if e.domain == NSPOSIXErrorDomain {
-        let posix = POSIXError.Code(rawValue: Int32(e.code))
-        switch posix {
-        case .ECONNRESET, .ECONNABORTED, .ETIMEDOUT, .EHOSTDOWN, .EHOSTUNREACH,
-             .ENETDOWN, .ENETUNREACH, .ENETRESET, .ESHUTDOWN, .EPIPE:
-            return true
-        default:
-            break
-        }
-    }
-
-    // 4) Optional HTTP-level signal (when you have the response)
+    // Optional HTTP-level signal (when you have the response)
     if let http = response as? HTTPURLResponse {
         if http.statusCode == 408 { return true }                  // Request Timeout
         if (300..<400).contains(http.statusCode) { return true }   // likely captive portal

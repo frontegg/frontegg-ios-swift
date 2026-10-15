@@ -5,3 +5,4 @@
 - [Usage Examples](usage.md)
 - [Advanced Topics](advanced.md)
 - [Offline Mode](offline-mode.md)
+- [Prebuilt Components](prebuilt-components.md)

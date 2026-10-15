@@ -40,6 +40,7 @@ struct FronteggPlist: Decodable, Equatable {
     let dismissAuthSessionOnOffline: Bool
     let offlineDebounceDelay: TimeInterval
     let useAssetLinks: Bool
+    let enableDPoP: Bool
     let enableAppAttest: Bool
 
     enum CodingKeys: CodingKey {
@@ -70,6 +71,7 @@ struct FronteggPlist: Decodable, Equatable {
         case dismissAuthSessionOnOffline
         case offlineDebounceDelay
         case useAssetLinks
+        case enableDPoP
         case enableAppAttest
     }
 
@@ -102,6 +104,7 @@ struct FronteggPlist: Decodable, Equatable {
         dismissAuthSessionOnOffline: Bool = false,
         offlineDebounceDelay: TimeInterval = 2.0,
         useAssetLinks: Bool = false,
+        enableDPoP: Bool = false,
         enableAppAttest: Bool = false
     ) {
         self.keychainService = keychainService
@@ -132,6 +135,7 @@ struct FronteggPlist: Decodable, Equatable {
         self.dismissAuthSessionOnOffline = dismissAuthSessionOnOffline
         self.offlineDebounceDelay = offlineDebounceDelay
         self.useAssetLinks = useAssetLinks
+        self.enableDPoP = enableDPoP
         self.enableAppAttest = enableAppAttest
     }
 
@@ -219,6 +223,8 @@ struct FronteggPlist: Decodable, Equatable {
         let useAssetLinks = try container.decodeIfPresent(Bool.self, forKey: .useAssetLinks)
         self.useAssetLinks = useAssetLinks ?? false
 
+        let enableDPoP = try container.decodeIfPresent(Bool.self, forKey: .enableDPoP)
+        self.enableDPoP = enableDPoP ?? false
         let enableAppAttest = try container.decodeIfPresent(Bool.self, forKey: .enableAppAttest)
         self.enableAppAttest = enableAppAttest ?? false
 
