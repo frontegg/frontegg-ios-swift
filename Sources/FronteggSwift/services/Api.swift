@@ -14,6 +14,23 @@ enum ApiError: Error {
     case refreshEndpointTransient(statusCode: Int, message: String)
     /// /me or /me/tenants returned a non-2xx HTTP status (e.g. proxy blocked the request).
     case meEndpointFailed(statusCode: Int, path: String)
+    /// The server answered with a retryable HTTP status (5xx, 408, 429).
+    case serverUnavailable(statusCode: Int, path: String)
+}
+
+extension ApiError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case let .invalidUrl(message):
+            return message
+        case let .refreshEndpointTransient(statusCode, _), let .serverUnavailable(statusCode, _):
+            return "The server is temporarily unavailable (HTTP \(statusCode)). Please try again."
+        case .meEndpointFailed(0, _):
+            return "The server returned an unexpected response."
+        case let .meEndpointFailed(statusCode, _):
+            return "Failed to load the user profile (HTTP \(statusCode))."
+        }
+    }
 }
 
 /// Result of `me()`. When a token re-refresh was performed,
@@ -36,6 +53,7 @@ class RedirectHandler: NSObject, URLSessionTaskDelegate {
 public class Api {
     internal static let DEFAULT_TIMEOUT: Int = 10
     internal static let REFRESH_TIMEOUT: Int = 30
+    internal static let oauthErrorDomain = "FronteggAuth"
 
     /// HTTP statuses where the refresh token may still be valid; callers should retry instead of logging out.
     /// This is intentionally broad: any 5xx plus 408/429 keeps the session recoverable until
@@ -817,16 +835,26 @@ public class Api {
                 body["code_verifier"] = codeVerifier
             }
                         
-            let (data, _) = try await postRequest(path: "oauth/token", body: body)
+            let (data, response) = try await postRequest(path: "oauth/token", body: body)
+
+            if let statusCode = (response as? HTTPURLResponse)?.statusCode,
+               Self.isTransientRefreshHTTPStatus(statusCode) {
+                return (nil, FronteggError.authError(.other(ApiError.serverUnavailable(statusCode: statusCode, path: "oauth/token"))))
+            }
 
             if let responseString = String(data: data, encoding: .utf8),
                responseString.contains("\"errors\"") || responseString.contains("\"error\"") {
-                return (nil, FronteggError.authError(.other(NSError(domain: "FronteggAuth", code: 400, userInfo: [NSLocalizedDescriptionKey: responseString]))))
+                return (nil, FronteggError.authError(.other(NSError(domain: Api.oauthErrorDomain, code: 400, userInfo: [NSLocalizedDescriptionKey: responseString]))))
             }
 
             return (try JSONDecoder().decode(AuthResponse.self, from: data), nil)
         } catch {
-            return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
+            switch FronteggErrorCategory(error) {
+            case .network, .cancelled, .configuration, .server:
+                return (nil, FronteggError.from(error))
+            default:
+                return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
+            }
         }
     }
     

@@ -52,6 +52,46 @@ final class PasskeysRegistrationCompletionTests: XCTestCase {
         XCTAssertNil(receivedError, "successful verify should complete with no error")
     }
 
+    func testVerifyRejectedWithJsonBodyDeliversFailure() async {
+        let authenticator = PasskeysAuthenticator()
+
+        let completed = expectation(description: "registration completion invoked")
+        var receivedError: FronteggError?
+        authenticator.registrationCompletion = { error in
+            receivedError = error
+            completed.fulfill()
+        }
+
+        let transport: PasskeysAuthenticator.VerifyTransport = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://example.frontegg.com")!,
+                statusCode: 400,
+                httpVersion: nil,
+                headerFields: nil
+            )
+            return (Data(#"{"errors":["Invalid attestation"]}"#.utf8), response, nil)
+        }
+
+        await authenticator.verifyNewDeviceSession(
+            publicKey: makeRegistration(),
+            baseUrl: "https://example.frontegg.com",
+            accessToken: "access-token",
+            verifyTransport: transport
+        )
+
+        await fulfillment(of: [completed], timeout: 2.0)
+        guard case .authError(.failedToAuthenticateWithPasskeys)? = receivedError else {
+            return XCTFail("a rejected verify must not report success, got \(String(describing: receivedError))")
+        }
+    }
+
+    func testVerifyRejectionErrorKeepsTheCauseOfTheStatus() {
+        XCTAssertEqual(PasskeysAuthenticator.verifyRejectionError(statusCode: 503).category, .server(statusCode: 503))
+        XCTAssertEqual(PasskeysAuthenticator.verifyRejectionError(statusCode: 401).category, .notAuthenticated)
+        XCTAssertEqual(PasskeysAuthenticator.verifyRejectionError(statusCode: 400).category, .authenticationFailed)
+        XCTAssertEqual(PasskeysAuthenticator.verifyRejectionError(statusCode: nil).category, .invalidResponse)
+    }
+
     /// A transport error must propagate to the registration completion, not be
     /// silently dropped.
     func testVerifyFailureDeliversRegistrationCompletion() async {

@@ -109,14 +109,7 @@ final class FronteggAuthTenantSwitcher: FronteggTenantSwitching {
     }
 
     func switchTenant(tenantId: String) async throws -> User {
-        let auth = self.auth
-        let result: Result<User, FronteggError> = await withCheckedContinuation { continuation in
-            let resumed = OnceFlag()
-            auth.switchTenant(tenantId: tenantId) { result in
-                if resumed.set() { continuation.resume(returning: result) }
-            }
-        }
-        return try result.get()
+        try await auth.switchTenantAsync(tenantId: tenantId)
     }
 }
 

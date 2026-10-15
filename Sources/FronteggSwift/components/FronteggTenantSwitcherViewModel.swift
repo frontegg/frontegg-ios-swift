@@ -57,7 +57,7 @@ final class FronteggTenantSwitcherViewModel: ObservableObject {
         } catch {
             logger.error("Failed to switch tenant: \(error.localizedDescription)")
             errorMessage = error.localizedDescription
-            return .failure(error as? FronteggError ?? .authError(.other(error)))
+            return .failure(FronteggError.from(error))
         }
     }
 }

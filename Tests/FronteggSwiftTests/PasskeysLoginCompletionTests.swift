@@ -11,6 +11,7 @@
 //
 
 import XCTest
+import AuthenticationServices
 @testable import FronteggSwift
 
 private final class MockPasskeysApi: Api {
@@ -101,6 +102,34 @@ final class PasskeysLoginCompletionTests: XCTestCase {
     }
 
     @available(iOS 15.0, *)
+    func testLoginWithPasskeys_whenUserCancelsSheet_reportsOperationCanceledAndResetsIsLoading() async {
+        let api = MockPasskeysApi()
+        api.mode = .succeed
+        auth.api = api
+
+        await MainActor.run { auth.setIsLoading(true) }
+
+        var received: FronteggError?
+        await PasskeysAuthenticator.shared.loginWithPasskeys(
+            { result in
+                if case .failure(let error) = result {
+                    received = error
+                }
+            },
+            auth: auth,
+            performAssertion: { _, _ in throw ASAuthorizationError(.canceled) }
+        )
+
+        guard case .authError(.operationCanceled)? = received else {
+            return XCTFail("Expected .operationCanceled when the passkey sheet is cancelled, got \(String(describing: received))")
+        }
+
+        await waitForMainQueue()
+        let stillLoading = await MainActor.run { auth.isLoading }
+        XCTAssertFalse(stillLoading, "isLoading must be reset after the passkey sheet is cancelled")
+    }
+
+    @available(iOS 15.0, *)
     func testLoginWithPasskeys_onSuccess_reportsSuccessThroughCompletionAndResetsIsLoading() async throws {
         let api = MockPasskeysApi()
         api.mode = .succeed
@@ -150,5 +179,11 @@ final class PasskeysLoginCompletionTests: XCTestCase {
 
         let stillLoading = await MainActor.run { auth.isLoading }
         XCTAssertFalse(stillLoading, "isLoading must be reset after a successful passkey login")
+    }
+
+    private func waitForMainQueue() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
     }
 }

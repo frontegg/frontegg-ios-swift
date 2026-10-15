@@ -34,6 +34,7 @@ extension FronteggAuth {
         activeEmbeddedOAuthFlow = .login
         loginHint = nil
         loginCompletion = nil
+        testRootViewControllerOverride = nil
         pendingOAuthErrorPresentationWorkItem?.cancel()
         pendingOAuthErrorPresentationWorkItem = nil
         pendingEmbeddedOAuthErrorFallbackWorkItem?.cancel()
