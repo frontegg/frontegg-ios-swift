@@ -842,10 +842,10 @@ public class Api {
             return (try JSONDecoder().decode(AuthResponse.self, from: data), nil)
         } catch {
             switch FronteggErrorCategory(error) {
-            case .unknown, .authenticationFailed:
-                return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
-            default:
+            case .network, .cancelled, .configuration, .server:
                 return (nil, FronteggError.from(error))
+            default:
+                return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
             }
         }
     }
