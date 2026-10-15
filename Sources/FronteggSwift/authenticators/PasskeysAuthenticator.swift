@@ -35,8 +35,6 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
     func handleRegistrationCallback(data: Any?, error: Error?) {
         if let registration = data as? WebauthnRegistration {
             Task { await self.verifyNewDeviceSession(publicKey: registration) }
-        } else if let error, FronteggAuth.isUserCancelledOAuthFlow(error) {
-            completeRegistration(FronteggError.authError(.operationCanceled))
         } else {
             completeRegistration(error.map(FronteggError.from))
         }

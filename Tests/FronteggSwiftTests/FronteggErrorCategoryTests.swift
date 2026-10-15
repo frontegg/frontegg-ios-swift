@@ -136,6 +136,32 @@ final class FronteggErrorCategoryTests: XCTestCase {
         XCTAssertEqual(wrapped.errorDescription, URLError(.notConnectedToInternet).localizedDescription)
     }
 
+    func test_from_mapsUserCancellationToOperationCanceled() {
+        let userCancellations: [Error] = [
+            ASAuthorizationError(.canceled),
+            NSError(
+                domain: ASWebAuthenticationSessionError.errorDomain,
+                code: ASWebAuthenticationSessionError.canceledLogin.rawValue
+            )
+        ]
+        for cancellation in userCancellations {
+            let mapped = FronteggError.from(cancellation)
+            guard case .authError(.operationCanceled) = mapped else {
+                return XCTFail("user cancellation \(cancellation) must map to .operationCanceled, got \(mapped)")
+            }
+            XCTAssertEqual(mapped.category, .cancelled)
+        }
+    }
+
+    func test_from_keepsNonCancelAuthorizationErrorsWrapped() {
+        let wrapped = FronteggError.from(ASAuthorizationError(.failed))
+        guard case .authError(.other(let underlying)) = wrapped else {
+            return XCTFail("non-cancel authorization errors must stay wrapped in .other, got \(wrapped)")
+        }
+        XCTAssertEqual((underlying as? ASAuthorizationError)?.code, .failed)
+        XCTAssertEqual(wrapped.category, .authenticationFailed)
+    }
+
     func test_underlyingError_nilForNonWrappedCases() {
         XCTAssertNil(FronteggError.authError(.failedToAuthenticate).underlyingError)
         XCTAssertNil(FronteggError.configError(.missingPlist).underlyingError)

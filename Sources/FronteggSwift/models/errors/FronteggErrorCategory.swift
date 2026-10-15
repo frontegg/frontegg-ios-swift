@@ -119,13 +119,15 @@ extension FronteggError {
         }
     }
 
-    /// Returns `error` as a `FronteggError`, wrapping foreign errors in `.authError(.other(_))`
+    /// Returns `error` as a `FronteggError`. A user cancelling a system sign-in sheet becomes
+    /// `.authError(.operationCanceled)`; other foreign errors are wrapped in `.authError(.other(_))`
     /// so the original cause stays available through `underlyingError` and `category`.
     public static func from(_ error: Error) -> FronteggError {
         switch error {
         case let error as FronteggError: error
         case let error as FronteggError.Authentication: .authError(error)
         case let error as FronteggError.Configuration: .configError(error)
+        case _ where FronteggAuth.isUserCancelledOAuthFlow(error): .authError(.operationCanceled)
         default: .authError(.other(error))
         }
     }
