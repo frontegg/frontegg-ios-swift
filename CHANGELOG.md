@@ -1,3 +1,5 @@
+## v1.3.25
+
 ## v1.3.24
 
 - Fixed: embedded step-up never completed after MFA. The login box went on to the application's App URL (a blank page when the App URL is `localhost`) instead of returning to the app, so no stepped-up token was issued and the `stepUp()` completion never ran. Step-up now finishes through the hosted login and returns a stepped-up token.
