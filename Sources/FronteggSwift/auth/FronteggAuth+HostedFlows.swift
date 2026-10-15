@@ -128,9 +128,11 @@ extension FronteggAuth {
 
 
     internal func getRootVC(_ useAppRootVC: Bool = false) -> UIViewController? {
+#if DEBUG
         if let override = testRootViewControllerOverride {
             return override
         }
+#endif
 
         if let appDelegate = UIApplication.shared.delegate,
            let window = appDelegate.window,

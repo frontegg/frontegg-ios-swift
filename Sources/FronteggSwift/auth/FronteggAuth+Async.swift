@@ -38,14 +38,9 @@ extension FronteggAuth {
         _ start: (@escaping (Result<T, FronteggError>) -> Void) -> Void
     ) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
-            let lock = NSLock()
-            var resumed = false
+            let resumed = OnceFlag()
             start { result in
-                let isFirst = lock.withLock { () -> Bool in
-                    defer { resumed = true }
-                    return !resumed
-                }
-                if isFirst {
+                if resumed.set() {
                     continuation.resume(with: result)
                 }
             }

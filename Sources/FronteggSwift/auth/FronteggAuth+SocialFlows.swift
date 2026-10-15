@@ -340,7 +340,7 @@ extension FronteggAuth {
     }
 
     func loginWithSocialLogin(socialLoginUrl: String, _ _completion: FronteggAuth.CompletionHandler? = nil) {
-        let completion = _completion ?? self.loginCompletion ?? { res in
+        let completion = FronteggAuth.onMainThread(_completion ?? self.loginCompletion) ?? { res in
 
 
         }

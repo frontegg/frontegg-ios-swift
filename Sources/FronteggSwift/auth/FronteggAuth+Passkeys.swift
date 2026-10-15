@@ -15,7 +15,7 @@ extension FronteggAuth {
                 await PasskeysAuthenticator.shared.loginWithPasskeys(completion)
             }
         } else {
-            // Fallback on earlier versions
+            FronteggAuth.onMainThread(_completion)?(.failure(.authError(.invalidPasskeysRequest)))
         }
     }
 
@@ -23,7 +23,7 @@ extension FronteggAuth {
         if #available(iOS 15.0, *) {
             PasskeysAuthenticator.shared.startWebAuthn(completion)
         } else {
-            // Fallback on earlier versions
+            FronteggAuth.onMainThread(completion)?(.authError(.invalidPasskeysRequest))
         }
     }
 }

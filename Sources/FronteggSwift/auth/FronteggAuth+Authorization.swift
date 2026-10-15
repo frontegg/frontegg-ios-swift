@@ -43,6 +43,7 @@ extension FronteggAuth {
                         completion(.success(user))
                     }
                 } catch {
+                    self.logger.error("Failed to authenticate: \(error.localizedDescription)")
                     await MainActor.run {
                         completion(.failure(FronteggError.from(error)))
                     }

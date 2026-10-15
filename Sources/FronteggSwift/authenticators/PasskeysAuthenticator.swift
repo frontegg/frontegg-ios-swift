@@ -324,9 +324,14 @@ class PasskeysAuthenticator: NSObject, ASAuthorizationControllerDelegate, ASAuth
             return
         }
 
-        if let dataStr = String(data: data, encoding: .utf8),
-           let httpResponse = response as? HTTPURLResponse,
-           dataStr.isEmpty, httpResponse.statusCode < 300 {
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode < 300 else {
+            let responseBody = String(data: data, encoding: .utf8) ?? ""
+            self.logger.error("Verify endpoint rejected the new device: \(responseBody)")
+            self.completeRegistration(FronteggError.authError(.failedToAuthenticateWithPasskeys(responseBody)))
+            return
+        }
+
+        if let dataStr = String(data: data, encoding: .utf8), dataStr.isEmpty {
             self.logger.debug("Response from verify succeeded with empty body")
             self.completeRegistration(nil)
         } else if let jsonResponse = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {

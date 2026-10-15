@@ -110,7 +110,9 @@ public class FronteggAuth: FronteggState {
     let unauthenticatedStartupProbeDelay: TimeInterval = 0.5
     let unauthenticatedStartupProbeTimeout: TimeInterval = 1.0
     var loginCompletion: CompletionHandler? = nil
+#if DEBUG
     var testRootViewControllerOverride: UIViewController?
+#endif
     // internal for extension access (Connectivity, Testing, SessionRestore)
     var networkMonitoringToken: NetworkStatusMonitor.OnChangeToken?
     // internal for extension access (FronteggAuth+OAuthErrors.swift)
