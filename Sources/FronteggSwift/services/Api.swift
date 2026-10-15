@@ -921,6 +921,8 @@ public class Api {
             }
 
             return (try JSONDecoder().decode(AuthResponse.self, from: data), nil)
+        } catch let error as FronteggDPoPError {
+            return (nil, FronteggError.from(error))
         } catch {
             switch FronteggErrorCategory(error) {
             case .network, .cancelled, .configuration, .server:

@@ -529,6 +529,9 @@ final class DPoPApiTests: XCTestCase {
         XCTAssertNotNil(error)
         XCTAssertTrue(api.requests.isEmpty)
         XCTAssertEqual(keyStorage.value, "sw:bound-key", "a locked keychain must never rotate the bound key")
+        guard case FronteggDPoPError.keyUnavailable? = error?.underlyingError else {
+            return XCTFail("the DPoP cause must be kept, got \(String(describing: error))")
+        }
     }
 
     func test_undecodableSecureEnclaveKey_codeExchangeBindsNewKey() async throws {
