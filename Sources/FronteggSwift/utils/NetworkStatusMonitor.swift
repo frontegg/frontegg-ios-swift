@@ -24,7 +24,8 @@ extension NSLock {
 /// The error followed by every NSError in its NSUnderlyingErrorKey chain.
 private func underlyingErrorChain(_ error: Error) -> [NSError] {
     var chain = [error as NSError]
-    while let underlying = chain.last?.userInfo[NSUnderlyingErrorKey] as? NSError {
+    while let underlying = chain.last?.userInfo[NSUnderlyingErrorKey] as? NSError,
+          !chain.contains(where: { $0 === underlying }) {
         chain.append(underlying)
     }
     return chain
@@ -82,6 +83,11 @@ private func isTransportFailure(_ error: NSError) -> Bool {
 func isConnectivityError(_ error: Error, response: URLResponse? = nil) -> Bool {
     if let api = error as? ApiError, case .refreshEndpointTransient = api {
         return true
+    }
+
+    let topLevelError = error as NSError
+    if topLevelError.domain == NSURLErrorDomain, topLevelError.code == URLError.cancelled.rawValue {
+        return false
     }
 
     if underlyingErrorChain(error).contains(where: isTransportFailure) {
