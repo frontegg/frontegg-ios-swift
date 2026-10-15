@@ -28,7 +28,7 @@ public enum FronteggDPoPError: LocalizedError {
         default:
             let nsError = cause as NSError
             guard nsError.domain == NSOSStatusErrorDomain else { return false }
-            status = OSStatus(nsError.code)
+            status = OSStatus(truncatingIfNeeded: nsError.code)
         }
         return CredentialManager.unavailableStatuses.contains(status)
     }
