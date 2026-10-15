@@ -840,10 +840,13 @@ public class Api {
             }
 
             return (try JSONDecoder().decode(AuthResponse.self, from: data), nil)
-        } catch let error where error is URLError || error is ApiError || error is CancellationError || isConnectivityError(error) {
-            return (nil, FronteggError.from(error))
         } catch {
-            return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
+            switch FronteggErrorCategory(error) {
+            case .network, .cancelled, .configuration:
+                return (nil, FronteggError.from(error))
+            default:
+                return (nil, FronteggError.authError(.couldNotExchangeToken(error.localizedDescription)))
+            }
         }
     }
     

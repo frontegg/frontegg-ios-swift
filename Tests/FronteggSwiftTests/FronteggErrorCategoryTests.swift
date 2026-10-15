@@ -180,6 +180,13 @@ final class FronteggErrorCategoryTests: XCTestCase {
         )
         XCTAssertEqual(FronteggErrorCategory(offline), .network)
         XCTAssertEqual(FronteggError.from(offline).category, .network)
+        XCTAssertTrue(isConnectivityError(offline))
+    }
+
+    func test_urlErrorWithTransportUnderlyingCause_isNetwork() {
+        let resetCause = NSError(domain: NSPOSIXErrorDomain, code: Int(POSIXError.ECONNRESET.rawValue))
+        let wrapped = NSError(domain: NSURLErrorDomain, code: URLError.unknown.rawValue, userInfo: [NSUnderlyingErrorKey: resetCause])
+        XCTAssertEqual(FronteggErrorCategory(wrapped), .network)
     }
 
     func test_serverUnavailable_isServerWithReadableMessage() {
