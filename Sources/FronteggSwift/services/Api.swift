@@ -880,13 +880,14 @@ public class Api {
         }
     }
     
-    /// A login binds a new session, so an unreadable DPoP key can be replaced here without breaking a bound refresh token.
+    /// A login binds a new session, so an unusable DPoP key can be replaced here; a merely locked keychain is never rotated.
     private func postAuthorizationCodeRequest(body: [String: Any]) async throws -> (Data, URLResponse) {
         do {
             return try await postRequest(path: "oauth/token", body: body)
-        } catch FronteggDPoPError.keyUnavailable where dpop != nil {
-            logger.warning("DPoP key unavailable at login, binding a new key")
-            dpop?.rotateKey()
+        } catch let error as FronteggDPoPError where error.isUnusableKey {
+            guard let dpop else { throw error }
+            logger.warning("Stored DPoP key is unusable at login, binding a new key")
+            dpop.rotateKey()
             return try await postRequest(path: "oauth/token", body: body)
         }
     }

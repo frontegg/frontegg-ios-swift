@@ -17,6 +17,21 @@ public enum FronteggDPoPError: LocalizedError {
         case .keyUnavailable: "The DPoP signing key is temporarily unavailable. Please try again."
         }
     }
+
+    /// The keychain is locked, so the stored key can't be read yet but is still valid.
+    var isKeychainLocked: Bool {
+        guard case let .keyUnavailable(cause) = self,
+              case .keychainUnavailable? = cause as? CredentialManager.KeychainError else {
+            return false
+        }
+        return true
+    }
+
+    /// The stored key can't be restored, stored or used to sign, so it will never work again.
+    var isUnusableKey: Bool {
+        guard case .keyUnavailable = self else { return false }
+        return !isKeychainLocked
+    }
 }
 
 struct DPoPKeyStorage {

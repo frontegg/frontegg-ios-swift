@@ -519,6 +519,7 @@ final class DPoPApiTests: XCTestCase {
     }
 
     func test_proofFailure_codeExchangeIsNotSent() async {
+        keyStorage.value = "sw:bound-key"
         keyStorage.loadError = lockedKeychain
         let api = DPoPTransportApi(dpop: makeDPoP())
 
@@ -527,6 +528,7 @@ final class DPoPApiTests: XCTestCase {
         XCTAssertNil(response)
         XCTAssertNotNil(error)
         XCTAssertTrue(api.requests.isEmpty)
+        XCTAssertEqual(keyStorage.value, "sw:bound-key", "a locked keychain must never rotate the bound key")
     }
 
     func test_undecodableSecureEnclaveKey_codeExchangeBindsNewKey() async throws {
@@ -564,6 +566,11 @@ final class DPoPApiTests: XCTestCase {
         XCTAssertEqual(FronteggErrorCategory(FronteggDPoPError.disabled), .configuration)
         XCTAssertEqual(FronteggErrorCategory(FronteggDPoPError.missingAccessToken), .notAuthenticated)
         XCTAssertEqual(FronteggErrorCategory(unavailable), .unknown)
+        XCTAssertTrue(unavailable.isKeychainLocked)
+        XCTAssertFalse(unavailable.isUnusableKey)
+        let unusable = FronteggDPoPError.keyUnavailable(CredentialManager.KeychainError.unknown(errSecDecode))
+        XCTAssertFalse(unusable.isKeychainLocked)
+        XCTAssertTrue(unusable.isUnusableKey)
     }
 
     func test_proofFailureOnNonceRetry_retryIsNotSent() async {
@@ -670,5 +677,25 @@ final class DPoPRefreshSessionTests: XCTestCase {
         XCTAssertEqual(auth.refreshToken, "refresh-token-existing")
         XCTAssertEqual(auth.accessToken, accessToken)
         XCTAssertNil(auth.lastAttemptReason, "a locked DPoP key must not count as a failed refresh attempt")
+    }
+
+    func test_refresh_withUnusableDPoPKey_usesTheBoundedRetryPath() async throws {
+        keyStorage.value = "se:" + Data(repeating: 7, count: 64).base64EncodedString()
+        let api = DPoPTransportApi(dpop: FronteggDPoP(storage: keyStorage.storage, preferSecureEnclave: false))
+        auth.api = api
+        let accessToken = try TestDataFactory.makeJWT(payloadDict: [
+            "sub": "user-1",
+            "tenantId": "tenant-123",
+            "exp": Int(Date().timeIntervalSince1970 - 60),
+        ])
+        auth.setAccessToken(accessToken)
+        auth.setRefreshToken("refresh-token-existing")
+        auth.setIsAuthenticated(true)
+
+        let refreshed = await auth.refreshTokenIfNeeded()
+
+        XCTAssertFalse(refreshed)
+        XCTAssertTrue(api.requests.isEmpty)
+        XCTAssertEqual(auth.lastAttemptReason, .unknown, "an unusable key must count toward the retry limit instead of retrying forever")
     }
 }
