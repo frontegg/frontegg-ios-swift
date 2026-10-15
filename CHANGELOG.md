@@ -1,20 +1,5 @@
 ## v1.3.25
 
-<!-- CURSOR_SUMMARY -->
----
-
-> [!NOTE]
-> **Low Risk**
-> Version and changelog-only changes with no behavioral code modifications.
-> 
-> **Overview**
-> **Release v1.3.25** — bumps the published SDK version from `1.3.24` to `1.3.25` in `SDKVersion.swift` and adds an empty `## v1.3.25` section at the top of `CHANGELOG.md`.
-> 
-> Changelog housekeeping: the v1.3.24 embedded step-up fixes stay under the v1.3.24 heading in `CHANGELOG.md`, and the same v1.3.24 notes are prepended to `CHANGELOG.old.md`. **No runtime or API code changes** beyond the version string.
-> 
-> <sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit f59306261fa45806d8c94d387db417189f90260d. Bugbot is set up for automated code reviews on this repo. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>
-<!-- /CURSOR_SUMMARY -->
-
 ## v1.3.24
 
 - Fixed: embedded step-up never completed after MFA. The login box went on to the application's App URL (a blank page when the App URL is `localhost`) instead of returning to the app, so no stepped-up token was issued and the `stepUp()` completion never ran. Step-up now finishes through the hosted login and returns a stepped-up token.
