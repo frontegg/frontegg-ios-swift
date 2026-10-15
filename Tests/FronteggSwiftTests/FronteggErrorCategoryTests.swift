@@ -177,6 +177,24 @@ final class FronteggErrorCategoryTests: XCTestCase {
         XCTAssertTrue(FronteggError.from(error).errorDescription?.contains("HTTP 503") ?? false)
     }
 
+    func test_malformedMePayload_isInvalidResponse() {
+        XCTAssertEqual(
+            FronteggErrorCategory(ApiError.meEndpointFailed(statusCode: 0, path: "identity/resources/users/v3/me/tenants")),
+            .invalidResponse
+        )
+        XCTAssertEqual(
+            FronteggErrorCategory(ApiError.meEndpointFailed(statusCode: 502, path: "identity/resources/users/v2/me")),
+            .server(statusCode: 502)
+        )
+    }
+
+    func test_securityCenterErrors_areClassified() {
+        XCTAssertEqual(FronteggErrorCategory(FronteggSecurityCenterError.notAuthenticated), .notAuthenticated)
+        XCTAssertEqual(FronteggErrorCategory(FronteggSecurityCenterError.invalidResponse), .invalidResponse)
+        XCTAssertEqual(FronteggErrorCategory(FronteggSecurityCenterError.requestFailed(statusCode: 401)), .notAuthenticated)
+        XCTAssertEqual(FronteggErrorCategory(FronteggSecurityCenterError.requestFailed(statusCode: 503)), .server(statusCode: 503))
+    }
+
     func test_underlyingError_nilForNonWrappedCases() {
         XCTAssertNil(FronteggError.authError(.failedToAuthenticate).underlyingError)
         XCTAssertNil(FronteggError.configError(.missingPlist).underlyingError)

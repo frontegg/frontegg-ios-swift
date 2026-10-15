@@ -60,7 +60,10 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
         DispatchQueue.main.async {   
             FronteggAuth.shared.setIsLoading(true)
         }
-        
+
+        let completion = self.completionHandler
+        self.completionHandler = nil
+
         DispatchQueue.global(qos: .background).async {
             Task { @MainActor in
                 do {
@@ -68,19 +71,18 @@ class AppleAuthenticator: NSObject, ASAuthorizationControllerPresentationContext
                     
                     await FronteggAuth.shared.setCredentials(accessToken: authResponse.access_token, refreshToken: authResponse.refresh_token)
                     if let user = FronteggAuth.shared.user {
-                        self.completionHandler?(.success(user))
+                        completion?(.success(user))
                     } else {
                         let fronteggError = FronteggError.authError(.failedToAuthenticate)
                         FronteggAuth.shared.reportOAuthFailure(error: fronteggError, flow: .apple)
-                        self.completionHandler?(.failure(fronteggError))
+                        completion?(.failure(fronteggError))
                     }
                 } catch {
                     self.logger.error("Failed to authenticate with apple \(error.localizedDescription)")
                     let fronteggError = FronteggError.from(error)
                     FronteggAuth.shared.reportOAuthFailure(error: fronteggError, flow: .apple)
-                    self.completionHandler?(.failure(fronteggError))
+                    completion?(.failure(fronteggError))
                 }
-                self.completionHandler = nil
             }
         }
         

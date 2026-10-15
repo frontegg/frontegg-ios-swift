@@ -64,9 +64,22 @@ public enum FronteggErrorCategory: Equatable {
             case let .refreshEndpointTransient(statusCode, _):
                 self = .server(statusCode: statusCode)
             case let .meEndpointFailed(statusCode, _):
-                self = statusCode == 401 ? .notAuthenticated : .server(statusCode: statusCode)
+                switch statusCode {
+                case 401: self = .notAuthenticated
+                case 0: self = .invalidResponse
+                default: self = .server(statusCode: statusCode)
+                }
             case let .serverUnavailable(statusCode, _):
                 self = .server(statusCode: statusCode)
+            }
+        case let error as FronteggSecurityCenterError:
+            switch error {
+            case .notAuthenticated:
+                self = .notAuthenticated
+            case .invalidResponse:
+                self = .invalidResponse
+            case let .requestFailed(statusCode):
+                self = statusCode == 401 ? .notAuthenticated : .server(statusCode: statusCode)
             }
         case is CancellationError:
             self = .cancelled
