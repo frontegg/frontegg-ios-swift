@@ -171,6 +171,17 @@ final class FronteggErrorCategoryTests: XCTestCase {
         XCTAssertEqual(FronteggErrorCategory(URLError(.cannotConnectToHost)), .network)
     }
 
+    func test_offlineUrlErrorWithCFNetworkUnderlyingError_isNetwork() {
+        let cfNetworkCause = NSError(domain: kCFErrorDomainCFNetwork as String, code: URLError.notConnectedToInternet.rawValue)
+        let offline = NSError(
+            domain: NSURLErrorDomain,
+            code: URLError.notConnectedToInternet.rawValue,
+            userInfo: [NSUnderlyingErrorKey: cfNetworkCause]
+        )
+        XCTAssertEqual(FronteggErrorCategory(offline), .network)
+        XCTAssertEqual(FronteggError.from(offline).category, .network)
+    }
+
     func test_serverUnavailable_isServerWithReadableMessage() {
         let error = ApiError.serverUnavailable(statusCode: 503, path: "oauth/token")
         XCTAssertEqual(FronteggErrorCategory(error), .server(statusCode: 503))

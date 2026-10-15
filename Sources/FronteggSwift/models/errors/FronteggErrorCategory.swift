@@ -107,7 +107,7 @@ public enum FronteggErrorCategory: Equatable {
             case .badServerResponse, .cannotParseResponse, .cannotDecodeRawData, .cannotDecodeContentData, .zeroByteResource:
                 return .invalidResponse
             default:
-                return isConnectivityError(error) ? .network : .unknown
+                return isConnectivityURLErrorCode(URLError.Code(rawValue: error.code)) ? .network : .unknown
             }
         default:
             return isConnectivityError(error) ? .network : .unknown

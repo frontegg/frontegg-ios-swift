@@ -30,6 +30,33 @@ private func deepestNSError(_ error: Error) -> NSError {
     return nsError
 }
 
+/// Returns true for URL error codes that mean the server could not be reached.
+func isConnectivityURLErrorCode(_ code: URLError.Code) -> Bool {
+    switch code {
+    case .notConnectedToInternet,          // -1009
+         .timedOut,                        // -1001
+         .cannotFindHost,                  // -1003
+         .cannotConnectToHost,             // -1004
+         .networkConnectionLost,           // -1005
+         .dnsLookupFailed,                 // -1006
+         .secureConnectionFailed,          // -1200
+         .serverCertificateHasBadDate,     // -1201
+         .serverCertificateUntrusted,      // -1202
+         .serverCertificateHasUnknownRoot, // -1203
+         .serverCertificateNotYetValid,    // -1204
+         .clientCertificateRejected,       // -1205
+         .clientCertificateRequired,       // -1206
+         .cannotLoadFromNetwork,           // -2000
+         .internationalRoamingOff,         // -1018
+         .dataNotAllowed,                  // -1020
+         .callIsActive,                    // -1019
+         .httpTooManyRedirects:            // -1007 (captive portal loops)
+        return true
+    default:
+        return false
+    }
+}
+
 /// Returns true if the error is very likely due to connectivity / transport problems.
 /// You can optionally pass the URLResponse (if you have it) for extra signals.
 func isConnectivityError(_ error: Error, response: URLResponse? = nil) -> Bool {
@@ -40,33 +67,8 @@ func isConnectivityError(_ error: Error, response: URLResponse? = nil) -> Bool {
     let e = deepestNSError(error)
 
     // 1) Classic URL errors
-    if e.domain == NSURLErrorDomain {
-        let code = URLError.Code(rawValue: e.code) // not optional
-        switch code {
-        case .notConnectedToInternet,          // -1009
-             .timedOut,                        // -1001
-             .cannotFindHost,                  // -1003
-             .cannotConnectToHost,             // -1004
-             .networkConnectionLost,           // -1005
-             .dnsLookupFailed,                 // -1006
-             .secureConnectionFailed,          // -1200
-             .serverCertificateHasBadDate,     // -1201
-             .serverCertificateUntrusted,      // -1202
-             .serverCertificateHasUnknownRoot, // -1203
-             .serverCertificateNotYetValid,    // -1204
-             .clientCertificateRejected,       // -1205
-             .clientCertificateRequired,       // -1206
-             .cannotLoadFromNetwork,           // -2000
-             .internationalRoamingOff,         // -1018
-             .dataNotAllowed,                  // -1020
-             .callIsActive,                    // -1019
-             .httpTooManyRedirects:            // -1007 (captive portal loops)
-            return true
-        case .cancelled:
-            break
-        default:
-            break
-        }
+    if e.domain == NSURLErrorDomain, isConnectivityURLErrorCode(URLError.Code(rawValue: e.code)) {
+        return true
     }
 
     // 2) CFNetwork lower-level host/proxy/DNS errors
