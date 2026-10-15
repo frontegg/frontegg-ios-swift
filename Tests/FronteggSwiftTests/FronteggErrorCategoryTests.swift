@@ -195,6 +195,15 @@ final class FronteggErrorCategoryTests: XCTestCase {
         XCTAssertTrue(FronteggError.from(error).errorDescription?.contains("HTTP 503") ?? false)
     }
 
+    func test_apiErrors_haveReadableDescriptions() {
+        let transientRefresh = FronteggError.from(ApiError.refreshEndpointTransient(statusCode: 502, message: "bad gateway"))
+        XCTAssertTrue(transientRefresh.errorDescription?.contains("HTTP 502") ?? false)
+        XCTAssertTrue(
+            ApiError.meEndpointFailed(statusCode: 503, path: "identity/resources/users/v2/me").localizedDescription.contains("HTTP 503")
+        )
+        XCTAssertEqual(ApiError.invalidUrl("invalid url: nope").localizedDescription, "invalid url: nope")
+    }
+
     func test_malformedMePayload_isInvalidResponse() {
         XCTAssertEqual(
             FronteggErrorCategory(ApiError.meEndpointFailed(statusCode: 0, path: "identity/resources/users/v3/me/tenants")),

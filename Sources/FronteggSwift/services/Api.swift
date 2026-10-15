@@ -20,8 +20,16 @@ enum ApiError: Error {
 
 extension ApiError: LocalizedError {
     var errorDescription: String? {
-        guard case let .serverUnavailable(statusCode, _) = self else { return nil }
-        return "The server is temporarily unavailable (HTTP \(statusCode)). Please try again."
+        switch self {
+        case let .invalidUrl(message):
+            return message
+        case let .refreshEndpointTransient(statusCode, _), let .serverUnavailable(statusCode, _):
+            return "The server is temporarily unavailable (HTTP \(statusCode)). Please try again."
+        case .meEndpointFailed(0, _):
+            return "The server returned an unexpected response."
+        case let .meEndpointFailed(statusCode, _):
+            return "Failed to load the user profile (HTTP \(statusCode))."
+        }
     }
 }
 
