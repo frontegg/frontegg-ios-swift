@@ -286,6 +286,20 @@ final class GoogleSignInTests: XCTestCase {
         XCTAssertFalse(auth.shouldSignInWithGoogleNatively(provider: "google", action: .signUp))
     }
 
+    func test_googleOnActivationAndInvitationPages_usesTheBrowser() {
+        register(.success("google-id-token"))
+
+        for path in ["/oauth/account/activate", "/oauth/account/invitation/accept", "/oauth/account/accept-invitation"] {
+            let pageURL = URL(string: "https://test.example.com\(path)?token=t")
+            XCTAssertFalse(auth.shouldSignInWithGoogleNatively(provider: "google", action: .login, loginBoxURL: pageURL), path)
+        }
+        XCTAssertTrue(auth.shouldSignInWithGoogleNatively(
+            provider: "google",
+            action: .login,
+            loginBoxURL: URL(string: "https://test.example.com/oauth/account/login")
+        ))
+    }
+
     func test_loginWithGoogle_duringStepUp_isCanceledWithoutAskingGoogle() async {
         let provider = register(.success("google-id-token"))
         auth.setIsStepUpAuthorization(true)
