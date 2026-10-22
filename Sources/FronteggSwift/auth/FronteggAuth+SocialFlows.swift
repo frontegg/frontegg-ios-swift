@@ -152,6 +152,32 @@ extension FronteggAuth {
             return
         }
 
+        if !custom, shouldSignInWithGoogleNatively(provider: providerString, action: action) {
+            loginWithGoogle(fallingBackTo: { [weak self] in
+                self?.handleBrowserSocialLogin(providerString: providerString, custom: custom, action: action, done: done)
+            }, completion: done)
+            return
+        }
+
+        handleBrowserSocialLogin(providerString: providerString, custom: custom, action: action, done: done)
+    }
+
+    // A retry recovers a browser flow, so Google stays in the browser instead of reopening native sign-in.
+    func retrySocialLoginInBrowser(providerString: String, completion: @escaping FronteggAuth.CompletionHandler) {
+        guard providerString == SocialLoginProvider.google.rawValue else {
+            handleSocialLogin(providerString: providerString, custom: false, action: .login, completion: completion)
+            return
+        }
+        let done = FronteggAuth.onMainThread(completion) ?? { _ in }
+        handleBrowserSocialLogin(providerString: providerString, custom: false, action: .login, done: done)
+    }
+
+    private func handleBrowserSocialLogin(
+        providerString: String,
+        custom: Bool,
+        action: SocialLoginAction,
+        done: @escaping FronteggAuth.CompletionHandler
+    ) {
         // Social login flows are single-flight. Drop any stale verifier state from a
         // previous abandoned attempt before generating the next authorize URL.
         SocialLoginUrlGenerator.shared.clearPendingSocialCodeVerifiers()

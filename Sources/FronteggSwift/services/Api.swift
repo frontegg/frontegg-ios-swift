@@ -1290,6 +1290,28 @@ public class Api {
     }
     
     
+    internal func postloginGoogleNative(idToken: String) async throws -> AuthResponse {
+        let (data, response) = try await postRequest(
+            path: "/oauth/account/social/google/post-login",
+            body: [
+                "idToken": idToken,
+                "redirectUri": "\(self.baseUrl)/oauth/account/social/success"
+            ]
+        )
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.isSuccess else {
+            throw FronteggError.authError(.couldNotExchangeToken(String(data: data, encoding: .utf8) ?? "Unknown error occured"))
+        }
+
+        if let jsonResponse = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           jsonResponse["mfaRequired"] as? Bool == true {
+            let refreshToken = getCookiesFromHeaders(response: httpResponse)?.0
+            throw FronteggError.authError(.mfaRequired(jsonResponse, refreshToken: refreshToken))
+        }
+
+        return try JSONDecoder().decode(AuthResponse.self, from: data)
+    }
+
     internal func getFeatureFlags() async throws -> String {
         let (stringData, _) = try await self.getRequest(path: "/flags", accessToken: nil)
 

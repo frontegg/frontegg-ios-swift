@@ -251,6 +251,45 @@ try FronteggAuth.shared.applyDPoP(to: &request)
 
 You can also use `dpopAuthorizationHeaders(method:url:)` or `dpopProof(method:url:)`. If your server replies with a `DPoP-Nonce` header, pass the response to `FronteggAuth.shared.dpop?.recordNonce(from:)`. Later proofs for that origin will include the nonce.
 
+## Native Google sign-in
+
+The optional `FronteggGoogleSignIn` library signs users in with the [Google Sign-In SDK](https://developers.google.com/identity/sign-in/ios) and exchanges the Google ID token with Frontegg, instead of going through the hosted login page. Apps that don't add the library get no new dependency.
+
+1. Add the `FronteggGoogleSignIn` product of this package to your app target, next to `FronteggSwift`.
+2. In the Google Cloud project that holds the Google web client configured in Frontegg's Google social login, create an **iOS** OAuth client for your bundle ID.
+3. In `Info.plist`, set `GIDClientID` to that iOS client ID, and add its reversed client ID (`com.googleusercontent.apps.…`) as a URL scheme.
+4. Turn it on at launch, and pass Google's redirect back to it:
+
+```swift
+import FronteggSwift
+import FronteggGoogleSignIn
+
+FronteggApp.shared.googleSignIn = FronteggGoogleSignIn()
+
+// SwiftUI
+.onOpenURL { url in
+    _ = FronteggGoogleSignIn.handle(url)
+}
+```
+
+Then call it from your own button:
+
+```swift
+FronteggAuth.shared.loginWithGoogle { result in
+    switch result {
+    case .success(let user): print("Signed in as \(user.email)")
+    case .failure(let error): print("Google sign-in failed: \(error.localizedDescription)")
+    }
+}
+```
+
+- Native sign-in needs your own Google app: configure Google social login in Frontegg with your custom credentials (client ID and secret). Google issues ID tokens only for a web client in the same Cloud project as your iOS client, so Frontegg's default shared Google app can't be used; with it, `loginWithGoogle` fails with `.configError(.socialLoginMissing("Google"))` and the login box uses the browser flow without showing the Google sheet.
+- The Google web client ID comes from that Google social login and is used as the ID token's audience, so there is nothing else to configure in Frontegg.
+- With `googleSignIn` set, the Google button of the embedded login box (with `handleLoginWithSocialProvider` on, the default) and `handleSocialLogin(providerString: "google", ...)` use it too, including with `useLegacySocialLoginFlow`. A cancel stays on the login box; any other failure falls back to the browser flow. Google sign-up, step-up and login per account (`loginOrganizationAlias` set) use the browser flow.
+- If Google social login is not active in Frontegg, `loginWithGoogle` fails with `.configError(.socialLoginMissing("Google"))`. If the user dismisses the Google sheet, it fails with `.authError(.operationCanceled)`. During a step-up, or with `loginOrganizationAlias` set, it fails with `.authError(.operationCanceled)` without showing the Google sheet; use the login box there.
+- An MFA-required response continues in the MFA flow, as other native sign-ins do.
+- `FronteggGoogleSignIn` uses `GIDSignIn.sharedInstance`. It restores the app's `configuration` afterwards and, once Google returns a user, signs that Google user out, so Frontegg leaves no Google session behind; this also happens when the Frontegg exchange then fails. A cancelled attempt leaves the app's Google session as it was. An app that also signs users in with Google Sign-In for its own purposes should sign its user in again after a successful Frontegg Google login.
+
 ## Entitlements
 
 The SDK can load and check user entitlements — features and permissions — from the Frontegg Entitlements API. Set `entitlementsEnabled` to `true` in `Frontegg.plist`, then:

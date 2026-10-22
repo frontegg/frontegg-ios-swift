@@ -14,10 +14,14 @@ let package = Package(
         .library(
             name: "FronteggSwift",
             targets: ["FronteggSwift"]),
+        .library(
+            name: "FronteggGoogleSignIn",
+            targets: ["FronteggGoogleSignIn"]),
     ],
     dependencies: [
         // Dependencies declare other packages that this package depends on.
         .package(url: "https://github.com/getsentry/sentry-cocoa.git", from: "8.46.0"),
+        .package(url: "https://github.com/google/GoogleSignIn-iOS.git", "9.0.0"..<"10.0.0"),
     ],
     targets: [
         // Targets are the basic building blocks of a package. A target can define a module or a test suite.
@@ -29,6 +33,13 @@ let package = Package(
             ],
             resources: [
                 .copy("PrivacyInfo.xcprivacy")
+            ]
+        ),
+        .target(
+            name: "FronteggGoogleSignIn",
+            dependencies: [
+                "FronteggSwift",
+                .product(name: "GoogleSignIn", package: "GoogleSignIn-iOS"),
             ]
         ),
         .testTarget(
