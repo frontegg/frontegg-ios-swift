@@ -18,7 +18,7 @@ final class LocalMockAuthServer {
     let clientId = "demo-embedded-e2e-client"
     let baseURL = URL(string: "http://127.0.0.1:49381")!
 
-    static let nativeGooglePostLoginPath = "/oauth/account/social/google/post-login"
+    static let nativeGooglePostLoginPath = "/frontegg/identity/resources/auth/v1/user/sso/google/postlogin"
     static let nativeGoogleIdToken = "e2e-native-google-id-token"
     static let nativeGoogleMfaIdToken = "e2e-native-google-mfa-id-token"
     static let nativeGoogleEmail = "google-native@frontegg.com"
@@ -1269,9 +1269,8 @@ final class LocalMockAuthServer {
     }
 
     private func handleNativeGooglePostLogin(_ request: HTTPRequest) -> HTTPResponse {
-        let body = parseJSONDictionary(request.body)
-        let redirectUri = body["redirectUri"] as? String ?? ""
-        let idToken = body["idToken"] as? String ?? ""
+        let redirectUri = request.query["redirectUri"]?.first ?? ""
+        let idToken = request.query["id_token"]?.first ?? ""
         guard redirectUri == "\(currentAppBaseURL().absoluteString)/oauth/account/social/success" else {
             return jsonResponse(status: 400, payload: ["error": "invalid_redirect_uri"])
         }
@@ -1279,10 +1278,14 @@ final class LocalMockAuthServer {
         switch idToken {
         case Self.nativeGoogleIdToken:
             let issuedRefreshToken = state.issueRefreshToken(email: Self.nativeGoogleEmail)
-            return jsonResponse(status: 200, payload: authResponse(
-                session: issuedRefreshToken.record,
-                refreshToken: issuedRefreshToken.token
-            ))
+            let response = jsonResponse(status: 200, payload: [:])
+            return HTTPResponse(
+                statusCode: response.statusCode,
+                headers: response.headers.merging([
+                    "Set-Cookie": "fe_refresh_\(clientId)=\(issuedRefreshToken.token); Path=/; HttpOnly; SameSite=Lax"
+                ]) { _, new in new },
+                body: response.body
+            )
         case Self.nativeGoogleMfaIdToken:
             return jsonResponse(status: 200, payload: [
                 "mfaRequired": true,
