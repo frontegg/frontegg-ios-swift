@@ -56,9 +56,26 @@ extension FronteggAuth {
         }
     }
 
-    // Sign-up, step-up and login per account use the browser: the native post-login carries none of them.
+    static let accountActionPaths = [
+        "/oauth/account/reset-password",
+        "/oauth/account/verify-email",
+        "/oauth/account/verify-phone",
+        "/oauth/account/accept-invitation",
+        "/oauth/account/activate",
+        "/oauth/account/invitation/accept",
+        "/oauth/account/unlock",
+    ]
+
     func shouldSignInWithGoogleNatively(provider: String, action: SocialLoginAction) -> Bool {
-        let isNativeFlow = action == .login && !isStepUpAuthorization && FronteggApp.shared.loginOrganizationAlias == nil
+        shouldSignInWithGoogleNatively(provider: provider, action: action, loginBoxURL: webview?.url)
+    }
+
+    // Sign-up, activation and invitation pages, step-up and login per account use the browser: the native post-login carries none of them.
+    func shouldSignInWithGoogleNatively(provider: String, action: SocialLoginAction, loginBoxURL: URL?) -> Bool {
+        let path = loginBoxURL?.path ?? ""
+        let isAccountActionPage = Self.accountActionPaths.contains { path.hasSuffix($0) || path.contains($0 + "/") }
+        let isNativeFlow = action == .login && !isAccountActionPage
+            && !isStepUpAuthorization && FronteggApp.shared.loginOrganizationAlias == nil
         return provider == SocialLoginProvider.google.rawValue && isNativeFlow
             && FronteggGoogleSignInRuntimeSettings.providerBox.value != nil
     }

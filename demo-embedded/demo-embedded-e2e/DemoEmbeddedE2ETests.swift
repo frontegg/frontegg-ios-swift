@@ -729,6 +729,37 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         )
     }
 
+    func testGoogleOnTheSignUpPageUsesTheBrowserFlow() throws {
+        try assertGoogleUsesTheBrowserFlow(onPageOpenedBy: "Open Mock Sign Up", pageTitle: "Mock Sign Up")
+    }
+
+    func testGoogleOnTheActivationPageUsesTheBrowserFlow() throws {
+        try assertGoogleUsesTheBrowserFlow(onPageOpenedBy: "Open Mock Activation", pageTitle: "Mock Activate Account")
+    }
+
+    func testGoogleOnTheInvitationPageUsesTheBrowserFlow() throws {
+        try assertGoogleUsesTheBrowserFlow(onPageOpenedBy: "Open Mock Invitation", pageTitle: "Mock Accept Invitation")
+    }
+
+    private func assertGoogleUsesTheBrowserFlow(onPageOpenedBy button: String, pageTitle: String) throws {
+        launchApp(googleIdToken: LocalMockAuthServer.nativeGoogleIdToken)
+        openEmbeddedLogin()
+        app.getWebLabel("Mock Embedded Login").waitUntilExists(timeout: 20)
+        app.getWebButton(button).waitUntilExists(timeout: 20).safeTap()
+        app.getWebLabel(pageTitle).waitUntilExists(timeout: 20)
+        app.getWebButton("Sign in with Mock Google").waitUntilExists(timeout: 20).safeTap()
+
+        XCTAssertTrue(
+            Self.server.waitForRequest(path: browserGoogleAuthorizePath, timeout: 20),
+            "Google on \(pageTitle) must use the browser Google flow. \(screenDebugSummary())"
+        )
+        XCTAssertEqual(
+            Self.server.requestCount(method: "POST", path: LocalMockAuthServer.nativeGooglePostLoginPath),
+            0,
+            "Google on \(pageTitle) must not use the native post-login. \(screenDebugSummary())"
+        )
+    }
+
     private func tapLoginBoxGoogleButton() {
         app.getWebLabel("Mock Embedded Login").waitUntilExists(timeout: 20)
         app.getWebButton("Sign in with Mock Google").waitUntilExists(timeout: 20).safeTap()

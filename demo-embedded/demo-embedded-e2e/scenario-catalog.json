@@ -136,6 +136,21 @@
       "description": "Sets a stub Google ID token provider whose token the native Google post-login rejects, taps the login box's Google button, and verifies the SDK falls back to the browser Google flow and signs in the Google social user."
     },
     {
+      "method": "testGoogleOnTheSignUpPageUsesTheBrowserFlow",
+      "title": "Google on the sign-up page uses the browser flow",
+      "description": "Sets a stub Google ID token provider, opens the login box's sign-up page, taps its Google button, and verifies the browser Google flow runs and the native Google postlogin is never called."
+    },
+    {
+      "method": "testGoogleOnTheActivationPageUsesTheBrowserFlow",
+      "title": "Google on the activation page uses the browser flow",
+      "description": "Sets a stub Google ID token provider, opens the account activation page (/oauth/account/activate), taps its Google button, and verifies the browser Google flow runs and the native Google postlogin is never called."
+    },
+    {
+      "method": "testGoogleOnTheInvitationPageUsesTheBrowserFlow",
+      "title": "Google on the invitation page uses the browser flow",
+      "description": "Sets a stub Google ID token provider, opens the invitation page (/oauth/account/invitation/accept), taps its Google button, and verifies the browser Google flow runs and the native Google postlogin is never called."
+    },
+    {
       "method": "testNativeGoogleMfaContinuesInsideTheLoginBox",
       "title": "Native Google sign-in MFA continues inside the login box",
       "description": "Sets a stub Google ID token provider whose native Google post-login answers mfaRequired, taps the login box's Google button, and verifies the MFA page opens in the open login box, completing it signs in the MFA user, and the browser Google flow is never opened."
