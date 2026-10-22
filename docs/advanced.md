@@ -255,7 +255,7 @@ You can also use `dpopAuthorizationHeaders(method:url:)` or `dpopProof(method:ur
 
 The optional `FronteggGoogleSignIn` library signs users in with the [Google Sign-In SDK](https://developers.google.com/identity/sign-in/ios) and exchanges the Google ID token with Frontegg, instead of going through the hosted login page. Apps that don't add the library get no new dependency.
 
-1. Add the `FronteggGoogleSignIn` product of this package to your app target, next to `FronteggSwift`.
+1. Add the `FronteggGoogleSignIn` product of this package to your app target, next to `FronteggSwift`. It works with GoogleSignIn-iOS 7.x through 9.x.
 2. In the Google Cloud project that holds the Google web client configured in Frontegg's Google social login, create an **iOS** OAuth client for your bundle ID.
 3. In `Info.plist`, set `GIDClientID` to that iOS client ID, and add its reversed client ID (`com.googleusercontent.apps.…`) as a URL scheme.
 4. Turn it on at launch, and pass Google's redirect back to it:

@@ -60,3 +60,9 @@ jobs:
           swift package resolve
           xcodebuild build -scheme FronteggSwift -destination "platform=iOS Simulator,name=iPhone 16 Pro"
           xcodebuild build -scheme FronteggGoogleSignIn -destination "platform=iOS Simulator,name=iPhone 16 Pro"
+
+      - name: Validate FronteggGoogleSignIn with GoogleSignIn 7.0.0
+        run: |
+          swift package resolve GoogleSignIn-iOS --version 7.0.0
+          grep -i -A8 'googlesignin' Package.resolved | grep -Eq '"version" ?: "7\.0\.0"'
+          xcodebuild build -scheme FronteggGoogleSignIn -destination "platform=iOS Simulator,name=iPhone 16 Pro" -onlyUsePackageVersionsFromResolvedFile
