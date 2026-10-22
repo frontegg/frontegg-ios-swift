@@ -17,6 +17,7 @@ permissions:
 jobs:
   updateChangelog:
     runs-on: 'ubuntu-latest'
+    timeout-minutes: 45
     if: startsWith(github.head_ref, 'release/next')
     env:
       CHANGELOG_FILE: ./CHANGELOG.md
