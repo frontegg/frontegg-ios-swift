@@ -1,3 +1,20 @@
+## v1.3.25
+
+<!-- CURSOR_SUMMARY -->
+---
+
+> [!NOTE]
+> **Low Risk**
+> Version and changelog-only changes; no auth or runtime logic modified.
+> 
+> **Overview**
+> **Release housekeeping for v1.3.25** with no functional SDK changes in this diff.
+> 
+> `SDKVersion.value` is bumped from **1.3.24** to **1.3.25**. **CHANGELOG.md** adds a new **v1.3.25** section at the top (still empty of release bullets). **CHANGELOG.old.md** archives the **v1.3.24** embedded step-up fix notes using the repo’s usual changelog rotation pattern.
+> 
+> <sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit 361717a518261f970755e0cd9c7e57738bb7b329. Bugbot is set up for automated code reviews on this repo. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>
+<!-- /CURSOR_SUMMARY -->
+
 ## v1.3.24
 
 - Fixed: embedded step-up never completed after MFA. The login box went on to the application's App URL (a blank page when the App URL is `localhost`) instead of returning to the app, so no stepped-up token was issued and the `stepUp()` completion never ran. Step-up now finishes through the hosted login and returns a stepped-up token.
