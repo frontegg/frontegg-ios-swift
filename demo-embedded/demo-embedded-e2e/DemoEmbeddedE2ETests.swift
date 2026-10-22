@@ -5,6 +5,10 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
     private let expiringAccessTokenTTL = 21
     private let longLivedRefreshTokenTTL = 120
     private let immediateRefreshTriggerWindow = 14
+    private let canceledGoogleSignInIdToken = "cancel"
+    private let rejectedGoogleIdToken = "e2e-rejected-google-id-token"
+    private let socialLoginConfigPath = "/frontegg/identity/resources/sso/v2"
+    private let browserGoogleAuthorizePath = "/idp/google/authorize"
     private let refreshTokenPaths = [
         "/oauth/token",
         "/frontegg/identity/resources/auth/v1/user/token/refresh"
@@ -226,6 +230,15 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         let app = XCUIApplication()
         var environment = Self.server.launchEnvironment(resetState: true)
         environment["FRONTEGG_E2E_STEP_UP_SCENARIO"] = stepUpScenario
+        app.launchEnvironment = environment
+        app.launch()
+        self.app = app
+    }
+
+    private func launchApp(googleIdToken: String) {
+        let app = XCUIApplication()
+        var environment = Self.server.launchEnvironment(resetState: true)
+        environment["FRONTEGG_E2E_GOOGLE_ID_TOKEN"] = googleIdToken
         app.launchEnvironment = environment
         app.launch()
         self.app = app
@@ -600,6 +613,125 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
 
         let continueButton = app.getWebButton("Continue").waitUntilExists(timeout: 20)
         XCTAssertTrue(continueButton.exists, screenDebugSummary())
+    }
+
+    func testLoginBoxGoogleButtonSignsInNativelyWhenAProviderIsSet() throws {
+        launchApp(googleIdToken: LocalMockAuthServer.nativeGoogleIdToken)
+        openEmbeddedLogin()
+        tapLoginBoxGoogleButton()
+
+        XCTAssertTrue(
+            Self.server.waitForRequest(method: "POST", path: LocalMockAuthServer.nativeGooglePostLoginPath, timeout: 20),
+            "Expected the Google ID token to be exchanged at the native post-login. \(screenDebugSummary())"
+        )
+        waitForUserEmailWithoutOAuthError(LocalMockAuthServer.nativeGoogleEmail, timeout: 30)
+        XCTAssertEqual(
+            Self.server.requestCount(path: browserGoogleAuthorizePath),
+            0,
+            "Native Google sign-in must not open the browser Google flow. \(screenDebugSummary())"
+        )
+    }
+
+    func testLoginWithGoogleSignsInWithoutOpeningTheLoginBox() throws {
+        launchApp(googleIdToken: LocalMockAuthServer.nativeGoogleIdToken)
+        waitForScreen("LoginPageRoot")
+        tapButton("E2ENativeGoogleLoginButton")
+
+        XCTAssertTrue(
+            Self.server.waitForRequest(method: "POST", path: LocalMockAuthServer.nativeGooglePostLoginPath, timeout: 20),
+            "Expected loginWithGoogle() to exchange the Google ID token at the native post-login. \(screenDebugSummary())"
+        )
+        waitForUserEmailWithoutOAuthError(LocalMockAuthServer.nativeGoogleEmail, timeout: 30)
+        XCTAssertEqual(
+            Self.server.requestCount(method: "GET", path: "/oauth/authorize"),
+            0,
+            "loginWithGoogle() must not open the hosted login box. \(screenDebugSummary())"
+        )
+        XCTAssertEqual(
+            Self.server.requestCount(path: browserGoogleAuthorizePath),
+            0,
+            "loginWithGoogle() must not open the browser Google flow. \(screenDebugSummary())"
+        )
+    }
+
+    func testCanceledNativeGoogleSignInKeepsTheLoginBoxOpen() throws {
+        launchApp(googleIdToken: canceledGoogleSignInIdToken)
+        openEmbeddedLogin()
+        app.getWebLabel("Mock Embedded Login").waitUntilExists(timeout: 20)
+        XCTAssertTrue(
+            Self.server.waitForRequest(method: "GET", path: socialLoginConfigPath, timeout: 20),
+            "Expected the login box to load the social login config. \(screenDebugSummary())"
+        )
+        let socialConfigRequestsBeforeTap = Self.server.requestCount(method: "GET", path: socialLoginConfigPath)
+        tapLoginBoxGoogleButton()
+
+        XCTAssertTrue(
+            Self.server.waitForRequestCount(
+                method: "GET",
+                path: socialLoginConfigPath,
+                count: socialConfigRequestsBeforeTap + 1,
+                timeout: 20
+            ),
+            "Expected native Google sign-in to load the Google client ID before asking the provider. \(screenDebugSummary())"
+        )
+        assertNoOAuthErrorToastAppears(duration: 3)
+        XCTAssertEqual(
+            Self.server.requestCount(method: "POST", path: LocalMockAuthServer.nativeGooglePostLoginPath),
+            0,
+            "A canceled Google sign-in must not reach the native post-login. \(screenDebugSummary())"
+        )
+        XCTAssertEqual(
+            Self.server.requestCount(path: browserGoogleAuthorizePath),
+            0,
+            "A canceled Google sign-in must not fall back to the browser Google flow. \(screenDebugSummary())"
+        )
+        XCTAssertTrue(
+            app.getWebLabel("Mock Embedded Login").exists,
+            "The login box should stay open after a canceled Google sign-in. \(screenDebugSummary())"
+        )
+        XCTAssertFalse(app.staticTexts["UserEmailValue"].exists, "A canceled Google sign-in must not authenticate anyone. \(screenDebugSummary())")
+    }
+
+    func testRejectedNativeGoogleSignInFallsBackToTheBrowserFlow() throws {
+        launchApp(googleIdToken: rejectedGoogleIdToken)
+        openEmbeddedLogin()
+        tapLoginBoxGoogleButton()
+
+        XCTAssertTrue(
+            Self.server.waitForRequest(method: "POST", path: LocalMockAuthServer.nativeGooglePostLoginPath, timeout: 20),
+            "Expected the rejected Google ID token to reach the native post-login first. \(screenDebugSummary())"
+        )
+        XCTAssertTrue(
+            Self.server.waitForRequest(path: browserGoogleAuthorizePath, timeout: 20),
+            "Expected a failed native exchange to fall back to the browser Google flow. \(screenDebugSummary())"
+        )
+        app.getWebLabel("Mock Google Login").waitUntilExists(timeout: 20)
+        app.getWebButton("Continue with Mock Google").safeTap()
+        waitForUserEmail("google-social@frontegg.com", timeout: 30)
+    }
+
+    func testNativeGoogleMfaContinuesInsideTheLoginBox() throws {
+        launchApp(googleIdToken: LocalMockAuthServer.nativeGoogleMfaIdToken)
+        openEmbeddedLogin()
+        tapLoginBoxGoogleButton()
+
+        XCTAssertTrue(
+            Self.server.waitForRequest(method: "POST", path: LocalMockAuthServer.nativeGooglePostLoginPath, timeout: 20),
+            "Expected the Google ID token to be exchanged at the native post-login. \(screenDebugSummary())"
+        )
+        app.getWebLabel("Mock Google MFA").waitUntilExists(timeout: 20)
+        app.getWebButton("Verify Mock MFA").waitUntilExists(timeout: 20).safeTap()
+        waitForUserEmail(LocalMockAuthServer.nativeGoogleMfaEmail, timeout: 30)
+        XCTAssertEqual(
+            Self.server.requestCount(path: browserGoogleAuthorizePath),
+            0,
+            "Google sign-in MFA must not fall back to the browser Google flow. \(screenDebugSummary())"
+        )
+    }
+
+    private func tapLoginBoxGoogleButton() {
+        app.getWebLabel("Mock Embedded Login").waitUntilExists(timeout: 20)
+        app.getWebButton("Sign in with Mock Google").waitUntilExists(timeout: 20).safeTap()
     }
 
     func testColdLaunchTransientProbeTimeoutsDoNotBlinkNoConnectionPage() throws {

@@ -18,6 +18,12 @@ final class LocalMockAuthServer {
     let clientId = "demo-embedded-e2e-client"
     let baseURL = URL(string: "http://127.0.0.1:49381")!
 
+    static let nativeGooglePostLoginPath = "/oauth/account/social/google/post-login"
+    static let nativeGoogleIdToken = "e2e-native-google-id-token"
+    static let nativeGoogleMfaIdToken = "e2e-native-google-mfa-id-token"
+    static let nativeGoogleEmail = "google-native@frontegg.com"
+    static let nativeGoogleMfaEmail = "google-native-mfa@frontegg.com"
+
     init() throws {
         let parameters = NWParameters.tcp
         parameters.allowLocalEndpointReuse = true
@@ -452,6 +458,8 @@ final class LocalMockAuthServer {
             response = handleHostedSSOPrelogin(request)
         case ("POST", "/frontegg/identity/resources/auth/v1/user"):
             response = handleHostedPasswordLogin(request)
+        case ("POST", Self.nativeGooglePostLoginPath):
+            response = handleNativeGooglePostLogin(request)
         case ("GET", "/identity/resources/users/v2/me"):
             response = handleMe(request)
         case ("GET", "/identity/resources/users/v3/me/tenants"):
@@ -536,6 +544,10 @@ final class LocalMockAuthServer {
                 title = "Mock Social Login"
                 buttonTitle = "Continue with Mock Social"
                 email = "social-login@frontegg.com"
+            } else if destination.contains("/oauth/account/mfa-mobile-authenticator") {
+                title = "Mock Google MFA"
+                buttonTitle = "Verify Mock MFA"
+                email = Self.nativeGoogleMfaEmail
             } else {
                 title = "Direct Login Mock Server"
                 buttonTitle = "Continue"
@@ -658,7 +670,7 @@ final class LocalMockAuthServer {
         </form>
         <form action="/__frontegg_test/social-login" method="get">
           <input type="hidden" name="provider" value="google" />
-          <button type="submit">Continue with Mock Google</button>
+          <button type="submit">Sign in with Mock Google</button>
         </form>
         \(hostedBootstrapScript(includeRefreshAttempt: true))
         \(hostedLoginBoxFooterScript())
@@ -1141,7 +1153,7 @@ final class LocalMockAuthServer {
             [
                 "type": "google",
                 "active": true,
-                "customised": false,
+                "customised": true,
                 "clientId": "mock-google-client-id",
                 "redirectUrl": "\(currentAppBaseURL().absoluteString)/oauth/account/social/success",
                 "redirectUrlPattern": "\(currentAppBaseURL().absoluteString)/oauth/account/social/success",
@@ -1254,6 +1266,32 @@ final class LocalMockAuthServer {
             ],
             body: authData
         )
+    }
+
+    private func handleNativeGooglePostLogin(_ request: HTTPRequest) -> HTTPResponse {
+        let body = parseJSONDictionary(request.body)
+        let redirectUri = body["redirectUri"] as? String ?? ""
+        let idToken = body["idToken"] as? String ?? ""
+        guard redirectUri == "\(currentAppBaseURL().absoluteString)/oauth/account/social/success" else {
+            return jsonResponse(status: 400, payload: ["error": "invalid_redirect_uri"])
+        }
+
+        switch idToken {
+        case Self.nativeGoogleIdToken:
+            let issuedRefreshToken = state.issueRefreshToken(email: Self.nativeGoogleEmail)
+            return jsonResponse(status: 200, payload: authResponse(
+                session: issuedRefreshToken.record,
+                refreshToken: issuedRefreshToken.token
+            ))
+        case Self.nativeGoogleMfaIdToken:
+            return jsonResponse(status: 200, payload: [
+                "mfaRequired": true,
+                "mfaToken": "e2e-native-google-mfa-token",
+                "userId": "user-google-native-mfa",
+            ])
+        default:
+            return jsonResponse(status: 400, payload: ["error": "invalid_google_id_token"])
+        }
     }
 
     private func handleHostedPostlogin(_ request: HTTPRequest) -> HTTPResponse {
