@@ -9,6 +9,7 @@ jobs:
   build-and-lint:
     name: "Build & Lint"
     runs-on: 'macos-15-xlarge'
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v6

@@ -26,6 +26,7 @@ jobs:
   unit-tests:
     name: "Unit Tests"
     runs-on: "macos-15-xlarge"
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -99,6 +100,7 @@ jobs:
   matrix-setup:
     name: "Generate E2E Matrix"
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     outputs:
       matrix: ${{ steps.generate.outputs.matrix }}
       apps: ${{ steps.generate.outputs.apps }}
@@ -119,6 +121,7 @@ jobs:
     name: "${{ matrix.app }} (shard ${{ matrix.shard-index }}/${{ matrix.shard-total }})"
     needs: matrix-setup
     runs-on: "macos-15-xlarge"
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.matrix-setup.outputs.matrix) }}
@@ -187,6 +190,7 @@ jobs:
     needs: [matrix-setup, e2e, unit-tests, unit-tests-tsan]
     if: always()
     runs-on: "macos-15-xlarge"
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v6

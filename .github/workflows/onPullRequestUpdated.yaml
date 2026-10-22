@@ -10,10 +10,15 @@ on:
       - master
 
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   validate-pr:
     name: "Validate PR Description"
     runs-on: 'ubuntu-latest'
+    timeout-minutes: 45
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -39,6 +44,7 @@ jobs:
   build-and-lint:
     name: "Build & Lint"
     runs-on: 'macos-15-xlarge'
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v6

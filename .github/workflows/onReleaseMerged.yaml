@@ -12,6 +12,7 @@ jobs:
     if: "contains(join(github.event.pull_request.labels.*.name, ','), 'Release') && github.event.pull_request.merged == true"
     name: 'Publish Release (Swift Package Manager)'
     runs-on: 'macos-15-xlarge'
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v6
