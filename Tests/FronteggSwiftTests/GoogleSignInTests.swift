@@ -115,16 +115,26 @@ private final class RecordingPostApi: Api {
     private let lock = NSLock()
     private var _path: String?
     private var _body: [String: Any?] = [:]
+    private var _silentAuthorizeRefreshTokens: [String] = []
     let responseBody: Data
     let responseHeaders: [String: String]
+    let silentAuthorizeBody: Data
 
     var path: String? { lock.withLock { _path } }
     var body: [String: Any?] { lock.withLock { _body } }
+    var silentAuthorizeRefreshTokens: [String] { lock.withLock { _silentAuthorizeRefreshTokens } }
 
-    init(responseBody: Data, responseHeaders: [String: String] = [:]) {
+    init(responseBody: Data, responseHeaders: [String: String] = [:], silentAuthorizeBody: Data = Data()) {
         self.responseBody = responseBody
         self.responseHeaders = responseHeaders
+        self.silentAuthorizeBody = silentAuthorizeBody
         super.init(baseUrl: "https://test.example.com", clientId: "test-client-id", applicationId: nil)
+    }
+
+    override func silentAuthorize(refreshToken: String, timeout: Int = 10) async throws -> (Data, URLResponse) {
+        lock.withLock { _silentAuthorizeRefreshTokens.append(refreshToken) }
+        let url = URL(string: "https://test.example.com/frontegg/oauth/authorize/silent")!
+        return (silentAuthorizeBody, HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
     }
 
     override func postRequest(
@@ -138,7 +148,7 @@ private final class RecordingPostApi: Api {
             _path = path
             _body = body
         }
-        let url = URL(string: "https://test.example.com\(path)")!
+        let url = URL(string: path.hasPrefix("http") ? path : "https://test.example.com\(path)")!
         return (responseBody, HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: responseHeaders)!)
     }
 }
@@ -450,19 +460,53 @@ final class GoogleSignInTests: XCTestCase {
         withExtendedLifetime(webView) {}
     }
 
-    func test_postloginGoogleNative_sendsTheIdTokenToTheGooglePostLogin() async throws {
-        let responseBody = try JSONSerialization.data(withJSONObject: TestDataFactory.makeAuthResponse(
-            refreshToken: "refresh-1",
-            accessToken: "access-1"
-        ))
-        let recordingApi = RecordingPostApi(responseBody: responseBody)
+    func test_postloginGoogleNative_sendsTheIdTokenToTheGoogleSsoPostlogin() async throws {
+        let recordingApi = RecordingPostApi(
+            responseBody: Data("{}".utf8),
+            responseHeaders: ["Set-Cookie": "fe_refresh_test-client-id=refresh-cookie; Path=/; HttpOnly"],
+            silentAuthorizeBody: try JSONSerialization.data(withJSONObject: TestDataFactory.makeAuthResponse(
+                refreshToken: "refresh-1",
+                accessToken: "access-1"
+            ))
+        )
+
+        _ = try await recordingApi.postloginGoogleNative(idToken: "google-id-token")
+
+        let components = try XCTUnwrap(URLComponents(string: try XCTUnwrap(recordingApi.path)))
+        let query = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value) })
+        XCTAssertEqual(components.host, "test.example.com")
+        XCTAssertEqual(components.path, "/frontegg/identity/resources/auth/v1/user/sso/google/postlogin")
+        XCTAssertEqual(query["id_token"], "google-id-token")
+        XCTAssertEqual(query["redirectUri"], "https://test.example.com/oauth/account/social/success")
+        XCTAssertTrue(recordingApi.body.isEmpty)
+    }
+
+    func test_postloginGoogleNative_exchangesTheRefreshCookieThroughSilentAuthorize() async throws {
+        let recordingApi = RecordingPostApi(
+            responseBody: Data("{}".utf8),
+            responseHeaders: ["Set-Cookie": "fe_refresh_test-client-id=refresh-cookie; Path=/; HttpOnly"],
+            silentAuthorizeBody: try JSONSerialization.data(withJSONObject: TestDataFactory.makeAuthResponse(
+                refreshToken: "refresh-1",
+                accessToken: "access-1"
+            ))
+        )
 
         let response = try await recordingApi.postloginGoogleNative(idToken: "google-id-token")
 
-        XCTAssertEqual(recordingApi.path, "/oauth/account/social/google/post-login")
-        XCTAssertEqual(recordingApi.body["idToken"] as? String, "google-id-token")
-        XCTAssertEqual(recordingApi.body["redirectUri"] as? String, "https://test.example.com/oauth/account/social/success")
+        XCTAssertEqual(recordingApi.silentAuthorizeRefreshTokens, ["refresh-cookie"])
         XCTAssertEqual(response.refresh_token, "refresh-1")
+        XCTAssertEqual(response.access_token, "access-1")
+    }
+
+    func test_postloginGoogleNative_withoutARefreshCookie_throwsCouldNotExchangeToken() async throws {
+        let recordingApi = RecordingPostApi(responseBody: Data("{}".utf8))
+
+        do {
+            _ = try await recordingApi.postloginGoogleNative(idToken: "google-id-token")
+            XCTFail("expected couldNotExchangeToken")
+        } catch FronteggError.authError(.couldNotExchangeToken) {
+            XCTAssertTrue(recordingApi.silentAuthorizeRefreshTokens.isEmpty)
+        }
     }
 
     func test_postloginGoogleNative_whenMfaIsRequired_throwsMfaRequiredWithTheRefreshCookie() async throws {

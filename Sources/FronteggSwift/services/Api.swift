@@ -1291,12 +1291,14 @@ public class Api {
     
     
     internal func postloginGoogleNative(idToken: String) async throws -> AuthResponse {
+        var urlComponents = URLComponents(string: "\(self.baseUrl)/frontegg/identity/resources/auth/v1/user/sso/google/postlogin")!
+        urlComponents.queryItems = [
+            URLQueryItem(name: "id_token", value: idToken),
+            URLQueryItem(name: "redirectUri", value: "\(self.baseUrl)/oauth/account/social/success")
+        ]
         let (data, response) = try await postRequest(
-            path: "/oauth/account/social/google/post-login",
-            body: [
-                "idToken": idToken,
-                "redirectUri": "\(self.baseUrl)/oauth/account/social/success"
-            ]
+            path: urlComponents.url!.absoluteString,
+            body: [:]
         )
 
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.isSuccess else {
@@ -1309,7 +1311,15 @@ public class Api {
             throw FronteggError.authError(.mfaRequired(jsonResponse, refreshToken: refreshToken))
         }
 
-        return try JSONDecoder().decode(AuthResponse.self, from: data)
+        guard let refreshTokenCookie = getCookiesFromHeaders(response: httpResponse)?.0 else {
+            throw FronteggError.authError(.couldNotExchangeToken("No refresh token cookie in the Google postlogin response"))
+        }
+        let cookieParts = refreshTokenCookie.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+        guard cookieParts.count == 2 else {
+            throw FronteggError.authError(.couldNotExchangeToken("Invalid refresh token cookie format"))
+        }
+        let (authData, _) = try await silentAuthorize(refreshToken: String(cookieParts[1]))
+        return try JSONDecoder().decode(AuthResponse.self, from: authData)
     }
 
     internal func getFeatureFlags() async throws -> String {
