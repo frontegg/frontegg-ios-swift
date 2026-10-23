@@ -512,7 +512,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                             logger.info("Retrying social login with provider: \(type) to avoid localhost redirect")
                             DispatchQueue.main.async { [weak self] in
                                 guard let self = self else { return }
-                                self.fronteggAuth.handleSocialLogin(providerString: type, custom: false, action: .login) { result in
+                                self.fronteggAuth.retrySocialLoginInBrowser(providerString: type) { result in
                                     switch result {
                                     case .success(let user):
                                         self.logger.info("✅ Social login completed successfully after blocking localhost redirect")

@@ -304,7 +304,7 @@ extension FronteggAuth {
                     if let urlComponents = URLComponents(url: verificationUrl, resolvingAgainstBaseURL: false),
                        let queryItems = urlComponents.queryItems,
                        let type = queryItems.first(where: { $0.name == "type" })?.value {
-                        self.handleSocialLogin(providerString: type, custom: false, action: .login) { result in
+                        self.retrySocialLoginInBrowser(providerString: type) { result in
                             switch result {
                             case .success(let user):
                                 completion(.success(user))
@@ -337,7 +337,7 @@ extension FronteggAuth {
                 if let urlComponents = URLComponents(url: verificationUrl, resolvingAgainstBaseURL: false),
                    let queryItems = urlComponents.queryItems,
                    let type = queryItems.first(where: { $0.name == "type" })?.value {
-                    self.handleSocialLogin(providerString: type, custom: false, action: .login) { result in
+                    self.retrySocialLoginInBrowser(providerString: type) { result in
                         switch result {
                         case .success(let user):
                             self.logger.info("✅ Login completed successfully after verification timeout")

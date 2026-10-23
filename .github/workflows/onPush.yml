@@ -37,3 +37,4 @@ jobs:
         run: |
           swift package resolve
           xcodebuild build -scheme FronteggSwift -destination "platform=iOS Simulator,name=iPhone 16 Pro"
+          xcodebuild build -scheme FronteggGoogleSignIn -destination "platform=iOS Simulator,name=iPhone 16 Pro"

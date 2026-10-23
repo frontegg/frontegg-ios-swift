@@ -49,7 +49,7 @@ public class SentryHelper {
     /// Breadcrumb `data` keys whose string values are treated as URLs: query and fragment are stripped.
     private static func breadcrumbKeyHoldsURL(_ key: String) -> Bool {
         let k = key.lowercased()
-        if k == "url" || k == "href" || k == "location" { return true }
+        if k == "url" || k == "href" || k == "location" || k == "path" { return true }
         return k.hasSuffix("url") || k.hasSuffix("_uri") || k.hasSuffix("uri")
     }
 
@@ -65,7 +65,7 @@ public class SentryHelper {
         return "\(scheme)://\(host)\(path)"
     }
 
-    /// Recursively redacts sensitive keys and URL queries from breadcrumb `data` (SDK + app).
+    /// Recursively redacts sensitive keys and URL queries from breadcrumb `data` and event context (SDK + app).
     private static func sanitizeBreadcrumbData(_ data: [String: Any]) -> [String: Any] {
         var out: [String: Any] = [:]
         out.reserveCapacity(data.count)
@@ -97,6 +97,10 @@ public class SentryHelper {
             }
         }
         return out
+    }
+
+    private static func sanitizeContext(_ context: [String: [String: Any]]) -> [String: [String: Any]] {
+        context.mapValues { sanitizeBreadcrumbData($0) }
     }
 
     private static func applyBreadcrumbSanitization(_ crumb: Breadcrumb) -> Breadcrumb {
@@ -406,7 +410,7 @@ public class SentryHelper {
         // Copy the hub's scope (global metadata) and layer the per-call context on top,
         // so the event carries both without mutating the shared hub scope.
         let scope = Scope(scope: hub.scope)
-        for (key, value) in context {
+        for (key, value) in sanitizeContext(context) {
             scope.setContext(value: value, key: key)
         }
         hub.capture(error: error, scope: scope)
@@ -419,7 +423,7 @@ public class SentryHelper {
         guard isSentryEnabled(), let hub = currentHub() else { return }
         let scope = Scope(scope: hub.scope)
         scope.setLevel(level)
-        for (key, value) in context {
+        for (key, value) in sanitizeContext(context) {
             scope.setContext(value: value, key: key)
         }
         hub.capture(message: message, scope: scope)
@@ -481,5 +485,9 @@ public class SentryHelper {
     /// Exposed for unit tests (`@testable import`).
     internal static func sanitizeBreadcrumbPayloadForTesting(_ data: [String: Any]) -> [String: Any] {
         sanitizeBreadcrumbData(data)
+    }
+
+    internal static func sanitizeContextForTesting(_ context: [String: [String: Any]]) -> [String: [String: Any]] {
+        sanitizeContext(context)
     }
 }

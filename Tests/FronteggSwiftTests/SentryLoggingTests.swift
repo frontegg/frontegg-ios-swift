@@ -159,6 +159,25 @@ final class SentryLoggingTests: XCTestCase {
         XCTAssertEqual(out["location"] as? String, "https://idp.example.com/callback")
     }
 
+    func test_sanitizeContext_stripsTheQueryFromAFailedRequestPath() {
+        let googlePostloginUrl = "https://example.com/frontegg/identity/resources/auth/v1/user/sso/google/postlogin"
+        let context: [String: [String: Any]] = [
+            "http": [
+                "method": "POST",
+                "path": "\(googlePostloginUrl)?id_token=secret-google-id-token&redirectUri=https%3A%2F%2Fexample.com",
+                "followRedirect": true
+            ]
+        ]
+        let out = SentryHelper.sanitizeContextForTesting(context)
+        XCTAssertEqual(out["http"]?["path"] as? String, googlePostloginUrl)
+        XCTAssertEqual(out["http"]?["method"] as? String, "POST")
+    }
+
+    func test_sanitizeContext_keepsARelativePath() {
+        let out = SentryHelper.sanitizeContextForTesting(["http": ["path": "/flags"]])
+        XCTAssertEqual(out["http"]?["path"] as? String, "/flags")
+    }
+
     // MARK: - Breadcrumb gating by logLevel
     //
     // Regression coverage for "Sentry quota exhausted" — pre-fix, `addBreadcrumb`

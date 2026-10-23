@@ -87,7 +87,33 @@ extension FronteggAuth {
             return
         }
 
+        let browserLogin: () -> Void = { [weak self] in
+            self?.startDirectLoginAction(
+                window: window,
+                type: type,
+                data: data,
+                ephemeralSession: ephemeralSession,
+                completion: completion,
+                additionalQueryParams: additionalQueryParams,
+                remainCodeVerifier: remainCodeVerifier
+            )
+        }
+        if type == "social-login", shouldSignInWithGoogleNatively(provider: data, action: action) {
+            loginWithGoogle(presentingFrom: window, fallingBackTo: browserLogin, completion: completion)
+            return
+        }
+        browserLogin()
+    }
 
+    private func startDirectLoginAction(
+        window: UIWindow?,
+        type: String,
+        data: String,
+        ephemeralSession: Bool?,
+        completion: @escaping FronteggAuth.CompletionHandler,
+        additionalQueryParams: [String: Any]?,
+        remainCodeVerifier: Bool
+    ) {
         var directLogin = [
             "type": type,
             "data": data,

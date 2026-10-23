@@ -153,6 +153,12 @@ public class FronteggApp {
         set { FronteggOAuthErrorRuntimeSettings.delegateBox.value = newValue }
     }
 
+    /// Native Google sign-in for `loginWithGoogle()` and the login box's Google button; `nil` keeps the browser flow.
+    public var googleSignIn: FronteggGoogleIdTokenProvider? {
+        get { FronteggGoogleSignInRuntimeSettings.providerBox.value }
+        set { FronteggGoogleSignInRuntimeSettings.providerBox.value = newValue }
+    }
+
     /// Account (tenant) alias for login-per-account (custom login box). When set, the authorize URL includes `organization=<alias>` so Frontegg routes the user to that account's login experience. Set from your app (e.g. from subdomain or query param) before calling login. Note: `switchTenant` is not supported between accounts that use custom login boxes.
     public var loginOrganizationAlias: String? = nil
 
