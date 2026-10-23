@@ -156,7 +156,7 @@ extension FronteggAuth {
             logger.error("loginWithGoogle needs FronteggApp.shared.googleSignIn to be set")
             throw FronteggError.configError(.socialLoginMissing("Google"))
         }
-        let googleConfig = try await api.getSocialLoginConfig().google
+        let googleConfig = try await nativeGoogleConfig()
         guard let googleConfig, googleConfig.active, let serverClientId = googleConfig.clientId, !serverClientId.isEmpty else {
             logger.error("Google social login is not active or has no client ID in Frontegg")
             throw FronteggError.configError(.socialLoginMissing("Google"))
@@ -192,6 +192,24 @@ extension FronteggAuth {
         return user
     }
 
+    // A usable config is reused briefly; an unusable one is never kept, so turning Google on applies at the next tap.
+    @MainActor
+    private func nativeGoogleConfig() async throws -> SocialLoginOption? {
+        let configApi = api
+        if let cache = nativeGoogleConfigCache, cache.api === configApi, Date() < cache.expiresAt {
+            return cache.option
+        }
+        let option = try await configApi.getSocialLoginConfig().google
+        if let option, option.active, option.customised, !(option.clientId ?? "").isEmpty {
+            nativeGoogleConfigCache = NativeGoogleConfigCache(
+                option: option,
+                api: configApi,
+                expiresAt: Date().addingTimeInterval(NativeGoogleConfigCache.lifetime)
+            )
+        }
+        return option
+    }
+
     // isLoading would replace an open login box with a loader and rebuild its web view, losing an MFA page loaded into it.
     @MainActor
     private func setGoogleSignInLoading(_ isLoading: Bool, isLoginBoxOpen: Bool) {
@@ -201,4 +219,12 @@ extension FronteggAuth {
             setIsLoading(isLoading)
         }
     }
+}
+
+struct NativeGoogleConfigCache {
+    static let lifetime: TimeInterval = 60
+
+    let option: SocialLoginOption
+    weak var api: Api?
+    let expiresAt: Date
 }

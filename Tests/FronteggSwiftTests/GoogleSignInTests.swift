@@ -62,6 +62,7 @@ private final class MockGoogleSignInApi: Api {
     private var _postloginResult: Result<AuthResponse, Error> = .failure(FronteggError.authError(.failedToAuthenticate))
     private var _meUser: User?
     private var _onPostlogin: (() -> Void)?
+    private var _configRequestCount = 0
 
     var googleActive: Bool {
         get { lock.withLock { _googleActive } }
@@ -84,12 +85,14 @@ private final class MockGoogleSignInApi: Api {
         set { lock.withLock { _onPostlogin = newValue } }
     }
     var postloginIdTokens: [String] { lock.withLock { _postloginIdTokens } }
+    var configRequestCount: Int { lock.withLock { _configRequestCount } }
 
     init() {
         super.init(baseUrl: "https://test.example.com", clientId: "test-client-id", applicationId: nil)
     }
 
     override func getSocialLoginConfig() async throws -> SocialLoginConfig {
+        lock.withLock { _configRequestCount += 1 }
         let option = TestDataFactory.makeSocialLoginOption(
             type: "google",
             active: googleActive,
@@ -266,6 +269,42 @@ final class GoogleSignInTests: XCTestCase {
 
         XCTAssertEqual(result.failure?.category, .cancelled)
         XCTAssertTrue(api.postloginIdTokens.isEmpty)
+    }
+
+    func test_loginWithGoogle_aSecondAttempt_reusesTheGoogleConfig() async {
+        let provider = register(.failure(FronteggError.authError(.operationCanceled)))
+
+        _ = await complete { self.auth.loginWithGoogle($0) }
+        _ = await complete { self.auth.loginWithGoogle($0) }
+
+        XCTAssertEqual(provider.requestedServerClientIds, ["google-web-client", "google-web-client"])
+        XCTAssertEqual(api.configRequestCount, 1)
+    }
+
+    func test_loginWithGoogle_afterGoogleIsTurnedOn_readsTheConfigAgain() async {
+        let provider = register(.failure(FronteggError.authError(.operationCanceled)))
+        api.googleActive = false
+        _ = await complete { self.auth.loginWithGoogle($0) }
+
+        api.googleActive = true
+        let result = await complete { self.auth.loginWithGoogle($0) }
+
+        XCTAssertEqual(result.failure?.category, .cancelled)
+        XCTAssertEqual(provider.requestedServerClientIds, ["google-web-client"])
+        XCTAssertEqual(api.configRequestCount, 2)
+    }
+
+    func test_loginWithGoogle_afterTheCachedConfigExpires_readsTheConfigAgain() async {
+        register(.failure(FronteggError.authError(.operationCanceled)))
+        _ = await complete { self.auth.loginWithGoogle($0) }
+        guard let cache = auth.nativeGoogleConfigCache else {
+            return XCTFail("A usable Google config should be cached")
+        }
+        auth.nativeGoogleConfigCache = NativeGoogleConfigCache(option: cache.option, api: api, expiresAt: .distantPast)
+
+        _ = await complete { self.auth.loginWithGoogle($0) }
+
+        XCTAssertEqual(api.configRequestCount, 2)
     }
 
     func test_handleSocialLogin_google_usesTheNativeProvider() async {
