@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 import FronteggSwift
 
 enum DemoEmbeddedTestMode {
@@ -18,6 +19,8 @@ enum DemoEmbeddedTestMode {
     static let misroutedCallbackStateEnv = "FRONTEGG_E2E_MISROUTED_CALLBACK_STATE"
     static let misroutedCallbackVerifierEnv = "FRONTEGG_E2E_MISROUTED_CALLBACK_VERIFIER"
     static let loginBoxFooterEnv = "FRONTEGG_E2E_LOGIN_BOX_FOOTER"
+    static let googleIdTokenEnv = "FRONTEGG_E2E_GOOGLE_ID_TOKEN"
+    static let canceledGoogleSignInIdToken = "cancel"
     static let requestAuthorizeRefreshToken = "signup-refresh-token"
     static let embeddedPasswordEmail = "test@frontegg.com"
     static let embeddedSAMLEmail = "test@saml-domain.com"
@@ -56,6 +59,11 @@ enum DemoEmbeddedTestMode {
     static var stepUpScenario: String? {
         guard isEnabled else { return nil }
         return ProcessInfo.processInfo.environment[stepUpScenarioEnv]
+    }
+
+    static var googleIdToken: String? {
+        guard isEnabled else { return nil }
+        return ProcessInfo.processInfo.environment[googleIdTokenEnv]
     }
 
     static var customSSOUrl: String? {
@@ -97,6 +105,22 @@ enum DemoEmbeddedTestMode {
     static var directSocialLoginUrl: String? {
         guard let baseUrl else { return nil }
         return "\(baseUrl)/idp/social/mock-social-provider"
+    }
+}
+
+final class DemoEmbeddedStubGoogleIdTokenProvider: FronteggGoogleIdTokenProvider {
+    private let configuredIdToken: String
+
+    init(idToken: String) {
+        configuredIdToken = idToken
+    }
+
+    @MainActor
+    func idToken(serverClientId: String, presenting viewController: UIViewController) async throws -> String {
+        if configuredIdToken == DemoEmbeddedTestMode.canceledGoogleSignInIdToken {
+            throw FronteggError.authError(.operationCanceled)
+        }
+        return configuredIdToken
     }
 }
 
@@ -167,6 +191,9 @@ final class DemoEmbeddedBootstrapper: ObservableObject {
 
         FronteggApp.shared.shouldPromptSocialLoginConsent = false
         FronteggApp.shared.loginBoxFooter = DemoEmbeddedTestMode.loginBoxFooter
+        if let googleIdToken = DemoEmbeddedTestMode.googleIdToken {
+            FronteggApp.shared.googleSignIn = DemoEmbeddedStubGoogleIdTokenProvider(idToken: googleIdToken)
+        }
         FronteggApp.shared.manualInit(
             baseUrl: baseUrl,
             cliendId: clientId,
