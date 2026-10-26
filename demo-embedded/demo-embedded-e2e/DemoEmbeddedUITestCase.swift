@@ -320,6 +320,13 @@ class DemoEmbeddedUITestCase: XCTestCase {
         XCTFail("Button \(identifier) was not hittable after scrolling. \(screenDebugSummary())")
     }
 
+    func scrollIntoView(_ element: XCUIElement, maxScrollAttempts: Int = 6) {
+        for _ in 0..<maxScrollAttempts where !element.isHittable {
+            app.swipeUp()
+        }
+        XCTAssertTrue(element.isHittable, "Element was not hittable after scrolling. \(screenDebugSummary())")
+    }
+
     func loginWithPassword(email: String = "test@frontegg.com", password: String = "Testpassword1!") {
         waitForScreen("LoginPageRoot")
 
