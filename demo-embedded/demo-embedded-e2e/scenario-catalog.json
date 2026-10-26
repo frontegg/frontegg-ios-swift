@@ -116,6 +116,46 @@
       "description": "Queues an OAuth error from the Google social callback, verifies the OAuth error toast is shown, and confirms the login UI stays open without authenticating the user."
     },
     {
+      "method": "testLoginBoxGoogleButtonSignsInNativelyWhenAProviderIsSet",
+      "title": "Login box Google button signs in natively when a provider is set",
+      "description": "Sets a stub Google ID token provider, taps the login box's Google button, and verifies the ID token is exchanged at the native Google post-login, the native Google user is signed in without an OAuth error toast, and the browser Google flow is never opened."
+    },
+    {
+      "method": "testLoginWithGoogleSignsInWithoutOpeningTheLoginBox",
+      "title": "loginWithGoogle() signs in without the login box",
+      "description": "Sets a stub Google ID token provider, calls the public loginWithGoogle() from an app button, and verifies the ID token is exchanged at the native Google post-login and the native Google user is signed in without opening the hosted login box or the browser Google flow."
+    },
+    {
+      "method": "testCanceledNativeGoogleSignInKeepsTheLoginBoxOpen",
+      "title": "Canceled native Google sign-in keeps the login box open",
+      "description": "Sets a stub Google ID token provider that cancels, taps the login box's Google button, and verifies nothing reaches the native Google post-login or the browser Google flow, no OAuth error toast appears, and the login box stays open with nobody signed in."
+    },
+    {
+      "method": "testRejectedNativeGoogleSignInFallsBackToTheBrowserFlow",
+      "title": "Rejected native Google sign-in falls back to the browser flow",
+      "description": "Sets a stub Google ID token provider whose token the native Google post-login rejects, taps the login box's Google button, and verifies the SDK falls back to the browser Google flow and signs in the Google social user."
+    },
+    {
+      "method": "testGoogleOnTheSignUpPageUsesTheBrowserFlow",
+      "title": "Google on the sign-up page uses the browser flow",
+      "description": "Sets a stub Google ID token provider, opens the login box's sign-up page, taps its Google button, and verifies the browser Google flow runs and the native Google postlogin is never called."
+    },
+    {
+      "method": "testGoogleOnTheActivationPageUsesTheBrowserFlow",
+      "title": "Google on the activation page uses the browser flow",
+      "description": "Sets a stub Google ID token provider, opens the account activation page (/oauth/account/activate), taps its Google button, and verifies the browser Google flow runs and the native Google postlogin is never called."
+    },
+    {
+      "method": "testGoogleOnTheInvitationPageUsesTheBrowserFlow",
+      "title": "Google on the invitation page uses the browser flow",
+      "description": "Sets a stub Google ID token provider, opens the invitation page (/oauth/account/invitation/accept), taps its Google button, and verifies the browser Google flow runs and the native Google postlogin is never called."
+    },
+    {
+      "method": "testNativeGoogleMfaContinuesInsideTheLoginBox",
+      "title": "Native Google sign-in MFA continues inside the login box",
+      "description": "Sets a stub Google ID token provider whose native Google post-login answers mfaRequired, taps the login box's Google button, and verifies the MFA page opens in the open login box, completing it signs in the MFA user, and the browser Google flow is never opened."
+    },
+    {
       "method": "testColdLaunchTransientProbeTimeoutsDoNotBlinkNoConnectionPage",
       "title": "Cold launch probe timeouts do not blink no-connection UI",
       "description": "Queues transient startup probe timeouts and verifies the app stays on the login experience without flashing the no-connection screen."
