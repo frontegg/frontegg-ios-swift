@@ -105,6 +105,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
         XCTAssertFalse(app.webViews.links["Blocked Link"].exists, "A javascript: footer link must not render as a link. \(screenDebugSummary())")
         XCTAssertTrue(app.webViews.staticTexts["Blocked Link"].exists, "A rejected footer link should keep its label as text. \(screenDebugSummary())")
 
+        scrollIntoView(privacyLink)
         privacyLink.safeTap()
         let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
         XCTAssertTrue(safari.wait(for: .runningForeground, timeout: 20), "Expected the http(s) footer link to open in Safari. \(screenDebugSummary())")
@@ -115,6 +116,7 @@ final class DemoEmbeddedE2ETests: DemoEmbeddedUITestCase {
             "Expected the login box to stay open after an http(s) footer link. \(screenDebugSummary())"
         )
 
+        scrollIntoView(app.webViews.links["Create an account"])
         app.webViews.links["Create an account"].safeTap()
         acceptSystemDialogIfNeeded(timeout: 3)
         waitForScreen("LoginPageRoot", timeout: 20)
