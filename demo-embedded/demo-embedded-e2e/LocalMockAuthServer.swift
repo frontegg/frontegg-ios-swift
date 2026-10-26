@@ -472,6 +472,12 @@ final class LocalMockAuthServer {
             response = handleSamlCallbackLandingPage()
         case ("GET", "/oauth/account/unlock"):
             response = handleUnlockAccount()
+        case ("GET", "/oauth/account/sign-up"):
+            response = renderAccountPageWithGoogle(title: "Mock Sign Up", action: "signUp")
+        case ("GET", "/oauth/account/activate"):
+            response = renderAccountPageWithGoogle(title: "Mock Activate Account")
+        case ("GET", "/oauth/account/invitation/accept"):
+            response = renderAccountPageWithGoogle(title: "Mock Accept Invitation")
         case let (method, path) where method == "GET"
             && path.hasPrefix("/oauth/account/redirect/ios/"):
             response = handleUnlockIntermediateRedirect(path: path)
@@ -672,11 +678,36 @@ final class LocalMockAuthServer {
           <input type="hidden" name="provider" value="google" />
           <button type="submit">Sign in with Mock Google</button>
         </form>
+        <form action="/oauth/account/sign-up" method="get">
+          <button type="submit">Open Mock Sign Up</button>
+        </form>
+        <form action="/oauth/account/activate" method="get">
+          <input type="hidden" name="token" value="e2e-activation-token" />
+          <button type="submit">Open Mock Activation</button>
+        </form>
+        <form action="/oauth/account/invitation/accept" method="get">
+          <input type="hidden" name="token" value="e2e-invitation-token" />
+          <button type="submit">Open Mock Invitation</button>
+        </form>
         \(hostedBootstrapScript(includeRefreshAttempt: true))
         \(hostedLoginBoxFooterScript())
         """
 
         return htmlResponse(status: 200, title: "Mock Embedded Login", body: body)
+    }
+
+    private func renderAccountPageWithGoogle(title: String, action: String? = nil) -> HTTPResponse {
+        let actionField = action.map { "<input type=\"hidden\" name=\"action\" value=\"\(htmlEscaped($0))\" />" } ?? ""
+        let body = """
+        <h1>\(htmlEscaped(title))</h1>
+        <form action="/__frontegg_test/social-login" method="get">
+          <input type="hidden" name="provider" value="google" />
+          \(actionField)
+          <button type="submit">Sign in with Mock Google</button>
+        </form>
+        """
+
+        return htmlResponse(status: 200, title: title, body: body)
     }
 
     /// Renders `window.__fronteggLoginBoxFooter` the way the login box's boxFooter slot does.
