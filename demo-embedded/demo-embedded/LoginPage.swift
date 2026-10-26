@@ -190,6 +190,11 @@ struct LoginBody: View {
         }
         .buttonStyle(PrimaryButtonStyle())
         .accessibilityIdentifier("E2EEmbeddedGoogleSocialButton")
+        Button("E2E Native Google Login") {
+            fronteggAuth.loginWithGoogle()
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .accessibilityIdentifier("E2ENativeGoogleLoginButton")
         Button("Use E2E Request Authorize Token") {
             signUpRefreshToken = DemoEmbeddedTestMode.requestAuthorizeRefreshToken
         }

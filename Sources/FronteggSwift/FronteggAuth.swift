@@ -127,6 +127,8 @@ public class FronteggAuth: FronteggState {
     // internal for extension access (SessionRestore, Testing, Refresh, HostedFlows)
     var isInitializingWithTokens: Bool = false
     @MainActor var isLoginInProgress: Bool = false
+    @MainActor var isNativeGoogleSignInInProgress: Bool = false
+    @MainActor var nativeGoogleConfigCache: NativeGoogleConfigCache?
     // internal for extension access (FronteggAuth+Entitlements.swift)
     let entitlementsLoadLock = NSLock()
     var entitlementsLoadInProgress: Bool = false

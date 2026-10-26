@@ -1290,6 +1290,38 @@ public class Api {
     }
     
     
+    internal func postloginGoogleNative(idToken: String) async throws -> AuthResponse {
+        var urlComponents = URLComponents(string: "\(self.baseUrl)/frontegg/identity/resources/auth/v1/user/sso/google/postlogin")!
+        urlComponents.queryItems = [
+            URLQueryItem(name: "id_token", value: idToken),
+            URLQueryItem(name: "redirectUri", value: "\(self.baseUrl)/oauth/account/social/success")
+        ]
+        let (data, response) = try await postRequest(
+            path: urlComponents.url!.absoluteString,
+            body: [:]
+        )
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.isSuccess else {
+            throw FronteggError.authError(.couldNotExchangeToken(String(data: data, encoding: .utf8) ?? "Unknown error occured"))
+        }
+
+        if let jsonResponse = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           jsonResponse["mfaRequired"] as? Bool == true {
+            let refreshToken = getCookiesFromHeaders(response: httpResponse)?.0
+            throw FronteggError.authError(.mfaRequired(jsonResponse, refreshToken: refreshToken))
+        }
+
+        guard let refreshTokenCookie = getCookiesFromHeaders(response: httpResponse)?.0 else {
+            throw FronteggError.authError(.couldNotExchangeToken("No refresh token cookie in the Google postlogin response"))
+        }
+        let cookieParts = refreshTokenCookie.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+        guard cookieParts.count == 2 else {
+            throw FronteggError.authError(.couldNotExchangeToken("Invalid refresh token cookie format"))
+        }
+        let (authData, _) = try await silentAuthorize(refreshToken: String(cookieParts[1]))
+        return try JSONDecoder().decode(AuthResponse.self, from: authData)
+    }
+
     internal func getFeatureFlags() async throws -> String {
         let (stringData, _) = try await self.getRequest(path: "/flags", accessToken: nil)
 
