@@ -7,21 +7,6 @@
 - Changed: the completions of `switchTenant`, passkey login and registration, and social, SSO, embedded and popup login now always run on the main thread. `switchTenant` previously completed on a background queue.
 - Changed: some failures now arrive as `.authError(.other(cause))` instead of a generic error, so their `failureReason` reads `"other"`. An exhausted `getOrRefreshAccessTokenAsync` throws the last network or server error instead of `.failedToAuthenticate`, and token exchange, passkey and Apple sign-in failures keep their underlying cause. Apps that match on `failureReason` for these cases should check `error.category` instead.
 
-<!-- CURSOR_SUMMARY -->
----
-
-> [!NOTE]
-> **High Risk**
-> The release documents auth-path and token-lifecycle changes (native Google, DPoP, error categories, completion threading) that can break apps matching on `failureReason` or assuming background completions.
-> 
-> **Overview**
-> **Release v1.3.25** — bumps `SDKVersion` to **1.3.25**, adds the **v1.3.25** section to `CHANGELOG.md`, and archives **v1.3.24** notes into `CHANGELOG.old.md`.
-> 
-> The documented release adds **opt-in native Google sign-in** via the optional `FronteggGoogleSignIn` product and `loginWithGoogle()` / embedded Google button (with browser fallback), **DPoP token binding** (`enableDPoP`), and an **App Attest** helper (`enableAppAttest`). It also introduces **`FronteggErrorCategory`** on `error.category`, async **`loginAsync` / `switchTenantAsync` / `logoutAsync`**, **main-thread auth completions** (including `switchTenant`), and **richer failure mapping** (e.g. `.authError(.other(cause))`, last error from exhausted token refresh).
-> 
-> <sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit ad6bbf9be21ce9fed755f68e3328deb1ce7abe5f. Bugbot is set up for automated code reviews on this repo. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>
-<!-- /CURSOR_SUMMARY -->
-
 ## v1.3.24
 
 - Fixed: embedded step-up never completed after MFA. The login box went on to the application's App URL (a blank page when the App URL is `localhost`) instead of returning to the app, so no stepped-up token was issued and the `stepUp()` completion never ran. Step-up now finishes through the hosted login and returns a stepped-up token.
