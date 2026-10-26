@@ -1,3 +1,27 @@
+## v1.3.25
+
+- Added: native Google sign-in. Add the new optional `FronteggGoogleSignIn` library product (built on GoogleSignIn-iOS 7 to 9) and set `FronteggApp.shared.googleSignIn`; `FronteggAuth.shared.loginWithGoogle()` and the embedded login box's Google button then sign in without opening the hosted login page. Sign-up, step-up, login per account, and the activation, invitation and other account pages keep the browser flow. A cancel completes with `.authError(.operationCanceled)` and stays on the login box, any other failure falls back to the browser flow, and MFA continues in the open login box. Requires Google social login with your own Google app in Frontegg and an iOS OAuth client (`GIDClientID` and its URL scheme); with Frontegg's shared Google app the browser flow is used. Apps that don't add the product get no Google code linked, though SwiftPM still resolves Google's packages. Off by default.
+- Added: opt-in DPoP token binding (RFC 9449). With `enableDPoP` set to `true` in `Frontegg.plist`, the SDK keeps a P-256 key (in the Secure Enclave when available) and signs a proof for the authorization code exchange and OAuth refreshes, so bound tokens can't be replayed from another device. Logout rotates the key. `FronteggAuth.shared.applyDPoP(to:)` and `dpopProof(method:url:)` let the app call its own APIs with the bound token. The environment must also enforce DPoP for tokens to be bound; refreshes with `enableSessionPerTenant` are not bound. Off by default.
+- Added: an opt-in App Attest client, `FronteggApp.shared.appAttest`, enabled with `enableAppAttest` in `Frontegg.plist`. It generates and attests an App Attest key and produces assertions for the app's own backend; the SDK does not send attestations to Frontegg yet. Needs the App Attest capability and a physical device. Off by default.
+- Added: `FronteggErrorCategory` (`network`, `cancelled`, `mfaRequired`, `server(statusCode:)` and more), read from `error.category`, so apps can tell why a call failed, and `loginAsync`, `switchTenantAsync` and `logoutAsync`. Existing `FronteggError` cases, `errorDescription` and `failureReason` are unchanged.
+- Changed: the completions of `switchTenant`, passkey login and registration, and social, SSO, embedded and popup login now always run on the main thread. `switchTenant` previously completed on a background queue.
+- Changed: some failures now arrive as `.authError(.other(cause))` instead of a generic error, so their `failureReason` reads `"other"`. An exhausted `getOrRefreshAccessTokenAsync` throws the last network or server error instead of `.failedToAuthenticate`, and token exchange, passkey and Apple sign-in failures keep their underlying cause. Apps that match on `failureReason` for these cases should check `error.category` instead.
+
+<!-- CURSOR_SUMMARY -->
+---
+
+> [!NOTE]
+> **High Risk**
+> The release documents auth-path and token-lifecycle changes (native Google, DPoP, error categories, completion threading) that can break apps matching on `failureReason` or assuming background completions.
+> 
+> **Overview**
+> **Release v1.3.25** — bumps `SDKVersion` to **1.3.25**, adds the **v1.3.25** section to `CHANGELOG.md`, and archives **v1.3.24** notes into `CHANGELOG.old.md`.
+> 
+> The documented release adds **opt-in native Google sign-in** via the optional `FronteggGoogleSignIn` product and `loginWithGoogle()` / embedded Google button (with browser fallback), **DPoP token binding** (`enableDPoP`), and an **App Attest** helper (`enableAppAttest`). It also introduces **`FronteggErrorCategory`** on `error.category`, async **`loginAsync` / `switchTenantAsync` / `logoutAsync`**, **main-thread auth completions** (including `switchTenant`), and **richer failure mapping** (e.g. `.authError(.other(cause))`, last error from exhausted token refresh).
+> 
+> <sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit ad6bbf9be21ce9fed755f68e3328deb1ce7abe5f. Bugbot is set up for automated code reviews on this repo. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>
+<!-- /CURSOR_SUMMARY -->
+
 ## v1.3.24
 
 - Fixed: embedded step-up never completed after MFA. The login box went on to the application's App URL (a blank page when the App URL is `localhost`) instead of returning to the app, so no stepped-up token was issued and the `stepUp()` completion never ran. Step-up now finishes through the hosted login and returns a stepped-up token.
