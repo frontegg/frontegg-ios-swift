@@ -1,3 +1,5 @@
+## v1.3.26
+
 ## v1.3.25
 
 - Added: native Google sign-in. Add the new optional `FronteggGoogleSignIn` library product (built on GoogleSignIn-iOS 7 to 9) and set `FronteggApp.shared.googleSignIn`; `FronteggAuth.shared.loginWithGoogle()` and the embedded login box's Google button then sign in without opening the hosted login page. Sign-up, step-up, login per account, and the activation, invitation and other account pages keep the browser flow. A cancel completes with `.authError(.operationCanceled)` and stays on the login box, any other failure falls back to the browser flow, and MFA continues in the open login box. Requires Google social login with your own Google app in Frontegg and an iOS OAuth client (`GIDClientID` and its URL scheme); with Frontegg's shared Google app the browser flow is used. Apps that don't add the product get no Google code linked, though SwiftPM still resolves Google's packages. Off by default.
