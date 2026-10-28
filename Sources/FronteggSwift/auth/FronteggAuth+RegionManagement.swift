@@ -15,6 +15,7 @@ extension FronteggAuth {
         self.applicationId = applicationId
         self.isRegional = false
         self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
+        self.multiFactorAuthenticator = MultiFactorAuthenticator(api: self.api, baseUrl: self.baseUrl)
         self.featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self.api))
         self.entitlements = Entitlements(.init(api: self.api, enabled: entitlementsEnabled))
         resetEntitlementsLoadState()
@@ -32,6 +33,7 @@ extension FronteggAuth {
             self.clientId = config.clientId
             self.applicationId = config.applicationId
             self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
+            self.multiFactorAuthenticator = MultiFactorAuthenticator(api: self.api, baseUrl: self.baseUrl)
             self.featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self.api))
             self.entitlements = Entitlements(.init(api: self.api, enabled: entitlementsEnabled))
             resetEntitlementsLoadState()
@@ -45,6 +47,7 @@ extension FronteggAuth {
                 self.clientId = fallback.clientId
                 self.applicationId = fallback.applicationId
                 self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
+                self.multiFactorAuthenticator = MultiFactorAuthenticator(api: self.api, baseUrl: self.baseUrl)
                 self.featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self.api))
                 self.entitlements = Entitlements(.init(api: self.api, enabled: entitlementsEnabled))
                 resetEntitlementsLoadState()
@@ -59,6 +62,7 @@ extension FronteggAuth {
         self.applicationId = config.applicationId
         setSelectedRegion(config)
         self.api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
+        self.multiFactorAuthenticator = MultiFactorAuthenticator(api: self.api, baseUrl: self.baseUrl)
         self.featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self.api))
         self.entitlements = Entitlements(.init(api: self.api, enabled: entitlementsEnabled))
         resetEntitlementsLoadState()

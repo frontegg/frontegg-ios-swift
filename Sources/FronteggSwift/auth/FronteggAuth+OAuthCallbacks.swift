@@ -389,26 +389,37 @@ extension FronteggAuth {
             await MainActor.run { setAccessToken(storedAccess) }
         }
 
-        guard let refreshToken = refreshToken else {
+        guard refreshToken != nil else {
             self.logger.info("No refresh token found in memory or keychain")
             return nil
         }
 
         self.logger.info("Check if the access token exists and is still valid")
 
-        if let accessToken = self.accessToken {
-            do {
-                let decodedToken = try JWTHelper.decode(jwtToken: accessToken)
-                if let exp = decodedToken["exp"] as? Int {
-                    let offset = self.calculateOffset(expirationTime: exp)
-                    self.logger.info("Access token offset: \(offset)")
-                    if offset > 15 { // Ensure token has more than 15 seconds validity
-                        return accessToken
-                    }
-                }
-            } catch {
-                self.logger.error("Failed to decode JWT: \(error.localizedDescription)")
+        if let accessToken = accessTokenValidForMoreThan15Seconds() {
+            return accessToken
+        }
+
+        // Share the automatic refresh's gate so both never spend the same rotating refresh token (FR-25927).
+        var gateAttempts = 0
+        while !(await self.refreshGate.tryBegin()) {
+            if gateAttempts == maxAttempts {
+                self.logger.error("Timeout while waiting for an in-flight token refresh (20 seconds)")
+                throw FronteggError.authError(.failedToAuthenticate)
             }
+            try await Task.sleep(nanoseconds: 200_000_000)
+            gateAttempts += 1
+        }
+        defer { Task { await self.refreshGate.end() } }
+
+        if let accessToken = accessTokenValidForMoreThan15Seconds() {
+            self.logger.info("Access token was refreshed while waiting for the refresh gate")
+            return accessToken
+        }
+
+        guard let latestRefreshToken = self.refreshToken else {
+            self.logger.info("Refresh token was cleared while waiting for the refresh gate")
+            return nil
         }
 
         self.logger.info("Refreshing access token")
@@ -447,18 +458,18 @@ extension FronteggAuth {
                     let currentAccessToken = self.accessToken
                     do {
                         self.logger.info("Attempting tenant-specific refresh with tenantId: \(tenantId) in getOrRefreshAccessTokenAsync")
-                        data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: tenantId, accessToken: currentAccessToken)
+                        data = try await self.api.refreshToken(refreshToken: latestRefreshToken, tenantId: tenantId, accessToken: currentAccessToken)
                         self.logger.info("Tenant-specific refresh successful in getOrRefreshAccessTokenAsync")
                     } catch {
                         // Keep the fallback broad here too: the tenant endpoint can reject a refresh
                         // while the standard endpoint still accepts it during recovery/migration.
                         self.logger.warning("Tenant-specific refresh failed in getOrRefreshAccessTokenAsync: \(error). Falling back to standard OAuth refresh.")
-                        data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: nil)
+                        data = try await self.api.refreshToken(refreshToken: latestRefreshToken, tenantId: nil)
                         self.logger.info("Standard OAuth refresh successful (fallback) in getOrRefreshAccessTokenAsync")
                     }
                 } else {
                     // Standard OAuth refresh for non-per-tenant sessions
-                    data = try await self.api.refreshToken(refreshToken: refreshToken, tenantId: nil)
+                    data = try await self.api.refreshToken(refreshToken: latestRefreshToken, tenantId: nil)
                 }
 
                 await self.setCredentialsInternal(accessToken: data.access_token, refreshToken: data.refresh_token, hydrationMode: .refreshPreserveCachedUser)
@@ -530,6 +541,25 @@ extension FronteggAuth {
         }
 
         throw lastError.map(FronteggError.from) ?? FronteggError.authError(.failedToAuthenticate)
+    }
+
+    private func accessTokenValidForMoreThan15Seconds() -> String? {
+        guard let accessToken = self.accessToken else {
+            return nil
+        }
+        do {
+            let decodedToken = try JWTHelper.decode(jwtToken: accessToken)
+            if let exp = decodedToken["exp"] as? Int {
+                let offset = self.calculateOffset(expirationTime: exp)
+                self.logger.info("Access token offset: \(offset)")
+                if offset > 15 {
+                    return accessToken
+                }
+            }
+        } catch {
+            self.logger.error("Failed to decode JWT: \(error.localizedDescription)")
+        }
+        return nil
     }
 
     public func getOrRefreshAccessToken(_ completion: @escaping FronteggAuth.AccessTokenHandler) {
