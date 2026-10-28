@@ -122,6 +122,20 @@ final class FronteggAuthRegionManagementTests: XCTestCase {
         XCTAssertEqual(auth.applicationId, "ap-app-id")
     }
 
+    // Regression: the MFA authenticator kept the initial base URL and API after a region switch,
+    // so native Apple sign-in that required MFA failed in regional apps.
+    func test_reinitWithRegion_creates_new_multiFactorAuthenticator() {
+        let oldAuthenticator = auth.multiFactorAuthenticator
+        auth.reinitWithRegion(config: euRegion)
+        XCTAssertFalse(auth.multiFactorAuthenticator === oldAuthenticator)
+    }
+
+    func test_manualInit_creates_new_multiFactorAuthenticator() {
+        let oldAuthenticator = auth.multiFactorAuthenticator
+        auth.manualInit(baseUrl: "https://new.frontegg.com", clientId: "new-client", applicationId: nil)
+        XCTAssertFalse(auth.multiFactorAuthenticator === oldAuthenticator)
+    }
+
     func test_reinitWithRegion_sets_selected_region_in_memory() {
         auth.reinitWithRegion(config: euRegion)
         XCTAssertEqual(auth.selectedRegion?.key, "eu")

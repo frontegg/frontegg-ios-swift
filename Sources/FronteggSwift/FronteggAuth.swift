@@ -51,8 +51,13 @@ public class FronteggAuth: FronteggState {
     public let credentialManager: CredentialManager
     // Serializes token-refresh entry so only one refresh runs at a time (FR-25927).
     let refreshGate = RefreshGate()
-    // internal for extension access (FronteggAuth+MFA.swift)
-    var multiFactorAuthenticator: MultiFactorAuthenticator
+    // Lock-protected like `api`: region switches rebuild it while MFA startup reads it from async tasks.
+    private let multiFactorAuthenticatorLock = NSLock()
+    private var _multiFactorAuthenticator: MultiFactorAuthenticator
+    var multiFactorAuthenticator: MultiFactorAuthenticator {
+        get { multiFactorAuthenticatorLock.withLock { _multiFactorAuthenticator } }
+        set { multiFactorAuthenticatorLock.withLock { _multiFactorAuthenticator = newValue } }
+    }
     // internal for extension access (FronteggAuth+StepUp.swift)
     var stepUpAuthenticator: StepUpAuthenticator
     // Lock-protected storage for the public `api` accessor below. Same hazard
@@ -174,7 +179,7 @@ public class FronteggAuth: FronteggState {
         self._api = Api(baseUrl: self.baseUrl, clientId: self.clientId, applicationId: self.applicationId)
         self._featureFlags = FeatureFlags(.init(clientId: self.clientId, api: self._api))
         self.entitlements = Entitlements(.init(api: self._api, enabled: entitlementsEnabled))
-        self.multiFactorAuthenticator = MultiFactorAuthenticator(api: _api, baseUrl: baseUrl)
+        self._multiFactorAuthenticator = MultiFactorAuthenticator(api: _api, baseUrl: baseUrl)
         self.stepUpAuthenticator = StepUpAuthenticator(credentialManager: credentialManager)
         
         super.init()

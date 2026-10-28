@@ -552,6 +552,32 @@ final class FronteggAuthRefreshRecoveryTests: XCTestCase {
         XCTAssertFalse(snapshot.emitInitialState)
     }
 
+    // Regression: FR-25927 — getOrRefreshAccessTokenAsync must wait for the refresh gate that
+    // automatic refresh holds, or both spend the same rotating refresh token and the loser logs out.
+    func test_getOrRefreshAccessTokenAsync_waitsForInFlightRefreshGate() async throws {
+        _ = try seedAuthenticatedSession(email: "refresh-gate@example.com", expirationOffset: -60)
+        let refreshedAccessToken = try makeAccessToken(email: "refresh-gate@example.com")
+        api.refreshResult = .success(
+            try makeAuthResponse(
+                accessToken: refreshedAccessToken,
+                refreshToken: "refresh-token-new"
+            )
+        )
+        let auth = self.auth!
+        let gateClaimed = await auth.refreshGate.tryBegin()
+        XCTAssertTrue(gateClaimed)
+
+        let pendingToken = Task { try await auth.getOrRefreshAccessTokenAsync() }
+        try await Task.sleep(nanoseconds: 600_000_000)
+        XCTAssertEqual(api.refreshCallCount, 0, "Must not refresh while another refresh holds the gate")
+
+        await auth.refreshGate.end()
+        let token = try await pendingToken.value
+
+        XCTAssertEqual(api.refreshCallCount, 1)
+        XCTAssertEqual(token, refreshedAccessToken)
+    }
+
     // MARK: - Web session recovery
 
     private func makeWebSessionCookie(value: String = "web-session-token") -> HTTPCookie {
