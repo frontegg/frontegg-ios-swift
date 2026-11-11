@@ -39,6 +39,7 @@ public struct FronteggSecurityCenter: View {
     private let sections: Sections
     private let strings: FronteggSecurityCenterStrings
     private let onManageMFA: (() -> Void)?
+    private let adminPortalLayout: AdminPortalLayout
 
     /// Creates the security center.
     /// - Parameters:
@@ -47,12 +48,14 @@ public struct FronteggSecurityCenter: View {
     ///   - strings: Copy shown by the component.
     ///   - onManageMFA: Called by "Manage multi-factor authentication". When nil, the
     ///     embedded `AdminPortalView` is presented, where MFA devices are managed.
+    ///   - adminPortalLayout: Layout of that embedded `AdminPortalView`. Defaults to `.desktop`.
     @MainActor
     public init(
         sections: Sections = .all,
         stepUpMaxAge: TimeInterval? = nil,
         strings: FronteggSecurityCenterStrings = .init(),
-        onManageMFA: (() -> Void)? = nil
+        onManageMFA: (() -> Void)? = nil,
+        adminPortalLayout: AdminPortalLayout = .default
     ) {
         self.init(
             viewModel: FronteggSecurityCenterViewModel(
@@ -64,7 +67,8 @@ public struct FronteggSecurityCenter: View {
             ),
             sections: sections,
             strings: strings,
-            onManageMFA: onManageMFA
+            onManageMFA: onManageMFA,
+            adminPortalLayout: adminPortalLayout
         )
     }
 
@@ -73,12 +77,14 @@ public struct FronteggSecurityCenter: View {
         viewModel: @autoclosure @escaping () -> FronteggSecurityCenterViewModel,
         sections: Sections,
         strings: FronteggSecurityCenterStrings,
-        onManageMFA: (() -> Void)?
+        onManageMFA: (() -> Void)?,
+        adminPortalLayout: AdminPortalLayout = .default
     ) {
         self._viewModel = StateObject(wrappedValue: viewModel())
         self.sections = sections
         self.strings = strings
         self.onManageMFA = onManageMFA
+        self.adminPortalLayout = adminPortalLayout
     }
 
     public var body: some View {
@@ -140,7 +146,7 @@ public struct FronteggSecurityCenter: View {
             Text(strings.revokeOtherSessionsConfirmationMessage)
         }
         .sheet(isPresented: $showingAdminPortal) {
-            AdminPortalView()
+            AdminPortalView(layout: adminPortalLayout)
         }
     }
 

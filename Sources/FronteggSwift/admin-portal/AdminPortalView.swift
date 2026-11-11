@@ -16,8 +16,11 @@ import WebKit
 @available(iOS 14.0, *)
 public struct AdminPortalView: View {
     @Environment(\.presentationMode) private var presentationMode
+    private let layout: AdminPortalLayout
 
-    public init() {}
+    public init(layout: AdminPortalLayout = .default) {
+        self.layout = layout
+    }
 
     public var body: some View {
         ZStack {
@@ -26,7 +29,7 @@ public struct AdminPortalView: View {
             // around the safe area look continuous with the rendered page.
             Color(UIColor.secondarySystemBackground)
                 .ignoresSafeArea()
-            AdminPortalWebView(onClose: dismiss)
+            AdminPortalWebView(layout: layout, onClose: dismiss)
                 .ignoresSafeArea(edges: .bottom)
         }
     }
