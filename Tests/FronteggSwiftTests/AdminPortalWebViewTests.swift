@@ -118,7 +118,7 @@ final class AdminPortalWebViewTests: XCTestCase {
     }
 
     @MainActor
-    func test_coordinator_requestsMobileContentMode_whenLayoutIsResponsive() {
+    func test_coordinator_requestsRecommendedContentMode_whenLayoutIsResponsive() {
         let coordinator = AdminPortalWebView.Coordinator(onClose: nil, layout: .responsive)
         let request = URLRequest(url: URL(string: "https://app.frontegg.com/oauth/portal")!)
         let action = StubNavigationAction(request: request)
@@ -131,7 +131,7 @@ final class AdminPortalWebViewTests: XCTestCase {
         }
 
         XCTAssertEqual(receivedPolicy, .allow)
-        XCTAssertEqual(receivedPreferences?.preferredContentMode, .mobile)
+        XCTAssertEqual(receivedPreferences?.preferredContentMode, .recommended)
     }
 
     // MARK: - Layout
@@ -155,7 +155,7 @@ final class AdminPortalWebViewTests: XCTestCase {
         let conf = WKWebViewConfiguration()
         AdminPortalWebView.applyLayout(.responsive, to: conf)
 
-        XCTAssertEqual(conf.defaultWebpagePreferences.preferredContentMode, .mobile)
+        XCTAssertEqual(conf.defaultWebpagePreferences.preferredContentMode, .recommended)
         XCTAssertFalse(conf.userContentController.userScripts.contains { $0.source.contains("width=1024") })
         XCTAssertNil(AdminPortalWebView.customUserAgent(for: .responsive))
     }

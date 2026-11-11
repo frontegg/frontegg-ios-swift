@@ -29,9 +29,13 @@ struct AdminPortalWebView: UIViewRepresentable {
         layout == .desktop ? desktopUserAgent : nil
     }
 
+    static func contentMode(for layout: AdminPortalLayout) -> WKWebpagePreferences.ContentMode {
+        layout == .desktop ? .desktop : .recommended
+    }
+
     static func applyLayout(_ layout: AdminPortalLayout, to conf: WKWebViewConfiguration) {
         let prefs = WKWebpagePreferences()
-        prefs.preferredContentMode = layout == .desktop ? .desktop : .mobile
+        prefs.preferredContentMode = contentMode(for: layout)
         conf.defaultWebpagePreferences = prefs
 
         guard layout == .desktop else { return }
@@ -163,7 +167,7 @@ struct AdminPortalWebView: UIViewRepresentable {
             if let url = navigationAction.request.url {
                 logger.trace("AdminPortal: navigation → \(url.absoluteString)")
             }
-            preferences.preferredContentMode = layout == .desktop ? .desktop : .mobile
+            preferences.preferredContentMode = AdminPortalWebView.contentMode(for: layout)
             decisionHandler(.allow, preferences)
         }
 

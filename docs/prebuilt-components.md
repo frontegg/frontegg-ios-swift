@@ -73,6 +73,7 @@ Parameters:
 - `stepUpMaxAge`: passed to `stepUp(maxAge:)` and `isSteppedUp(maxAge:)`.
 - `strings`: a `FronteggSecurityCenterStrings` value with every user-facing string.
 - `onManageMFA`: replaces the default admin-portal sheet.
+- `adminPortalLayout`: the layout of that admin-portal sheet. Defaults to `.desktop`; pass `.responsive` on phones (see "Layout on phones" in [Advanced](advanced.md)).
 
 To reload the data, pull down on the list. A failed list load shows an inline error with **Try again** and doesn't block the other sections. A failed action (revoke, delete or step-up) shows an alert. If the user cancels the passkey or step-up sheet, no error appears.
 

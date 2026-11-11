@@ -968,7 +968,7 @@ AdminPortalView(layout: .responsive)
 | Layout | Behaviour |
 |---|---|
 | `.desktop` (default) | Desktop layout at 1024px, scaled to fit; sidebar always visible. |
-| `.responsive` | Device width; the portal adapts to the screen like a mobile browser. |
+| `.responsive` | Device width with the system's content mode; the portal adapts to the screen as it does in Safari. |
 
 ### Dismissal
 
