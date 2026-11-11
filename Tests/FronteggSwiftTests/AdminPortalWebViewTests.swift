@@ -117,6 +117,49 @@ final class AdminPortalWebViewTests: XCTestCase {
                        "Per-navigation preferences must request desktop content mode so the portal layout doesn't flip to mobile after in-page navigations.")
     }
 
+    @MainActor
+    func test_coordinator_requestsMobileContentMode_whenLayoutIsResponsive() {
+        let coordinator = AdminPortalWebView.Coordinator(onClose: nil, layout: .responsive)
+        let request = URLRequest(url: URL(string: "https://app.frontegg.com/oauth/portal")!)
+        let action = StubNavigationAction(request: request)
+
+        var receivedPolicy: WKNavigationActionPolicy?
+        var receivedPreferences: WKWebpagePreferences?
+        coordinator.webView(WKWebView(), decidePolicyFor: action, preferences: WKWebpagePreferences()) { policy, prefs in
+            receivedPolicy = policy
+            receivedPreferences = prefs
+        }
+
+        XCTAssertEqual(receivedPolicy, .allow)
+        XCTAssertEqual(receivedPreferences?.preferredContentMode, .mobile)
+    }
+
+    // MARK: - Layout
+
+    func test_layout_defaultsToDesktop() {
+        XCTAssertEqual(AdminPortalLayout.default, .desktop)
+    }
+
+    @MainActor
+    func test_desktopLayout_forcesDesktopWidthAndUserAgent() {
+        let conf = WKWebViewConfiguration()
+        AdminPortalWebView.applyLayout(.desktop, to: conf)
+
+        XCTAssertEqual(conf.defaultWebpagePreferences.preferredContentMode, .desktop)
+        XCTAssertTrue(conf.userContentController.userScripts.contains { $0.source.contains("width=1024") })
+        XCTAssertEqual(AdminPortalWebView.customUserAgent(for: .desktop)?.contains("Macintosh"), true)
+    }
+
+    @MainActor
+    func test_responsiveLayout_usesTheDeviceWidthAndDefaultUserAgent() {
+        let conf = WKWebViewConfiguration()
+        AdminPortalWebView.applyLayout(.responsive, to: conf)
+
+        XCTAssertEqual(conf.defaultWebpagePreferences.preferredContentMode, .mobile)
+        XCTAssertFalse(conf.userContentController.userScripts.contains { $0.source.contains("width=1024") })
+        XCTAssertNil(AdminPortalWebView.customUserAgent(for: .responsive))
+    }
+
 }
 
 // MARK: - Stubs

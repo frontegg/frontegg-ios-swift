@@ -12,33 +12,32 @@ struct AdminPortalWebView: UIViewRepresentable {
     typealias UIViewType = WKWebView
 
     private let fronteggAuth: FronteggAuth
+    private let layout: AdminPortalLayout
     private let onClose: (() -> Void)?
     private let logger = getLogger("AdminPortalWebView")
 
-    init(onClose: (() -> Void)? = nil) {
+    static let desktopViewport = "width=1024, user-scalable=yes, minimum-scale=0.3, maximum-scale=3"
+    static let desktopUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+
+    init(layout: AdminPortalLayout = .default, onClose: (() -> Void)? = nil) {
         self.fronteggAuth = FronteggAuth.shared
+        self.layout = layout
         self.onClose = onClose
     }
 
-    func makeUIView(context: Context) -> WKWebView {
-        let conf = WKWebViewConfiguration()
-        // Share the SDK's process pool and persistent data store so cookies
-        // are visible across the SDK's webviews and this one.
-        conf.processPool = WebViewShared.processPool
-        conf.websiteDataStore = .default()
+    static func customUserAgent(for layout: AdminPortalLayout) -> String? {
+        layout == .desktop ? desktopUserAgent : nil
+    }
 
-        // Request the desktop layout so the portal renders the persistent
-        // sidebar + content side-by-side instead of collapsing into a mobile
-        // drawer.
+    static func applyLayout(_ layout: AdminPortalLayout, to conf: WKWebViewConfiguration) {
         let prefs = WKWebpagePreferences()
-        prefs.preferredContentMode = .desktop
+        prefs.preferredContentMode = layout == .desktop ? .desktop : .mobile
         conf.defaultWebpagePreferences = prefs
 
-        // Force the viewport meta to a desktop width before the page's CSS
-        // and JS evaluate. Material-UI's responsive hooks read
-        // window.innerWidth, so this is what actually flips the breakpoint
-        // from mobile to desktop. Runs at documentStart on the main frame
-        // only.
+        guard layout == .desktop else { return }
+
+        // Material-UI's responsive hooks read window.innerWidth, so the viewport
+        // width is what actually flips the portal's breakpoint to desktop.
         let viewportOverride = """
         (function() {
             var setViewport = function() {
@@ -46,7 +45,7 @@ struct AdminPortalWebView: UIViewRepresentable {
                 if (existing) { existing.parentNode.removeChild(existing); }
                 var meta = document.createElement('meta');
                 meta.setAttribute('name', 'viewport');
-                meta.setAttribute('content', 'width=1024, user-scalable=yes, minimum-scale=0.3, maximum-scale=3');
+                meta.setAttribute('content', '\(desktopViewport)');
                 (document.head || document.documentElement).appendChild(meta);
             };
             setViewport();
@@ -57,6 +56,16 @@ struct AdminPortalWebView: UIViewRepresentable {
         """
         let viewportScript = WKUserScript(source: viewportOverride, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         conf.userContentController.addUserScript(viewportScript)
+    }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let conf = WKWebViewConfiguration()
+        // Share the SDK's process pool and persistent data store so cookies
+        // are visible across the SDK's webviews and this one.
+        conf.processPool = WebViewShared.processPool
+        conf.websiteDataStore = .default()
+
+        AdminPortalWebView.applyLayout(layout, to: conf)
 
         let bridge = AdminPortalBridge(onClose: onClose)
         conf.userContentController.add(bridge, name: AdminPortalBridge.handlerName)
@@ -73,9 +82,7 @@ struct AdminPortalWebView: UIViewRepresentable {
         webView.allowsBackForwardNavigationGestures = true
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
-        // Desktop user-agent — backstop for any UA-sniffing branches in the
-        // portal's responsive logic.
-        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+        webView.customUserAgent = AdminPortalWebView.customUserAgent(for: layout)
         webView.isOpaque = true
         webView.backgroundColor = .secondarySystemBackground
         webView.scrollView.backgroundColor = .secondarySystemBackground
@@ -99,7 +106,7 @@ struct AdminPortalWebView: UIViewRepresentable {
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onClose: onClose)
+        Coordinator(onClose: onClose, layout: layout)
     }
 
     /// SwiftUI teardown hook — fires when the representable is removed (sheet
@@ -141,10 +148,12 @@ struct AdminPortalWebView: UIViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         private let logger = getLogger("AdminPortalWebView")
         private let onClose: (() -> Void)?
+        private let layout: AdminPortalLayout
         var bridge: AdminPortalBridge?
 
-        init(onClose: (() -> Void)?) {
+        init(onClose: (() -> Void)?, layout: AdminPortalLayout = .default) {
             self.onClose = onClose
+            self.layout = layout
         }
 
         func webView(_ webView: WKWebView,
@@ -154,15 +163,16 @@ struct AdminPortalWebView: UIViewRepresentable {
             if let url = navigationAction.request.url {
                 logger.trace("AdminPortal: navigation → \(url.absoluteString)")
             }
-            preferences.preferredContentMode = .desktop
+            preferences.preferredContentMode = layout == .desktop ? .desktop : .mobile
             decisionHandler(.allow, preferences)
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard layout == .desktop else { return }
             let reapply = """
             (function() {
                 var existing = document.querySelector('meta[name="viewport"]');
-                var desired = 'width=1024, user-scalable=yes, minimum-scale=0.3, maximum-scale=3';
+                var desired = '\(AdminPortalWebView.desktopViewport)';
                 if (existing && existing.getAttribute('content') === desired) { return; }
                 if (existing) { existing.parentNode.removeChild(existing); }
                 var meta = document.createElement('meta');

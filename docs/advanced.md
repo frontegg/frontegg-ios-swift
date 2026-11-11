@@ -957,6 +957,19 @@ final class ProfileViewController: UIViewController {
 }
 ```
 
+### Layout on phones
+
+By default the portal renders its desktop layout at 1024px and scales it to fit, so the sidebar stays visible. On phones that makes the text small. Pass `layout: .responsive` to use the device's real width instead; below 767px the sidebar collapses into a menu button, as it does in mobile Safari:
+
+```swift
+AdminPortalView(layout: .responsive)
+```
+
+| Layout | Behaviour |
+|---|---|
+| `.desktop` (default) | Desktop layout at 1024px, scaled to fit; sidebar always visible. |
+| `.responsive` | Device width; the portal adapts to the screen like a mobile browser. |
+
 ### Dismissal
 
 The portal is dismissed in one of two ways:
