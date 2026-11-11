@@ -1,3 +1,5 @@
+## v1.3.27
+
 ## v1.3.26
 
 - Fixed: `getOrRefreshAccessTokenAsync()` could sign the user out when the app resumed. It refreshed without waiting for an automatic refresh that was already running, so both sent the same single-use refresh token, and the rejected request cleared the session. It now waits up to 20 seconds for a running refresh and returns that refresh's token if it is still valid for more than 15 seconds; otherwise it refreshes with the newest refresh token. If the running refresh doesn't finish in 20 seconds, it throws `.authError(.failedToAuthenticate)`. (FR-25952 — [#347](https://github.com/frontegg/frontegg-ios-swift/pull/347))
