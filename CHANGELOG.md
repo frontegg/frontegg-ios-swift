@@ -1,5 +1,7 @@
 ## v1.3.27
 
+- Added: `AdminPortalView(layout:)` chooses how the embedded admin portal lays itself out. The default, `.desktop`, keeps the current layout: the portal renders at 1024px and is scaled to fit, with the sidebar always visible. `.responsive` uses the device's real width, so on phones the sidebar collapses into a menu button, as it does in Safari. `FronteggSecurityCenter(adminPortalLayout:)` passes the same option to the admin portal it opens from "Manage multi-factor authentication". Apps that don't pass a layout are unaffected.
+
 ## v1.3.26
 
 - Fixed: `getOrRefreshAccessTokenAsync()` could sign the user out when the app resumed. It refreshed without waiting for an automatic refresh that was already running, so both sent the same single-use refresh token, and the rejected request cleared the session. It now waits up to 20 seconds for a running refresh and returns that refresh's token if it is still valid for more than 15 seconds; otherwise it refreshes with the newest refresh token. If the running refresh doesn't finish in 20 seconds, it throws `.authError(.failedToAuthenticate)`. (FR-25952 — [#347](https://github.com/frontegg/frontegg-ios-swift/pull/347))
